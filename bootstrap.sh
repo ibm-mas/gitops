@@ -11,7 +11,7 @@ do
         shift
         ;;
         -k|--ibm-api-key)
-        IBMCLOUD_APIKEY=$2
+        IBMCLOUD_APIKEY=$1
         shift
         ;;
         *)
@@ -22,7 +22,6 @@ do
         ;;
     esac
 done
-
 # 1. Install Openshift GitOps Operator
 
 # 1.1 Install Subscription

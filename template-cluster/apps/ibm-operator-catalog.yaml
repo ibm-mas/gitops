@@ -1,0 +1,29 @@
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ibm-operator-catalog
+  namespace: openshift-gitops
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-marketplace
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    path: applications/ibm-operator-catalog
+    targetRevision: poc
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_catalog_version: {{ catalog_version }}
+            mas_catalog_image: {{ image_registry }}/cpopen/ibm-maximo-operator-catalog
+            ibm_entitlement_key: {{ vault__ibm_entitlement_key }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,47 @@
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ibm-sls-{{ mas_instance }}
+  namespace: openshift-gitops
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ibm-sls-{{ mas_instance }}
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    path: applications/ibm-sls
+    targetRevision: poc
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            sls_channel: {{ sls_channel }}
+            sls_entitlement_file: {{ vault__sls_entitlement_file }}
+            ibm_entitlement_key: {{ vault__ibm_entitlement_key }}
+            sls_mongo_username: {{ vault__sls_mongo_username }}
+            sls_mongo_password: {{ vault__sls_mongo_password }}
+            sls_mongo_secret_name: sls-mongo-credentials
+            mongo_spec:
+              authMechanism: DEFAULT
+              configDb: admin
+              secretName: sls-mongo-credentials
+              nodes:
+                - host: {{ mongo_host_1 }}
+                  port: {{ mongo_port_1 }}
+                - host: {{ mongo_host_2 }}
+                  port: {{ mongo_port_1 }}
+                - host: {{ mongo_host_3 }}
+                  port: {{ mongo_port_1 }}
+              certificates:
+                - alias: ca
+                  crt: |
+                    {{ mongo_ca_certificate }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

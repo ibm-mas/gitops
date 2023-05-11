@@ -6,14 +6,38 @@ do
     key="$1"
     shift
     case $key in
-        -a|--avp-ibm-instance-url)
-        AVP_IBM_INSTANCE_URL=$1
+        -i|--avp-ibm-instance-url)
+        AVP_INSTANCE_URL=$1
         shift
         ;;
-        -k|--ibm-api-key)
-        IBMCLOUD_APIKEY=$1
+        -r|--avp-aws-secret-region)
+        AVP_AWS_SECRET_REGION=$1
         shift
         ;;
+        -s|--avp-aws-secret-key)
+        AVP_AWS_SECRET_KEY=$1
+        shift
+        ;;
+        -a|--avp-aws-access-key)
+        AVP_AWS_ACCESS_KEY=$1
+        shift
+        ;;
+        -b|--avp-ibm-api-key)
+        AVP_IBM_APIKEY=$1
+        shift
+        ;;
+        -t|--secret-manager-type)
+        AVP_TYPE=$1
+        shift
+        ;;        
+        -p|--github-pat)
+        APP_WATCHER_REPO_PAT=$1
+        shift
+        ;;
+        -u|--github-url)
+        APP_WATCHER_REPO_URL=$1
+        shift
+        ;;        
         *)
         # unknown option
         echo -e "\n${COLOR_RED}Usage Error: Unsupported flag \"${key}\" ${COLOR_OFF}\n\n"
@@ -22,6 +46,27 @@ do
         ;;
     esac
 done
+
+## Creates ArgoCD Application to watch the Environment representation Applications
+if [ -z $AVP_TYPE ]
+then
+  echo "Missing --secret-manager-type, try run the command again passing -t ibm | aws"
+  exit 1
+fi
+if [ $AVP_TYPE == 'aws' ]
+then
+  if [ -z $AVP_AWS_SECRET_REGION ] || [ -z $AVP_AWS_SECRET_REGION ] || [ -z $AVP_AWS_SECRET_REGION ]; then
+    echo 'Missing required params for AWS secret manager, make sure to provide --avp-aws-secret-region, --avp-aws-secret-key and --avp-aws-access-key'
+    exit 1
+  fi
+fi
+if [ $AVP_TYPE == 'ibm' ]
+then
+  if [ -z $AVP_INSTANCE_URL ] || [ -z $AVP_IBM_APIKEY ]; then
+    echo 'Missing required params for AWS secret manager, make sure to provide --avp-ibm-api-key and --avp-ibm-instance-url'
+    exit 1
+  fi
+fi
 # 1. Install Openshift GitOps Operator
 
 # 1.1 Install Subscription
@@ -45,6 +90,22 @@ oc wait --for=condition=Established crd/argocds.argoproj.io
 
 # # 2. Create Secret Manager secret
 echo 'Create Secret Manager Backend Secret'
+if [ $AVP_TYPE == 'aws' ]
+then
+  cat <<EOF | oc apply  -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openshift-gitops-vault
+  namespace: openshift-gitops
+stringData: 
+    vault.yml: |
+        AVP_TYPE: awssecretsmanager
+        AWS_REGION: $AVP_AWS_SECRET_REGION
+        AWS_ACCESS_KEY_ID: $AVP_AWS_ACCESS_KEY
+        AWS_SECRET_ACCESS_KEY: $AVP_AWS_SECRET_KEY
+EOF
+else
 cat <<EOF | oc apply  -f -
 apiVersion: v1
 kind: Secret
@@ -53,10 +114,11 @@ metadata:
   namespace: openshift-gitops
 stringData: 
     vault.yml: |
-        AVP_IBM_INSTANCE_URL: $AVP_IBM_INSTANCE_URL
+        AVP_IBM_INSTANCE_URL: $AVP_INSTANCE_URL
         AVP_TYPE: ibmsecretsmanager
         AVP_IBM_API_KEY: $IBMCLOUD_APIKEY
 EOF
+fi
 
 # 3. Create repo server SA
 echo 'Create ArgoCD repo server service account'
@@ -326,3 +388,44 @@ spec:
 EOF
 
 oc wait --for=jsonpath='{.status.phase}'=Available argocd/openshift-gitops -n openshift-gitops
+
+if [-z $APP_WATCHER_REPO_URL] || [-z $APP_WATCHER_REPO_PAT]; then
+  echo 'No Environment watcher github repository provided, make sure to provide --github-pat and --github-url'
+  exit 1
+else
+  echo 'Creates repository secret and environment watcher ArgoCD Application'
+  cat <<EOF | oc apply  -f -
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: ghe-pat-secret
+  namespace: openshift-gitops
+stringData:
+  password: $APP_WATCHER_REPO_PAT
+  url: $APP_WATCHER_REPO_URL
+  username: not-used
+type: Opaque
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: environment-watcher
+  namespace: openshift-gitops
+spec:
+  destination:
+    server: 'https://kubernetes.default.svc'
+  source:
+    path: .
+    repoURL: $APP_WATCHER_REPO_URL
+    targetRevision: HEAD
+    directory:
+      recurse: true
+  sources: []
+  project: default
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
+EOF
+fi

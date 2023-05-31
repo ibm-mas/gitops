@@ -32,19 +32,19 @@ spec:
         {{ .Values.db2_database_db_config }}
 {{- end }}
       settings:
-        dftTableOrg: "{{.Values.db2_table_org }}"
+        dftTableOrg: "{{ .Values.db2_table_org }}"
       ssl:
         secretName: "db2u-certificate"
         certLabel: "CN=db2u"
     instance:
-{% if .Values.db2_instance_registry is defined and .Values.db2_instance_registry != "" %}
+{{- if .Values.db2_instance_registry }}
       registry:
         {{ .Values.db2_instance_registry }}
-{% endif %}
-{% if .Values.db2_instance_dbm_config is defined and .Values.db2_instance_dbm_config != "" %}
+{{- end }}
+{{- if .Values.db2_instance_dbm_config }}
       dbmConfig:
         {{ .Values.db2_instance_dbm_config }}
-{% endif %}
+{{- end }}
 
     mln:
       total: {{ .Values.db2_mln_count }}
@@ -82,7 +82,7 @@ spec:
         resources:
           requests:
             storage: "{{ .Values.db2_data_storage_size }}"
-{% if .Values.db2_backup_storage_class is defined and .Values.db2_backup_storage_class != "" %}
+{{- if .Values.db2_backup_storage_class }}
     - name: backup
       type: create
       spec:
@@ -93,8 +93,8 @@ spec:
             storage: "{{ .Values.db2_backup_storage_size }}"
         storageClassName: "{{ .Values.db2_backup_storage_class }}"
       type: create
-{% endif %}
-{% if .Values.db2_logs_storage_class is defined and .Values.db2_logs_storage_class != "" %}
+{{- end }}
+{{- if .Values.db2_logs_storage_class }}
     - name: activelogs
       spec:
         accessModes:
@@ -104,8 +104,8 @@ spec:
             storage: "{{ .Values.db2_logs_storage_size }}"
         storageClassName: "{{ .Values.db2_logs_storage_class }}"
       type: template
-{% endif %}
-{% if .Values.db2_temp_storage_class is defined and .Values.db2_temp_storage_class != "" %}
+{{- end }}
+{{- if .Values.db2_temp_storage_class }}
     - name: tempts
       spec:
         accessModes:
@@ -115,4 +115,4 @@ spec:
             storage: "{{ .Values.db2_temp_storage_size }}"
         storageClassName: "{{ .Values.db2_temp_storage_class }}"
       type: template
-{% endif %}
+{{- end }}

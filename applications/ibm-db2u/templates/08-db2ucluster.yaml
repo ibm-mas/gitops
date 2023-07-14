@@ -13,26 +13,36 @@ spec:
     imagePullSecrets:
       - ibm-registry
   addOns:
-    graph:
-      enabled: false
-    rest:
-      enabled: false
+    graph: {}
+    rest: {}
   version: "{{ .Values.db2_version }}"
   size: {{ .Values.db2_num_pods }}
   environment:
     dbType: db2wh
     database:
       name: "{{ .Values.db2_dbname }}"
+
+{{- if .Values.db2_database_db_config }}
       dbConfig:
 {{ .Values.db2_database_db_config | toYaml | indent 8 }}
+{{- end }}
+
       settings:
         dftTableOrg: "{{ .Values.db2_table_org }}"
       ssl:
         secretName: "db2u-certificate"
         certLabel: "CN=db2u"
     instance:
+
+{{- if .Values.db2_instance_registry }}
       registry:
 {{ .Values.db2_instance_registry | toYaml | indent 8 }}
+{{- end }}
+
+{{- if .Values.db2_instance_dbm_config }}
+      dbmConfig:
+{{ .Values.db2_instance_dbm_config | toYaml | indent 8 }}
+{{- end }}
     mln:
       total: {{ .Values.db2_mln_count }}
   license:

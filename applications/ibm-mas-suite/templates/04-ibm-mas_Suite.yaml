@@ -2,12 +2,15 @@
 apiVersion: core.mas.ibm.com/v1
 kind: Suite
 metadata:
+{{- if .Values.mas_annotations }}
+  annotations: 
+{{ .Values.mas_annotations | toYaml | indent 4 }}
+{{- end }}
+{{- if .Values.mas_labels }}
+  labels: 
+{{ .Values.mas_labels | toYaml | indent 4 }}
+{{- end }}
   name: "{{ .Values.mas_instance_id }}"  
-  labels:
-    mas.ibm.com/instanceId: "{{ .Values.mas_instance_id }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "0"
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   domain: "{{ .Values.domain }}"
   license:
@@ -16,3 +19,7 @@ spec:
     icr:
       cp: cp.icr.io/cp
       cpopen: icr.io/cpopen
+{{- if .Values.mas_image_tags }}
+    imageTags: 
+{{ .Values.mas_image_tags | toYaml | indent 6 }}
+{{ end }}

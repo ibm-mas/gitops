@@ -1,0 +1,55 @@
+---
+# Source: ibm-mas-suite/templates/03-ibm-entitlement_Secret.yaml
+kind: Secret
+apiVersion: v1
+metadata:
+  name: ibm-entitlement
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: xxx
+---
+# Source: ibm-mas-suite/templates/01-ibm-mas_OperatorGroup.yaml
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: ibm-mas-operator-group  
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  targetNamespaces:
+    - "mas-xxx-core"
+---
+# Source: ibm-mas-suite/templates/02-ibm-mas_Subscription.yaml
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: ibm-mas-operator  
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  channel: "xxx"
+  installPlanApproval: Automatic
+  name: ibm-mas
+  source: ibm-operator-catalog
+  sourceNamespace: openshift-marketplace
+---
+# Source: ibm-mas-suite/templates/04-ibm-mas_Suite.yaml
+apiVersion: core.mas.ibm.com/v1
+kind: Suite
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+  labels:
+    mas.ibm.com/instanceId: "xxx"
+  name: "xxx"  
+spec:
+  domain: "xxx"
+  license:
+    accept: true
+  settings:
+    icr:
+      cp: cp.icr.io/cp
+      cpopen: icr.io/cpopen

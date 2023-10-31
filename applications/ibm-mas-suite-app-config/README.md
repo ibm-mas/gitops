@@ -1,3 +1,3 @@
 MAS Core Platform
 ===============================================================================
-Installs the Application on `Suite`.
+Configures the Application 

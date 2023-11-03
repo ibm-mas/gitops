@@ -13,5 +13,38 @@ metadata:
     mas.ibm.com/applicationId: {{ .Values.mas_app_id }}
 spec:
 {{- if eq .Values.mas_app_id "manage" }}
-{{ .Values.mas_appws_manage_spec | toYaml  | indent 2 }}
+  bindings:
+  {{ .Values.manage_bindings | toYaml  | indent 4 }}
+  components: 
+  {{ .Values.manage_mas_appws_components | toYaml  | indent 4 }}
+  settings:
+    deployment:
+      persistentVolumes: {{ .Values.mas_app_settings_persistent_volumes }}
+
+      {{- if eq .Values.mas_app_settings_server_bundles_type "dev" }}
+      {{ .Values.mas_app_settings_server_bundles_dev | toYaml  | indent 6 }}
+      {{- else if eq .Values.mas_app_settings_server_bundles_type "small" }}
+      {{ .Values.mas_app_settings_server_bundles_small | toYaml  | indent 6 }}
+      {{- else if eq .Values.mas_app_settings_server_bundles_type "jms" }}
+      {{ .Values.mas_app_settings_server_bundles_jms | toYaml  | indent 6 }}
+      {{- else if eq .Values.mas_app_settings_server_bundles_type "snojms" }}
+      {{ .Values.mas_app_settings_server_bundles_snojms | toYaml  | indent 6 }}
+      {{- end }}
+
+      defaultJMS: {{ .Values.mas_app_settings_default_jms }}
+    languages:
+      baseLang: {{ .Values.mas_app_settings_base_language  }}
+      secondaryLangs: {{ .Values.mas_app_settings_secondary_languages }}
+    aio:
+      install: {{ .Values.mas_app_settings_aio_flag   }}
+    db:
+      dbSchema: {{ .Values.mas_app_settings_db2_schema }}
+      maxinst:
+        demodata: {{ .Values.mas_app_settings_demodata }}
+        db2Vargraphic: true
+        tableSpace: {{ .Values.mas_app_settings_tablespace }}
+        indexSpace: {{ .Values.mas_app_settings_indexspace }}
+        bypassUpgradeVersionCheck: false
+    customizationList: {{  .Values.mas_app_settings_customization_list }}
+
 {{- end }}

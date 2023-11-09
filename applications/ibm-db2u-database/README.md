@@ -1,3 +1,3 @@
-IBM DB2U JDBC Configuration
+IBM DB2U Database
 ===============================================================================
-Create Db2u ldap user and configure DB2U JDBC config
+Create Db2u database for a MAS app

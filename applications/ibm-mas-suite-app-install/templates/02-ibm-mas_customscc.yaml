@@ -1,6 +1,6 @@
  {{- if eq .Values.mas_app_id "visualinspection" }}
 
- ---
+---
 allowHostDirVolumePlugin: false
 allowHostIPC: false
 allowHostNetwork: false
@@ -24,14 +24,16 @@ allowedUnsafeSysctls: null
 apiVersion: security.openshift.io/v1
 defaultAddCapabilities: null
 fsGroup:
-  type: RunAsAny
+  type: MustRunAs
+  ranges:
+  - max: 65535
+    min: 1
 groups: []
 kind: SecurityContextConstraints
 metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "-5"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-  annotations:
     kubernetes.io/description: "This policy is the most restrictive for IBM Maximo Visual Inspection."
   name: ibm-mas-visualinspection-scc
 readOnlyRootFilesystem: false
@@ -57,6 +59,7 @@ volumes:
 - persistentVolumeClaim
 - projected
 - secret
+
 
 {{- end }}
 

@@ -1,0 +1,53 @@
+
+---
+# IBM Cloud Pak Foundational Services
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: umbrella-test
+spec:
+  generators:
+  - git:
+      repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+      revision: HEAD
+      files:
+      - path: "**/umbrella-test.yaml"
+  template:
+    metadata:
+      name: umbrella-test-{{ resource_suffix }}
+      labels:
+        cloud: aws
+        environment: '{{ account.id }}'
+        region: '{{ region.id }}'
+        instance: '{{ cluster.id }}'
+    spec:
+      ignoreDifferences:
+        - group: '*'
+          kind: ServiceAccount
+          jsonPointers:
+          - /imagePullSecrets
+      project: cluster-scope-{{ resource_suffix }}
+      sources:
+        - repoURL: https://github.com/ibm-mas/gitops
+          targetRevision: mascore1032
+          path: applications/umbrella-test
+          plugin:
+            env:
+              - name: HELM_VALUES
+                value: |
+                  dummy-1:
+                    dummyvalue: {{ dummy-1.dummyvalue }}
+                  dummy-2:
+                    dummyvalue: {{ dummy-2.dummyvalue }}
+                  tags:
+                    dummy-1: {{ tags.dummy-1 }}
+                    dummy-2: {{ tags.dummy-2 }}
+      destination:
+        server: '{{ cluster.url }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=false
+          - RespectIgnoreDifferences=true

@@ -12,21 +12,32 @@ spec:
       repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
       revision: HEAD
       files:
-      - path: "umbrella-test/umbrella-test.yaml"
+      - path: "**/umbrella-test.yaml"
   template:
     metadata:
-      name: umbrella-test-app
+      name: umbrella-test-{{ resource_suffix }}
       labels:
         cloud: aws
         environment: '{{ account.id }}'
         region: '{{ region.id }}'
         instance: '{{ cluster.id }}'
     spec:
-      project: default
+      project: cluster-scope-{{ resource_suffix }}
       sources:
         - repoURL: https://github.com/ibm-mas/gitops
           targetRevision: mascore1032
           path: applications/umbrella-test
+          plugin:
+            env:
+              - name: HELM_VALUES
+                value: |
+                  dummy-1:
+                    dummyvalue: {{ dummy-1.dummyvalue }}
+                  dummy-2:
+                    dummyvalue: {{ dummy-2.dummyvalue }}
+                  tags:
+                    dummy-1: {{ tags.dummy-1 }}
+                    dummy-2: {{ tags.dummy-2 }}
       destination:
         server: '{{ cluster.url }}'
       syncPolicy:

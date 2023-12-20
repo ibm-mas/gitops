@@ -9,6 +9,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: mas-root
+  namespace: openshift-gitops
 spec:
     project: mas-argoproj-resources
     source:

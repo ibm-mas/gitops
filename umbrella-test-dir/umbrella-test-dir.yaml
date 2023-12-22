@@ -1,0 +1,53 @@
+
+---
+# IBM Cloud Pak Foundational Services
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: umbrella-test
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  generators:
+  - matrix:
+      generators:
+        - git:
+            repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+            revision: mascore1032
+            files:
+            - directories: "umbrella-test-dir/*/*/*"
+        - git:
+            repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+            revision: mascore1032
+            files:
+            - path: "{{ .path.path }}/*.yaml"
+            pathParamPrefix: "filegenerator"
+  template:
+    metadata:
+      name: "umbrella-test-{{ index .path.segments 1 }}-{{ index .path.segments 2 }}-{{ index .path.segments 3 }}"
+      labels:
+        cloud: aws
+        environment: '{{ index .path.segments 1 }}'
+        region: '{{ index .path.segments 2 }}'
+        cluster: '{{ index .path.segments 3 }}'
+    spec:
+      project: mas
+      sources:
+        - repoURL: https://github.com/ibm-mas/gitops
+          targetRevision: mascore1032
+          path: applications/umbrella-test
+          plugin:
+            env:
+              - name: HELM_VALUES
+                value: |
+                  {{ toPrettyJson . }}
+      destination:
+        server: '{{ .cluster.url }}'
+        namespace: 'default'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=false
+          - RespectIgnoreDifferences=true

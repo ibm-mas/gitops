@@ -11,35 +11,44 @@ spec:
   generators:
     - merge:
         mergeKeys:
-          - 'account.id'
-          - 'region.id'
-          - 'cluster.id'
+          # Would love to use ".path.path" here to merge the configs together
+          # but this is not possible currently with goTemplate: true - see https://github.com/argoproj/argo-cd/issues/12836
+          # (and we really want goTemplate: true so we can dump the entire config file into HELM_VALUES using toPrettyJson)
+          # instead, we are forced to explicitly provide a merge key in all of our config files to make them line up
+          - 'merge-key'
         generators:
+          # This is the "base" generator, it *must* be first in the list
           - git:
               repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
               revision: mascore1032
               files:
-              - path: "fvtsaas/apps/cis-compliance.yaml"
+              - path: "*/*/*/ibm-mas-cluster-base.yaml"
+          # The ordering of subsequent generators is unimportant
           - git:
               repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
               revision: mascore1032
               files:
-              - path: fvtsaas/apps/ibm-common-services.yaml"
+              - path: "*/*/*/cis-compliance.yaml"
           - git:
               repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
               revision: mascore1032
               files:
-              - path: fvtsaas/apps/ibm-db2u.yaml"
+              - path: "*/*/*/ibm-common-services.yaml"
           - git:
               repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
               revision: mascore1032
               files:
-              - path: fvtsaas/apps/ibm-dro.yaml"
+              - path: "*/*/*/ibm-db2u.yaml"
           - git:
               repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
               revision: mascore1032
               files:
-              - path: fvtsaas/apps/ibm-operator-catalog.yaml"
+              - path: "*/*/*/ibm-dro.yaml"
+          - git:
+              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+              revision: mascore1032
+              files:
+              - path: "*/*/*/ibm-operator-catalog.yaml"
   template:
     metadata:
       name: "ibm-mas-cluster-{{ .account.id }}-{{ .region.id }}-{{ .cluster.id }}"

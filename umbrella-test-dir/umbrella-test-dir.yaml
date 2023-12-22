@@ -16,26 +16,26 @@ spec:
         - git:
             repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
             revision: mascore1032
-            directories:
-            - path: "umbrella-test-dir/*/*/*"
+            files:
+            - path: "umbrella-test-dir/*/*/*/umbrella-test-base.yaml"
         - git:
             repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
             revision: mascore1032
             files:
-            - path: "{{ .path.path }}/umbrella-test-1.yaml"
+            - path: "umbrella-test-dir/*/*/*/umbrella-test-1.yaml"
         - git:
             repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
             revision: mascore1032
             files:
-            - path: "{{ .path.path }}/umbrella-test-2.yaml"
+            - path: "umbrella-test-dir/*/*/*/umbrella-test-2.yaml"
   template:
     metadata:
-      name: "umbtest-{{ index .path.segments 1 }}-{{ index .path.segments 2 }}-{{ index .path.segments 3 }}"
+      name: "umbtest-{{ .account.id }}-{{ .region.id }}-{{ .cluster.id }}"
       labels:
         cloud: aws
-        environment: '{{ index .path.segments 1 }}'
-        region: '{{ index .path.segments 2 }}'
-        cluster: '{{ index .path.segments 3 }}'
+        environment: '{{ .account.id}}'
+        region: '{{ .region.id }}'
+        cluster: '{{ .cluster.id }}'
     spec:
       project: mas
       sources:
@@ -48,7 +48,7 @@ spec:
                 value: |
                   {{ toPrettyJson . }}
       destination:
-        server: 'https://kubernetes.default.svc'
+        server: '{{ .cluster.url }}'
         namespace: 'default'  
       syncPolicy:
         automated:

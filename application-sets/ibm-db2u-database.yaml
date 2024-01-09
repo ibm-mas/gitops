@@ -1,0 +1,55 @@
+
+---
+# IBM Cloud Pak Foundational Services
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ibm-db2u-database-iot
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+        revision: mascore1032
+        files:
+        - path: "*/*/*/*/*.ibm-db2u-database.yaml"
+  template:
+    metadata:
+      name: "db2u-db-{{ .account.id }}-{{ .region.id }}-{{ .cluster.id }}-{{ .instance.id }}-{{ .db2_instance_name }}"
+      labels:
+        cloud: aws
+        environment: '{{ .account.id }}'
+        region: '{{ .region.id }}'
+        cluster: '{{ .cluster.id }}'
+        instance: '{{ .instance.id }}'
+    spec:
+      project: mas
+      sources:
+        - repoURL: https://github.com/ibm-mas/gitops
+          targetRevision: mascore1032
+          path: applications/ibm-db2u-database
+          plugin:
+            env:
+              - name: HELM_VALUES
+                value: |
+                  {{ toRawJson . }}
+      destination:
+        server: '{{ .cluster.url }}'
+        namespace: 'default'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=false
+          - RespectIgnoreDifferences=true
+      ignoreDifferences:
+        - group: '*'
+          kind: ServiceAccount
+          jsonPointers:
+            - /imagePullSecrets
+        - group: 'marketplace.redhat.com/v1alpha1'
+          kind: MarketplaceConfig
+          jsonPointers:
+            - /spec

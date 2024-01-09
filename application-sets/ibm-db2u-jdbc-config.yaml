@@ -13,10 +13,22 @@ spec:
         repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
         revision: mascore1032
         files:
-        - path: "*/*/*/*/*.ibm-db2u-jdbc-config"
+        - path: "*/*/*/*/jdbc-configs/*.yaml"
+      # TODO: Once we move to a version of ArgoCD that supports values here:
+      # values:
+      #    account_id: {{.path[0]}}
+      #    region_id: {{.path[1]}}
+      #    cluster_id: {{.path[2]}}
+      #    instance_id: {{.path[3]}}
+
+      # Reference these below using {{ .values.account_id }}
+      # and remove from generated config files
+
+
   template:
     metadata:
-      name: "jdbc-config-{{ .account.id }}-{{ .region.id }}-{{ .cluster.id }}-{{ .instance.id }}-{{ .suite_jdbccfg_name }}"
+      # TODO: probably need more discriminators in this name - but bear in mind that it cannot be longer than ~50 chars
+      name: "{{ .suite_jdbccfg_name }}" # e.g. fvtsaas-jdbc-system
       labels:
         cloud: aws
         environment: '{{ .account.id }}'
@@ -44,12 +56,3 @@ spec:
         syncOptions:
           - CreateNamespace=false
           - RespectIgnoreDifferences=true
-      ignoreDifferences:
-        - group: '*'
-          kind: ServiceAccount
-          jsonPointers:
-            - /imagePullSecrets
-        - group: 'marketplace.redhat.com/v1alpha1'
-          kind: MarketplaceConfig
-          jsonPointers:
-            - /spec

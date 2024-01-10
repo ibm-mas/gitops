@@ -4,7 +4,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: x-ibm-mas-instance-{{ .Values.account.id }}-{{ .Values.region.id }}-{{ .Values.cluster.id }}
+  name: cluster-appset
   namespace: openshift-gitops
 spec:
   goTemplate: true
@@ -20,42 +20,40 @@ spec:
           # This is the "base" generator, it *must* be first in the list
           - git:
               repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032
+              revision: mascore1032v2
               files:
-              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-instance-base.yaml"
+              - path: "*/*/*/ibm-mas-cluster-base.yaml"
           - git:
               repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032
+              revision: mascore1032v2
               files:
-              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite.yaml"
+              - path: "*/*/*/ibm-operator-catalog.yaml"
           - git:
               repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032
+              revision: mascore1032v2
               files:
-              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/x-ibm-sls.yaml"
-
+              - path: "*/*/*/ibm-common-services.yaml"
   template:
     metadata:
-      name: "x-ibm-mas-instance-{{ .Values.account.id }}-{{ .Values.region.id }}-{{ .Values.cluster.id }}-{{ `{{.instance.id}}` }}"
+      name: "cluster-{{ .cluster.id }}"
       labels:
         cloud: aws
-        environment: '{{ .Values.account.id }}'
-        region: '{{ .Values.region.id }}'
-        cluster: '{{ .Values.cluster.id }}'
-        instance: '{{ `{{.instance.id}}` }}'
+        environment: '{{ .account.id }}'
+        region: '{{ .region.id }}'
+        cluster: '{{ .cluster.id }}'
     spec:
       project: mas
       sources:
         - repoURL: https://github.com/ibm-mas/gitops
-          targetRevision: mascore1032
-          path: root-applications/ibm-mas-instance-root
+          targetRevision: mascore1032v2
+          path: root-applications/ibm-mas-cluster-root
           plugin:
             env:
               - name: HELM_VALUES
                 value: |
-                  {{ `{{toRawJson .}}` }}
+                  {{ toRawJson . }}
       destination:
-        server: '{{ .Values.cluster.url }}'
+        server: '{{ .cluster.url }}'
         namespace: 'openshift-gitops'
       syncPolicy:
         automated:

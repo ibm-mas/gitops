@@ -1,3 +1,4 @@
+{{- if not (empty (index .Values "bindings" "system")) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
@@ -18,7 +19,7 @@ spec:
     server: {{ .Values.cluster.url }}
     namespace: default
   sources:
-    {{- if not (empty (index .Values "ibm-mas-mongo-config" "system")) }}
+    {{- if not (empty (index .Values "bindings" "system" "ibm-mas-mongo-config")) }}
     - path: applications/ibm-mas-mongo-config
       repoURL: https://github.com/ibm-mas/gitops
       targetRevision: mascore1032v2
@@ -26,7 +27,7 @@ spec:
         env:
           - name: HELM_VALUES
             value: |
-              {{ index .Values "ibm-mas-mongo-config" "system" | toRawJson }}
+              {{ index .Values "bindings" "system" "ibm-mas-mongo-config" | toRawJson }}
     {{- end }}
   syncPolicy:
     automated:
@@ -35,3 +36,4 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - RespectIgnoreDifferences=true
+{{- end }}

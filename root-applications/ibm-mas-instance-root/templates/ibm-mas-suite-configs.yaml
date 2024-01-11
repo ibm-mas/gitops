@@ -1,10 +1,10 @@
-{{- if not (  or (empty (index .Values "bindings")) (empty (index .Values "bindings" "system"))  )}}
+{{- if not ( (empty (index .Values "suite-configs")) )}}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: system-bindings.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: suite-configs.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: openshift-gitops
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -19,7 +19,7 @@ spec:
     server: {{ .Values.cluster.url }}
     namespace: default
   sources:
-    {{- if not (empty (index .Values "bindings" "system" "ibm-mas-mongo-config")) }}
+    {{- range (index .Values "suite-configs" "mongo") }}
     - path: applications/ibm-mas-mongo-config
       repoURL: https://github.com/ibm-mas/gitops
       targetRevision: mascore1032v2
@@ -27,9 +27,9 @@ spec:
         env:
           - name: HELM_VALUES
             value: |
-              {{ index .Values "bindings" "system" "ibm-mas-mongo-config" | toRawJson }}
+              {{ .| toRawJson }}
     {{- end }}
-    {{- if not (empty (index .Values "bindings" "system" "ibm-mas-jdbc-config")) }}
+    {{- range (index .Values "suite-configs" "jdbc") }}
     - path: applications/ibm-db2u-jdbc-config
       repoURL: https://github.com/ibm-mas/gitops
       targetRevision: mascore1032v2
@@ -37,7 +37,7 @@ spec:
         env:
           - name: HELM_VALUES
             value: |
-              {{ index .Values "bindings" "system" "ibm-mas-jdbc-config" | toRawJson }}
+              {{ .| toRawJson }}
     {{- end }}
   syncPolicy:
     automated:

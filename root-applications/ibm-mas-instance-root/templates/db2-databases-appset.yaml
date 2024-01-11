@@ -1,0 +1,56 @@
+---
+# IBM Cloud Pak Foundational Services
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: db2-db-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+        revision: mascore1032v2
+        files:
+          - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/db2-databases/*.yaml"
+
+  template:
+    metadata:
+      name: "db2-db.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}.{{ `{{.db2_instance_name}}` }}"
+      labels:
+        cloud: aws
+        environment: '{{ .Values.account.id }}'
+        region: '{{ .Values.region.id }}'
+        cluster: '{{ .Values.cluster.id }}'
+        instance: '{{ .Values.instance.id }}'
+        db2_instance_name: '{{ `{{.db2_instance_name}}` }}'
+    spec:
+      project: mas
+      sources:
+        - repoURL: https://github.com/ibm-mas/gitops
+          targetRevision: mascore1032v2
+          path: applications/tinyapp
+          plugin:
+            env:
+              - name: HELM_VALUES
+                value: |
+                  {{ `{{toRawJson .}}` }}
+      destination:
+        server: '{{ .Values.cluster.url }}'
+        namespace: 'openshift-gitops'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=false
+          - RespectIgnoreDifferences=true
+      ignoreDifferences:
+        - group: '*'
+          kind: ServiceAccount
+          jsonPointers:
+            - /imagePullSecrets
+        - group: 'marketplace.redhat.com/v1alpha1'
+          kind: MarketplaceConfig
+          jsonPointers:
+            - /spec

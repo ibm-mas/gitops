@@ -1,0 +1,38 @@
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: workspace.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}.{{ .Values.workspace.id }}
+  namespace: openshift-gitops
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
+  project: mas
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    path: applications/tinyapp
+    targetRevision: mascore1032v2
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_instance_id: {{ .Values.instance.id }}
+            mas_workspace_id: {{ .Values.workspace.id }}
+            mas_workspace_name: {{ .Values.workspace.id }}
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true

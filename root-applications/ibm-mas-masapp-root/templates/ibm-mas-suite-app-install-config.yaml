@@ -39,7 +39,18 @@ spec:
             value: |
               {{ index .Values "ibm-suite-app-config" | toRawJson }}
     {{- end }}
-
+    {{- if not ( (empty (index .Values "wsapp-config")) )}}
+    {{- if not ( (empty (index .Values "wsapp-config" "jdbc")) )}}
+    - repoURL: https://github.com/ibm-mas/gitops
+      path: applications/ibm-db2u-jdbc-config
+      targetRevision: mascore1032v2
+      plugin:
+        env:
+          - name: HELM_VALUES
+            value: |
+              {{ index .Values "wsapp-config" "jdbc" | toRawJson }}
+    {{- end }}
+    {{- end }}
   syncPolicy:
     automated:
       prune: true

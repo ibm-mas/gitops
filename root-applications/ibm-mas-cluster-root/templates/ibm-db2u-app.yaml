@@ -1,0 +1,37 @@
+{{- if not (empty (index .Values "ibm-db2u")) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: db2u.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
+  namespace: openshift-gitops
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
+  project: mas
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    path: applications/tinyapp
+    targetRevision: mascore1032v2
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            {{ index .Values "ibm-db2u" | toRawJson }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+{{- end }}

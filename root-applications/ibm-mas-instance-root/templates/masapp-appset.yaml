@@ -33,6 +33,11 @@ spec:
               revision: mascore1032v2
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/masapps/*/ibm-mas-masapp-config.yaml"
+          - git:
+              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+              revision: mascore1032v2
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/masapps/*/wsapp-configs/ibm-mas-masapp-config.yaml"
 
 
 
@@ -50,14 +55,26 @@ spec:
     spec:
       project: mas
       sources:
+        {{- if not ( (empty (index .Values "ibm-suite-app-install")) )}}
         - repoURL: https://github.com/ibm-mas/gitops
+          path: applications/tinyapp
           targetRevision: mascore1032v2
-          path: root-applications/ibm-mas-masapp-root
           plugin:
             env:
               - name: HELM_VALUES
                 value: |
-                  {{ `{{toRawJson .}}` }}
+                  {{ index .Values "ibm-suite-app-install" | toRawJson }}
+        {{- end }}
+        {{- if not ( (empty (index .Values "ibm-suite-app-config")) )}}
+        - repoURL: https://github.com/ibm-mas/gitops
+          path: applications/tinyapp
+          targetRevision: mascore1032v2
+          plugin:
+            env:
+              - name: HELM_VALUES
+                value: |
+                  {{ index .Values "ibm-suite-app-config" | toRawJson }}
+        {{- end }}
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: 'openshift-gitops'

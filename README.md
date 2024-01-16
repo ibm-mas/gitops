@@ -4,11 +4,16 @@ A GitOps approach to managing Maximo Application Suite
 
 
 # Root application example
+
+One per account that should be managed by the ArgoCD worker:
+
+> replace `<accountid>` below
+
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: root
+  name: root.<accountid>
   namespace: openshift-gitops
 spec:
   destination:

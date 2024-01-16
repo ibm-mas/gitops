@@ -1,0 +1,81 @@
+
+---
+# IBM Cloud Pak Foundational Services
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  # Include .{{ .Values.account.id }} in the name?
+  # Only ever one of these registered per ArgoCD instance though right so probably no need
+  # If we do change the appset name as above, we'll need to update the gitops_* functions calls to argocd_sync
+  name: cluster-appset
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  generators:
+    - merge:
+        mergeKeys:
+          # Would love to use ".path.path" here to merge the configs together
+          # but this is not possible currently with goTemplate: true - see https://github.com/argoproj/argo-cd/issues/12836
+          # (and we really want goTemplate: true so we can dump the entire config file into HELM_VALUES using toPrettyJson)
+          # instead, we are forced to explicitly provide a merge key in all of our config files to make them line up
+          - 'merge-key'
+        generators:
+          # This is the "base" generator, it *must* be first in the list
+          - git:
+              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+              revision: mascore1032v2
+              files:
+              - path: "{{ .Values.account.id }}/*/*/ibm-mas-cluster-base.yaml"
+          - git:
+              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+              revision: mascore1032v2
+              files:
+              - path: "{{ .Values.account.id }}/*/*/ibm-operator-catalog.yaml"
+          - git:
+              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+              revision: mascore1032v2
+              files:
+              - path: "{{ .Values.account.id }}/*/*/ibm-common-services.yaml"
+          - git:
+              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+              revision: mascore1032v2
+              files:
+              - path: "{{ .Values.account.id }}/*/*/ibm-dro.yaml"
+          - git:
+              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+              revision: mascore1032v2
+              files:
+              - path: "{{ .Values.account.id }}/*/*/ibm-db2u.yaml"
+          - git:
+              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
+              revision: mascore1032v2
+              files:
+              - path: "{{ .Values.account.id }}/*/*/cis-compliance.yaml"
+  template:
+    metadata:
+      name: "cluster.{{.Values.account.id}}.{{ `{{.region.id}}` }}.{{ `{{.cluster.id}}` }}"
+      labels:
+        cloud: aws
+        environment: '{{ .Values.account.id }}'
+        region: '{{ `{{ .region.id }}` }}'
+        cluster: '{{ `{{ .cluster.id }}` }}'
+    spec:
+      project: mas
+      sources:
+        - repoURL: https://github.com/ibm-mas/gitops
+          targetRevision: mascore1032v2
+          path: root-applications/ibm-mas-cluster-root
+          helm:
+            values: |
+              {{ `{{toRawJson .}}` }}
+      destination:
+        server: 'https://kubernetes.default.svc'
+        namespace: 'openshift-gitops'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=false
+          - RespectIgnoreDifferences=true
+

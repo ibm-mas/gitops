@@ -8,18 +8,21 @@ A GitOps approach to managing Maximo Application Suite
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: mas-root
+  name: root
   namespace: openshift-gitops
 spec:
-    project: mas-argoproj-resources
-    source:
-        repoURL: 'https://github.com/ibm-mas/gitops'
-        path: application-sets
-        targetRevision: mascore1032
-    destination:
-        server: 'https://kubernetes.default.svc'
-        namespace: openshift-gitops
-    syncPolicy:
-        syncOptions:
-            - CreateNamespace=false
+  destination:
+    namespace: openshift-gitops
+    server: 'https://kubernetes.default.svc'
+  project: mas
+  source:
+    path: root-applications/ibm-mas-account-root
+    repoURL: 'https://github.com/ibm-mas/gitops'
+    targetRevision: mascore1032v2
+    helm:
+      values: |
+        {"account":{"id":"<accountid>"}}
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
 ```

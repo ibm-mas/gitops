@@ -25,8 +25,16 @@ spec:
     plugin:
       env:
         - name: HELM_VALUES
+          # This copies keys under "ibm-dro" to the root config level so we don't have to prefix
+          # all references to ibm-dro config with ibm-dro in the application chart,
+          # while still passing in the values from cluster-base (e.g. account.id etc)
+          # which are now needed by the postsync jobs (see https://jsw.ibm.com/browse/MASCORE-1425)
+          # TODO: Probably a better way of handling this
+          # TODO: what if there's a clash between a root prop and one defined under ibm-dro?
+          # TODO: Probably don't actually want to "pollute" our externally-available, pipeline-agnostic
+          #       application charts with MaS-SaaS-specific stuff (like the postsync jobs) anyway
           value: |
-            {{ index .Values "ibm-dro" | toRawJson }}
+            {{ mustMergeOverwrite .Values (index .Values "ibm-dro") | toRawJson }}
   syncPolicy:
     automated:
       prune: true

@@ -1,0 +1,118 @@
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: aws
+  namespace: "{{ .Values.dro_namespace }}"
+data:
+  aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
+type: Opaque
+
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+# TODO: Currently bound with cluster-admin; probably want to lock this down more
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: postsync-sa
+  namespace: "{{ .Values.dro_namespace }}"
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: postsync-sa-rb
+  namespace: "{{ .Values.dro_namespace }}"
+subjects:
+  - kind: ServiceAccount
+    name: postsync-sa
+    namespace: "{{ .Values.dro_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "postsync-update-sm"
+  namespace: "{{ .Values.dro_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    hook-delete-policy: before-hook-creation
+    argocd.argoproj.io/sync-wave: "01"
+spec:
+  template:
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account.id }}
+            - name: REGION_ID
+              value: {{ .Values.region.id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster.id }}
+            - name: DRO_NAMESPACE
+              value: "{{ .Values.dro_namespace }}"
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+
+              # NOTE: cannot just render {{ .Values.sm.aws_access_key_id }} and {{ .Values.sm.aws_secret_access_key }} into here, 
+              # as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              SECRET_NAME_DRO=${ACCOUNT_ID}/${CLUSTER_ID}/dro
+              export DRO_API_TOKEN=$(oc get secret ibm-data-reporter-operator-api-token -n ${DRO_NAMESPACE} -o jsonpath='{.data.token}' | base64 -d ; echo)
+
+              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
+              source /mascli/functions/gitops_utils
+
+              # aws configure set aws_access_key_id $SM_AWS_ACCESS_KEY_ID
+              # aws configure set aws_secret_access_key $SM_AWS_SECRET_ACCESS_KEY
+              # aws configure set default.region $REGION_ID
+              # aws configure list
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+              # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
+              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\" }"
+
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: "postsync-sa"
+      volumes:
+        - name: aws
+          secret:
+            secretName: aws
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4

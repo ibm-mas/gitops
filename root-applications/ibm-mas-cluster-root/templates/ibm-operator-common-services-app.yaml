@@ -20,8 +20,16 @@ spec:
     plugin:
       env:
         - name: HELM_VALUES
+          # This copies keys under "ibm-common-services" to the root config level so we don't have to prefix
+          # all references to ibm-common-services config with ibm-common-services in the application chart,
+          # while still passing in the values from cluster-base (e.g. account.id etc)
+          # which are now needed by the postsync jobs (see https://jsw.ibm.com/browse/MASCORE-1425)
+          # TODO: Probably a better way of handling this
+          # TODO: what if there's a clash between a root prop and one defined under ibm-common-services?
+          # TODO: Probably don't actually want to "pollute" our externally-available, pipeline-agnostic
+          #       application charts with MaS-SaaS-specific stuff (like the postsync jobs) anyway
           value: |
-            {{ index .Values "ibm-common-services" | toRawJson }}
+            {{ mustMergeOverwrite .Values (index .Values "ibm-common-services") | toRawJson }}
   syncPolicy:
     automated:
       prune: true

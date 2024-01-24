@@ -87,9 +87,19 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
-              SECRET_NAME_SLS=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/sls
+              echo "Fetching registrationKey from sls-suite-registration  ConfigMapin mas-${INSTANCE_ID}-sls"
               export SLS_REGISTRATION_KEY=$(oc get cm sls-suite-registration -n mas-${INSTANCE_ID}-sls -o jsonpath='{.data.registrationKey}')
+              if [[ -z "${SLS_REGISTRATION_KEY}" ]]; then
+                echo "Failed to fetch registrationKey"
+                exit 1
+              fi
+
+              echo "Fetching ca from sls-suite-registration ConfigMap in mas-${INSTANCE_ID}-sls"
               export SLS_CA=$(oc get cm sls-suite-registration -n mas-${INSTANCE_ID}-sls -o jsonpath='{.data.ca}' | base64 -w0)
+              if [[ -z "${SLS_CA}" ]]; then
+                echo "Failed to fetch ca"
+                exit 1
+              fi
 
               # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
               source /mascli/functions/gitops_utils
@@ -102,6 +112,7 @@ spec:
               sm_login
 
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
+              SECRET_NAME_SLS=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/sls
               sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\" }"
 
 

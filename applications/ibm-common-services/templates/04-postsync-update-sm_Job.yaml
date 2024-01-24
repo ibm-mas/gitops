@@ -85,8 +85,12 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
-              SECRET_NAME_DB2_DEFAULT_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/db2_default_channel
+              echo "Fetching defaultChannel from db2u-operator PackageManifest in ibm-common-services"
               export DB2_DEFAULT_CHANNEL=$(oc get PackageManifest db2u-operator -n ibm-common-services  -o=jsonpath="{.status.defaultChannel}")
+              if [[ -z "${DB2_DEFAULT_CHANNEL}" ]]; then
+                echo "Failed to fetch defaultChannel"
+                exit 1
+              fi
 
               # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
               source /mascli/functions/gitops_utils
@@ -99,6 +103,7 @@ spec:
               sm_login
 
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
+              SECRET_NAME_DB2_DEFAULT_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/db2_default_channel
               sm_update_secret $SECRET_NAME_DB2_DEFAULT_CHANNEL "{\"db2_default_channel\": \"$DB2_DEFAULT_CHANNEL\" }"
 
 

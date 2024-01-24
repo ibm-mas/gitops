@@ -1,0 +1,39 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "efs-postsync-role"
+  namespace: openshift-gitops
+  annotations:
+
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: ibm-entitlement
+      containers:
+        - name: efs
+          image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              memory: 100Mi
+              cpu: 10m
+            limits:
+              memory: 100Mi
+              cpu: 10m
+          command:
+            - /opt/app-root/src/run-role.sh
+            - ocp_efs
+          env:
+            - name: CLUSTER_NAME
+              value: "{{ .Values.cluster_id }}"
+            - name: EFS_UNIQUE_ID
+              value: "{{ .Values.mas_instance_id }}"
+
+      restartPolicy: Never
+      serviceAccountName: "openshift-gitops-argocd-application-controller"
+  backoffLimit: 4

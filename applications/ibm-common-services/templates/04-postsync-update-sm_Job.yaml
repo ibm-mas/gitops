@@ -85,10 +85,19 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
+              # Used by gitops_db2u
               echo "Fetching defaultChannel from db2u-operator PackageManifest in ibm-common-services"
               export DB2_DEFAULT_CHANNEL=$(oc get PackageManifest db2u-operator -n ibm-common-services  -o=jsonpath="{.status.defaultChannel}")
               if [[ -z "${DB2_DEFAULT_CHANNEL}" ]]; then
                 echo "Failed to fetch defaultChannel"
+                exit 1
+              fi
+
+              # Used by gitops_db2u_database
+              echo "Fetching domain from ingress.config.openshift.io cluster"
+              export CLUSTER_DOMAIN=$(oc get ingress.config.openshift.io cluster -o=jsonpath='{.spec.domain}')
+              if [[ -z "${CLUSTER_DOMAIN}" ]]; then
+                echo "Failed to fetch domain"
                 exit 1
               fi
 
@@ -102,9 +111,13 @@ spec:
               export SM_AWS_REGION=${REGION_ID}
               sm_login
 
-              # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
+
+              # TODO: combine these into a single cluster-level secret? e.g. <account>/<cluster> with db2DefaultChannel and domain keys?
               SECRET_NAME_DB2_DEFAULT_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/db2_default_channel
               sm_update_secret $SECRET_NAME_DB2_DEFAULT_CHANNEL "{\"db2_default_channel\": \"$DB2_DEFAULT_CHANNEL\" }"
+
+              SECRET_NAME_CLUSTER_DOMAIN=${ACCOUNT_ID}/${CLUSTER_ID}/cluster_domain
+              sm_update_secret $SECRET_NAME_CLUSTER_DOMAIN "{\"cluster_domain\": \"$CLUSTER_DOMAIN\" }"
 
 
       restartPolicy: Never

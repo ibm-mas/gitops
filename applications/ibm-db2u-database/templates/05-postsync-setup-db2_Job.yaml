@@ -1,0 +1,136 @@
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: "aws-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+data:
+  aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
+type: Opaque
+
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+# TODO: Currently bound with cluster-admin; probably want to lock this down more
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "postsync-sa-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "db2-database-postsync-sa-rb-{{ .Values.db2_instance_name }}"
+subjects:
+  - kind: ServiceAccount
+    name: "postsync-sa-{{ .Values.db2_instance_name }}"
+    namespace: "{{ .Values.db2_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "postsync-setup-db2-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    hook-delete-policy: before-hook-creation
+spec:
+  template:
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account.id }}
+            - name: REGION_ID
+              value: {{ .Values.region.id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster.id }}
+            - name: MAS_INSTANCE_ID
+              value: {{ .Values.instance.id }}
+            - name: MAS_APP_ID
+              value: {{ .Values.mas_application_id}}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
+              source /mascli/functions/gitops_utils
+
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+
+              export DB2CFG_SETTINGS_APPLIED_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/${MAS_APP_ID}/db2cfg
+              export DB2CFG_SETTINGS_APPLIED=$(sm_get_secret_value ${DB2CFG_SETTINGS_APPLIED_SECRET} "db2cfg_settings_applied")
+              # TODO: or we could skip rendering of this hook (and related templates) altogether if DB2CFG_SETTINGS_APPLIED is "true"?
+
+              echo "DB2CFG_SETTINGS_APPLIED=${DB2CFG_SETTINGS_APPLIED} MAS_APP_ID=${MAS_APP_ID}"  
+
+
+              # TODO: what's the purpose of the DB2_INTERNAL flag (used in gitops_db2u_database).. 
+              # surely any DB2 being spun up in this way via ArgoCD is considered "internal"?
+              if [[ "${DB2CFG_SETTINGS_APPLIED}" != "true" ]]; then
+
+                echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+                echo "sm_update_secret ...DB2CFG_SETTINGS_APPLIED with true"
+                export DB2CFG_SETTINGS_APPLIED="true"
+                sm_update_secret ${DB2CFG_SETTINGS_APPLIED_SECRET} "{ \"db2cfg_settings_applied\": \"${DB2CFG_SETTINGS_APPLIED}\" }"
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+              fi
+
+
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: "postsync-sa-{{ .Values.db2_instance_name }}"
+      volumes:
+        - name: aws
+          secret:
+            secretName: aws
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4

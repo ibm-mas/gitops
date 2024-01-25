@@ -138,12 +138,13 @@ spec:
               echo "oc exec apply-db2cfg-settings.sh rc: ${rc}"
 
 
-
-              # Create backup script
               echo ""
               echo "================================================================================"
               echo "Invoke Suite DB2 Backup"
               echo "================================================================================"
+              # Some parameters like LOGARCHMETH1 being set can cause a backup to be needed as it moves
+              # to archival logging. 
+              # Copy and run a script on the db2u pod to perform that backup now if we are in that state.
 
               BACKUPDB_SH_PATH="/tmp/backupdb.sh"
 
@@ -151,72 +152,68 @@ spec:
               echo "Create ${BACKUPDB_SH_PATH}"
               echo "--------------------------------------------------------------------------------"
 
+              # Generate a script to copy and run on the db2u pod
               echo '
-              # Check that connect returns SQL1116N which means BACKUP PENDING state
-              if db2 connect to '${DB2_DBNAME}' | grep SQL1116N >/dev/null
-              then
-
+                # Check that connect returns SQL1116N which means BACKUP PENDING state
+                if db2 connect to '${DB2_DBNAME}' | grep SQL1116N >/dev/null; then
                   echo "backupdb.sh: Database connect returning SQL1116N, do backup now"
-
-                  echo "backupdb.sh: Creating backup folder /mnt/backup"
-                  mkdir -p /mnt/backup
-                  rc=$?
-                  [ $rc -ne 0 ] && exit $rc
-
-                  echo "backupdb.sh: db2 force applications"
-                  db2 force application all
-                  rc=$?
-                  [ $rc -ne 0 ] && exit $rc
-
-                  echo "backupdb.sh: Turn off comms manager"
-                  db2set -null DB2COMM
-                  rc=$?
-                  [ $rc -ne 0 ] && exit $rc
-
-                  echo "backupdb.sh: Deactivate database"
-                  db2 deactivate database '${DB2_DBNAME}'
-                  rc=$?
-                  [ $rc -ne 0 ] && exit $rc
-
-                  echo "backupdb.sh: db2stop"
-                  db2stop force
-                  rc=$?
-                  [ $rc -ne 0 ] && exit $rc
-
-                  echo "backupdb.sh: db2start in admin mode"
-                  db2start admin mode restricted access
-                  rc=$?
-                  [ $rc -ne 0 ] && exit $rc
-
-                  # dbstart does not always start straight away, wait 20 seconds
-                  sleep 20
-
-                  echo "backupdb.sh: db2 backup db '${DB2_DBNAME}' on all dbpartitionnums"
-                  db2 backup db '${DB2_DBNAME}' on all dbpartitionnums to /mnt/backup
-                  rc=$?
-                  [ $rc -ne 0 ] && exit $rc
-
-                  echo "backupdb.sh: db2stop"
-                  db2stop force
-                  rc=$?
-                  [ $rc -ne 0 ] && exit $rc
-
-                  echo "backupdb.sh: db2set comms manager"
-                  db2set DB2COMM=TCPIP,SSL
-                  rc=$?
-                  [ $rc -ne 0 ] && exit $rc
-
-                  echo "backupdb.sh: db2start"
-                  db2start
-                  rc=$?
-                  [ $rc -ne 0 ] && exit $rc
-
-              else
-
-                  echo "backupdb.sh: Database connect not returning SQL1116N, nothing to do"
+                else
+                  echo "backupdb.sh: Database connect not returning SQL1116N, nothing to do, exit now"
                   exit 0
+                fi
 
-              fi
+                echo "backupdb.sh: Creating backup folder /mnt/backup"
+                mkdir -p /mnt/backup
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+                echo "backupdb.sh: db2 force applications"
+                db2 force application all
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+                echo "backupdb.sh: Turn off comms manager"
+                db2set -null DB2COMM
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+                echo "backupdb.sh: Deactivate database"
+                db2 deactivate database '${DB2_DBNAME}'
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+                echo "backupdb.sh: db2stop"
+                db2stop force
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+                echo "backupdb.sh: db2start in admin mode"
+                db2start admin mode restricted access
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+                # dbstart does not always start straight away, wait 20 seconds
+                sleep 20
+
+                echo "backupdb.sh: db2 backup db '${DB2_DBNAME}' on all dbpartitionnums"
+                db2 backup db '${DB2_DBNAME}' on all dbpartitionnums to /mnt/backup
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+                echo "backupdb.sh: db2stop"
+                db2stop force
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+                echo "backupdb.sh: db2set comms manager"
+                db2set DB2COMM=TCPIP,SSL
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
+
+                echo "backupdb.sh: db2start"
+                db2start
+                rc=$?
+                [ $rc -ne 0 ] && exit $rc
               ' > ${BACKUPDB_SH_PATH}
 
               chmod +x ${BACKUPDB_SH_PATH}
@@ -224,12 +221,34 @@ spec:
               echo ""
               echo "Copy ${BACKUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
+              oc cp ${BACKUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/backupdb.sh -c db2u
+
+              echo ""
+              echo "Executing ${BACKUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/tmp/backupdb.sh | tee /tmp/backupdb.log' db2inst1
+
+
+
+
+              echo ""
+              echo "================================================================================"
+              echo "Invoke Suite DB2 setup for Manage"
+              echo "================================================================================"
+
+
+
+
+
 
               echo ""
               echo "================================================================================"
               echo "Setting ${DB2CFG_SETTINGS_APPLIED_SECRET}#db2cfg_settings_applied to true"
               echo "================================================================================"
+
+              echo "Do not set db2cfg_settings_applied to true for testing. TODO: remove this after testing complete"
+              exit 0
+
               export DB2CFG_SETTINGS_APPLIED="true"
               sm_update_secret ${DB2CFG_SETTINGS_APPLIED_SECRET} "{ \"db2cfg_settings_applied\": \"${DB2CFG_SETTINGS_APPLIED}\" }"
               rc=$?

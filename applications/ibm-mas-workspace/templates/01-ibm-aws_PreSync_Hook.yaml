@@ -16,28 +16,17 @@ spec:
           image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
           imagePullPolicy: Always
           command:
-            - /bin/sh
-            - -c
-            - |
-
-              set -e
-
-              AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-              AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-              AWS_DEFAULT_REGION=$(cat /etc/mas/creds/aws/aws_default_region)
-              echo "sleep"
-              sleep 300
-              /opt/app-root/src/run-role.sh ocp_efs
-
-              rc=$?
-              echo "rc=$rc"
-              [ $rc -ne 0 ] && exit $rc
-              exit 0
+            - /opt/app-root/src/run-role.sh
+            - ocp_efs
           env:
             - name: CLUSTER_NAME
               value: "{{ .Values.cluster_id }}"
             - name: EFS_UNIQUE_ID
               value: "{{ .Values.mas_instance_id }}"
+            - name: AWS_ACCESS_KEY_ID
+              value: "{{ .Values.sm_aws_access_key_id }}"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "{{ .Values.sm_aws_secret_access_key }}"
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws

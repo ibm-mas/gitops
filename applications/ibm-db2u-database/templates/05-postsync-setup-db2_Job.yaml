@@ -154,9 +154,11 @@ spec:
               echo "--------------------------------------------------------------------------------"
 
               # Generate a script to copy and run on the db2u pod
-              echo '
+              cat > ${BACKUPDB_SH_PATH} << EOF
+                #!/bin/bash
+
                 # Check that connect returns SQL1116N which means BACKUP PENDING state
-                if db2 connect to '${DB2_DBNAME}' | grep SQL1116N >/dev/null; then
+                if db2 connect to ${DB2_DBNAME} | grep SQL1116N >/dev/null; then
                   echo "backupdb.sh: Database connect returning SQL1116N, do backup now"
                 else
                   echo "backupdb.sh: Database connect not returning SQL1116N, nothing to do, exit now"
@@ -179,7 +181,7 @@ spec:
                 [ $rc -ne 0 ] && exit $rc
 
                 echo "backupdb.sh: Deactivate database"
-                db2 deactivate database '${DB2_DBNAME}'
+                db2 deactivate database ${DB2_DBNAME}
                 rc=$?
                 [ $rc -ne 0 ] && exit $rc
 
@@ -196,8 +198,8 @@ spec:
                 # dbstart does not always start straight away, wait 20 seconds
                 sleep 20
 
-                echo "backupdb.sh: db2 backup db '${DB2_DBNAME}' on all dbpartitionnums"
-                db2 backup db '${DB2_DBNAME}' on all dbpartitionnums to /mnt/backup
+                echo "backupdb.sh: db2 backup db ${DB2_DBNAME} on all dbpartitionnums"
+                db2 backup db ${DB2_DBNAME} on all dbpartitionnums to /mnt/backup
                 rc=$?
                 [ $rc -ne 0 ] && exit $rc
 
@@ -215,7 +217,7 @@ spec:
                 db2start
                 rc=$?
                 [ $rc -ne 0 ] && exit $rc
-              ' > ${BACKUPDB_SH_PATH}
+              EOF
 
               chmod +x ${BACKUPDB_SH_PATH}
 
@@ -246,9 +248,97 @@ spec:
                 echo "--------------------------------------------------------------------------------"
 
                 # Generate a script to copy and run on the db2u pod
-                echo '
-                  
-                ' > ${SETUPDB_SH_PATH}
+                cat > ${SETUPDB_SH_PATH} << EOF
+                  #!/bin/bash
+
+                  TBSP_SQL="/tmp/.tbsp.sql"
+
+                  if [ -f $TBSP_SQL ]; then
+                      rm $TBSP_SQL
+                  fi
+
+                  if ! db2gcf -s | grep Available >/dev/null; then
+
+                      db2_kill
+                      ipclean -a
+                      db2start
+
+                      if ! db2gcf -s | grep Available >/dev/null; then
+                          echo "Instance is not up. Please check."
+                          exit 1
+                      fi
+
+                  fi
+
+                  db2 connect to ${DB2_DBNAME}
+                  if [ $? != 0 ]; then
+                    echo "Failed to connect to database!"
+                    exit 1
+                  fi
+
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.bufferpools
+                  where BPNAME='MAXBUFPOOL')
+                  then 'CREATE BUFFERPOOL MAXBUFPOOL SIZE 8192 AUTOMATIC PAGESIZE 32 K;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >$TBSP_SQL
+                  maxd_bpf=$?
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.bufferpools
+                  where BPNAME='MAXBUFPOOLINDX')
+                  then 'CREATE BUFFERPOOL MAXBUFPOOLINDX SIZE 8192 AUTOMATIC PAGESIZE 32 K;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >>$TBSP_SQL
+                  maxi_bpf=$?
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.bufferpools
+                  where BPNAME='MAXTEMPBP')
+                  then 'CREATE BUFFERPOOL MAXTEMPBP SIZE 8192 AUTOMATIC PAGESIZE 32 K;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >>$TBSP_SQL
+                  maxtmp_bpf=$?
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.tablespaces
+                  where TBSPACE='MAXDATA')
+                  then 'CREATE TABLESPACE MAXDATA PAGESIZE 32 K MANAGED BY AUTOMATIC STORAGE BUFFERPOOL MAXBUFPOOL;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >>$TBSP_SQL
+                  maxd_tbsp=$?
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.tablespaces
+                  where TBSPACE='MAXINDEX')
+                  then 'CREATE TABLESPACE MAXINDEX PAGESIZE 32 K MANAGED BY AUTOMATIC STORAGE BUFFERPOOL MAXBUFPOOLINDX;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >>$TBSP_SQL
+                  maxi_tbsp=$?
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.tablespaces
+                  where TBSPACE='MAXTEMP')
+                  then 'CREATE TEMPORARY TABLESPACE MAXTEMP PAGESIZE 32 K MANAGED BY AUTOMATIC STORAGE BUFFERPOOL MAXTEMPBP;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >>$TBSP_SQL
+                  maxtmp_tbsp=$?
+
+                  if [[ "$maxd_bpf" -eq  "0" && "$maxi_bpf" -eq  "0" && "$maxtmp_bpf" -eq "0"  && "$maxd_tbsp" -eq  "0" && "$maxi_tbsp" -eq "0" && "$maxtmp_tbsp" -eq "0" && -f "$TBSP_SQL" ]]; then
+                      db2 -tvf $TBSP_SQL
+                      rm $TBSP_SQL
+                  else
+                      echo "Error detected."
+                      exit 1
+                  fi               
+                EOF
 
                 chmod +x ${SETUPDB_SH_PATH}
 
@@ -261,7 +351,6 @@ spec:
                 echo "Executing ${SETUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1
-
 
                 echo ""
                 echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
@@ -277,7 +366,6 @@ spec:
                 echo "Creating /mnt/backup/staging in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1
-
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
 

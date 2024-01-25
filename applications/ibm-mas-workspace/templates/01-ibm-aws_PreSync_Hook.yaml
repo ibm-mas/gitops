@@ -1,4 +1,26 @@
 ---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: presync-sa
+  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: presync-sa-rb
+  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+subjects:
+  - kind: ServiceAccount
+    name: presync-sa
+    namespace: "mas-{{ .Values.mas_instance_id }}-core"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -46,7 +68,8 @@ spec:
               mountPath: /etc/mas/creds/aws
 
       restartPolicy: Never
-      serviceAccountName: "openshift-gitops-argocd-application-controller"
+      #serviceAccountName: "openshift-gitops-argocd-application-controller"
+      serviceAccountName: "presync-sa"
       volumes:
         - name: aws
           secret:

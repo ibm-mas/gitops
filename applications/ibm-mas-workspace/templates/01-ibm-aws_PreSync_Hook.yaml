@@ -3,13 +3,16 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: efs-presync-role
-  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  #namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   template:
     spec:
+      imagePullSecrets:
+        - name: ibm-entitlement
       containers:
         - name: efs
           image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
@@ -43,6 +46,7 @@ spec:
               mountPath: /etc/mas/creds/aws
 
       restartPolicy: Never
+      serviceAccountName: "openshift-gitops-argocd-application-controller"
       volumes:
         - name: aws
           secret:

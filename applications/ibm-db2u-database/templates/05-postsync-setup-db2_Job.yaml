@@ -134,8 +134,7 @@ spec:
               echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "================================================================================"
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
-              rc=$?
-              echo "oc exec apply-db2cfg-settings.sh rc: ${rc}"
+              echo ".... rc $?"
 
 
               echo ""
@@ -218,6 +217,7 @@ spec:
                 rc=$?
                 [ $rc -ne 0 ] && exit $rc
               EOF
+              # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
 
               chmod +x ${BACKUPDB_SH_PATH}
 
@@ -225,12 +225,13 @@ spec:
               echo "Copy ${BACKUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
               oc cp ${BACKUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${BACKUPDB_SH_PATH} -c db2u
+              echo ".... rc $?"
 
               echo ""
               echo "Executing ${BACKUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUPDB_SH_PATH} | tee /tmp/backupdb.log" db2inst1
-
+              echo ".... rc $?"
 
 
               if [[ "$MAS_APP_ID" == "manage" ]]; then
@@ -338,7 +339,8 @@ spec:
                       echo "Error detected."
                       exit 1
                   fi               
-                EOF
+              EOF
+                # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
 
                 chmod +x ${SETUPDB_SH_PATH}
 
@@ -346,31 +348,33 @@ spec:
                 echo "Copy ${SETUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc cp ${SETUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${SETUPDB_SH_PATH} -c db2u
+                echo ".... rc $?"
 
                 echo ""
                 echo "Executing ${SETUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1
+                echo ".... rc $?"
 
                 echo ""
                 echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1
+                echo ".... rc $?"
 
                 echo ""
                 echo "Creating /mnt/bludata0/db2/archive_log in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/bludata0/db2/archive_log/" db2inst1
+                echo ".... rc $?"
 
                 echo ""
                 echo "Creating /mnt/backup/staging in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1
+                echo ".... rc $?"
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
-
-
-
 
 
               echo ""

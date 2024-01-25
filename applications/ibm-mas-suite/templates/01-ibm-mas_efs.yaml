@@ -1,14 +1,25 @@
 ---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: aws
+  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/sync-wave: "-7"
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+type: Opaque
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: efs-presync-role-
+  name: efs-presync-role
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "-6"
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-
 spec:
   template:
     spec:
@@ -19,20 +30,33 @@ spec:
           image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
           imagePullPolicy: Always
           command:
-            - /opt/app-root/src/run-role.sh
-            - ocp_efs
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              sleep 300
+              /opt/app-root/src/run-role.sh ocp_efs
+
           env:
             - name: CLUSTER_NAME
               value: "{{ .Values.cluster_id }}"
             - name: EFS_UNIQUE_ID
               value: "{{ .Values.mas_instance_id }}"
-            - name: AWS_ACCESS_KEY_ID
-              value: "{{ .Values.sm_aws_access_key_id }}"
-            - name: AWS_SECRET_ACCESS_KEY
-              value: "{{ .Values.sm_aws_secret_access_key }}"
             - name: AWS_DEFAULT_REGION
               value: "{{ .Values.sm_aws_region }}"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
 
       restartPolicy: Never
-      serviceAccountName: "openshift-gitops-argocd-application-controller"
+      volumes:
+        - name: aws
+          secret:
+            secretName: aws
+            defaultMode: 420
+            optional: false
   backoffLimit: 0

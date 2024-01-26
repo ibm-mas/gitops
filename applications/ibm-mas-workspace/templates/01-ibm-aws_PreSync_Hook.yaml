@@ -20,7 +20,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: presync-sa
-  namespace: mas-{{ .Values.mas_instance_id }}-core
+  namespace: ibm-common-services
   annotations:
     argocd.argoproj.io/hook: PreSync
 ---
@@ -29,12 +29,12 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   annotations:
     argocd.argoproj.io/hook: PreSync
-  name: mas-{{ .Values.mas_instance_id }}-core
-  namespace: mas-{{ .Values.mas_instance_id }}-core
+  name: ibm-common-services
+  namespace: ibm-common-services
 subjects:
   - kind: ServiceAccount
     name: presync-sa
-    namespace: mas-{{ .Values.mas_instance_id }}-core
+    namespace: ibm-common-services
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -45,8 +45,8 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: efs-presync-role
-  #namespace: "mas-{{ .Values.mas_instance_id }}-core"
-  namespace: openshift-gitops
+  namespace: "ibm-common-services"
+  #namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
@@ -104,8 +104,8 @@ spec:
           #    mountPath: /etc/mas/creds/aws
 
       restartPolicy: Never
-      serviceAccountName: "openshift-gitops-argocd-application-controller"
-      #serviceaccount: presync-sa
+      #serviceAccountName: "openshift-gitops-argocd-application-controller"
+      serviceaccount: presync-sa
       #volumes:
       #  - name: aws
       #    secret:

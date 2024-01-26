@@ -89,7 +89,9 @@ spec:
               set -e
 
               source /mascli/functions/gitops_utils
-              export DB2CFG_SETTINGS_APPLIED_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/${MAS_APP_ID}/db2cfg
+
+              export SETTINGS_APPLIED_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/settings_applied
+              export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config
 
               echo ""
               echo "================================================================================"
@@ -104,11 +106,11 @@ spec:
               echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
               echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
               echo "DB2_DBNAME .......................... ${DB2_DBNAME}"
-              echo "DB2CFG_SETTINGS_APPLIED_SECRET ...... ${DB2CFG_SETTINGS_APPLIED_SECRET}"
+              echo "SETTINGS_APPLIED_SECRET ............. ${SETTINGS_APPLIED_SECRET}"
 
               echo ""
               echo "================================================================================"
-              echo "Checking ${DB2CFG_SETTINGS_APPLIED_SECRET}#db2cfg_settings_applied"
+              echo "Checking ${SETTINGS_APPLIED_SECRET}#db2cfg_settings_applied"
               echo "================================================================================"
 
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
@@ -116,7 +118,7 @@ spec:
               export SM_AWS_REGION=${REGION_ID}
               sm_login
              
-              export DB2CFG_SETTINGS_APPLIED=$(sm_get_secret_value ${DB2CFG_SETTINGS_APPLIED_SECRET} "db2cfg_settings_applied")
+              export DB2CFG_SETTINGS_APPLIED=$(sm_get_secret_value ${SETTINGS_APPLIED_SECRET} "db2cfg_settings_applied")
               # TODO: or we could skip rendering of this hook (and related templates) altogether if DB2CFG_SETTINGS_APPLIED is "true"?
               echo "DB2CFG_SETTINGS_APPLIED ............. ${DB2CFG_SETTINGS_APPLIED}"
 
@@ -379,11 +381,42 @@ spec:
 
               echo ""
               echo "================================================================================"
-              echo "Setting ${DB2CFG_SETTINGS_APPLIED_SECRET}#db2cfg_settings_applied to true"
+              echo "Setting ${DB2_CONFIG_SECRET} secret"
+              echo "================================================================================"
+
+
+              echo ""
+              echo "Fetch CA cert from db2u-certicate-${DB2_INSTANCE_NAME} secret in ${DB2_NAMESPACE}"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_CA_PEM=$(oc get secret db2u-certificate-${DB2_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o "jsonpath={.data['ca\.crt']}" | base64 -w0)
+              if [[ -z "${DB2_CA_PEM}" ]]; then
+                echo "Failed to fetch db2 ca pem"
+                exit 1
+              fi
+
+              echo ""
+              echo "Fetch ssl-server target port of c-${DB2_INSTANCE_NAME}-db2u-engn-svc service in ${DB2_NAMESPACE}"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_TLS_SERVICEPORT=$(oc get svc c-${DB2_INSTANCE_NAME}-db2u-engn-svc -n ${DB2_NAMESPACE} -o=jsonpath="{.spec.ports[?(@.name=='ssl-server')].targetPort}")
+              if [[ -z "${DB2_TLS_SERVICEPORT}" ]]; then
+                echo "Failed to fetch db2 tls service port"
+                exit 1
+              fi
+
+              echo ""
+              echo "Updating Secrets Manager"
+              echo "--------------------------------------------------------------------------------"
+              sm_update_secret ${DB2_CONFIG_SECRET} "{ \"tls_serviceport\": ${DB2_TLS_SERVICEPORT}, \"ca_b64\": \"${DB2_CA_PEM}\" }"
+              echo ".... rc $?"
+
+
+              echo ""
+              echo "================================================================================"
+              echo "Setting ${SETTINGS_APPLIED_SECRET}#db2cfg_settings_applied to true"
               echo "================================================================================"
 
               export DB2CFG_SETTINGS_APPLIED="true"
-              sm_update_secret ${DB2CFG_SETTINGS_APPLIED_SECRET} "{ \"db2cfg_settings_applied\": \"${DB2CFG_SETTINGS_APPLIED}\" }"
+              sm_update_secret ${SETTINGS_APPLIED_SECRET} "{ \"db2cfg_settings_applied\": \"${DB2CFG_SETTINGS_APPLIED}\" }"
               echo ".... rc $?"
 
 

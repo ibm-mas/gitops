@@ -1,27 +1,27 @@
-#---
-#kind: ServiceAccount
-#apiVersion: v1
-#metadata:
-#  annotations:
-#    argocd.argoproj.io/hook: PreSync
-#  name: presync-sa
-#  namespace: "mas-{{ .Values.mas_instance_id }}-core"
-#
-#---
-#kind: ClusterRoleBinding
-#apiVersion: rbac.authorization.k8s.io/v1
-#metadata:
-#  annotations:
-#    argocd.argoproj.io/hook: PreSync
-#  name: presync-sa-rb
-#subjects:
-#  - kind: ServiceAccount
-#    name: presync-sa
-#    namespace: "mas-{{ .Values.mas_instance_id }}-core"
-#roleRef:
-#  apiGroup: rbac.authorization.k8s.io
-#  kind: ClusterRole
-#  name: cluster-admin
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: presync-sa
+  namespace: mas-{{ .Values.mas_instance_id }}-core
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+  name: mas-{{ .Values.mas_instance_id }}-core
+  namespace: mas-{{ .Values.mas_instance_id }}-core
+subjects:
+  - kind: ServiceAccount
+    name: presync-sa
+    namespace: mas-{{ .Values.mas_instance_id }}-core
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
 
 ---
 apiVersion: batch/v1
@@ -42,6 +42,9 @@ spec:
         - name: efs
           image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
           imagePullPolicy: Always
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
           command:
             - /bin/sh
             - -c
@@ -86,8 +89,8 @@ spec:
           #    mountPath: /etc/mas/creds/aws
 
       restartPolicy: Never
-      serviceAccountName: "openshift-gitops-argocd-application-controller"
-      #serviceAccountName: "presync-sa"
+      #serviceAccountName: "openshift-gitops-argocd-application-controller"
+      serviceaccount: presync-sa
       #volumes:
       #  - name: aws
       #    secret:

@@ -1,0 +1,88 @@
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+# TODO: Currently bound with cluster-admin; probably want to lock this down more
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "presync-sa-jdbccfg-{{ .Values.suite_jdbccfg_name }}"
+  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "presync-jdbccfg-sa-rb-{{ .Values.suite_jdbccfg_name }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+subjects:
+  - kind: ServiceAccount
+    name: "presync-sa-jdbccfg-{{ .Values.suite_jdbccfg_name }}"
+    namespace: "mas-{{ .Values.mas_instance_id }}-core"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "presync-jdbccfg-await-crd-{{ .Values.suite_jdbccfg_name }}"
+  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    hook-delete-policy: before-hook-creation
+spec:
+  template:
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env: []
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True STARTS  
+              wait_period=0
+              while true
+              do
+                wait_period=$(($wait_period+10))
+                if [ $wait_period -gt 300 ];then
+                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready with in 300 sec, exiting"
+                  exit 1
+                else
+                  sleep 10
+                fi
+                export DB2_CRD_NAMES_ACCEPTED_STATUS=`oc get crd db2uclusters.db2u.databases.ibm.com -o=jsonpath="{.status.conditions[?(@.type=='NamesAccepted')].status}"`
+                echo "DB2_CRD_NAMES_ACCEPTED_STATUS .... ${DB2_CRD_NAMES_ACCEPTED_STATUS}"
+
+                if [[ "$DB2_CRD_NAMES_ACCEPTED_STATUS" == "True" ]]; then
+                  break
+                fi
+              done  
+              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True DONE
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: "presync-sa-jdbccfg-{{ .Values.suite_jdbccfg_name }}"
+      volumes: []
+  backoffLimit: 4

@@ -43,8 +43,23 @@ spec:
           image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
           imagePullPolicy: Always
           command:
-            - /opt/app-root/src/run-role.sh
-            - ocp_efs
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo "aws configure ${AWS_ACCESS_KEY_ID:0:3} ${AWS_SECRET_ACCESS_KEY:0:3} ${AWS_DEFAULT_REGION}"
+              aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+              aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+              aws configure set output json
+              aws configure set region $AWS_DEFAULT_REGION
+              echo "s3"
+              aws s3 ls
+              echo "ec2"
+              aws ec2 describe-instances
+              echo "sleep"
+              sleep 500
+              /opt/app-root/src/run-role.sh ocp_efs
 
           env:
             - name: CLUSTER_NAME

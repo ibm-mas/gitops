@@ -33,6 +33,25 @@ roleRef:
   kind: ClusterRole
   name: cluster-admin
 
+
+---
+
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: postsync-update-sm-network-policy
+  namespace: "mas-{{ .Values.instance.id }}-sls"
+spec:
+  podSelector:
+    matchLabels:
+      app: sls-postsync-update-sm
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
 ---
 apiVersion: batch/v1
 kind: Job
@@ -131,21 +150,3 @@ spec:
             defaultMode: 420
             optional: false
   backoffLimit: 4
-
----
-
-# Permit outbound communication by the Job pods
-# (Needed to communicate with the K8S HTTP API and AWS SM)
-kind: NetworkPolicy
-apiVersion: networking.k8s.io/v1
-metadata:
-  name: postsync-update-sm-network-policy
-  namespace: "mas-{{ .Values.instance.id }}-sls"
-spec:
-  podSelector:
-    matchLabels:
-      app: sls-postsync-update-sm
-  egress:
-    - {}
-  policyTypes:
-    - Egress

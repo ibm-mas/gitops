@@ -6,21 +6,21 @@
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: "presync-sa-add-mvi-scc"
+  name: "postsync-sa-add-mvi-scc"
   namespace: "{{ .Values.mas_app_namespace }}"
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: PostSync
 
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: "presync-sa-rb-add-mvi-scc"
+  name: "postsync-sa-rb-add-mvi-scc"
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: PostSync
 subjects:
   - kind: ServiceAccount
-    name: "presync-sa-add-mvi-scc"
+    name: "postsync-sa-add-mvi-scc"
     namespace: "{{ .Values.mas_app_namespace }}"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -35,15 +35,15 @@ roleRef:
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: "presync-np-add-mvi-scc"
+  name: "postsync-np-add-mvi-scc"
   namespace: "{{ .Values.mas_app_namespace }}"
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: PostSync
     hook-delete-policy: before-hook-creation
 spec:
   podSelector:
     matchLabels:
-      app: "presync-add-mvi-scc"
+      app: "postsync-add-mvi-scc"
   egress:
     - {}
   policyTypes:
@@ -54,17 +54,17 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "presync-add-mvi-scc"
+  name: "postsync-add-mvi-scc"
   namespace: "{{ .Values.mas_app_namespace }}"
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: PostSync
     hook-delete-policy: before-hook-creation
 spec:
   template:
     spec:
       metadata:
           labels:
-            app: "presync-add-mvi-scc"
+            app: "postsync-add-mvi-scc"
       containers:
         - name: run
           # TODO: use a dedicated image with a smaller footprint for this sort of thing?
@@ -86,13 +86,13 @@ spec:
             - /bin/sh
             - -c
             - |
-              oc adm policy add-scc-to-user anyuid system:serviceaccount:${MAS_APP_NAMESPACE}:ibm-mas-visualinspection-operator
+              oc adm policy remove-scc-from-user anyuid system:serviceaccount:${MAS_APP_NAMESPACE}:ibm-mas-visualinspection-operator
 
       restartPolicy: Never
 
       # TODO: is this the correct SA to use here?
       # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
-      serviceAccountName: "presync-sa-add-mvi-scc"
+      serviceAccountName: "postsync-sa-add-mvi-scc"
       volumes: []
   backoffLimit: 4
 

@@ -1,0 +1,99 @@
+ {{- if eq .Values.mas_app_id "visualinspection" }}
+
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+# TODO: Currently bound with cluster-admin; probably want to lock this down more
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "presync-sa-add-mvi-scc"
+  namespace: "{{ .Values.mas_app_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "presync-sa-rb-add-mvi-scc"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+subjects:
+  - kind: ServiceAccount
+    name: "presync-sa-add-mvi-scc"
+    namespace: "{{ .Values.mas_app_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+
+---
+
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: "presync-npo-add-mvi-scc"
+  namespace: "mas-{{ .Values.mas_instance_id}}-core"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    hook-delete-policy: before-hook-creation
+spec:
+  podSelector:
+    matchLabels:
+      app: "presync-npo-add-mvi-scc"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "presync-add-mvi-scc"
+  namespace: "{{ .Values.mas_app_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    hook-delete-policy: before-hook-creation
+spec:
+  template:
+    spec:
+      metadata:
+          labels:
+            app: "presync-add-mvi-scc"
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: MAS_APP_NAMESPACE
+              value: {{ .Values.mas_app_namespace}}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              oc adm policy add-scc-to-user anyuid system:serviceaccount:${MAS_APP_NAMESPACE}:ibm-mas-visualinspection-operator
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: "presync-sa-add-mvi-scc"
+      volumes: []
+  backoffLimit: 4
+
+{{- end }}

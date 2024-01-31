@@ -1,0 +1,111 @@
+---
+
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  generateName: postsync-delete-config-crs-sa-np
+  namespace: "mas-{{ .Values.instance.id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    # argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  podSelector:
+    matchLabels:
+      app: "postsync-delete-config-crs-job"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: "postsync-delete-config-crs-job"
+  namespace: "mas-{{ .Values.instance.id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    # argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    metadata:
+      labels:
+        app: "postsync-delete-config-crs-job"
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: INSTANCE_ID
+              value: {{ .Values.instance.id }}
+
+            - name: MONGO_ABSENT
+              value: {{ index .Values "system-configs" "mongo" | empty }}
+
+            - name: JDBC_ABSENT
+              value: {{ index .Values "system-configs" "jdbc" | empty }}
+
+            - name: SLS_ABSENT
+              value: {{ index .Values "system-configs" "sls" | empty }}
+
+            - name: BAS_ABSENT
+              value: {{ index .Values "system-configs" "bas" | empty }}
+
+            - name: KAFKA_ABSENT
+              value: {{ index .Values "system-configs" "kafka" | empty }}
+
+            - name: IDP_ABSENT
+              value: {{ index .Values "system-configs" "idp" | empty }}
+
+            - name: SMTP_ABSENT
+              value: {{ index .Values "system-configs" "smtp" | empty }}
+
+            - name: OBJECTSTORAGE_ABSENT
+              value: {{ index .Values "system-configs" "objectstorage" | empty }}
+
+
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              source /mascli/functions/gitops_utils
+
+              echo "MONGO_ABSENT ................. ${MONGO_ABSENT}"
+              echo "JDBC_ABSENT .................. ${JDBC_ABSENT}"
+              echo "SLS_ABSENT ................... ${SLS_ABSENT}"
+              echo "BAS_ABSENT ................... ${BAS_ABSENT}"
+              echo "KAFKA_ABSENT ................. ${KAFKA_ABSENT}"
+              echo "IDP_ABSENT ................... ${IDP_ABSENT}"
+              echo "SMTP_ABSENT .................. ${SMTP_ABSENT}"
+              echo "OBJECTSTORAGE_ABSENT ......... ${OBJECTSTORAGE_ABSENT}"
+
+              if [[ "${SMTP_ABSENT}" == "true" ]]; then
+                delete_oc_resource "${INSTANCE_ID}-smtp-system" "mas-${INSTANCE_ID}-core"
+              fi
+
+              # TODO: others
+
+      restartPolicy: Never
+
+      # OK to piggyback on ibm-mas-coreapi role here? This has all the access we need (delete config.mas.ibm.com)
+      # If not, we'll need to setup a service account in this chart (note: >1 cleanup job might be running at once, so the SA name
+      # will have to made unique, but such a way that we can know what it is so we can reference it here in the job)
+      serviceAccountName: "ibm-mas-coreapi"
+      volumes: []
+  backoffLimit: 4

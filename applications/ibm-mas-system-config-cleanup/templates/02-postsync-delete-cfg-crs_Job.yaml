@@ -1,25 +1,4 @@
 ---
-
-# Permit outbound communication by the Job pods
-# (Needed to communicate with the K8S HTTP API and AWS SM)
-kind: NetworkPolicy
-apiVersion: networking.k8s.io/v1
-metadata:
-  generateName: postsync-delete-config-crs-sa-np
-  namespace: "mas-{{ .Values.instance.id }}-core"
-  annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-spec:
-  podSelector:
-    matchLabels:
-      app: "postsync-delete-config-crs-job"
-  egress:
-    - {}
-  policyTypes:
-    - Egress
-
----
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -176,10 +155,6 @@ spec:
               fi
 
       restartPolicy: Never
-
-      # OK to piggyback on ibm-mas-coreapi role here? This has all the access we need (delete config.mas.ibm.com)
-      # If not, we'll need to setup a service account in this chart (note: >1 cleanup job might be running at once, so the SA name
-      # will have to made unique, but such a way that we can know what it is so we can reference it here in the job)
-      serviceAccountName: "ibm-mas-coreapi"
+      serviceAccountName: "postsync-delete-cfg-crs-sa"
       volumes: []
   backoffLimit: 4

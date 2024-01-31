@@ -88,6 +88,7 @@ spec:
                 RESOURCE=$1
                 NAMESPACE=$2
                 echo
+                echo "------------------------------------------------------------------"
                 echo "Check if resource $RESOURCE is present in namepsace $NAMESPACE "
 
                 # don't want a non-zero rc from oc delete to cause the job to fail
@@ -97,6 +98,7 @@ spec:
                 set -e
                 if [[ -z "${RESOURCE_NAME}" ]]; then
                   echo "$RESOURCE not found, skipping"
+                  exit 0
                 fi
 
                 echo "oc delete resource $RESOURCE in namepsace $NAMESPACE "
@@ -110,7 +112,7 @@ spec:
 
                 if [ $return_code -ne 0 ]; then
                   echo "oc delete timed out after 300s, forcing delete by removing finalizers"
-                  echo " oc patch $RESOURCE -n $NAMESPACE"
+                  echo "oc patch $RESOURCE -n $NAMESPACE"
 
                   # NOTE: set -e, so job will exit if this fails (which is what we want)
                   oc patch $RESOURCE -n $NAMESPACE --type="json" -p '[{"op": "remove", "path":"/metadata/finalizers"}]' 2>/dev/null
@@ -128,6 +130,7 @@ spec:
                 fi
 
                 echo "... verified"
+                exit 0
                 
               }
 

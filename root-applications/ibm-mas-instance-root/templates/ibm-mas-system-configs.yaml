@@ -1,4 +1,3 @@
-{{- if not ( (empty (index .Values "system-configs")) )}}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
@@ -14,6 +13,8 @@ spec:
     server: {{ .Values.cluster.url }}
     namespace: default
   sources:
+    {{- if not (empty (index .Values "system-configs")) }}
+    
     {{- if not (empty (index .Values "system-configs" "mongo")) }}
     - path: applications/ibm-mas-mongo-config
       repoURL: https://github.com/ibm-mas/gitops
@@ -94,6 +95,8 @@ spec:
             value: |
               {{ index .Values "system-configs" "objectstorage" | toRawJson }}
     {{- end }}
+
+    {{- end }} # if not (empty (index .Values "system-configs"))
     - path: applications/ibm-mas-system-config-cleanup
       repoURL: https://github.com/ibm-mas/gitops
       targetRevision: mascore1425
@@ -109,4 +112,3 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - RespectIgnoreDifferences=true
-{{- end }}

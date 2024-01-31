@@ -84,7 +84,43 @@ spec:
 
               set -e
 
-              source /mascli/functions/gitops_utils
+              function delete_oc_resource(){
+                RESOURCE=$1
+                NAMESPACE=$2
+                echo
+                echo " Check if resource $RESOURCE is present in namepsace $NAMESPACE "
+                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                if [ -z "${RESOURCE_NAME}" ]]; then
+                  echo "$RESOURCE not found, skipping"
+                fi
+
+                echo "oc delete resource $RESOURCE in namepsace $NAMESPACE "
+
+                # don't want a non-zero rc from oc delete to cause the job to fail (since we then want to try patching out the finalizers)
+                # so, temporarily set +e
+                set +e
+                oc delete $RESOURCE -n $NAMESPACE --timeout=300s --wait=true
+                return_code=$?
+                set -e
+
+                if [ $return_code -ne 0 ]; then
+                  echo "oc delete timed out after 300s, forcing delete by removing finalizers"
+                  echo " oc patch $RESOURCE -n $NAMESPACE"
+
+                  # NOTE: set -e, so job will exit if this fails (which is what we want)
+                  oc patch $RESOURCE -n $NAMESPACE --type="json" -p '[{"op": "remove", "path":"/metadata/finalizers"}]' 2>/dev/null
+                fi
+
+                echo "Verify that resource $RESOURCE is now absent in namepsace $NAMESPACE "
+                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                if [ -n "${RESOURCE_NAME}" ]]; then
+                  echo "$RESOURCE still present, failing job"
+                  exit 1
+                fi
+
+                echo "... verified"
+                
+              }
 
               echo "MONGO_ABSENT ................. ${MONGO_ABSENT}"
               echo "JDBC_ABSENT .................. ${JDBC_ABSENT}"

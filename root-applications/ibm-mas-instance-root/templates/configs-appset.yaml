@@ -1,0 +1,53 @@
+---
+# IBM Cloud Pak Foundational Services
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: configs-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: git@github.ibm.com:maximoappsuite/gitops-envs.git
+        revision: mascore1032v2
+        files:
+        - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/configs/*.yaml"
+
+  template:
+    metadata:
+      name: "{{ `{{.mas_config_name}` }}".{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}"
+      labels:
+        cloud: aws
+        environment: '{{ .Values.account.id }}'
+        region: '{{ .Values.region.id }}'
+        cluster: '{{ .Values.cluster.id }}'
+        instance: '{{ .Values.instance.id }}'
+    spec:
+      project: mas
+      sources:
+        - repoURL: https://github.com/ibm-mas/gitops
+          targetRevision: mascore1653
+          path: applications/{{ `{{.mas_config_chart}}` }}
+          helm:
+            values: |
+              {{ `{{toRawJson .}}` }}
+      destination:
+        server: {{ .Values.cluster.url }}
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=false
+          - RespectIgnoreDifferences=true
+      ignoreDifferences:
+        - group: '*'
+          kind: ServiceAccount
+          jsonPointers:
+            - /imagePullSecrets
+        - group: 'marketplace.redhat.com/v1alpha1'
+          kind: MarketplaceConfig
+          jsonPointers:
+            - /spec

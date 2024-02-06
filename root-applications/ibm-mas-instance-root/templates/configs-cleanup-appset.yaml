@@ -1,9 +1,11 @@
 ---
-# IBM Cloud Pak Foundational Services
+# This appset generates an application containing a Job that will delete a CR in OCP
+# This is used to delete config CRs (e.g. MongoCfg, BasCfg, etc) that ArgoCD refuses to delete due to the fact that they have an additional owner (suite)
+# As soon as we get access to ArgoCD 2.10, we should replace this hacky workaround with a DeleteHook on the config charts.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: configs-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: cleanup-configs-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: openshift-gitops
 spec:
   goTemplate: true
@@ -12,10 +14,10 @@ spec:
         repoURL: git@github.ibm.com:maximoappsuite/gitops-envs.git
         revision: mascore1032v2
         files:
-          - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/configs/*.yaml"
+          - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/configs/cleanup/*.yaml"
   template:
     metadata:
-      name: "{{ `{{.mas_config_name}}` }}.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}"
+      name: "cleanup-{{ `{{.mas_config_name}}` }}.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}"
       labels:
         cloud: aws
         environment: '{{ .Values.account.id }}'
@@ -27,7 +29,7 @@ spec:
       sources:
         - repoURL: https://github.com/ibm-mas/gitops
           targetRevision: mascore1425
-          path: applications/{{ `{{.mas_config_chart}}` }}
+          path: applications/ibm-mas-system-config-cleanup
           plugin:
             env:
               - name: HELM_VALUES

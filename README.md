@@ -23,10 +23,13 @@ spec:
   source:
     path: root-applications/ibm-mas-account-root
     repoURL: 'https://github.com/ibm-mas/gitops'
-    targetRevision: mascore1032v2
+    targetRevision: master
     helm:
       values: |
-        {"account":{"id":"<accountid>"}}
+        {
+          "gitops": {"repoURL": "https://github.com/ibm-mas/gitops", "targetRevision":"master"},
+          "account":{"id":"<accountid>"}
+        }
   syncPolicy:
     syncOptions:
       - CreateNamespace=false

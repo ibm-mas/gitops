@@ -1,9 +1,23 @@
+{{- if .Values.ibm_common_services.run_sync_hooks }}
+
+{{ $ns := "ibm-common-services"}}
+{{ $aws_secret := "aws"}}
+{{ $role_name :=  "postsync-update-sm-r" }}
+{{ $sa_name :=    "postsync-update-sm-sa" }}
+{{ $rb_name :=    "postsync-update-sm-rb" }}
+{{ $job_name :=   "postsync-update-sm-job" }}
+
+
 ---
 kind: Secret
 apiVersion: v1
 metadata:
-  name: aws
-  namespace: "ibm-common-services"
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 data:
   aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
@@ -15,40 +29,72 @@ type: Opaque
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: postsync-sa
-  namespace: "ibm-common-services"
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 
 ---
-kind: ClusterRoleBinding
+kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: ibm-common-services-postsync-sa-rb
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - packages.operators.coreos.com
+    resources:
+      - packagemanifests
+  - verbs:
+      - get
+    apiGroups:
+      - ingress.config.openshift.io
+    resources:
+      - clusters
+
+
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 subjects:
   - kind: ServiceAccount
-    name: postsync-sa
-    namespace: "ibm-common-services"
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
+  kind: Role
+  name: {{ $role_name }}
 
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "postsync-update-sm"
-  namespace: "ibm-common-services"
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
   annotations:
+    argocd.argoproj.io/sync-wave: "102"
     argocd.argoproj.io/hook: PostSync
-    hook-delete-policy: before-hook-creation
-    argocd.argoproj.io/sync-wave: "01"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   template:
     spec:
       containers:
         - name: run
-          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
-          # Just using cli for now since it has all the deps we need to talk with AWS SM
           image: quay.io/ibmmas/cli:7.10.0-pre.gitops
           imagePullPolicy: IfNotPresent
           resources:
@@ -127,7 +173,8 @@ spec:
       volumes:
         - name: aws
           secret:
-            secretName: aws
+            secretName: {{ $aws_secret }}
             defaultMode: 420
             optional: false
   backoffLimit: 4
+{{- end }}

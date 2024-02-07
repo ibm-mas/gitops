@@ -25,6 +25,22 @@ spec:
     spec:
       project: mas
       sources:
+        {{ `{{ if .delete }}` }}
+          # Because the CR has an owner (Suite), ArgoCD won't cleanup the CR when the application is removed,
+          # so we need to call oc delete ourselves (and we have to do this from within the cluster itself as our deprovision scripts cannot access oc directly.
+          # For now, as a temporary solution: conditionally render templates containing a Job that deletes the CR when the "delete" flag is set by our provision scripts
+          # prior to deletion of the config itself.
+          # TODO: change to OnDelete hook once we have access to ArgoCD 2.10
+          # See https://jsw.ibm.com/browse/MASCORE-1643
+        - repoURL: https://github.com/ibm-mas/gitops
+          targetRevision: mascore1425
+          path: applications/ibm-mas-config-cleanup
+          plugin:
+            env:
+              - name: HELM_VALUES
+                value: |
+                  {{ `{{toRawJson .}}` }}
+        {{ `{{ else }}` }}
         - repoURL: https://github.com/ibm-mas/gitops
           targetRevision: mascore1425
           path: applications/{{ `{{.mas_config_chart}}` }}
@@ -33,6 +49,7 @@ spec:
               - name: HELM_VALUES
                 value: |
                   {{ `{{toRawJson .}}` }}
+        {{ `{{ end }}` }}
       destination:
         server: {{ .Values.cluster.url }}
         namespace: default

@@ -1,14 +1,14 @@
 {{- if eq .Values.mongodb_provider "aws" }}
-{{- if eq .Values.user_action "add" }}
+{{- if or (eq .Values.user_action "remove") (eq .Values.user_action "add") }}
 
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: postsync-sa
+  name: sync-sa
   namespace: mas-{{ .Values.mas_instance_id }}-sls
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: PostSync,SyncFail
     argocd.argoproj.io/sync-wave: "1"
     argocd.argoproj.io/hook-delete-policy: before-hook-creation
 
@@ -16,14 +16,14 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: postsync-sa
+  name: sync-sa
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: PostSync,SyncFail
     argocd.argoproj.io/sync-wave: "2"
     argocd.argoproj.io/hook-delete-policy: before-hook-creation
 subjects:
   - kind: ServiceAccount
-    name: postsync-sa
+    name: sync-sa
     namespace: mas-{{ .Values.mas_instance_id }}-sls
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -36,16 +36,16 @@ roleRef:
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: postsync-role-network-policy
+  name: sync-role-network-policy
   namespace: mas-{{ .Values.mas_instance_id }}-sls
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: PostSync,SyncFail
     argocd.argoproj.io/hook-delete-policy: before-hook-creation
     argocd.argoproj.io/sync-wave: "3"
 spec:
   podSelector:
     matchLabels:
-      app: "postsync-role"
+      app: "sync-role"
   egress:
     - {}
   policyTypes:
@@ -55,22 +55,22 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: aws-docdb-process-user-postsync-role
+  name: aws-docdb-process-user-sync-role
   namespace: mas-{{ .Values.mas_instance_id }}-sls
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: PostSync,SyncFail
     argocd.argoproj.io/hook-delete-policy: before-hook-creation
     argocd.argoproj.io/sync-wave: "4"
 spec:
   template:
     metadata:
       labels:
-        app: "postsync-role"
+        app: "sync-role"
     spec:
       containers:
         - name: aws-docdb-process-user
           image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
-          imagePullPolicy: IfNotPresent           
+          imagePullPolicy: IfNotPresent
 
           command:
             - /bin/sh
@@ -79,7 +79,7 @@ spec:
               oc delete project mas-{{ .Values.mas_instance_id }}-sync-job
 
       restartPolicy: Never
-      serviceAccountName: postsync-sa
+      serviceAccountName: sync-sa
   backoffLimit: 0
 
 {{- end }}

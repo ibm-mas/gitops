@@ -1,0 +1,86 @@
+{{- if eq .Values.mongodb_provider "aws" }}
+{{- if eq .Values.user_action "add" }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postsync-sa
+  namespace: mas-{{ .Values.mas_instance_id }}-sls
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: postsync-sa
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
+subjects:
+  - kind: ServiceAccount
+    name: postsync-sa
+    namespace: mas-{{ .Values.mas_instance_id }}-sls
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: postsync-role-network-policy
+  namespace: mas-{{ .Values.mas_instance_id }}-sls
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  podSelector:
+    matchLabels:
+      app: "postsync-role"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aws-docdb-process-user-postsync-role
+  namespace: mas-{{ .Values.mas_instance_id }}-sls
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  template:
+    metadata:
+      labels:
+        app: "postsync-role"
+    spec:
+      containers:
+        - name: aws-docdb-process-user
+          image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
+          imagePullPolicy: IfNotPresent           
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              oc delete project mas-{{ .Values.mas_instance_id }}-sync-job
+
+      restartPolicy: Never
+      serviceAccountName: postsync-sa
+  backoffLimit: 0
+
+{{- end }}
+{{- end }}

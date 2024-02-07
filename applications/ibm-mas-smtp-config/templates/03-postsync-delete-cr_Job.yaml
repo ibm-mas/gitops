@@ -16,12 +16,32 @@
 {{ $job_name := printf "postsync-delete-cr-job-%s" $cr_name }}
 {{ $ns := printf "mas-%s-core" .Values.mas_instance_id }}
 ---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_name }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
 
+---
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: {{ $role_name }}
   namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
 rules:
   - verbs:
       - delete
@@ -38,6 +58,8 @@ apiVersion: v1
 metadata:
   name: {{ $sa_name }}
   namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
 
 ---
 kind: RoleBinding
@@ -45,6 +67,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: {{ $rb_name }}
   namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
 subjects:
   - kind: ServiceAccount
     name: {{ $sa_name }}
@@ -54,22 +78,6 @@ roleRef:
   kind: Role
   name: {{ $role_name }}
 
----
-# Permit outbound communication by the Job pods
-# (Needed to communicate with the K8S HTTP API and AWS SM)
-kind: NetworkPolicy
-apiVersion: networking.k8s.io/v1
-metadata:
-  name: {{ $np_name }}
-  namespace: {{ $ns }}
-spec:
-  podSelector:
-    matchLabels:
-      app: {{ $job_name }}
-  egress:
-    - {}
-  policyTypes:
-    - Egress
 
 ---
 apiVersion: batch/v1
@@ -77,6 +85,8 @@ kind: Job
 metadata:
   name: {{ $job_name }}
   namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "102"
 spec:
   template:
     metadata:

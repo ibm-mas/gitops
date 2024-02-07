@@ -5,12 +5,23 @@
   # TODO: change to OnDelete hook once we have access to ArgoCD 2.10
   # See https://jsw.ibm.com/browse/MASCORE-1643
 {{- if .Values.delete }}
+
+# Generate a suffix for all the resources so there are no name clashes if >1 config is deleted at the same time
+# TODO: ws/app/wsapp binding support (need to generate the cr name accordingly)
+{{ $cr_name := printf "%s%s" .Values.mas_instance_id "-smtp-system" }}
+{{ $role_name := printf "postsync-delete-cr-r-%s" $cr_name }}
+{{ $sa_name := printf "postsync-delete-cr-sa-%s" $cr_name }}
+{{ $rb_name := printf "postsync-delete-cr-rb-%s" $cr_name }}
+{{ $np_name := printf "postsync-delete-cr-np-%s" $cr_name }}
+{{ $job_name := printf "postsync-delete-cr-job-%s" $cr_name }}
+{{ $ns := printf "mas-%s-core" .Values.mas_instance_id }}
 ---
+
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: postsync-delete-smtpcfg-cr-r
-  namespace: mas-{{ .Values.mas_instance_id }}-core
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
 rules:
   - verbs:
       - delete
@@ -25,23 +36,23 @@ rules:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: postsync-delete-smtpcfg-cr-sa
-  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
 
 ---
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: postsync-delete-smtpcfg-cr-rb
-  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
 subjects:
   - kind: ServiceAccount
-    name: postsync-delete-smtpcfg-cr-sa
-    namespace: "mas-{{ .Values.mas_instance_id }}-core"
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: postsync-delete-smtpcfg-cr-r
+  name: {{ $role_name }}
 
 ---
 # Permit outbound communication by the Job pods
@@ -49,12 +60,12 @@ roleRef:
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: postsync-delete-smtpcfg-cr-sa-np
-  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  name: {{ $np_name }}
+  namespace: {{ ns }}
 spec:
   podSelector:
     matchLabels:
-      app: "postsync-delete-smtpcfg-cr-job"
+      app: {{ $job_name }}
   egress:
     - {}
   policyTypes:
@@ -64,13 +75,13 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: "postsync-delete-smtpcfg-cr-job"
-  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
 spec:
   template:
     metadata:
       labels:
-        app: "postsync-delete-smtpcfg-cr-job"
+        app: {{ $job_name }}
     spec:
       containers:
         - name: run
@@ -86,8 +97,10 @@ spec:
               cpu: 10m
               memory: 64Mi
           env:
-            - name: INSTANCE_ID
-              value: "{{ .Values.mas_instance_id }}"
+            - name: CR_NAMESPACE
+              value: {{ $ns }}
+            - name: CR_NAME
+              value: {{ $cr_name }}
 
           volumeMounts: []
           command:
@@ -147,12 +160,12 @@ spec:
                 
               }
 
-              # TODO: ws/app/wsapp binding support
-              delete_oc_resource "smtpcfgs.config.mas.ibm.com/${INSTANCE_ID}-smtp-system" "mas-${INSTANCE_ID}-core"
+              
+              delete_oc_resource "smtpcfgs.config.mas.ibm.com/${CR_NAME}" "${CR_NAMESPACE}"
 
 
       restartPolicy: Never
-      serviceAccountName: "postsync-delete-smtpcfg-cr-sa"
+      serviceAccountName: {{ $sa_name }}
       volumes: []
   backoffLimit: 4
 {{- end }}

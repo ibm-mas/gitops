@@ -1,55 +1,93 @@
+{{- if .Values.ibm_dro.run_sync_hooks }}
+
+{{ $ns := .Values.ibm_dro.dro_namespace}}
+{{ $aws_secret := "aws"}}
+{{ $role_name :=  "postsync-ibm-dro-update-sm-r" }}
+{{ $sa_name :=    "postsync-ibm-dro-update-sm-sa" }}
+{{ $rb_name :=    "postsync-ibm-dro-update-sm-rb" }}
+{{ $job_name :=   "postsync-ibm-dro-update-sm-job" }}
+
+
 ---
 kind: Secret
 apiVersion: v1
 metadata:
-  name: aws
-  namespace: "{{ .Values.dro_namespace }}"
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 data:
   aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
 type: Opaque
 
 ---
-# Service account that is authorized to read k8s secrets (needed by the job)
-# TODO: Currently bound with cluster-admin; probably want to lock this down more
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: postsync-sa
-  namespace: "{{ .Values.dro_namespace }}"
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - core
+    resources:
+      - secrets
+
+
 
 ---
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: postsync-sa-rb
-  namespace: "{{ .Values.dro_namespace }}"
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 subjects:
   - kind: ServiceAccount
-    name: postsync-sa
-    namespace: "{{ .Values.dro_namespace }}"
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
+  kind: Role
+  name: {{ $role_name }}
 
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "postsync-update-sm"
-  namespace: "{{ .Values.dro_namespace }}"
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
   annotations:
+    argocd.argoproj.io/sync-wave: "102"
     argocd.argoproj.io/hook: PostSync
-    hook-delete-policy: before-hook-creation
-    argocd.argoproj.io/sync-wave: "01"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   template:
     spec:
       containers:
         - name: run
-          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
-          # Just using cli for now since it has all the deps we need to talk with AWS SM
           image: quay.io/ibmmas/cli:7.10.0-pre.gitops
           imagePullPolicy: IfNotPresent
           resources:
@@ -67,7 +105,7 @@ spec:
             - name: CLUSTER_ID
               value: {{ .Values.cluster.id }}
             - name: DRO_NAMESPACE
-              value: "{{ .Values.dro_namespace }}"
+              value: {{ .Values.ibm_dro.dro_namespace }}
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
@@ -113,11 +151,15 @@ spec:
 
       # TODO: is this the correct SA to use here?
       # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
-      serviceAccountName: "postsync-sa"
+      serviceAccountName: {{ $sa_name }}
       volumes:
         - name: aws
           secret:
-            secretName: aws
+            secretName: {{ $aws_secret }}
             defaultMode: 420
             optional: false
   backoffLimit: 4
+{{- end }}
+
+
+

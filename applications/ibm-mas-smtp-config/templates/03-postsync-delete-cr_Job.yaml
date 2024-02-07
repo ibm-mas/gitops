@@ -7,8 +7,9 @@
 {{- if .Values.delete }}
 
 # Generate a suffix for all the resources so there are no name clashes if >1 config is deleted at the same time
-# TODO: ws/app/wsapp binding support (need to generate the cr name accordingly)
-{{ $cr_name := printf "%s%s" .Values.mas_instance_id "-smtp-system" }}
+{{ $cr_name := printf "%s%s" .Values.mas_config_name }}
+{{ $cr_kind := .Values.mas_config_kind }}
+{{ $cr_api_version := .Values.mas_config_api_version }}
 {{ $role_name := printf "postsync-delete-cr-r-%s" $cr_name }}
 {{ $sa_name := printf "postsync-delete-cr-sa-%s" $cr_name }}
 {{ $rb_name := printf "postsync-delete-cr-rb-%s" $cr_name }}
@@ -49,9 +50,9 @@ rules:
       - list
       - watch
     apiGroups:
-      - config.mas.ibm.com
+      - {{ $cr_api_version }}
     resources:
-      - smtpcfgs
+      - {{ $cr_kind }}
 
 ---
 kind: ServiceAccount
@@ -113,6 +114,12 @@ spec:
             - name: CR_NAME
               value: {{ $cr_name }}
 
+            - name: CR_API_VERSION
+              value: {{ $cr_api_version }}
+
+            - name: CR_KIND
+              value: {{ $cr_kind }}
+
           volumeMounts: []
           command:
             - /bin/sh
@@ -172,7 +179,7 @@ spec:
               }
 
               
-              delete_oc_resource "smtpcfgs.config.mas.ibm.com/${CR_NAME}" "${CR_NAMESPACE}"
+              delete_oc_resource "${CR_KIND}.${CR_API_VERSION}/${CR_NAME}" "${CR_NAMESPACE}"
 
 
       restartPolicy: Never

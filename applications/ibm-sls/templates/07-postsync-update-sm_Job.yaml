@@ -1,77 +1,120 @@
+{{- if .Values.ibm_sls.run_sync_hooks }}
+
+{{ $ns := printf "mas-%s-sls" .Values.instance.id}}
+{{ $aws_secret := "aws"}}
+{{ $np_name :=    "postsync-ibm-sls-update-sm-np" }}
+{{ $role_name :=  "postsync-ibm-sls-update-sm-r" }}
+{{ $sa_name :=    "postsync-ibm-sls-update-sm-sa" }}
+{{ $rb_name :=    "postsync-ibm-sls-update-sm-rb" }}
+{{ $job_name :=   "postsync-ibm-sls-update-sm-job" }}
+
+
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ job_name }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
 ---
 kind: Secret
 apiVersion: v1
 metadata:
-  name: aws
-  namespace: "mas-{{ .Values.instance.id }}-sls"
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 data:
   aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
 type: Opaque
 
 ---
-# Service account that is authorized to read k8s secrets (needed by the job)
-# TODO: Currently bound with cluster-admin; probably want to lock this down more
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: postsync-sa
-  namespace: "mas-{{ .Values.instance.id }}-sls"
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - ""
+    resources:
+      - configmaps
+
+
 
 ---
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: postsync-sa-rb
-  namespace: "mas-{{ .Values.instance.id }}-sls"
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 subjects:
   - kind: ServiceAccount
-    name: postsync-sa
-    namespace: "mas-{{ .Values.instance.id }}-sls"
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-
-
----
-
-# Permit outbound communication by the Job pods
-# (Needed to communicate with the K8S HTTP API and AWS SM)
-kind: NetworkPolicy
-apiVersion: networking.k8s.io/v1
-metadata:
-  name: postsync-update-sm-network-policy
-  namespace: "mas-{{ .Values.instance.id }}-sls"
-spec:
-  podSelector:
-    matchLabels:
-      app: sls-postsync-update-sm
-  egress:
-    - {}
-  policyTypes:
-    - Egress
+  kind: Role
+  name: {{ $role_name }}
 
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "postsync-update-sm"
-  namespace: "mas-{{ .Values.instance.id }}-sls"
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
   annotations:
+    argocd.argoproj.io/sync-wave: "102"
     argocd.argoproj.io/hook: PostSync
-    hook-delete-policy: before-hook-creation
-    argocd.argoproj.io/sync-wave: "01"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   template:
     metadata:
       labels:
-        app: "sls-postsync-update-sm"
+        app: {{ $job_name }}
     spec:
       containers:
         - name: run
-          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
-          # Just using cli for now since it has all the deps we need to talk with AWS SM
           image: quay.io/ibmmas/cli:7.10.0-pre.gitops
           imagePullPolicy: IfNotPresent
           resources:
@@ -142,11 +185,12 @@ spec:
 
       # TODO: is this the correct SA to use here?
       # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
-      serviceAccountName: "postsync-sa"
+      serviceAccountName: {{ $sa_name }}
       volumes:
         - name: aws
           secret:
-            secretName: aws
+            secretName: {{ $aws_secret }}
             defaultMode: 420
             optional: false
   backoffLimit: 4
+{{- end }}

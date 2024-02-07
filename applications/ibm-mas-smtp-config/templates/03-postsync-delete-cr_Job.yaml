@@ -1,9 +1,9 @@
-# Because the CR has an owner (Suite), ArgoCD won't cleanup the CR when the application is removed,
-# so we need to call oc delete ourselves (and we have to do this from within the cluster itself as our deprovision
-# scripts cannot access oc directly.
-# TODO: change to OnDelete hook once we have access to ArgoCD 2.10
-# See https://jsw.ibm.com/browse/MASCORE-1643
-# For now, as a temporary solution: Run as a PostSync hook, gated by the "delete" flag set on env config by our deprovision scripts prior to deletion
+  # Because the CR has an owner (Suite), ArgoCD won't cleanup the CR when the application is removed,
+  # so we need to call oc delete ourselves (and we have to do this from within the cluster itself as our deprovision scripts cannot access oc directly.
+  # For now, as a temporary solution: conditionally render templates containing a Job that deletes the CR when the "delete" flag is set by our provision scripts
+  # prior to deletion of the config itself.
+  # TODO: change to OnDelete hook once we have access to ArgoCD 2.10
+  # See https://jsw.ibm.com/browse/MASCORE-1643
 {{- if .Values.delete }}
 ---
 kind: Role
@@ -11,9 +11,6 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: postsync-delete-smtpcfg-cr-r
   namespace: mas-{{ .Values.mas_instance_id }}-core
-  annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 rules:
   - verbs:
       - delete
@@ -30,9 +27,6 @@ apiVersion: v1
 metadata:
   name: postsync-delete-smtpcfg-cr-sa
   namespace: "mas-{{ .Values.mas_instance_id }}-core"
-  annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 
 ---
 kind: RoleBinding
@@ -40,9 +34,6 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: postsync-delete-smtpcfg-cr-rb
   namespace: "mas-{{ .Values.mas_instance_id }}-core"
-  annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 subjects:
   - kind: ServiceAccount
     name: postsync-delete-smtpcfg-cr-sa
@@ -60,9 +51,6 @@ apiVersion: networking.k8s.io/v1
 metadata:
   name: postsync-delete-smtpcfg-cr-sa-np
   namespace: "mas-{{ .Values.mas_instance_id }}-core"
-  annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   podSelector:
     matchLabels:
@@ -78,9 +66,6 @@ kind: Job
 metadata:
   generateName: "postsync-delete-smtpcfg-cr-job"
   namespace: "mas-{{ .Values.mas_instance_id }}-core"
-  annotations:
-    argocd.argoproj.io/hook: PostSync
-    # argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   template:
     metadata:

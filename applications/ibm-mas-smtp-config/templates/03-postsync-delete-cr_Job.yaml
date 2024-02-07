@@ -1,0 +1,173 @@
+# Because the CR has an owner (Suite), ArgoCD won't cleanup the CR when the application is removed,
+# so we need to call oc delete ourselves (and we have to do this from within the cluster itself as our deprovision
+# scripts cannot access oc directly.
+# TODO: change to OnDelete hook once we have access to ArgoCD 2.10
+# See https://jsw.ibm.com/browse/MASCORE-1643
+# For now, as a temporary solution: Run as a PostSync hook, gated by the "delete" flag set on env config by our deprovision scripts prior to deletion
+{{- if .Values.cleanup }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: postsync-delete-smtpcfg-cr-r
+  namespace: mas-{{ .Values.instance.id }}-core
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - verbs:
+      - delete
+      - get
+      - list
+    apiGroups:
+      - config.mas.ibm.com
+    resources:
+      - SmtpCfgs
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: postsync-delete-smtpcfg-cr-sa
+  namespace: "mas-{{ .Values.instance.id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: postsync-delete-smtpcfg-cr-rb
+  namespace: "mas-{{ .Values.instance.id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+subjects:
+  - kind: ServiceAccount
+    name: postsync-delete-smtpcfg-cr-sa
+    namespace: "mas-{{ .Values.instance.id }}-core"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: postsync-delete-smtpcfg-cr-r
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: postsync-delete-smtpcfg-cr-sa-np
+  namespace: "mas-{{ .Values.instance.id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  podSelector:
+    matchLabels:
+      app: "postsync-delete-smtpcfg-cr-job"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: "postsync-delete-smtpcfg-cr-job"
+  namespace: "mas-{{ .Values.instance.id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    # argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    metadata:
+      labels:
+        app: "postsync-delete-smtpcfg-cr-job"
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: INSTANCE_ID
+              value: "{{ .Values.instance.id }}"
+
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              function delete_oc_resource(){
+                RESOURCE=$1
+                NAMESPACE=$2
+                echo
+                echo "------------------------------------------------------------------"
+                echo "Check if resource $RESOURCE is present in namespace $NAMESPACE "
+
+                # don't want a non-zero rc from oc delete to cause the job to fail
+                # so, temporarily set +e
+                set +e
+                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                set -e
+                if [[ -z "${RESOURCE_NAME}" ]]; then
+                  echo "$RESOURCE not found, skipping"
+                  return 0
+                fi
+
+                echo "oc delete resource $RESOURCE in namespace $NAMESPACE "
+
+                # don't want a non-zero rc from oc delete to cause the job to fail (since we then want to try patching out the finalizers)
+                # so, temporarily set +e
+                set +e
+                oc delete $RESOURCE -n $NAMESPACE --timeout=300s --wait=true
+                return_code=$?
+                set -e
+
+                if [ $return_code -ne 0 ]; then
+                  echo "oc delete timed out after 300s, forcing delete by removing finalizers"
+                  echo "oc patch $RESOURCE -n $NAMESPACE"
+
+                  # NOTE: set -e, so job will exit if this fails (which is what we want)
+                  oc patch $RESOURCE -n $NAMESPACE --type="json" -p '[{"op": "remove", "path":"/metadata/finalizers"}]' 2>/dev/null
+                fi
+
+                echo "Verify that resource $RESOURCE is now absent in namespace $NAMESPACE "
+                # don't want a non-zero rc from oc delete to cause the job to fail
+                # so, temporarily set +e
+                set +e
+                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                set -e
+                if [[ -n "${RESOURCE_NAME}" ]]; then
+                  echo "$RESOURCE still present, failing job"
+                  exit 1
+                fi
+
+                echo "... verified"
+                return 0
+                
+              }
+
+              # TODO: ws/app/wsapp binding support
+              delete_oc_resource "smtpcfgs.config.mas.ibm.com/${INSTANCE_ID}-smtp-system" "mas-${INSTANCE_ID}-core"
+
+
+      restartPolicy: Never
+      serviceAccountName: "postsync-delete-smtpcfg-cr-sa"
+      volumes: []
+  backoffLimit: 4
+{{- end }}

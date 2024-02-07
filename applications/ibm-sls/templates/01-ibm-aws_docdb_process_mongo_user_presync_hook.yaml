@@ -1,14 +1,22 @@
 {{- if eq .Values.mongodb_provider "aws" }}
-{{- if eq .Values.user_action "add" }}
+{{- if or (eq .Values.user_action "remove") (eq .Values.user_action "add") }}
+
+{{- $hook := "" }}
+{{- if (eq .Values.user_action "remove") }}
+{{- $hook = "PostSync" }}
+{{- else if (eq .Values.user_action "add") }}
+{{- $hook = "PreSync" }}
+{{- end}}
+
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: mas-{{ .Values.mas_instance_id }}-sync-job
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/sync-wave: "1"
-    argocd.argoproj.io/hook-delete-policy: hook-succeeded,before-hook-creation
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
 
 ---
 kind: Secret
@@ -17,9 +25,9 @@ metadata:
   name: aws-docdb
   namespace: mas-{{ .Values.mas_instance_id }}-sync-job
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/sync-wave: "2"
-    argocd.argoproj.io/hook-delete-policy: hook-succeeded,before-hook-creation
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
 stringData:
   docdb_master_username: {{ .Values.docdb_master_username }}
   docdb_master_password: {{ .Values.docdb_master_password }}
@@ -35,9 +43,9 @@ metadata:
   name: aws
   namespace: mas-{{ .Values.mas_instance_id }}-sync-job
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/sync-wave: "2"
-    argocd.argoproj.io/hook-delete-policy: hook-succeeded,before-hook-creation
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
 stringData:
   aws_access_key_id: {{ .Values.sm_aws_access_key_id }}
   aws_secret_access_key: {{ .Values.sm_aws_secret_access_key }}
@@ -48,26 +56,26 @@ type: Opaque
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: presync-sa
+  name: sync-sa
   namespace: mas-{{ .Values.mas_instance_id }}-sync-job
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/sync-wave: "3"
-    argocd.argoproj.io/hook-delete-policy: hook-succeeded,before-hook-creation
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
 
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: presync-sa
+  name: sync-sa
   #namespace: mas-{{ .Values.mas_instance_id }}-sync-job
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/sync-wave: "4"
-    argocd.argoproj.io/hook-delete-policy: hook-succeeded,before-hook-creation
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
 subjects:
   - kind: ServiceAccount
-    name: presync-sa
+    name: sync-sa
     namespace: mas-{{ .Values.mas_instance_id }}-sync-job
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -80,16 +88,16 @@ roleRef:
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: presync-role-network-policy
+  name: sync-role-network-policy
   namespace: mas-{{ .Values.mas_instance_id }}-sync-job
   annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: hook-succeeded,before-hook-creation
+    argocd.argoproj.io/hook: {{ $hook }}
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
     argocd.argoproj.io/sync-wave: "5"
 spec:
   podSelector:
     matchLabels:
-      app: "presync-role"
+      app: "sync-role"
   egress:
     - {}
   policyTypes:
@@ -99,23 +107,23 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: aws-docdb-process-user-presync-role
-  generateName: aws-docdb-process-user-presync-role-
+  name: aws-docdb-process-user-sync-role
+  generateName: aws-docdb-process-user-sync-role-
   namespace: mas-{{ .Values.mas_instance_id }}-sync-job
   annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: hook-succeeded,before-hook-creation
+    argocd.argoproj.io/hook: {{ $hook }}
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
     argocd.argoproj.io/sync-wave: "6"
 spec:
   template:
     metadata:
       labels:
-        app: "presync-role"
+        app: "sync-role"
     spec:
       containers:
         - name: aws-docdb-process-user
           image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           env:
             - name: USER_ACTION
               value: "{{ .Values.user_action }}"
@@ -123,9 +131,9 @@ spec:
               value: "{{ .Values.mas_instance_id }}"
 
             - name: ACCOUNT_ID
-              value: {{ .Values.account_id }}
+              value: "{{ .Values.account_id }}"
             - name: CLUSTER_ID
-              value: {{ .Values.cluster_id }}
+              value: "{{ .Values.cluster_id }}"
 
             - name: DOCDB_HOST
               value: "{{ .Values.docdb_host }}"
@@ -185,6 +193,7 @@ spec:
               set -e
               mkdir -p ${MAS_CONFIG_DIR}
 
+              echo "USER_ACTION=${USER_ACTION}"
               echo "MAS_CONFIG_DIR=${MAS_CONFIG_DIR}"
               echo "MAS_INSTANCE_ID=${MAS_INSTANCE_ID}"
               echo "DOCDB_HOST=${DOCDB_HOST}"
@@ -219,18 +228,22 @@ spec:
               sm_login
 
               SECRETS_KEY_SEPERATOR="/"
-
               export SECRET_NAME_MONGO=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}mongo
+              if [[ "${USER_ACTION}" == "add" ]]; then
+                # Setting instance username and password into mongo instance secret, along with Info
+                ESCAPED_INFO=${DOCDB_MASTER_INFO//\"/\\\"}
+                ESCAPED_INFO=${ESCAPED_INFO//$'\n'/\\n}
 
-              # Setting instance username and password into mongo instance secret, along with Info
-              ESCAPED_INFO=${DOCDB_MASTER_INFO//\"/\\\"}
-              ESCAPED_INFO=${ESCAPED_INFO//$'\n'/\\n}
+                echo "DOCDB_MASTER_INFO (ESCAPED_INFO)=${DOCDB_MASTER_INFO}"
+                sm_update_secret $SECRET_NAME_MONGO "{\"info\":\"$ESCAPED_INFO\", \"username\":\"$DOCDB_INSTANCE_USERNAME\", \"password\":\"$DOCDB_INSTANCE_PASSWORD\"}"
+              fi
 
-              echo "DOCDB_MASTER_INFO (ESCAPED_INFO)=${DOCDB_MASTER_INFO}"
-              sm_update_secret $SECRET_NAME_MONGO "{\"info\":\"$ESCAPED_INFO\", \"username\":\"$DOCDB_INSTANCE_USERNAME\", \"password\":\"$DOCDB_INSTANCE_PASSWORD\"}"
-
+              if [[ "${USER_ACTION}" == "remove" ]]; then
+                echo "aws secretsmanager delete-secret - $SECRET_NAME_MONGO"
+                aws secretsmanager delete-secret --force-delete-without-recovery --secret-id $SECRET_NAME_MONGO
+              fi
       restartPolicy: Never
-      serviceAccountName: presync-sa
+      serviceAccountName: sync-sa
   backoffLimit: 0
 
 {{- end }}

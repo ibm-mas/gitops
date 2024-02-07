@@ -4,7 +4,7 @@ apiVersion: v1
 kind: Secret
 type: Opaque
 metadata:
-  name: "{{ .Values.mas_instance_id | lower }}-usersupplied-jdbc-creds-{{ .Values.mas_config_scope }}"
+  name: "{{ .Values.mas_config_name }}-credentials"
   namespace: "mas-{{ .Values.mas_instance_id }}-core"
   annotations:
     argocd.argoproj.io/sync-wave: "0"
@@ -17,7 +17,7 @@ stringData:
 apiVersion: config.mas.ibm.com/v1
 kind: JdbcCfg
 metadata:
-  name: "{{ .Values.suite_jdbccfg_name }}"
+  name: "{{ .Values.mas_config_name }}"
   namespace: "mas-{{ .Values.mas_instance_id }}-core"
   labels:
 {{- if eq .Values.mas_config_scope "system" }}
@@ -33,12 +33,12 @@ metadata:
 {{ .Values.wsapp_suite_jdbccfg_labels | toYaml  | indent 4 }}
 {{ end }}
 spec:
-  displayName: "{{ .Values.suite_jdbccfg_name }}"
+  displayName: "{{ .Values.mas_config_name }}"
   config:
     url: "{{ .Values.jdbc_url }}"
     sslEnabled: true
     credentials:
-      secretName: "{{ .Values.mas_instance_id | lower }}-usersupplied-jdbc-creds-{{ .Values.mas_config_scope }}" 
+      secretName: "{{ .Values.mas_config_name }}-credentials" 
   certificates:
     - alias: "{{ .Values.db2_instance_name | lower }}"
       crt: |

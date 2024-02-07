@@ -9,7 +9,7 @@ apiVersion: v1
 kind: Secret
 type: Opaque
 metadata:
-  name: "presync-credentials-jdbccfg-{{ .Values.suite_jdbccfg_name }}"
+  name: "presync-credentials-jdbccfg-{{ .Values.mas_config_name }}"
   namespace: "mas-{{ .Values.mas_instance_id }}-core"
   annotations:
     argocd.argoproj.io/hook: PreSync
@@ -23,7 +23,7 @@ stringData:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: "presync-sa-jdbccfg-{{ .Values.suite_jdbccfg_name }}"
+  name: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
   namespace: "mas-{{ .Values.mas_instance_id }}-core"
   annotations:
     argocd.argoproj.io/hook: PreSync
@@ -32,12 +32,12 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: "presync-jdbccfg-sa-rb-{{ .Values.suite_jdbccfg_name }}"
+  name: "presync-jdbccfg-sa-rb-{{ .Values.mas_config_name }}"
   annotations:
     argocd.argoproj.io/hook: PreSync
 subjects:
   - kind: ServiceAccount
-    name: "presync-sa-jdbccfg-{{ .Values.suite_jdbccfg_name }}"
+    name: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
     namespace: "mas-{{ .Values.mas_instance_id }}-core"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -52,7 +52,7 @@ roleRef:
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: "presync-jdbccfg-np-{{ .Values.suite_jdbccfg_name }}"
+  name: "presync-jdbccfg-np-{{ .Values.mas_config_name }}"
   namespace: "mas-{{ .Values.mas_instance_id}}-core"
   annotations:
     argocd.argoproj.io/hook: PreSync
@@ -60,7 +60,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: "presync-jdbccfg-create-db2-user-{{ .Values.suite_jdbccfg_name }}"
+      app: "presync-jdbccfg-create-db2-user-{{ .Values.mas_config_name }}"
   egress:
     - {}
   policyTypes:
@@ -71,7 +71,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "presync-jdbccfg-create-db2-user-{{ .Values.suite_jdbccfg_name }}"
+  name: "presync-jdbccfg-create-db2-user-{{ .Values.mas_config_name }}"
   namespace: "mas-{{ .Values.mas_instance_id }}-core"
   annotations:
     argocd.argoproj.io/hook: PreSync
@@ -80,7 +80,7 @@ spec:
   template:
     metadata:
         labels:
-          app: "presync-jdbccfg-create-db2-user-{{ .Values.suite_jdbccfg_name }}"
+          app: "presync-jdbccfg-create-db2-user-{{ .Values.mas_config_name }}"
     spec:
       containers:
         - name: run
@@ -249,11 +249,11 @@ spec:
 
       # TODO: is this the correct SA to use here?
       # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
-      serviceAccountName: "presync-sa-jdbccfg-{{ .Values.suite_jdbccfg_name }}"
+      serviceAccountName: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
       volumes:
         - name: db2-credentials
           secret:
-            secretName: "presync-credentials-jdbccfg-{{ .Values.suite_jdbccfg_name }}"
+            secretName: "presync-credentials-jdbccfg-{{ .Values.mas_config_name }}"
             defaultMode: 420
             optional: false
   backoffLimit: 4

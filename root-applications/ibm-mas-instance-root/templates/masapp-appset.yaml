@@ -19,25 +19,25 @@ spec:
         generators:
           # This is the "base" generator, it *must* be first in the list
           - git:
-              repoURL: git@github.ibm.com:maximoappsuite/gitops-envs.git
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/masapps/*/ibm-mas-masapp-base.yaml"
           - git:
-              repoURL: git@github.ibm.com:maximoappsuite/gitops-envs.git
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/masapps/*/ibm-mas-masapp-install.yaml"
           - git:
-              repoURL: git@github.ibm.com:maximoappsuite/gitops-envs.git
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/masapps/*/ibm-mas-masapp-config.yaml"
 
           # only supoprts JDBC configs at the wsapp level (as this is all we use in SaaS at the mo - i.e. the JDBC config for Manage)
           - git:
-              repoURL: git@github.ibm.com:maximoappsuite/gitops-envs.git
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/masapps/*/wsapp-configs/wsapp.ibm-mas-jdbc-config.yaml"
 
@@ -58,11 +58,18 @@ spec:
       project: mas
       sources:
         - repoURL: https://github.com/ibm-mas/gitops
-          targetRevision: mascore1425
+          targetRevision: "{{ .Values.source.targetRevision }}"
           path: root-applications/ibm-mas-masapp-root
           helm:
             values: |
               {{ `{{toRawJson .}}` }}
+            parameters:
+              - name: "generator.repoURL"
+                value: "{{ .Values.generator.repoURL }}"
+              - name: "generator.revision"
+                value: "{{ .Values.generator.revision }}"
+              - name: "source.targetRevision"
+                value: "{{ .Values.source.targetRevision }}"
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: 'openshift-gitops'

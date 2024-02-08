@@ -14,8 +14,8 @@ spec:
   goTemplate: true
   generators:
     - git:
-        repoURL: git@github.ibm.com:maximoappsuite/gitops-envs.git
-        revision: mascore1032v2
+        repoURL: "{{ .Values.generator.repoURL }}"
+        revision: "{{ .Values.generator.revision }}"
         files:
           - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/workspaces/*/ibm-mas-workspace-base.yaml"
 
@@ -32,8 +32,8 @@ spec:
   #       generators:
   #         # This is the "base" generator, it *must* be first in the list
   #         - git:
-  #             repoURL: git@github.ibm.com:maximoappsuite/gitops-envs.git
-  #             revision: mascore1032v2
+  #             repoURL: "{{ .Values.generator.repoURL }}"
+  #             revision: "{{ .Values.generator.revision }}"
   #             files:
   #             - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/workspaces/*/ibm-mas-workspace-base.yaml"
 
@@ -53,11 +53,18 @@ spec:
       project: mas
       sources:
         - repoURL: https://github.com/ibm-mas/gitops
-          targetRevision: mascore1425
+          targetRevision: "{{ .Values.source.targetRevision }}"
           path: root-applications/ibm-mas-workspace-root
           helm:
             values: |
               {{ `{{toRawJson .}}` }}
+            parameters:
+              - name: "generator.repoURL"
+                value: "{{ .Values.generator.repoURL }}"
+              - name: "generator.revision"
+                value: "{{ .Values.generator.revision }}"
+              - name: "source.targetRevision"
+                value: "{{ .Values.source.targetRevision }}"
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: 'openshift-gitops'

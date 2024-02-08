@@ -1,0 +1,86 @@
+{{- if eq .Values.mongodb_provider "aws" }}
+{{- if or (eq .Values.user_action "remove") (eq .Values.user_action "add") }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sync-sa
+  namespace: mas-{{ .Values.mas_instance_id }}-sls
+  annotations:
+    argocd.argoproj.io/hook: PostSync,SyncFail
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: sync-sa
+  annotations:
+    argocd.argoproj.io/hook: PostSync,SyncFail
+    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
+subjects:
+  - kind: ServiceAccount
+    name: sync-sa
+    namespace: mas-{{ .Values.mas_instance_id }}-sls
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: sync-role-network-policy
+  namespace: mas-{{ .Values.mas_instance_id }}-sls
+  annotations:
+    argocd.argoproj.io/hook: PostSync,SyncFail
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  podSelector:
+    matchLabels:
+      app: "sync-role"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aws-docdb-process-user-sync-role
+  namespace: mas-{{ .Values.mas_instance_id }}-sls
+  annotations:
+    argocd.argoproj.io/hook: PostSync,SyncFail
+    argocd.argoproj.io/hook-delete-policy: before-hook-creation
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  template:
+    metadata:
+      labels:
+        app: "sync-role"
+    spec:
+      containers:
+        - name: aws-docdb-process-user
+          image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              oc delete project mas-{{ .Values.mas_instance_id }}-sync-job
+
+      restartPolicy: Never
+      serviceAccountName: sync-sa
+  backoffLimit: 0
+
+{{- end }}
+{{- end }}

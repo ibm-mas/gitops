@@ -1,6 +1,6 @@
 
 ---
-# IBM Cloud Pak Foundational Services
+# IBM Maximo Application Suite Account Root Application Set
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -19,33 +19,33 @@ spec:
         generators:
           # This is the "base" generator, it *must* be first in the list
           - git:
-              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/ibm-mas-cluster-base.yaml"
           - git:
-              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/ibm-operator-catalog.yaml"
           - git:
-              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/ibm-common-services.yaml"
           - git:
-              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/ibm-dro.yaml"
           - git:
-              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/ibm-db2u.yaml"
           - git:
-              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/cis-compliance.yaml"
           - git:
@@ -65,12 +65,19 @@ spec:
       project: mas
       sources:
         - repoURL: https://github.com/ibm-mas/gitops
-          targetRevision: mascore1032v2
+          targetRevision: "{{ .Values.source.targetRevision }}"
           path: root-applications/ibm-mas-cluster-root
           helm:
             releaseName: clusterappset
             values: |
               {{ `{{toRawJson .}}` }}
+            parameters:
+              - name: "generator.repoURL"
+                value: "{{ .Values.generator.repoURL }}"
+              - name: "generator.revision"
+                value: "{{ .Values.generator.revision }}"
+              - name: "source.targetRevision"
+                value: "{{ .Values.source.targetRevision }}"
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: 'openshift-gitops'
@@ -81,4 +88,3 @@ spec:
         syncOptions:
           - CreateNamespace=false
           - RespectIgnoreDifferences=true
-

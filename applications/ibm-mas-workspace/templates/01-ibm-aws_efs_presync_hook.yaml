@@ -1,9 +1,11 @@
+{{- if .Values.ibm_mas_workspace.install_efs }}
+
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: presync-sa
-  namespace: mas-{{ .Values.mas_instance_id }}-core
+  namespace: mas-{{ .Values.ibm_mas_workspace.mas_instance_id }}-core
   annotations:
     argocd.argoproj.io/hook: PreSync
 ---
@@ -11,13 +13,13 @@ kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: presync-sa
-  namespace: mas-{{ .Values.mas_instance_id }}-core
+  namespace: mas-{{ .Values.ibm_mas_workspace.mas_instance_id }}-core
   annotations:
     argocd.argoproj.io/hook: PreSync
 subjects:
   - kind: ServiceAccount
     name: presync-sa
-    namespace: mas-{{ .Values.mas_instance_id }}-core
+    namespace: mas-{{ .Values.ibm_mas_workspace.mas_instance_id }}-core
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -30,7 +32,7 @@ kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
   name: efs-presync-role-network-policy
-  namespace: mas-{{ .Values.mas_instance_id }}-core
+  namespace: mas-{{ .Values.ibm_mas_workspace.mas_instance_id }}-core
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
@@ -48,7 +50,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: efs-presync-role
-  namespace: mas-{{ .Values.mas_instance_id }}-core
+  namespace: mas-{{ .Values.ibm_mas_workspace.mas_instance_id }}-core
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
@@ -69,9 +71,9 @@ spec:
 
           env:
             - name: CLUSTER_NAME
-              value: "{{ .Values.cluster_id }}"
+              value: "{{ .Values.ibm_mas_workspace.cluster_id }}"
             - name: EFS_UNIQUE_ID
-              value: "{{ .Values.mas_instance_id }}"
+              value: "{{ .Values.ibm_mas_workspace.mas_instance_id }}"
             - name: AWS_DEFAULT_REGION
               valueFrom:
                 secretKeyRef:
@@ -91,3 +93,4 @@ spec:
       restartPolicy: Never
       serviceAccountName: presync-sa
   backoffLimit: 0
+{{- end }}

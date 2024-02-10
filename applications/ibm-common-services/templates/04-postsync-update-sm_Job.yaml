@@ -1,0 +1,177 @@
+{{- if .Values.ibm_common_services.run_sync_hooks }}
+
+{{ $ns := "ibm-common-services"}}
+{{ $aws_secret := "aws"}}
+{{ $role_name :=  "postsync-ibm-common-services-update-sm-r" }}
+{{ $sa_name :=    "postsync-ibm-common-services-update-sm-sa" }}
+{{ $rb_name :=    "postsync-ibm-common-services-update-sm-rb" }}
+{{ $job_name :=   "postsync-ibm-common-services-update-sm-job" }}
+
+
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+data:
+  aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
+type: Opaque
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - packages.operators.coreos.com
+    resources:
+      - packagemanifests
+  - verbs:
+      - get
+    apiGroups:
+      - config.openshift.io
+    resources:
+      - ingresses
+
+
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $role_name }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "102"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account.id }}
+            - name: REGION_ID
+              value: {{ .Values.region.id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster.id }}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              # Used by gitops_db2u
+              echo "Fetching defaultChannel from db2u-operator PackageManifest in ibm-common-services"
+              export DB2_DEFAULT_CHANNEL=$(oc get PackageManifest db2u-operator -n ibm-common-services  -o=jsonpath="{.status.defaultChannel}")
+              if [[ -z "${DB2_DEFAULT_CHANNEL}" ]]; then
+                echo "Failed to fetch defaultChannel"
+                exit 1
+              fi
+
+              # Used by gitops_db2u_database
+              echo "Fetching domain from ingress.config.openshift.io cluster"
+              export CLUSTER_DOMAIN=$(oc get ingress.config.openshift.io cluster -o=jsonpath='{.spec.domain}')
+              if [[ -z "${CLUSTER_DOMAIN}" ]]; then
+                echo "Failed to fetch domain"
+                exit 1
+              fi
+
+              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
+              source /mascli/functions/gitops_utils
+
+              # aws configure set aws_access_key_id $SM_AWS_ACCESS_KEY_ID
+              # aws configure set aws_secret_access_key $SM_AWS_SECRET_ACCESS_KEY
+              # aws configure set default.region $REGION_ID
+              # aws configure list
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+
+              # TODO: combine these into a single cluster-level secret? e.g. <account>/<cluster> with db2DefaultChannel and domain keys?
+              SECRET_NAME_DB2_DEFAULT_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/db2_default_channel
+              sm_update_secret $SECRET_NAME_DB2_DEFAULT_CHANNEL "{\"db2_default_channel\": \"$DB2_DEFAULT_CHANNEL\" }"
+
+              SECRET_NAME_CLUSTER_DOMAIN=${ACCOUNT_ID}/${CLUSTER_ID}/cluster_domain
+              sm_update_secret $SECRET_NAME_CLUSTER_DOMAIN "{\"cluster_domain\": \"$CLUSTER_DOMAIN\" }"
+
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: {{ $sa_name }}
+      volumes:
+        - name: aws
+          secret:
+            secretName: {{ $aws_secret }}
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+{{- end }}

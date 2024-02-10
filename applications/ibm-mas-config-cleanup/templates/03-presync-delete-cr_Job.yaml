@@ -1,0 +1,191 @@
+
+# Generate a suffix for all the resources so there are no name clashes if >1 config is deleted at the same time
+{{ $cr_name := .Values.mas_config_name }}
+{{ $cr_kind := .Values.mas_config_kind }}
+{{ $cr_api_version := .Values.mas_config_api_version }}
+{{ $role_name := printf "presync-delete-cr-r-%s" $cr_name }}
+{{ $sa_name := printf "presync-delete-cr-sa-%s" $cr_name }}
+{{ $rb_name := printf "presync-delete-cr-rb-%s" $cr_name }}
+{{ $np_name := printf "presync-delete-cr-np-%s" $cr_name }}
+{{ $job_name := printf "presync-delete-cr-job-%s" $cr_name }}
+{{ $ns := printf "mas-%s-core" .Values.mas_instance_id }}
+
+
+{{- if .Values.delete }}
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PreSync
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_name }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PreSync
+rules:
+  - verbs:
+      - delete
+      - get
+      - list
+      - watch
+    apiGroups:
+      - {{ $cr_api_version }}
+    resources:
+      - {{ $cr_kind }}
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PreSync
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
+    argocd.argoproj.io/hook: PreSync
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "102"
+    argocd.argoproj.io/hook: PreSync
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_name }}
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CR_NAMESPACE
+              value: {{ $ns }}
+            - name: CR_NAME
+              value: {{ $cr_name }}
+
+            - name: CR_API_VERSION
+              value: {{ $cr_api_version }}
+
+            - name: CR_KIND
+              value: {{ $cr_kind }}
+
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              function delete_oc_resource(){
+                RESOURCE=$1
+                NAMESPACE=$2
+                echo
+                echo "------------------------------------------------------------------"
+                echo "Check if resource $RESOURCE is present in namespace $NAMESPACE "
+
+                # don't want a non-zero rc from oc delete to cause the job to fail
+                # so, temporarily set +e
+                set +e
+                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                set -e
+                if [[ -z "${RESOURCE_NAME}" ]]; then
+                  echo "$RESOURCE not found, skipping"
+                  return 0
+                fi
+
+                echo "oc delete resource $RESOURCE in namespace $NAMESPACE "
+
+                # don't want a non-zero rc from oc delete to cause the job to fail (since we then want to try patching out the finalizers)
+                # so, temporarily set +e
+                set +e
+                oc delete $RESOURCE -n $NAMESPACE --timeout=300s --wait=true
+                return_code=$?
+                set -e
+
+                if [ $return_code -ne 0 ]; then
+                  echo "oc delete timed out after 300s, forcing delete by removing finalizers"
+                  echo "oc patch $RESOURCE -n $NAMESPACE"
+
+                  # NOTE: set -e, so job will exit if this fails (which is what we want)
+                  oc patch $RESOURCE -n $NAMESPACE --type="json" -p '[{"op": "remove", "path":"/metadata/finalizers"}]' 2>/dev/null
+                fi
+
+                echo "Verify that resource $RESOURCE is now absent in namespace $NAMESPACE "
+                # don't want a non-zero rc from oc delete to cause the job to fail
+                # so, temporarily set +e
+                set +e
+                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                set -e
+                if [[ -n "${RESOURCE_NAME}" ]]; then
+                  echo "$RESOURCE still present, failing job"
+                  exit 1
+                fi
+
+                echo "... verified"
+                return 0
+                
+              }
+
+              
+              delete_oc_resource "${CR_KIND}.${CR_API_VERSION}/${CR_NAME}" "${CR_NAMESPACE}"
+
+
+      restartPolicy: Never
+      serviceAccountName: {{ $sa_name }}
+      volumes: []
+  backoffLimit: 4
+
+{{- end }}

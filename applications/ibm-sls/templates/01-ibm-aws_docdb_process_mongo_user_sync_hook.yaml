@@ -1,10 +1,10 @@
-{{- if eq .Values.mongodb_provider "aws" }}
-{{- if or (eq .Values.user_action "remove") (eq .Values.user_action "add") }}
+{{- if eq .Values.ibm_sls.mongodb_provider "aws" }}
+{{- if or (eq .Values.ibm_sls.user_action "remove") (eq .Values.ibm_sls.user_action "add") }}
 
 {{- $hook := "" }}
-{{- if (eq .Values.user_action "remove") }}
+{{- if (eq .Values.ibm_sls.user_action "remove") }}
 {{- $hook = "PostSync" }}
-{{- else if (eq .Values.user_action "add") }}
+{{- else if (eq .Values.ibm_sls.user_action "add") }}
 {{- $hook = "PreSync" }}
 {{- end}}
 
@@ -12,7 +12,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: mas-{{ .Values.mas_instance_id }}-sync-job
+  name: mas-{{ .Values.ibm_sls.mas_instance_id }}-sync-job
   annotations:
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/sync-wave: "1"
@@ -23,17 +23,17 @@ kind: Secret
 apiVersion: v1
 metadata:
   name: aws-docdb
-  namespace: mas-{{ .Values.mas_instance_id }}-sync-job
+  namespace: mas-{{ .Values.ibm_sls.mas_instance_id }}-sync-job
   annotations:
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/sync-wave: "2"
     argocd.argoproj.io/hook-delete-policy: before-hook-creation
 stringData:
-  docdb_master_username: {{ .Values.docdb_master_username }}
-  docdb_master_password: {{ .Values.docdb_master_password }}
-  docdb_master_info: {{ .Values.docdb_master_info }}
-  docdb_instance_username: {{ .Values.sls_mongo_username }}
-  docdb_instance_password: {{ .Values.sls_mongo_password }}
+  docdb_master_username: {{ .Values.ibm_sls.docdb_master_username }}
+  docdb_master_password: {{ .Values.ibm_sls.docdb_master_password }}
+  docdb_master_info: {{ .Values.ibm_sls.docdb_master_info }}
+  docdb_instance_username: {{ .Values.ibm_sls.sls_mongo_username }}
+  docdb_instance_password: {{ .Values.ibm_sls.sls_mongo_password }}
 type: Opaque
 
 ---
@@ -41,15 +41,15 @@ kind: Secret
 apiVersion: v1
 metadata:
   name: aws
-  namespace: mas-{{ .Values.mas_instance_id }}-sync-job
+  namespace: mas-{{ .Values.ibm_sls.mas_instance_id }}-sync-job
   annotations:
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/sync-wave: "2"
     argocd.argoproj.io/hook-delete-policy: before-hook-creation
 stringData:
-  aws_access_key_id: {{ .Values.sm_aws_access_key_id }}
-  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key }}
-  aws_default_region: {{ .Values.sm_aws_region }}
+  aws_access_key_id: {{ .Values.ibm_sls.sm_aws_access_key_id }}
+  aws_secret_access_key: {{ .Values.ibm_sls.sm_aws_secret_access_key }}
+  aws_default_region: {{ .Values.ibm_sls.sm_aws_region }}
 type: Opaque
 
 ---
@@ -57,7 +57,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: sync-sa
-  namespace: mas-{{ .Values.mas_instance_id }}-sync-job
+  namespace: mas-{{ .Values.ibm_sls.mas_instance_id }}-sync-job
   annotations:
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/sync-wave: "3"
@@ -68,7 +68,7 @@ kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: sync-sa
-  #namespace: mas-{{ .Values.mas_instance_id }}-sync-job
+  #namespace: mas-{{ .Values.ibm_sls.mas_instance_id }}-sync-job
   annotations:
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/sync-wave: "4"
@@ -76,7 +76,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: sync-sa
-    namespace: mas-{{ .Values.mas_instance_id }}-sync-job
+    namespace: mas-{{ .Values.ibm_sls.mas_instance_id }}-sync-job
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -89,7 +89,7 @@ kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
   name: sync-role-network-policy
-  namespace: mas-{{ .Values.mas_instance_id }}-sync-job
+  namespace: mas-{{ .Values.ibm_sls.mas_instance_id }}-sync-job
   annotations:
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/hook-delete-policy: before-hook-creation
@@ -109,7 +109,7 @@ kind: Job
 metadata:
   name: aws-docdb-process-user-sync-role
   generateName: aws-docdb-process-user-sync-role-
-  namespace: mas-{{ .Values.mas_instance_id }}-sync-job
+  namespace: mas-{{ .Values.ibm_sls.mas_instance_id }}-sync-job
   annotations:
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/hook-delete-policy: before-hook-creation
@@ -126,21 +126,21 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: USER_ACTION
-              value: "{{ .Values.user_action }}"
+              value: "{{ .Values.ibm_sls.user_action }}"
             - name: MAS_INSTANCE_ID
-              value: "{{ .Values.mas_instance_id }}"
+              value: "{{ .Values.ibm_sls.mas_instance_id }}"
 
             - name: ACCOUNT_ID
-              value: "{{ .Values.account_id }}"
+              value: "{{ .Values.ibm_sls.account_id }}"
             - name: CLUSTER_ID
-              value: "{{ .Values.cluster_id }}"
+              value: "{{ .Values.ibm_sls.cluster_id }}"
 
             - name: DOCDB_HOST
-              value: "{{ .Values.docdb_host }}"
+              value: "{{ .Values.ibm_sls.docdb_host }}"
             - name: DOCDB_PORT
-              value: "{{ .Values.docdb_port }}"
+              value: "{{ .Values.ibm_sls.docdb_port }}"
             - name: MAS_CONFIG_DIR
-              value: "/tmp/{{ .Values.mas_instance_id }}/aws_documentdb_user"
+              value: "/tmp/{{ .Values.ibm_sls.mas_instance_id }}/aws_documentdb_user"
 
             - name: DOCDB_MASTER_USERNAME
               valueFrom:

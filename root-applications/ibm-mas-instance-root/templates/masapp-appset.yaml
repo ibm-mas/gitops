@@ -4,7 +4,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: masapp-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: ma-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: openshift-gitops
 spec:
   goTemplate: true
@@ -19,34 +19,24 @@ spec:
         generators:
           # This is the "base" generator, it *must* be first in the list
           - git:
-              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/masapps/*/ibm-mas-masapp-base.yaml"
           - git:
-              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/masapps/*/ibm-mas-masapp-install.yaml"
           - git:
-              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032v2
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/masapps/*/ibm-mas-masapp-config.yaml"
 
-          # only supoprts JDBC configs at the wsapp level (as this is all we use in SaaS at the mo - i.e. the JDBC config for Manage)
-          - git:
-              repoURL: https://github.ibm.com/maximoappsuite/gitops-envs
-              revision: mascore1032v2
-              files:
-              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/masapps/*/wsapp-configs/wsapp.ibm-mas-jdbc-config.yaml"
-
-
-
-
   template:
     metadata:
-      name: "masapp.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}.{{ `{{.masapp.id}}` }}"
+      name: "ma.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}.{{ `{{.masapp.id}}` }}"
       labels:
         cloud: aws
         environment: '{{ .Values.account.id }}'
@@ -58,15 +48,66 @@ spec:
       project: mas
       sources:
         - repoURL: https://github.com/ibm-mas/gitops
-          targetRevision: mascore1032v2
-          path: root-applications/ibm-mas-masapp-root
-          helm:
-            releaseName: masappappset
-            values: |
-              {{ `{{toRawJson .}}` }}
+          targetRevision: "{{ .Values.source.targetRevision }}"
+          path: applications/ibm-mas-suite-app-install
+          plugin:
+            env:
+              - name: HELM_VALUES
+                value: |
+                  {{` 
+                    {{
+                      toRawJson (
+                        merge 
+                          . 
+                          (
+                            dict "generator" (
+                              dict 
+                                "repoURL" "`}}{{ .Values.generator.repoURL }}{{`"
+                                "revision" "`}}{{ .Values.generator.revision }}{{`"
+                            )
+                          )
+                          (
+                            dict "source" (
+                              dict "targetRevision" "`}}{{ .Values.source.targetRevision }}{{`"
+                            )
+                          )
+                      )
+                    }}
+                  `}}
+              - name: ARGOCD_APP_NAME
+                value: "{{ `{{.masapp.id}}` }}-install"
+        - repoURL: https://github.com/ibm-mas/gitops
+          targetRevision: "{{ .Values.source.targetRevision }}"
+          path: applications/ibm-mas-suite-app-config
+          plugin:
+            env:
+              - name: HELM_VALUES
+                value: |
+                  {{` 
+                    {{
+                      toRawJson (
+                        merge 
+                          . 
+                          (
+                            dict "generator" (
+                              dict 
+                                "repoURL" "`}}{{ .Values.generator.repoURL }}{{`"
+                                "revision" "`}}{{ .Values.generator.revision }}{{`"
+                            )
+                          )
+                          (
+                            dict "source" (
+                              dict "targetRevision" "`}}{{ .Values.source.targetRevision }}{{`"
+                            )
+                          )
+                      )
+                    }}
+                  `}}
+              - name: ARGOCD_APP_NAME
+                value: "{{ `{{.masapp.id}}` }}-config"
       destination:
-        server: 'https://kubernetes.default.svc'
-        namespace: 'openshift-gitops'
+        server: "{{ .Values.cluster.url }}"
+        namespace: "default"
       syncPolicy:
         automated:
           prune: true

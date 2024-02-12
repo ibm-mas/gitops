@@ -1,10 +1,10 @@
-{{- if not (empty (index .Values "nvidia-gpu-operator")) }}
+{{- if not (empty .Values.nvidia_gpu_operator) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cis-compliance.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
+  name: nvidia-gpu.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
   namespace: openshift-gitops
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -16,12 +16,12 @@ spec:
   source:
     repoURL: https://github.com/ibm-mas/gitops
     path: applications/nvidia-gpu-operator
-    targetRevision: mascore1032v2
+    targetRevision: "{{ .Values.source.targetRevision }}"
     plugin:
       env:
         - name: HELM_VALUES
           value: |
-            {{ index .Values "nvidia-gpu-operator" | toRawJson }}
+            {{ .Values | toRawJson }}
         - name: ARGOCD_APP_NAME
           value: nvidiagpuapp
   syncPolicy:

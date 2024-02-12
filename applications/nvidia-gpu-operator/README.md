@@ -1,3 +1,3 @@
 Nvidia GPU Operator
 ===============================================================================
-Installs Nvidia GPU operator and Redhat Node Feature Discovery
+Installs the GPU app dependency, Redhat Node Feature Discovery, and the Nvidia GPU Operator

@@ -1,0 +1,96 @@
+{{- if .Values.ibm_mas_workspace.install_efs }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: presync-sa
+  namespace: mas-{{ .Values.ibm_mas_workspace.mas_instance_id }}-core
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: presync-sa
+  namespace: mas-{{ .Values.ibm_mas_workspace.mas_instance_id }}-core
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+subjects:
+  - kind: ServiceAccount
+    name: presync-sa
+    namespace: mas-{{ .Values.ibm_mas_workspace.mas_instance_id }}-core
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: efs-presync-role-network-policy
+  namespace: mas-{{ .Values.ibm_mas_workspace.mas_instance_id }}-core
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  podSelector:
+    matchLabels:
+      app: "efs-presync-role"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: efs-presync-role
+  namespace: mas-{{ .Values.ibm_mas_workspace.mas_instance_id }}-core
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  template:
+    metadata:
+      labels:
+        app: "efs-presync-role"
+    spec:
+      containers:
+        - name: efs
+          image: quay.io/ibmmas/cli:7.10.0-pre.mascore1032v2
+          imagePullPolicy: Always
+
+          command:
+            - /opt/app-root/src/run-role.sh
+            - ocp_efs
+
+          env:
+            - name: CLUSTER_NAME
+              value: "{{ .Values.ibm_mas_workspace.cluster_id }}"
+            - name: EFS_UNIQUE_ID
+              value: "{{ .Values.ibm_mas_workspace.mas_instance_id }}"
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_default_region
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_access_key_id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_secret_access_key
+
+      restartPolicy: Never
+      serviceAccountName: presync-sa
+  backoffLimit: 0
+{{- end }}

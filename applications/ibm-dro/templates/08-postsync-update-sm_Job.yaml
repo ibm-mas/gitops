@@ -1,0 +1,165 @@
+{{- if .Values.ibm_dro.run_sync_hooks }}
+
+{{ $ns := .Values.ibm_dro.dro_namespace}}
+{{ $aws_secret := "aws"}}
+{{ $role_name :=  "postsync-ibm-dro-update-sm-r" }}
+{{ $sa_name :=    "postsync-ibm-dro-update-sm-sa" }}
+{{ $rb_name :=    "postsync-ibm-dro-update-sm-rb" }}
+{{ $job_name :=   "postsync-ibm-dro-update-sm-job" }}
+
+
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+data:
+  aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
+type: Opaque
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+
+
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "102"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account.id }}
+            - name: REGION_ID
+              value: {{ .Values.region.id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster.id }}
+            - name: DRO_NAMESPACE
+              value: {{ .Values.ibm_dro.dro_namespace }}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              echo "Fetching token from ibm-data-reporter-operator-api-token Secret in ${DRO_NAMESPACE}"
+              export DRO_API_TOKEN=$(oc get secret ibm-data-reporter-operator-api-token -n ${DRO_NAMESPACE} -o jsonpath='{.data.token}' | base64 -d ; echo)
+              if [[ -z "${DRO_API_TOKEN}" ]]; then
+                echo "Failed to fetch token"
+                exit 1
+              fi
+
+              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
+              source /mascli/functions/gitops_utils
+
+              # aws configure set aws_access_key_id $SM_AWS_ACCESS_KEY_ID
+              # aws configure set aws_secret_access_key $SM_AWS_SECRET_ACCESS_KEY
+              # aws configure set default.region $REGION_ID
+              # aws configure list
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+              # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
+              SECRET_NAME_DRO=${ACCOUNT_ID}/${CLUSTER_ID}/dro
+              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\" }"
+
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: {{ $sa_name }}
+      volumes:
+        - name: aws
+          secret:
+            secretName: {{ $aws_secret }}
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+{{- end }}
+
+
+

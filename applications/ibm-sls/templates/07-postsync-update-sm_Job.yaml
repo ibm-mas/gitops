@@ -1,0 +1,196 @@
+{{- if .Values.ibm_sls.run_sync_hooks }}
+
+{{ $ns := printf "mas-%s-sls" .Values.instance.id}}
+{{ $aws_secret := "aws"}}
+{{ $np_name :=    "postsync-ibm-sls-update-sm-np" }}
+{{ $role_name :=  "postsync-ibm-sls-update-sm-r" }}
+{{ $sa_name :=    "postsync-ibm-sls-update-sm-sa" }}
+{{ $rb_name :=    "postsync-ibm-sls-update-sm-rb" }}
+{{ $job_name :=   "postsync-ibm-sls-update-sm-job" }}
+
+
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_name }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+data:
+  aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
+type: Opaque
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - ""
+    resources:
+      - configmaps
+
+
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "102"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_name }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account.id }}
+            - name: REGION_ID
+              value: {{ .Values.region.id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster.id }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance.id }}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              echo "Fetching registrationKey from sls-suite-registration ConfigMap in mas-${INSTANCE_ID}-sls"
+              export SLS_REGISTRATION_KEY=$(oc get cm sls-suite-registration -n mas-${INSTANCE_ID}-sls -o jsonpath='{.data.registrationKey}')
+              if [[ -z "${SLS_REGISTRATION_KEY}" ]]; then
+                echo "Failed to fetch registrationKey"
+                exit 1
+              fi
+
+              echo "Fetching ca from sls-suite-registration ConfigMap in mas-${INSTANCE_ID}-sls"
+              export SLS_CA=$(oc get cm sls-suite-registration -n mas-${INSTANCE_ID}-sls -o jsonpath='{.data.ca}' | base64 -w0)
+              if [[ -z "${SLS_CA}" ]]; then
+                echo "Failed to fetch ca"
+                exit 1
+              fi
+
+              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
+              source /mascli/functions/gitops_utils
+
+              # aws configure set aws_access_key_id $SM_AWS_ACCESS_KEY_ID
+              # aws configure set aws_secret_access_key $SM_AWS_SECRET_ACCESS_KEY
+              # aws configure set default.region $REGION_ID
+              # aws configure list
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+              # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
+              SECRET_NAME_SLS=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/sls
+              sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\" }"
+
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: {{ $sa_name }}
+      volumes:
+        - name: aws
+          secret:
+            secretName: {{ $aws_secret }}
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+{{- end }}

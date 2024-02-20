@@ -1,0 +1,260 @@
+{{- if not .Values.delete }}
+---
+# We need to embed the supplied JDBC creds in a K8S secret so we can safely access them from
+# the Job without exposing them via the ArgoCD resources
+# NOTE: do not want to use the actual usersupplied jdbc creds secret as I'd have to annotate that
+# to be a presync hook which will cause ArgoCD to delete it and could cause problems; safer just to create a dedicated secret for the presync hook.
+# (alternatively could look up the secret via SM in the Job script but it's better this way as we use the actual credentials set in the chart values)
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: "presync-credentials-jdbccfg-{{ .Values.mas_config_name }}"
+  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+stringData:
+  username: "{{ .Values.db2_jdbc_username }}"
+  password: "{{ .Values.jdbc_instance_password }}"
+
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+# TODO: Currently bound with cluster-admin; probably want to lock this down more
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
+  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "presync-jdbccfg-sa-rb-{{ .Values.mas_config_name }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+subjects:
+  - kind: ServiceAccount
+    name: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
+    namespace: "mas-{{ .Values.mas_instance_id }}-core"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+
+---
+
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: "presync-jdbccfg-np-{{ .Values.mas_config_name }}"
+  namespace: "mas-{{ .Values.mas_instance_id}}-core"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    hook-delete-policy: before-hook-creation
+spec:
+  podSelector:
+    matchLabels:
+      app: "presync-jdbccfg-create-db2-user-{{ .Values.mas_config_name }}"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "presync-jdbccfg-create-db2-user-{{ .Values.mas_config_name }}"
+  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    hook-delete-policy: before-hook-creation
+spec:
+  template:
+    metadata:
+        labels:
+          app: "presync-jdbccfg-create-db2-user-{{ .Values.mas_config_name }}"
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+            - name: DB2_DBNAME
+              value: "{{ .Values.db2_dbname }}"
+          volumeMounts:
+            - name: db2-credentials
+              mountPath: /etc/mas/creds/db2-credentials
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              source /mascli/functions/gitops_utils
+
+              export DB2_CREDENTIALS_SECRET_PATH="/etc/mas/creds/db2-credentials"
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
+              echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
+              echo "DB2_DBNAME .......................... ${DB2_DBNAME}"
+              echo "DB2_CREDENTIALS_SECRET_PATH ......... ${DB2_CREDENTIALS_SECRET_PATH}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Checking DB2 CRD db2uclusters.db2u.databases.ibm.com is ready (retries every ~10 seconds for ~5 minutes)"
+              echo "================================================================================"
+
+              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True STARTS  
+              wait_period=0
+              while true; do
+                export DB2_CRD_NAMES_ACCEPTED_STATUS=$(oc get crd db2uclusters.db2u.databases.ibm.com -o=jsonpath="{.status.conditions[?(@.type=='NamesAccepted')].status}")
+                echo "DB2_CRD_NAMES_ACCEPTED_STATUS .... ${DB2_CRD_NAMES_ACCEPTED_STATUS}"
+                if [[ "$DB2_CRD_NAMES_ACCEPTED_STATUS" == "True" ]]; then
+                  break
+                fi
+
+                wait_period=$(($wait_period+10))
+                if [ $wait_period -gt 300 ];then
+                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready with in 300 sec, exiting"
+                  exit 1
+                else
+                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready, trying again in 10 seconds"
+                  sleep 10
+                fi
+              done  
+              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True DONE
+
+              echo ""
+              echo "================================================================================"
+              echo "Reading LDAP credentials from ${DB2_CREDENTIALS_SECRET_PATH}"
+              echo "================================================================================"
+              export DB2_LDAP_USERNAME=$(cat /etc/mas/creds/db2-credentials/username)
+              export DB2_LDAP_PASSWORD=$(cat /etc/mas/creds/db2-credentials/password)
+
+              echo ""
+              echo "================================================================================"
+              echo "Checking if ${DB2_LDAP_USERNAME} user exists already"
+              echo "================================================================================"
+              
+              # Using the || syntax to avoid surfacing a non 0 rc and exitting the job (without having to disable set -e)
+              DB2_USER_FOUND=true
+              oc exec -it c-db2wh-tgka-iot-db2u-0 -c db2u -n db2u -- su -lc "id ${DB2_LDAP_USERNAME}" || DB2_USER_FOUND=false
+              if [[ "${DB2_USER_FOUND}" == "true" ]]; then
+                echo "DB2 user exists already, exiting now"
+                exit 0
+              fi
+              echo "DB2 user does not exist yet"
+
+              echo ""
+              echo "================================================================================"
+              echo "Creating user ${DB2_LDAP_USERNAME}"
+              echo "================================================================================"
+
+              echo ""
+              echo "Looking up name of DB2 LDAP pod"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_LDAP_POD_NAME=$(oc get pods -o custom-columns=POD:.metadata.name -l app=${DB2_INSTANCE_NAME},role=ldap -n ${DB2_NAMESPACE}  --no-headers)
+              if [[ -z "${DB2_LDAP_POD_NAME}" ]]; then
+                echo "Failed to look up DB2 LDAP pod name"
+                exit 1
+              fi
+              echo "DB2_LDAP_POD_NAME .......................... ${DB2_LDAP_POD_NAME}"
+
+
+              echo ""
+              echo "Executing addLdapUser.py script in ${DB2_LDAP_POD_NAME} pod"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -it -n ${DB2_NAMESPACE} ${DB2_LDAP_POD_NAME} -- /opt/ibm/ldap_scripts/addLdapUser.py -u ${DB2_LDAP_USERNAME} -r admin -p ${DB2_LDAP_PASSWORD}
+              echo "..... rc $?"
+
+              echo ""
+              echo "Verifying that ${DB2_LDAP_USERNAME} can authenticate with ${DB2_DBNAME} database (retries every ~10 seconds for max ~5 minutes)"
+              echo "--------------------------------------------------------------------------------"
+              wait_period=0
+              while true; do
+
+                # Using the || syntax to avoid surfacing a non 0 rc and exitting the job (without having to disable set -e)
+                AUTH_SUCCESS=true
+                oc exec -it c-${DB2_INSTANCE_NAME}-db2u-0 -n ${DB2_NAMESPACE} -c db2u -- su -lc "db2 connect to ${DB2_DBNAME} user ${DB2_LDAP_USERNAME} using ${DB2_LDAP_PASSWORD}" db2inst1 || AUTH_SUCCESS=false
+                if [[ "${AUTH_SUCCESS}" == "true" ]]; then
+                  echo "Authenticated successfully"
+                  break
+                fi
+                echo "... failed to authenticate this time"
+
+                wait_period=$(($wait_period+10))
+                if [ $wait_period -gt 300 ]; then
+                  echo "... >5 minutes have elapsed, failing job."
+                  exit 1
+                else
+                  echo "... retrying in 10 seconds"
+                  sleep 10
+                fi
+              done
+
+
+              echo ""
+              echo "================================================================================"
+              echo "Wait for c-${DB2_INSTANCE_NAME}-db2u Statefulset to report ready (retries every ~10 seconds for max ~5 minutes)"
+              echo "================================================================================"
+              wait_period=0
+              while true; do
+
+                export READY_REPLICAS=$(oc get statefulset c-${DB2_INSTANCE_NAME}-db2u -n ${DB2_NAMESPACE} -o=jsonpath="{.status.readyReplicas}")
+                export REPLICAS=$(oc get statefulset c-${DB2_INSTANCE_NAME}-db2u -n ${DB2_NAMESPACE} -o=jsonpath="{.status.replicas}")
+                echo "${READY_REPLICAS}/${REPLICAS} replicas are ready"
+
+                if [[ ${READY_REPLICAS} -ge 1 && ${REPLICAS} -ge 1 && ${READY_REPLICAS} -eq ${REPLICAS} ]]; then
+                  echo "Statefulset c-${DB2_INSTANCE_NAME}-db2u is ready"
+                  break
+                fi
+
+                wait_period=$(($wait_period+10))
+                if [ $wait_period -gt 300 ]; then
+                  echo "... >5 minutes have elapsed, failing job."
+                  exit 1
+                else
+                  echo "... retrying in 10 seconds"
+                  sleep 10
+                fi
+              done
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
+      volumes:
+        - name: db2-credentials
+          secret:
+            secretName: "presync-credentials-jdbccfg-{{ .Values.mas_config_name }}"
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+{{- end }}

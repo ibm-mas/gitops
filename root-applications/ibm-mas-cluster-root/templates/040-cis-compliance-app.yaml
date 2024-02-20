@@ -1,0 +1,38 @@
+{{- if not (empty .Values.cis_compliance) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cis-compliance.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "040"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mas
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    path: applications/040-cis-compliance
+    targetRevision: "{{ .Values.source.targetRevision }}"
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            {{ .Values | toRawJson }}
+        - name: ARGOCD_APP_NAME
+          value: ciscomplianceapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+      - Validate=false
+{{- end }}

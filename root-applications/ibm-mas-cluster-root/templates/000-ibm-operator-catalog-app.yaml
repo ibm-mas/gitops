@@ -1,0 +1,41 @@
+{{- if not (empty .Values.ibm_operator_catalog) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: operator-catalog.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
+  project: mas
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    path: applications/000-ibm-operator-catalog
+    targetRevision: "{{ .Values.source.targetRevision }}"
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            {{ .Values | toRawJson }}
+        - name: ARGOCD_APP_NAME
+          value: operatorcatalogapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+{{- end }}

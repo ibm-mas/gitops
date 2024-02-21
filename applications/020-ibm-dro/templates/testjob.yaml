@@ -1,0 +1,50 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "testjob"
+  namespace: "redhat-marketplace"
+  annotations:
+    argocd.argoproj.io/sync-wave: "102"
+spec:
+  template:
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+
+              ####################################
+              # TODO: remove me before merge
+              echo "Deliberately failing postsync hook for testing"
+              exit 1
+              ####################################
+
+
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: "default"
+      volumes: []
+  backoffLimit: 4
+
+

@@ -1,0 +1,104 @@
+{{- if .Values.redhat_cert_manager.run_sync_hooks }}
+
+{{ $ns := "openshift-marketplace"}}
+{{ $aws_secret := "aws"}}
+{{ $role_name  :=  "postsync-verify-r" }}
+{{ $sa_name    :=  "postsync-verify-sa" }}
+{{ $rb_name    :=  "postsync-verify-rb" }}
+{{ $job_name   :=  "postsync-verify-job" }}
+
+
+
+
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "102"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      containers:
+        - name: run
+          image: docker-na-public.artifactory.swg-devops.com/wiotp-docker-local/wiotp/ubi-python38:latest
+          imagePullPolicy: IfNotPresent
+          imagePullSecrets:
+            - name: ibm-entitlement
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env: []
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              python3.8 --version
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: {{ $sa_name }}
+      volumes: []
+  backoffLimit: 4
+{{- end }}

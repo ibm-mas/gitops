@@ -1,8 +1,9 @@
-{{ $ns := "openshift-marketplace"}}
-{{ $role_name  :=  "postsync-verify-r" }}
-{{ $sa_name    :=  "postsync-verify-sa" }}
-{{ $rb_name    :=  "postsync-verify-rb" }}
-{{ $job_name   :=  "postsync-verify-job" }}
+{{ $ns              := "openshift-marketplace"}}
+{{ $role_name       :=  "postsync-verify-r" }}
+{{ $sa_name         :=  "postsync-verify-sa" }}
+{{ $rb_name         :=  "postsync-verify-rb" }}
+{{ $tests_cm_name   :=  "postsync-verify-tests-cm" }}
+{{ $job_name        :=  "postsync-verify-job" }}
 
 
 ---
@@ -55,6 +56,19 @@ roleRef:
   name: {{ $role_name }}
 
 ---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ tests_cm_name }}
+  namespace: {{ $ns }}
+immutable: false
+data:
+  tests.py: |-
+    def test_hello():
+      return True
+
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -67,12 +81,12 @@ metadata:
 spec:
   template:
     spec:
-      imagePullPolicy: IfNotPresent
       imagePullSecrets:
         - name: ibm-entitlement
       containers:
         - name: run
-          image: docker-na-public.artifactory.swg-devops.com/wiotp-docker-local/wiotp/ubi-python38:latest
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
           resources:
             limits:
               cpu: 200m
@@ -81,14 +95,24 @@ spec:
               cpu: 10m
               memory: 64Mi
           env: []
-          volumeMounts: []
+          volumeMounts:
+            - name: tests
+              mountPath: /opt/ibm/test/src/
           command:
             - /bin/sh
             - -c
             - |
-              python3.8 --version
-
+              pip3.8 install pytest
+              python3.8 -m pytest /opt/ibm/test/src/tests.py
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}
-      volumes: []
+      volumes:
+        - name: tests
+          configMap:
+            name: {{ tests_cm_name }}
+            items:
+              - key: tests.py
+                path: tests.py
+            defaultMode: 420
+            optional: false
   backoffLimit: 4

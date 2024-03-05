@@ -152,6 +152,7 @@ data:
     requests
     kubernetes
     openshift
+    semver
   tests.py: |-
     from kubernetes import client,config
     from kubernetes.client import Configuration
@@ -161,6 +162,7 @@ data:
     import pytest
     import tempfile
     import os
+    import semver
 
 
     # e.g. "dclain-1a"
@@ -203,18 +205,6 @@ data:
 
 
     @pytest.fixture(scope="session")
-    def mvi_apikey(v1_secrets):
-      mvi_apikey_secret = v1_secrets.get(name=mvi_apikey_secret_name, namespace=mvi_namespace)
-      if not mvi_apikey_secret:
-        assert False, f"Could not find secret {mvi_apikey_secret_name} in {mvi_namespace}"
-      try:
-        dnn_apikey_b64 = mvi_apikey_secret['data']['dnn-apikey']
-      except KeyError as e:
-        assert False, "Expected data.dnn-apikey field not present in secret {mvi_apikey_secret_name} in {mvi_namespace}"
-
-      yield base64.b64decode(dnn_apikey_b64)
-
-    @pytest.fixture(scope="session")
     def mvi_route(v1_routes):
       yield v1_routes.get(name=mvi_route_name, namespace=mvi_namespace)
 
@@ -238,9 +228,41 @@ data:
         yield fp.name
 
 
+    @pytest.fixture(scope="session")
+    def mvi_version(mvi_host, mvi_host_ca_filepath):
+      resp = requests.get(
+        f"https://{mvi_host}/api/version-info",
+        verify=mvi_host_ca_filepath
+      )
+      resp_json = resp.json()
+      assert resp.status_code == 200, f"Expected status 200 from GET /api/version-info, but got {resp.status_code}. Body: {resp_json}."
+      try:
+        raw_version_str = resp_json['version']
+        stripped_version = raw_version_str.split("-")[0]
+        return semver.VersionInfo.parse(stripped_version)
+      except KeyError as e:
+        assert False, f"Expected version key not found in response from GET /api/version-info. Body: {resp_json}"
 
 
 
+    @pytest.fixture(scope="session")
+    def mvi_apikey(v1_secrets, mvi_version):
+      '''
+      Obtaining this API key is only currently possible in MVI versions >= 9.0.0, so any test
+      that attempts to use this fixture against MVI < 9.0.0 will be skipped at present
+      '''
+      if mvi_version.compare("9.0.0") < 0:
+        pytest.skip("MVI API Key secret required by this test is only currently available in MVI >= 9.0.0")
+
+      mvi_apikey_secret = v1_secrets.get(name=mvi_apikey_secret_name, namespace=mvi_namespace)
+      if not mvi_apikey_secret:
+        assert False, f"Could not find secret {mvi_apikey_secret_name} in {mvi_namespace}"
+      try:
+        dnn_apikey_b64 = mvi_apikey_secret['data']['dnn-apikey']
+      except KeyError as e:
+        assert False, "Expected data.dnn-apikey field not present in secret {mvi_apikey_secret_name} in {mvi_namespace}"
+
+      yield base64.b64decode(dnn_apikey_b64)
 
 
     def test_at_least_one_ready_gpu_node(v1_nodes):
@@ -267,8 +289,6 @@ data:
         assert total_gpu_count > 0, f"No GPU Nodes available for use by MVI according to GET /api/system/device-info. Body: {resp_json}"
       except KeyError as e:
         assert False, f"Expected gpu_info.total key not found in response from GET /api/system/device-info: {resp_json}. Error details: {e}"
-
-
 
     def test_ping_api(mvi_host, mvi_host_ca_filepath):
       resp = requests.get(

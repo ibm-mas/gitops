@@ -196,6 +196,10 @@ data:
       yield dyn_client.resources.get(api_version='v1', kind='Node')
 
     @pytest.fixture(scope="session")
+    def gpu_nodes(v1_nodes):
+      yield v1_nodes.get(label_selector='nvidia.com/gpu.count>0')
+
+    @pytest.fixture(scope="session")
     def v1_secrets(dyn_client):
       yield dyn_client.resources.get(api_version='v1', kind='Secret')
 
@@ -265,8 +269,13 @@ data:
       yield base64.b64decode(dnn_apikey_b64)
 
 
-    def test_at_least_one_ready_gpu_node(v1_nodes):
-      gpu_nodes = v1_nodes.get(label_selector='nvidia.com/gpu.count>0')
+    def test_at_least_one_ready_gpu_node(gpu_nodes):
+      # We may have installed MVI on a cluster with no GPU nodes (e.g. an internal test system)
+      # In that case, skip this test so we don't block the pipeline unnecessarily
+      if len(gpu_nodes.items) == 0:
+        pytest.skip("Cluster does not have an GPU nodes, skipping test")
+
+      # If there are GPU nodes, check at least one of them is ready
       for gpu_node in gpu_nodes.items:
         for cond in gpu_node.status.conditions:
             if cond.type == 'Ready' and cond.status == 'True':
@@ -274,7 +283,14 @@ data:
       assert False, f"No GPU nodes with condition Ready=True found in the cluster."
 
 
-    def test_at_least_one_gpu_visible_to_mvi(mvi_host, mvi_apikey, mvi_host_ca_filepath):
+    def test_at_least_one_gpu_visible_to_mvi(gpu_nodes, mvi_host, mvi_apikey, mvi_host_ca_filepath):
+
+      # We may have installed MVI on a cluster with no GPU nodes (e.g. an internal test system)
+      # In that case, skip this test so we don't block the pipeline unnecessarily
+      if len(gpu_nodes.items) == 0:
+        pytest.skip("Cluster does not have an GPU nodes, skipping test")
+
+      # If there are GPU nodes, check at least one of them is visible to MVI
       resp = requests.get(
         f"https://{mvi_host}/api/system/device-info",
         headers={
@@ -307,6 +323,7 @@ data:
         assert resp_json['status'] == "Ready", f"Expected status field from GET /api/ping to be 'Ready', but was {resp_json['status']}. Body: {resp_json}"
       except KeyError as e:
         assert False, f"Expected status key not found in response from GET /api/ping. Body: {resp_json}"
+
 
 
 

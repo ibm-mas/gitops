@@ -1,0 +1,23 @@
+{{- if not .Values.delete }}
+---
+apiVersion: config.mas.ibm.com/v1
+kind: SlsCfg
+metadata:
+  name: "{{ .Values.mas_config_name }}"
+  namespace: mas-{{ .Values.mas_instance_id }}-core
+  labels:
+    mas.ibm.com/configScope: system
+    mas.ibm.com/instanceId: "{{ .Values.mas_instance_id }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "134"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  displayName: SLS
+  config:
+    url: "{{ .Values.url }}"
+    credentials:
+      secretName: "{{ .Values.mas_config_name }}-credentials"
+  certificates:
+    - alias: ca
+{{ .Values.ca | toYaml | indent 6 }}
+{{- end }}

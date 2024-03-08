@@ -125,6 +125,12 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
+              export DRO_URL=https://$(oc get route ibm-data-reporter -n ${DRO_NAMESPACE} -ojsonpath='{.spec.host}')
+              if [[ -z "${DRO_URL}" ]]; then
+                echo "Failed to fetch dro url from route"
+                exit 1
+              fi
+
               echo "Fetching token from ibm-data-reporter-operator-api-token Secret in ${DRO_NAMESPACE}"
               export DRO_API_TOKEN=$(oc get secret ibm-data-reporter-operator-api-token -n ${DRO_NAMESPACE} -o jsonpath='{.data.token}' | base64 -d ; echo)
               if [[ -z "${DRO_API_TOKEN}" ]]; then
@@ -144,7 +150,7 @@ spec:
 
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
               SECRET_NAME_DRO=${ACCOUNT_ID}/${CLUSTER_ID}/dro
-              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\" }"
+              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\" }"
 
 
       restartPolicy: Never

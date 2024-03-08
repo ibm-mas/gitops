@@ -2,7 +2,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: sync-test-app-a
+  name: sync-test-app-inner-{{ .Values.name }}
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "000"
@@ -21,13 +21,13 @@ spec:
       namespace: 'default'
   source:
     repoURL: https://github.com/ibm-mas/gitops
-    path: applications/sync-test-app
+    path: applications/sync-test-app-inner
     targetRevision: "mascore1839"
     plugin:
       env:
         - name: HELM_VALUES
           value: |
-            { "name": "a" }
+            { "name": "{{ .Values.name }}"}
         - name: ARGOCD_APP_NAME
           value: droapp
   syncPolicy:

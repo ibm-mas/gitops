@@ -3,10 +3,10 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: sync-test-root
-  namespace: openshift-gitops
+  namespace: argocd
 spec:
   destination:
-    namespace: openshift-gitops
+    namespace: argocd
     server: 'https://kubernetes.default.svc'
   project: mas
   source:

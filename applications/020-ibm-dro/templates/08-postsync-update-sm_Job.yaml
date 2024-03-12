@@ -51,7 +51,12 @@ rules:
       - ""
     resources:
       - secrets
-
+  - verbs:
+      - get
+    apiGroups:
+      - route.openshift.io
+    resources:
+      - routes
 
 
 ---
@@ -125,11 +130,12 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
-              export DRO_URL=https://$(oc get route ibm-data-reporter -n ${DRO_NAMESPACE} -ojsonpath='{.spec.host}')
-              if [[ -z "${DRO_URL}" ]]; then
-                echo "Failed to fetch dro url from route"
+              export DRO_HOST="$(oc get route ibm-data-reporter -n ${DRO_NAMESPACE} -ojsonpath='{.spec.host}')"
+              if [[ -z "${DRO_HOST}" ]]; then
+                echo "Failed to fetch dro host from route"
                 exit 1
               fi
+              export DRO_URL="https://${DRO_HOST}"
 
               echo "Fetching token from ibm-data-reporter-operator-api-token Secret in ${DRO_NAMESPACE}"
               export DRO_API_TOKEN=$(oc get secret ibm-data-reporter-operator-api-token -n ${DRO_NAMESPACE} -o jsonpath='{.data.token}' | base64 -d ; echo)

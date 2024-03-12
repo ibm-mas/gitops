@@ -13,16 +13,17 @@ Register one of these applications per account to be managed by the ArgoCD worke
 >   - `<config-repo>-revision>`: The revision of `<config-repo>` to source cluster/instance configuration from, e.g. `master`.
 >   - `<account-id>`: The ID of the account this root application manages. This also determines the root folder in `<config-repo>`:`<config-repo-revision` to source cluster/instance configuration from, e.g. `aws-dev`.
 >   - `<argocd-project>`: The ArgoCD project to register this application in, e.g. `mas`.
+>   - `<argoapp-namespace>`: The namespace on cluster running ArgoCD in which to create ArgoCD Application resources. E.g. `openshift-gitops` (internal clusters), `argocd-worker` (MCSP)
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: root.<account-id>
-  namespace: openshift-gitops
+  namespace: <argoapp-namespace>
 spec:
   destination:
-    namespace: openshift-gitops
+    namespace: <argoapp-namespace>
     server: 'https://kubernetes.default.svc'
   project: "<argocd-project>"
   source:
@@ -41,7 +42,8 @@ spec:
           },
           "source": {
             "targetRevision": "<source-repo-revision>"
-          }
+          },
+          "argoapp_namespace": "<argoapp-namespace>"
         }
   syncPolicy:
     syncOptions:

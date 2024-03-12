@@ -5,7 +5,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: instance-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
-  namespace: openshift-gitops
+  namespace: {{ .Values.argoapp_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "099"
 spec:
@@ -69,9 +69,11 @@ spec:
                 value: "{{ .Values.generator.revision }}"
               - name: "source.targetRevision"
                 value: "{{ .Values.source.targetRevision }}"
+              - name: argoapp_namespace
+                value: "{{ .Values.argoapp_namespace }}"
       destination:
         server: 'https://kubernetes.default.svc'
-        namespace: 'openshift-gitops'
+        namespace: {{ .Values.argoapp_namespace }}
       syncPolicy:
         automated:
           prune: true

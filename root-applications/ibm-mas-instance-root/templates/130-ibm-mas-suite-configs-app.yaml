@@ -1,29 +1,35 @@
 {{ $account_id := .Values.account.id }}
+{{ $region_id := .Values.region.id }}
+{{ $cluster_id := .Values.cluster.id }}
+{{ $instance_id := .Values.instance.id }}
+{{ $cluster_url := .Values.cluster.url }}
+{{ $source_targetRevision := .Values.source.targetRevision }}
+{{ $argoapp_namespace := .Values.argoapp_namespace }}
 
 {{- range $i, $value := .Values.ibm_mas_suite_configs }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: "{{ $value.mas_config_name }}.{{ $account_id }}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}"
-  namespace: {{ .Values.argoapp_namespace }}
+  name: "{{ $value.mas_config_name }}.{{ $account_id }}.{{ $region_id }}.{{ $cluster_id }}.{{ $instance_id }}"
+  namespace: {{ $argoapp_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "130"
   labels:
     cloud: aws
     environment: '{{ $account_id }}'
-    region: '{{ .Values.region.id }}'
-    cluster: '{{ .Values.cluster.id }}'
-    instance: '{{ .Values.instance.id }}'
+    region: '{{ $region_id }}'
+    cluster: '{{ $cluster_id }}'
+    instance: '{{ $instance_id }}'
 spec:
   project: mas
   destination:
-    server: {{ .Values.cluster.url }}
+    server: {{ $cluster_url }}
     namespace: default
   source:
     repoURL: https://github.com/ibm-mas/gitops
     path: applications/130-{{ $value.mas_config_chart }}
-    targetRevision: "{{ .Values.source.targetRevision }}"
+    targetRevision: "{{ $source_targetRevision }}"
     plugin:
       env:
         - name: HELM_VALUES

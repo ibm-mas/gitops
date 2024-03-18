@@ -1,12 +1,39 @@
 {{- range $i, $value := .Values.ibm_mas_suite_configs }}
 ---
-apiVersion: v1
-kind: ConfigMap
+apiVersion: argoproj.io/v1alpha1
+kind: Application
 metadata:
-  name: configmap-{{ $value.mas_config_chart }}
-  namespace: default
+  name: "{{ $value.mas_config_name }}.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}"
+  namespace: {{ .Values.argoapp_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "130"
-data:
-  {{ $value.mas_config_name }}: {{ $value.mas_config_scope }}
+  labels:
+    cloud: aws
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+spec:
+  project: mas
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    path: applications/130-{{ $values.mas_config_chart }}
+    targetRevision: "{{ .Values.source.targetRevision }}"
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            {{ $value | toRawJson }}
+        - name: ARGOCD_APP_NAME
+          value: {{ $value.mas_config_name }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
 {{- end }}

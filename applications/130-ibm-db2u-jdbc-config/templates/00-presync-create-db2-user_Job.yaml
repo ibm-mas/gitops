@@ -162,9 +162,23 @@ spec:
               echo "Checking if ${DB2_LDAP_USERNAME} user exists already"
               echo "================================================================================"
               
+              echo ""
+              echo "Looking up name of DB2 db2u pod"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_DB2U_POD_NAME=$(oc get pods -o custom-columns=POD:.metadata.name -l app=${DB2_INSTANCE_NAME},role=db -n ${DB2_NAMESPACE}  --no-headers)
+              if [[ -z "${DB2_DB2U_POD_NAME}" ]]; then
+                echo "Failed to look up DB2 db2u pod name"
+                exit 1
+              fi
+              echo "DB2_DB2U_POD_NAME .......................... ${DB2_DB2U_POD_NAME}"
+
+
+              echo ""
+              echo "Executing command on DB2 db2u pod; su -lc \"id ${DB2_LDAP_USERNAME}\""
+              echo "--------------------------------------------------------------------------------"
               # Using the || syntax to avoid surfacing a non 0 rc and exitting the job (without having to disable set -e)
               DB2_USER_FOUND=true
-              oc exec -it c-db2wh-tgka-iot-db2u-0 -c db2u -n db2u -- su -lc "id ${DB2_LDAP_USERNAME}" || DB2_USER_FOUND=false
+              oc exec -it ${DB2_DB2U_POD_NAME}-c db2u -n db2u -- su -lc "id ${DB2_LDAP_USERNAME}" || DB2_USER_FOUND=false
               if [[ "${DB2_USER_FOUND}" == "true" ]]; then
                 echo "DB2 user exists already, exiting now"
                 exit 0

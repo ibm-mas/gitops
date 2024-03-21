@@ -1,0 +1,38 @@
+{{- if .Values.ibm_suite_app_install }}
+{{- if eq .Values.ibm_suite_app_install.mas_app_id "visualinspection" }}
+{{- if eq .Values.ibm_suite_app_install.mas_edition "essentials-inspection" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: 'custom-service-jvm-config'
+  namespace: {{ .Values.ibm_suite_app_install.mas_app_namespace }}
+  labels:
+    app: visualinspection
+    visualinspection_cr: {{ .Values.ibm_suite_app_install.mas_instance_id }}
+    app.kubernetes.io/instance: 'custom-service-jvm-config'
+    app.kubernetes.io/managed-by: ibm-mas-visualinspection
+    app.kubernetes.io/name: custom-service-jvm-configmap
+    mas.ibm.com/instanceId: {{ .Values.ibm_suite_app_install.mas_instance_id }}
+    mas.ibm.com/applicationId: visualinspection
+  annotations:
+    argocd.argoproj.io/sync-wave: "503"
+data:
+  jvm-options: |
+    -Dvision.service.config=/etc/vision/config-powerai-k8s.json
+    -Xms512m
+    -Xmx7g
+    -XX:+UseStringDeduplication
+    -XX:+UseG1GC
+    -XX:+UseGCLogFileRotation
+    -XX:NumberOfGCLogFiles=10
+    -XX:GCLogFileSize=1M
+    -XX:+PrintGCDateStamps
+    -verbose:gc
+    -XX:+PrintGCDetails
+    -Xloggc:/opt/powerai-vision/data/logs/vision-service/gc.log
+    -javaagent:/opt/ibm/wlp/usr/shared/resources/jmx_exporter/jmx_prometheus_javaagent-0.20.0.jar=9081:/opt/ibm/wlp/usr/shared/resources/jmx_exporter/jmx-config.yaml
+
+{{- end }}
+{{- end }}
+{{- end }}

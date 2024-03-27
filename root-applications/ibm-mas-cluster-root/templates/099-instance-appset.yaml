@@ -6,8 +6,6 @@ kind: ApplicationSet
 metadata:
   name: instance-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
   namespace: {{ .Values.argoapp_namespace }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "099"
 spec:
   goTemplate: true
   generators:
@@ -40,6 +38,11 @@ spec:
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-workspace.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repoURL }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite-configs.yaml"
 
   template:
     metadata:
@@ -52,6 +55,7 @@ spec:
         instance: '{{ `{{.instance.id}}` }}'
       annotations:
         healthCheckTimeout: "1800"
+        argocd.argoproj.io/sync-wave: "099"
     spec:
       project: mas
       source:
@@ -78,6 +82,7 @@ spec:
         automated:
           prune: true
           selfHeal: true
+          allowEmpty: true
         syncOptions:
           - CreateNamespace=false
           - RespectIgnoreDifferences=true

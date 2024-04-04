@@ -19,9 +19,7 @@ metadata:
   name: {{ $np_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "100"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "110"
 spec:
   podSelector:
     matchLabels:
@@ -39,9 +37,7 @@ metadata:
   name: {{ $aws_secret }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "100"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "110"
 data:
   aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
@@ -54,9 +50,7 @@ metadata:
   name: {{ $sa_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "100"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "110"
 
 ---
 kind: Role
@@ -65,9 +59,7 @@ metadata:
   name: {{ $role_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "100"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "110"
 rules:
   - verbs:
       - get
@@ -85,9 +77,7 @@ metadata:
   name: {{ $rb_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "101"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "111"
 subjects:
   - kind: ServiceAccount
     name: {{ $sa_name }}
@@ -104,9 +94,7 @@ metadata:
   name: {{ $job_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "102"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "112"
 spec:
   template:
     metadata:
@@ -139,6 +127,8 @@ spec:
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
+            - name: sls-suite-registration
+              mountPath: /etc/mas/creds/sls-suite-registration
           command:
             - /bin/sh
             - -c
@@ -153,14 +143,14 @@ spec:
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
               echo "Fetching registrationKey from sls-suite-registration ConfigMap in mas-${INSTANCE_ID}-sls"
-              export SLS_REGISTRATION_KEY=$(oc get cm sls-suite-registration -n mas-${INSTANCE_ID}-sls -o jsonpath='{.data.registrationKey}')
+              SLS_REGISTRATION_KEY=$(cat /etc/mas/creds/sls-suite-registration/registrationKey)
               if [[ -z "${SLS_REGISTRATION_KEY}" ]]; then
                 echo "Failed to fetch registrationKey"
                 exit 1
               fi
 
               echo "Fetching ca from sls-suite-registration ConfigMap in mas-${INSTANCE_ID}-sls"
-              export SLS_CA=$(oc get cm sls-suite-registration -n mas-${INSTANCE_ID}-sls -o jsonpath='{.data.ca}' | base64 -w0)
+              SLS_CA=$(cat /etc/mas/creds/sls-suite-registration/ca | base64 -w0)
               if [[ -z "${SLS_CA}" ]]; then
                 echo "Failed to fetch ca"
                 exit 1
@@ -192,5 +182,10 @@ spec:
             secretName: {{ $aws_secret }}
             defaultMode: 420
             optional: false
+        - name: sls-suite-registration
+          configMap:
+            name: sls-suite-registration
+            optional: false
+
   backoffLimit: 4
 {{- end }}

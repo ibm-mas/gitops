@@ -10,7 +10,18 @@
 {{ $np_name := "postdelete-delete-profilebundles-np" }}
 {{ $job_name := "postdelete-delete-profilebundles-job" }}
 {{ $ns := "openshift-compliance" }}
+{{ $cleanup_ns := "postdelete-openshift-compliance" }}
 
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $cleanup_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+  labels:
+    argocd.argoproj.io/managed-by: {{ .Values.argoapp_namespace }}
 
 ---
 # Permit outbound communication by the Job pods
@@ -19,7 +30,7 @@ kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
   name: {{ $np_name }}
-  namespace: {{ $ns }}
+  namespace: {{ $cleanup_ns }}
   annotations:
     argocd.argoproj.io/hook: PostDelete
 spec:
@@ -32,11 +43,10 @@ spec:
     - Egress
 
 ---
-kind: Role
+kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: {{ $role_name }}
-  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PostDelete
 rules:
@@ -56,16 +66,15 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: {{ $sa_name }}
-  namespace: {{ $ns }}
+  namespace: {{ $cleanup_ns }}
   annotations:
     argocd.argoproj.io/hook: PostDelete
 
 ---
-kind: RoleBinding
+kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: {{ $rb_name }}
-  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PostDelete
 subjects:
@@ -74,7 +83,7 @@ subjects:
     namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: Role
+  kind: ClusterRole
   name: {{ $role_name }}
 
 
@@ -83,7 +92,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ $job_name }}
-  namespace: {{ $ns }}
+  namespace: {{ $cleanup_ns }}
   annotations:
     argocd.argoproj.io/hook: PostDelete
 spec:

@@ -5,10 +5,8 @@
 {{ $cr_kind := "profilebundles" }}
 {{ $cr_api_version := "compliance.openshift.io" }}
 {{ $role_name := "postdelete-delete-profilebundles-r" }}
-{{ $crole_name := "postdelete-delete-profilebundles-cr" }}
 {{ $sa_name := "postdelete-delete-profilebundles-sa" }}
 {{ $rb_name := "postdelete-delete-profilebundles-rb"}}
-{{ $crb_name := "postdelete-delete-profilebundles-crb"}}
 {{ $np_name := "postdelete-delete-profilebundles-np" }}
 {{ $job_name := "postdelete-delete-profilebundles-job" }}
 {{ $ns := "openshift-compliance" }}
@@ -54,25 +52,6 @@ rules:
 
 
 ---
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $crole_name }}
-  annotations:
-    argocd.argoproj.io/hook: PostDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-rules:
-  - verbs:
-      - delete
-      - get
-      - list
-      - watch
-    apiGroups:
-      - project.openshift.io
-    resources:
-      - projects
-
----
 kind: ServiceAccount
 apiVersion: v1
 metadata:
@@ -98,22 +77,6 @@ roleRef:
   kind: Role
   name: {{ $role_name }}
 
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $crb_name }}
-  annotations:
-    argocd.argoproj.io/hook: PostDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-subjects:
-  - kind: ServiceAccount
-    name: {{ $sa_name }}
-    namespace: {{ $ns }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ $crole_name }}
 
 ---
 apiVersion: batch/v1
@@ -215,8 +178,6 @@ spec:
               for CR_NAME in ${CR_NAMES//,/ }; do
                 delete_oc_resource "${CR_KIND}.${CR_API_VERSION}/${CR_NAME}" "${CR_NAMESPACE}"
               done
-
-              oc delete project "${CR_NAMESPACE}"
 
 
 

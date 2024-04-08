@@ -1,44 +1,36 @@
 {{- /*
-Due to Helm scoping issues, you must pass any chart Values that are not under .Values.ibm_mas_suite_configs into Helm vars
-before attempting to reference them inside the {{ range }} loop
+When inside the range loop below, make sure you prefix any references to chart values NOT under .Values.ibm_mas_suite_configs with $.
+For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
 */}}
-
-{{ $account_id := .Values.account.id }}
-{{ $region_id := .Values.region.id }}
-{{ $cluster_id := .Values.cluster.id }}
-{{ $instance_id := .Values.instance.id }}
-{{ $cluster_url := .Values.cluster.url }}
-{{ $source_targetRevision := .Values.source.targetRevision }}
-{{ $slack_channel_id := .Values.notifications.slack_channel_id }}
 
 {{- range $i, $value := .Values.ibm_mas_suite_configs }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: "{{ $value.mas_config_name }}.{{ $account_id }}.{{ $region_id }}.{{ $cluster_id }}.{{ $instance_id }}"
+  name: "{{ $value.mas_config_name }}.{{ $.Values.account.id  }}.{{ $.Values.region.id }}.{{ $.Values.cluster.id  }}.{{ $.Values.instance.id }}"
   namespace: {{ $.Values.argoapp_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "130"
-    {{- if $slack_channel_id }}
-    notifications.argoproj.io/subscribe.on-sync-failed.slack.slack: {{ $slack_channel_id }}
-    notifications.argoproj.io/subscribe.on-sync-succeeded.slack.slack: {{ $slack_channel_id }}
+    {{- if $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.slack.slack: {{ $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack.slack: {{ $.Values.notifications.slack_channel_id }}
     {{- end }}
   labels:
     cloud: aws
-    environment: '{{ $account_id }}'
-    region: '{{ $region_id }}'
-    cluster: '{{ $cluster_id }}'
-    instance: '{{ $instance_id }}'
+    environment: '{{ $.Values.account.id }}'
+    region: '{{ $.Values.region.id }}'
+    cluster: '{{ $.Values.cluster.id }}'
+    instance: '{{ $.Values.instance.id }}'
 spec:
   project: mas
   destination:
-    server: {{ $cluster_url }}
+    server: {{ $.Values.cluster.url }}
     namespace: default
   source:
     repoURL: https://github.com/ibm-mas/gitops
     path: applications/130-{{ $value.mas_config_chart }}
-    targetRevision: "{{ $source_targetRevision }}"
+    targetRevision: "{{ $.Values.source.targetRevision }}"
     plugin:
       env:
         - name: HELM_VALUES

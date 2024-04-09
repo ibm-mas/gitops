@@ -58,6 +58,10 @@ spec:
       annotations:
         healthCheckTimeout: "1800"
         argocd.argoproj.io/sync-wave: "099"
+        {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+        notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ .Values.notifications.slack_channel_id }}
+        notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ .Values.notifications.slack_channel_id }}
+        {{- end }}
     spec:
       project: mas
       source:
@@ -77,6 +81,10 @@ spec:
                 value: "{{ .Values.source.targetRevision }}"
               - name: argoapp_namespace
                 value: "{{ .Values.argoapp_namespace }}"
+                {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+              - name: "notifications.slack_channel_id"
+                value: "{{ .Values.notifications.slack_channel_id }}"
+                {{- end }}
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argoapp_namespace }}

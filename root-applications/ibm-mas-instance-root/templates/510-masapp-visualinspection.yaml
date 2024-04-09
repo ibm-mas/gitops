@@ -1,4 +1,4 @@
-{{- if not (empty .Values.masapp_visualinspection) }}
+{{- if eq .Values.masapp.id "visualinspection" }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
@@ -6,6 +6,13 @@ kind: Application
 metadata:
   name: visualinspection.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argoapp_namespace }}
+  labels:
+    cloud: aws
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+    masapp: 'visualinspection'
   annotations:
     argocd.argoproj.io/sync-wave: "510"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
@@ -19,17 +26,71 @@ spec:
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
-  source:
-    repoURL: https://github.com/ibm-mas/gitops
-    path: applications/510-masapp-visualinspection
-    targetRevision: "{{ .Values.source.targetRevision }}"
-    plugin:
-      env:
-        - name: HELM_VALUES
-          value: |
-            {{ .Values | toRawJson }}
-        - name: ARGOCD_APP_NAME
-          value: visualinspectionapp
+  sources:
+    - repoURL: https://github.com/ibm-mas/gitops
+      targetRevision: "{{ .Values.source.targetRevision }}"
+      path: applications/500-ibm-mas-suite-app-install
+      plugin:
+        env:
+          - name: HELM_VALUES
+            value: |
+              {{`
+                {{
+                  toRawJson (
+                    merge
+                      .
+                      (
+                        dict "generator" (
+                          dict
+                            "repoURL" "`}}{{ .Values.generator.repoURL }}{{`"
+                            "revision" "`}}{{ .Values.generator.revision }}{{`"
+                        )
+                      )
+                      (
+                        dict "source" (
+                          dict "targetRevision" "`}}{{ .Values.source.targetRevision }}{{`"
+                        )
+                      )
+                      (
+                        dict "argoapp_namespace" "`}}{{ .Values.argoapp_namespace}}{{`"
+                      )
+                  )
+                }}
+              `}}
+          - name: ARGOCD_APP_NAME
+            value: "visualinspection-install"
+    - repoURL: https://github.com/ibm-mas/gitops
+      targetRevision: "{{ .Values.source.targetRevision }}"
+      path: applications/600-ibm-mas-suite-app-config
+      plugin:
+        env:
+          - name: HELM_VALUES
+            value: |
+              {{`
+                {{
+                  toRawJson (
+                    merge
+                      .
+                      (
+                        dict "generator" (
+                          dict
+                            "repoURL" "`}}{{ .Values.generator.repoURL }}{{`"
+                            "revision" "`}}{{ .Values.generator.revision }}{{`"
+                        )
+                      )
+                      (
+                        dict "source" (
+                          dict "targetRevision" "`}}{{ .Values.source.targetRevision }}{{`"
+                        )
+                      )
+                      (
+                        dict "argoapp_namespace" "`}}{{ .Values.argoapp_namespace}}{{`"
+                      )
+                  )
+                }}
+              `}}
+          - name: ARGOCD_APP_NAME
+            value: "visualinspection-config"
   syncPolicy:
     automated:
       prune: true

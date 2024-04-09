@@ -1,0 +1,124 @@
+{{- if .Values.use_postdelete_hooks }}
+
+{{ $ns := .Values.db2_namespace }}
+{{ $aws_secret := printf "postdelete-update-sm-aws-%s" .Values.db2_instance_name}}
+{{ $np_name :=    printf "postdelete-update-sm-np-%s" .Values.db2_instance_name }}
+{{ $sa_name :=    "default" }}
+{{ $job_name :=   printf "postdelete-update-sm-job-%s" .Values.db2_instance_name }}
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_name }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+data:
+  aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
+type: Opaque
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_name }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:7.10.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account.id }}
+            - name: REGION_ID
+              value: {{ .Values.region.id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster.id }}
+            - name: MAS_INSTANCE_ID
+              value: {{ .Values.instance.id }}
+            - name: MAS_APP_ID
+              value: {{ .Values.mas_application_id}}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              export SETTINGS_APPLIED_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/settings_applied
+              export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config
+
+              source /mascli/functions/gitops_utils
+
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+              sm_delete_secret $SETTINGS_APPLIED_SECRET
+              sm_delete_secret $DB2_CONFIG_SECRET
+
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: {{ $sa_name }}
+      volumes:
+        - name: aws
+          secret:
+            secretName: {{ $aws_secret }}
+            defaultMode: 420
+            optional: false
+
+  backoffLimit: 4
+{{- end }}

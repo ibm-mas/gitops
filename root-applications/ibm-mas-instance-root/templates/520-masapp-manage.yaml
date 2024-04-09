@@ -1,0 +1,40 @@
+{{- if not (empty .Values.masapp_manage) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: manage.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argoapp_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "520"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mas
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    path: applications/520-masapp-manage
+    targetRevision: "{{ .Values.source.targetRevision }}"
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            {{ .Values | toRawJson }}
+        - name: ARGOCD_APP_NAME
+          value: manageapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+{{- end }}

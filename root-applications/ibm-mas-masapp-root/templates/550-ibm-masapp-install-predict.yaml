@@ -1,0 +1,69 @@
+{{- if eq .Values.masapp.id "predict" }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: predict.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argoapp_namespace }}
+  labels:
+    cloud: aws
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+    masapp: 'predict'
+  annotations:
+    argocd.argoproj.io/sync-wave: "550"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mas
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    targetRevision: "{{ .Values.source.targetRevision }}"
+    path: applications/500-ibm-mas-suite-app-install
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            {{`
+              {{
+                toRawJson (
+                  merge
+                    .
+                    (
+                      dict "generator" (
+                        dict
+                          "repoURL" "`}}{{ .Values.generator.repoURL }}{{`"
+                          "revision" "`}}{{ .Values.generator.revision }}{{`"
+                      )
+                    )
+                    (
+                      dict "source" (
+                        dict "targetRevision" "`}}{{ .Values.source.targetRevision }}{{`"
+                      )
+                    )
+                    (
+                      dict "argoapp_namespace" "`}}{{ .Values.argoapp_namespace}}{{`"
+                    )
+                )
+              }}
+            `}}
+        - name: ARGOCD_APP_NAME
+          value: "predict-install"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+{{- end }}

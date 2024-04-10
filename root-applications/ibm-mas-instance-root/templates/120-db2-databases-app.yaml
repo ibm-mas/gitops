@@ -1,0 +1,53 @@
+{{- /*
+When inside the range loop below, make sure you prefix any references to chart values NOT under .Values.ibm_db2u_databases with $.
+For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
+*/}}
+
+{{- range $i, $value := .Values.ibm_db2u_databases }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: "db2-db.{{ $.Values.account.id }}.{{ $.Values.region.id }}.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
+  namespace: {{ $.Values.argoapp_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "120"
+    {{- if and $.Values.notifications $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ $.Values.notifications.slack_channel_id }}
+    {{- end }}
+  labels:
+    cloud: aws
+    environment: '{{ $.Values.account.id }}'
+    region: '{{ $.Values.region.id }}'
+    cluster: '{{ $.Values.cluster.id }}'
+    instance: '{{ $.Values.instance.id }}'
+spec:
+  project: mas
+  destination:
+    server: {{ $.Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    path: applications/120-ibm-db2u-database
+    targetRevision: "{{ $.Values.source.targetRevision }}"
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            {{ $value | toRawJson }}
+        - name: ARGOCD_APP_NAME
+          value: "db2dbapp-{{ $value.mas_application_id }}"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: 'db2u.databases.ibm.com'
+      kind: Db2uCluster
+      jsonPointers:
+      - /spec/environment/database/ssl/secretName
+{{- end }}

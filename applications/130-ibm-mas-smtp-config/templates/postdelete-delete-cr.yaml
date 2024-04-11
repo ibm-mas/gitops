@@ -1,101 +1,24 @@
 {{- if .Values.use_postdelete_hooks }}
 
-# Generate a suffix for all the resources so there are no name clashes if >1 config is deleted at the same time
 {{ $cr_name := .Values.mas_config_name }}
 {{ $cr_kind := .Values.mas_config_kind }}
 {{ $cr_api_version := .Values.mas_config_api_version }}
-{{ $role_name := printf "postdelete-delete-cr-r-%s" $cr_name }}
-{{ $sa_name := printf "postdelete-delete-cr-sa-%s" $cr_name }}
-{{ $rb_name := printf "postdelete-delete-cr-rb-%s" $cr_name }}
-{{ $np_name := printf "postdelete-delete-cr-np-%s" $cr_name }}
-{{ $job_name := printf "postdelete-delete-cr-job-%s" $cr_name }}
+
+# NOTE: depends on resources created in ibm-mas-suite chart (01-postdelete-crs-resources)
+# The values below must align with the values in that file
+{{ $role_name := "postdelete-delete-cr-r" }}
+{{ $sa_name :=   "postdelete-delete-cr-sa" }}
+{{ $rb_name :=   "postdelete-delete-cr-rb" }}
+{{ $np_name :=   "postdelete-delete-cr-np" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
 {{ $ns := printf "mas-%s-core" .Values.mas_instance_id }}
-{{ $hook_delete_policy := "HookSucceeded" }}
-
-
----
-# Permit outbound communication by the Job pods
-# (Needed to communicate with the K8S HTTP API and AWS SM)
-
-# argocd.argoproj.io/sync-options: Delete=false annotation is *required* on this resource
-# so that it is not deleted before the PostDelete job that depends on it is run
-# (NOTE: it is not currently possible to annotate this type of resource with PostDelete due to a bug in ArgoCD: https://github.com/argoproj/argo-cd/issues/17191)
-kind: NetworkPolicy
-apiVersion: networking.k8s.io/v1
-metadata:
-  name: {{ $np_name }}
-  namespace: {{ $ns }}
-  annotations:
-    argocd.argoproj.io/sync-options: Delete=false
-spec:
-  podSelector:
-    matchLabels:
-      app: {{ $job_name }}
-  egress:
-    - {}
-  policyTypes:
-    - Egress
-
----
-# argocd.argoproj.io/sync-options: Delete=false annotation is *required* on this resource
-# so that it is not deleted before the PostDelete job that depends on it is run
-# (NOTE: it is not currently possible to annotate this type of resource with PostDelete due to a bug in ArgoCD: https://github.com/argoproj/argo-cd/issues/17191)
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $role_name }}
-  namespace: {{ $ns }}
-  annotations:
-    argocd.argoproj.io/sync-options: Delete=false
-rules:
-  - verbs:
-      - delete
-      - get
-      - list
-      - watch
-    apiGroups:
-      - {{ $cr_api_version }}
-    resources:
-      - {{ $cr_kind }}
-
----
-# argocd.argoproj.io/sync-options: Delete=false annotation is *required* on this resource
-# so that it is not deleted before the PostDelete job that depends on it is run
-# (NOTE: it is not currently possible to annotate this type of resource with PostDelete due to a bug in ArgoCD: https://github.com/argoproj/argo-cd/issues/17191)
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: {{ $sa_name }}
-  namespace: {{ $ns }}
-  annotations:
-    argocd.argoproj.io/sync-options: Delete=false
-
----
-# argocd.argoproj.io/sync-options: Delete=false annotation is *required* on this resource
-# so that it is not deleted before the PostDelete job that depends on it is run
-# (NOTE: it is not currently possible to annotate this type of resource with PostDelete due to a bug in ArgoCD: https://github.com/argoproj/argo-cd/issues/17191)
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $rb_name }}
-  namespace: {{ $ns }}
-  annotations:
-    argocd.argoproj.io/sync-options: Delete=false
-subjects:
-  - kind: ServiceAccount
-    name: {{ $sa_name }}
-    namespace: {{ $ns }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: {{ $role_name }}
 
 
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $job_name }}
+  generateName: {{ $job_label }}
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PostDelete
@@ -104,7 +27,7 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ $job_name }}
+        app: {{ $job_label }}
     spec:
       containers:
         - name: run

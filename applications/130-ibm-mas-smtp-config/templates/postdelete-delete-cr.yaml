@@ -16,6 +16,10 @@
 ---
 # Permit outbound communication by the Job pods
 # (Needed to communicate with the K8S HTTP API and AWS SM)
+
+# argocd.argoproj.io/sync-options: Delete=false annotation is *required* on this resource
+# so that it is not deleted before the PostDelete job that depends on it is run
+# (NOTE: it is not currently possible to annotate this type of resource with PostDelete due to a bug in ArgoCD: https://github.com/argoproj/argo-cd/issues/17191)
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
@@ -33,6 +37,9 @@ spec:
     - Egress
 
 ---
+# argocd.argoproj.io/sync-options: Delete=false annotation is *required* on this resource
+# so that it is not deleted before the PostDelete job that depends on it is run
+# (NOTE: it is not currently possible to annotate this type of resource with PostDelete due to a bug in ArgoCD: https://github.com/argoproj/argo-cd/issues/17191)
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -52,6 +59,9 @@ rules:
       - {{ $cr_kind }}
 
 ---
+# argocd.argoproj.io/sync-options: Delete=false annotation is *required* on this resource
+# so that it is not deleted before the PostDelete job that depends on it is run
+# (NOTE: it is not currently possible to annotate this type of resource with PostDelete due to a bug in ArgoCD: https://github.com/argoproj/argo-cd/issues/17191)
 kind: ServiceAccount
 apiVersion: v1
 metadata:
@@ -61,6 +71,9 @@ metadata:
     argocd.argoproj.io/sync-options: Delete=false
 
 ---
+# argocd.argoproj.io/sync-options: Delete=false annotation is *required* on this resource
+# so that it is not deleted before the PostDelete job that depends on it is run
+# (NOTE: it is not currently possible to annotate this type of resource with PostDelete due to a bug in ArgoCD: https://github.com/argoproj/argo-cd/issues/17191)
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -86,6 +99,7 @@ metadata:
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   template:
     metadata:

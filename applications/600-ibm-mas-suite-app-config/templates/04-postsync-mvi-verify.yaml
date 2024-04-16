@@ -180,7 +180,6 @@ data:
       raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
 
     mvi_namespace = f"mas-{mas_instance_id}-visualinspection"
-    mvi_apikey_secret_name = f"{mas_instance_id}-credentials-dnn-visualinspection"
     mvi_route_name = f"{mas_instance_id}-{mas_workspace_id}"
 
 
@@ -262,9 +261,11 @@ data:
       if mvi_version.compare("9.0.0") < 0:
         pytest.skip("MVI API Key secret required by this test is only currently available in MVI >= 9.0.0")
 
-      mvi_apikey_secret = v1_secrets.get(name=mvi_apikey_secret_name, namespace=mvi_namespace)
+      mvi_apikey_secret = v1_secrets.get(label_selector="app.kubernetes.io/name=visualinspection-dnn-secret", namespace=mvi_namespace)
       if not mvi_apikey_secret:
-        assert False, f"Could not find secret {mvi_apikey_secret_name} in {mvi_namespace}"
+        assert False, f"Could not find any visual inspection dnn secret in {mvi_namespace}"
+
+      mvi_apikey_secret_name = mvi_apikey_secret['metadata']['name']
       try:
         dnn_apikey_b64 = mvi_apikey_secret['data']['dnn-apikey']
       except KeyError as e:

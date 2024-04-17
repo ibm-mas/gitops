@@ -88,6 +88,8 @@ spec:
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
+            - name: db2u-certificate
+              mountPath: /etc/mas/creds/db2u-certificate
           command:
             - /bin/sh
             - -c
@@ -395,7 +397,7 @@ spec:
               echo ""
               echo "Fetch CA cert from db2u-certicate-${DB2_INSTANCE_NAME} secret in ${DB2_NAMESPACE}"
               echo "--------------------------------------------------------------------------------"
-              export DB2_CA_PEM=$(oc get secret db2u-certificate-${DB2_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o "jsonpath={.data['ca\.crt']}")
+              export DB2_CA_PEM=$(cat /etc/mas/creds/db2u-certificate/ca.crt | base64 -w0)
               if [[ -z "${DB2_CA_PEM}" ]]; then
                 echo "Failed to fetch db2 ca pem"
                 exit 1
@@ -438,6 +440,11 @@ spec:
         - name: aws
           secret:
             secretName: "aws-{{ .Values.db2_instance_name }}"
+            defaultMode: 420
+            optional: false
+        - name: aws
+          secret:
+            secretName: "db2u-certificate-{{ .Values.db2_instance_name }}"
             defaultMode: 420
             optional: false
   backoffLimit: 4

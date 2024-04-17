@@ -1,10 +1,10 @@
-{{- if not (empty .Values.ibm_mas_app_assist_config) }}
+{{- if not (empty .Values.ibm_mas_app_monitor_install) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: assist.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: monitor.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argoapp_namespace }}
   labels:
     cloud: aws
@@ -12,9 +12,9 @@ metadata:
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id }}'
-    masapp: 'assist'
+    masapp: 'monitor'
   annotations:
-    argocd.argoproj.io/sync-wave: "565"
+    argocd.argoproj.io/sync-wave: "510"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ .Values.notifications.slack_channel_id }}
@@ -29,7 +29,7 @@ spec:
   source:
     repoURL: https://github.com/ibm-mas/gitops
     targetRevision: "{{ .Values.source.targetRevision }}"
-    path: applications/600-ibm-mas-suite-app-config
+    path: applications/500-ibm-mas-suite-app-install
     plugin:
       env:
         - name: HELM_VALUES
@@ -58,7 +58,7 @@ spec:
               }}
             `}}
         - name: ARGOCD_APP_NAME
-          value: "assist-config"
+          value: "monitor-install"
   syncPolicy:
     automated:
       prune: true

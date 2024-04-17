@@ -1,10 +1,10 @@
-{{- if not (empty .Values.ibm_mas_app_predict_install) }}
+{{- if not (empty .Values.ibm_mas_app_assist_install) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: predict.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: assist.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argoapp_namespace }}
   labels:
     cloud: aws
@@ -12,9 +12,9 @@ metadata:
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id }}'
-    masapp: 'predict'
+    masapp: 'assist'
   annotations:
-    argocd.argoproj.io/sync-wave: "550"
+    argocd.argoproj.io/sync-wave: "500"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ .Values.notifications.slack_channel_id }}
@@ -57,8 +57,10 @@ spec:
                 )
               }}
             `}}
+        - name: MAS_APP_ID
+          value: "assist"
         - name: ARGOCD_APP_NAME
-          value: "predict-install"
+          value: "assist-install"
   syncPolicy:
     automated:
       prune: true

@@ -85,6 +85,10 @@ spec:
               value: "{{ .Values.db2_dbname }}"
             - name: TLS_VERSION
               value: "{{ .Values.tls_version }}"
+
+            # Hash all chart values, this is to ensure the Job will rerun if anything changes in the DB2 config
+            - name: CONFIG_HASH
+            - value: "{{ .Values | toYaml | sha256sum }}"
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
@@ -127,7 +131,6 @@ spec:
                 return 1
               }
 
-              export SETTINGS_APPLIED_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/settings_applied
               export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config
 
               echo ""
@@ -143,30 +146,12 @@ spec:
               echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
               echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
               echo "DB2_DBNAME .......................... ${DB2_DBNAME}"
-              echo "SETTINGS_APPLIED_SECRET ............. ${SETTINGS_APPLIED_SECRET}"
-
-              echo ""
-              echo "================================================================================"
-              echo "Checking ${SETTINGS_APPLIED_SECRET}#db2cfg_settings_applied"
-              echo "================================================================================"
 
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               export SM_AWS_REGION=${REGION_ID}
               sm_login
              
-              export DB2CFG_SETTINGS_APPLIED=$(sm_get_secret_value ${SETTINGS_APPLIED_SECRET} "db2cfg_settings_applied")
-              # TODO: or we could skip rendering of this hook (and related templates) altogether if DB2CFG_SETTINGS_APPLIED is "true"?
-              # -- in theory yes, but since it would have to be passed in via AVP in order to be referenced via { .Values.db2_namespace }, 
-              #     we'll only ever see the first value due to AVP caching
-              echo "DB2CFG_SETTINGS_APPLIED ............. ${DB2CFG_SETTINGS_APPLIED}"
-
-              if [[ "${DB2CFG_SETTINGS_APPLIED}" == "true" ]]; then
-                echo "DB2 settings have been applied since the last change was made to the database configuration, exiting now "
-                exit 0
-              fi
-
-
               echo ""
               echo "================================================================================"
               echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to be present before continuing (timeout 300s)"
@@ -470,16 +455,6 @@ spec:
               echo "Updating Secrets Manager"
               echo "--------------------------------------------------------------------------------"
               sm_update_secret ${DB2_CONFIG_SECRET} "{ \"tls_serviceport\": \"${DB2_TLS_SERVICEPORT}\", \"ca_b64\": \"${DB2_CA_PEM}\" }"
-              echo ".... rc $?"
-
-
-              echo ""
-              echo "================================================================================"
-              echo "Setting ${SETTINGS_APPLIED_SECRET}#db2cfg_settings_applied to true"
-              echo "================================================================================"
-
-              export DB2CFG_SETTINGS_APPLIED="true"
-              sm_update_secret ${SETTINGS_APPLIED_SECRET} "{ \"db2cfg_settings_applied\": \"${DB2CFG_SETTINGS_APPLIED}\" }"
               echo ".... rc $?"
 
 

@@ -99,6 +99,34 @@ spec:
 
               source /mascli/functions/gitops_utils
 
+              function wait_for_resource {
+                RES_TYPE="$1"
+                RES_NAME="$2"
+                RES_NS="$3"
+                RETRIES=${4:-10}
+                RETRY_DELAY_SECONDS=${5:-30}
+
+                for (( c=1; c<="${RETRIES}"; c++ )); do
+
+                  echo "... attempt ${c} of ${RETRIES}"
+
+                  rc=0
+                  oc get "${RES_TYPE}/${RES_NAME}" -n "${RES_NAMESPACE}" || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+                    return 0
+                  fi
+
+                  if [[ "${c}" -lt "${RETRIES}" ]]; then
+                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                    sleep $RETRY_DELAY_SECONDS
+                  fi
+                done
+
+                echo "...... failed, no attempts remain"
+                return 1
+              }
+
               export SETTINGS_APPLIED_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/settings_applied
               export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config
 
@@ -137,8 +165,24 @@ spec:
               fi
 
 
-              # TODO: what's the purpose of the DB2_INTERNAL flag (used in gitops_db2u_database).. 
-              # surely any DB2 being spun up in this way via ArgoCD is considered "internal"?
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "pod" "c-${DB2_INSTANCE_NAME}-db2u-0" "${DB2_NAMESPACE}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to report Ready=True before continuing (timeout 300s)"
+              echo "================================================================================"
+              oc wait --for=condition=Ready pod/c-${DB2_INSTANCE_NAME}-db2u-0 --timeout 300s -n ${DB2_NAMESPACE}
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for service c-${DB2_INSTANCE_NAME}-db2u-engn-svc to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
+
 
               echo ""
               echo "================================================================================"

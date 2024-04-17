@@ -129,10 +129,6 @@ spec:
                 exit 0
               fi
 
-
-              # TODO: what's the purpose of the DB2_INTERNAL flag (used in gitops_db2u_database).. 
-              # surely any DB2 being spun up in this way via ArgoCD is considered "internal"?
-
               echo ""
               echo "================================================================================"
               echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
@@ -380,6 +376,13 @@ spec:
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
 
+              echo ""
+              echo "================================================================================"
+              echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0 again as db2u doesn't always apply the first time"
+              echo "================================================================================"
+              sleep 30
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
+              echo ".... rc $?"
 
               echo ""
               echo "================================================================================"

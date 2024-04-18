@@ -4,6 +4,8 @@ apiVersion: v1
 metadata:
   name: "aws-{{ .Values.db2_instance_name }}"
   namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "127"
 data:
   aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
@@ -17,12 +19,16 @@ apiVersion: v1
 metadata:
   name: "postsync-sa-{{ .Values.db2_instance_name }}"
   namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "127"
 
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: "db2-database-postsync-sa-rb-{{ .Values.db2_instance_name }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "128"
 subjects:
   - kind: ServiceAccount
     name: "postsync-sa-{{ .Values.db2_instance_name }}"
@@ -37,11 +43,12 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "postsync-setup-db2-{{ .Values.db2_instance_name }}"
+  # Suffix the Job name with a hash of all chart values
+  # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes in the DB2 config
+  name: "postsync-setup-db2-{{ .Values.db2_instance_name }}-{{ .Values | toYaml | adler32sum }}"
   namespace: "{{ .Values.db2_namespace }}"
   annotations:
-    argocd.argoproj.io/hook: PostSync
-    hook-delete-policy: before-hook-creation
+    argocd.argoproj.io/sync-wave: "129"
 spec:
   template:
     spec:
@@ -49,7 +56,7 @@ spec:
         - name: run
           # TODO: use a dedicated image with a smaller footprint for this sort of thing?
           # Just using cli for now since it has all the deps we need to talk with AWS SM
-          image: quay.io/ibmmas/cli:7.10.0-pre.mascore1425
+          image: quay.io/ibmmas/cli:8.1.0-pre.gitops
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -80,9 +87,12 @@ spec:
               value: "{{ .Values.db2_dbname }}"
             - name: TLS_VERSION
               value: "{{ .Values.tls_version }}"
+
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
+            - name: db2u-certificate
+              mountPath: /etc/mas/creds/db2u-certificate
           command:
             - /bin/sh
             - -c
@@ -92,7 +102,34 @@ spec:
 
               source /mascli/functions/gitops_utils
 
-              export SETTINGS_APPLIED_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/settings_applied
+              function wait_for_resource {
+                RES_TYPE="$1"
+                RES_NAME="$2"
+                RES_NS="$3"
+                RETRIES=${4:-10}
+                RETRY_DELAY_SECONDS=${5:-30}
+
+                for (( c=1; c<="${RETRIES}"; c++ )); do
+
+                  echo "... attempt ${c} of ${RETRIES}"
+
+                  rc=0
+                  oc get "${RES_TYPE}/${RES_NAME}" -n "${RES_NAMESPACE}" || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+                    return 0
+                  fi
+
+                  if [[ "${c}" -lt "${RETRIES}" ]]; then
+                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                    sleep $RETRY_DELAY_SECONDS
+                  fi
+                done
+
+                echo "...... failed, no attempts remain"
+                return 1
+              }
+
               export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config
 
               echo ""
@@ -108,30 +145,30 @@ spec:
               echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
               echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
               echo "DB2_DBNAME .......................... ${DB2_DBNAME}"
-              echo "SETTINGS_APPLIED_SECRET ............. ${SETTINGS_APPLIED_SECRET}"
-
-              echo ""
-              echo "================================================================================"
-              echo "Checking ${SETTINGS_APPLIED_SECRET}#db2cfg_settings_applied"
-              echo "================================================================================"
 
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               export SM_AWS_REGION=${REGION_ID}
               sm_login
              
-              export DB2CFG_SETTINGS_APPLIED=$(sm_get_secret_value ${SETTINGS_APPLIED_SECRET} "db2cfg_settings_applied")
-              # TODO: or we could skip rendering of this hook (and related templates) altogether if DB2CFG_SETTINGS_APPLIED is "true"?
-              echo "DB2CFG_SETTINGS_APPLIED ............. ${DB2CFG_SETTINGS_APPLIED}"
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "pod" "c-${DB2_INSTANCE_NAME}-db2u-0" "${DB2_NAMESPACE}"
 
-              if [[ "${DB2CFG_SETTINGS_APPLIED}" == "true" ]]; then
-                echo "DB2 settings have been applied since the last change was made to the database configuration, exiting now "
-                exit 0
-              fi
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to report Ready=True before continuing (timeout 300s)"
+              echo "================================================================================"
+              oc wait --for=condition=Ready pod/c-${DB2_INSTANCE_NAME}-db2u-0 --timeout 300s -n ${DB2_NAMESPACE}
 
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for service c-${DB2_INSTANCE_NAME}-db2u-engn-svc to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
 
-              # TODO: what's the purpose of the DB2_INTERNAL flag (used in gitops_db2u_database).. 
-              # surely any DB2 being spun up in this way via ArgoCD is considered "internal"?
 
               echo ""
               echo "================================================================================"
@@ -140,6 +177,13 @@ spec:
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
               echo ".... rc $?"
 
+              echo ""
+              echo "================================================================================"
+              echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0 again as db2u doesn't always apply the first time"
+              echo "================================================================================"
+              sleep 30
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
+              echo ".... rc $?"
 
               echo ""
               echo "================================================================================"
@@ -380,7 +424,6 @@ spec:
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
 
-
               echo ""
               echo "================================================================================"
               echo "Setting ${DB2_CONFIG_SECRET} secret"
@@ -390,7 +433,7 @@ spec:
               echo ""
               echo "Fetch CA cert from db2u-certicate-${DB2_INSTANCE_NAME} secret in ${DB2_NAMESPACE}"
               echo "--------------------------------------------------------------------------------"
-              export DB2_CA_PEM=$(oc get secret db2u-certificate-${DB2_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o "jsonpath={.data['ca\.crt']}")
+              export DB2_CA_PEM=$(cat /etc/mas/creds/db2u-certificate/ca.crt | base64 -w0)
               if [[ -z "${DB2_CA_PEM}" ]]; then
                 echo "Failed to fetch db2 ca pem"
                 exit 1
@@ -414,16 +457,6 @@ spec:
               echo ".... rc $?"
 
 
-              echo ""
-              echo "================================================================================"
-              echo "Setting ${SETTINGS_APPLIED_SECRET}#db2cfg_settings_applied to true"
-              echo "================================================================================"
-
-              export DB2CFG_SETTINGS_APPLIED="true"
-              sm_update_secret ${SETTINGS_APPLIED_SECRET} "{ \"db2cfg_settings_applied\": \"${DB2CFG_SETTINGS_APPLIED}\" }"
-              echo ".... rc $?"
-
-
       restartPolicy: Never
 
       # TODO: is this the correct SA to use here?
@@ -433,6 +466,11 @@ spec:
         - name: aws
           secret:
             secretName: "aws-{{ .Values.db2_instance_name }}"
+            defaultMode: 420
+            optional: false
+        - name: db2u-certificate
+          secret:
+            secretName: "db2u-certificate-{{ .Values.db2_instance_name }}"
             defaultMode: 420
             optional: false
   backoffLimit: 4

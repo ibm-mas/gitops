@@ -5,7 +5,6 @@
 {{ $role_name :=  "postsync-ibm-dro-update-sm-r" }}
 {{ $sa_name :=    "postsync-ibm-dro-update-sm-sa" }}
 {{ $rb_name :=    "postsync-ibm-dro-update-sm-rb" }}
-{{ $job_name :=   "postsync-ibm-dro-update-sm-job" }}
 
 
 ---
@@ -15,9 +14,7 @@ metadata:
   name: {{ $aws_secret }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "100"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "026"
 data:
   aws_access_key_id: {{ .Values.sm.aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm.aws_secret_access_key | b64enc }}
@@ -30,9 +27,7 @@ metadata:
   name: {{ $sa_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "100"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "026"
 
 ---
 kind: Role
@@ -41,16 +36,8 @@ metadata:
   name: {{ $role_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "100"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "026"
 rules:
-  - verbs:
-      - get
-    apiGroups:
-      - ""
-    resources:
-      - secrets
   - verbs:
       - get
     apiGroups:
@@ -66,9 +53,7 @@ metadata:
   name: {{ $rb_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "101"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "027"
 subjects:
   - kind: ServiceAccount
     name: {{ $sa_name }}
@@ -82,12 +67,15 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $job_name }}
+  # Generate the job name by suffixing with a hash of all chart values
+  # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes
+  # Any change to cluster config will trigger a rerun of the job. 
+  # We can refine this in future to only take into account a subset of instance config (perhaps just values under ibm_dro?).
+  # But the job is idempotent and quick so no real harm in running it when we don't actually need to.
+  name: "postsync-ibm-dro-update-sm-job-{{ .Values | toYaml | adler32sum }}"
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "102"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "028"
 spec:
   template:
     spec:
@@ -117,12 +105,53 @@ spec:
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
+            - name: ibm-data-reporter-operator-api-token
+              mountPath: /etc/mas/creds/ibm-data-reporter-operator-api-token
           command:
             - /bin/sh
             - -c
             - |
 
               set -e
+
+              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
+              source /mascli/functions/gitops_utils
+
+              function wait_for_resource {
+                RES_TYPE="$1"
+                RES_NAME="$2"
+                RES_NS="$3"
+                RETRIES=${4:-10}
+                RETRY_DELAY_SECONDS=${5:-30}
+
+                for (( c=1; c<="${RETRIES}"; c++ )); do
+
+                  echo "... attempt ${c} of ${RETRIES}"
+
+                  rc=0
+                  oc get "${RES_TYPE}/${RES_NAME}" -n "${RES_NAMESPACE}" || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+                    return 0
+                  fi
+
+                  if [[ "${c}" -lt "${RETRIES}" ]]; then
+                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                    sleep $RETRY_DELAY_SECONDS
+                  fi
+                done
+
+                echo "...... failed, no attempts remain"
+                return 1
+              }
+
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for route ibm-data-reporter to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "route" "ibm-data-reporter" "${DRO_NAMESPACE}"
+
 
               # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
               # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
@@ -138,14 +167,12 @@ spec:
               export DRO_URL="https://${DRO_HOST}"
 
               echo "Fetching token from ibm-data-reporter-operator-api-token Secret in ${DRO_NAMESPACE}"
-              export DRO_API_TOKEN=$(oc get secret ibm-data-reporter-operator-api-token -n ${DRO_NAMESPACE} -o jsonpath='{.data.token}' | base64 -d ; echo)
+              export DRO_API_TOKEN=$(cat /etc/mas/creds/ibm-data-reporter-operator-api-token)
               if [[ -z "${DRO_API_TOKEN}" ]]; then
                 echo "Failed to fetch token"
                 exit 1
               fi
 
-              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
-              source /mascli/functions/gitops_utils
 
               # aws configure set aws_access_key_id $SM_AWS_ACCESS_KEY_ID
               # aws configure set aws_secret_access_key $SM_AWS_SECRET_ACCESS_KEY
@@ -168,6 +195,11 @@ spec:
         - name: aws
           secret:
             secretName: {{ $aws_secret }}
+            defaultMode: 420
+            optional: false
+        - name: ibm-data-reporter-operator-api-token
+          secret:
+            secretName: ibm-data-reporter-operator-api-token
             defaultMode: 420
             optional: false
   backoffLimit: 4

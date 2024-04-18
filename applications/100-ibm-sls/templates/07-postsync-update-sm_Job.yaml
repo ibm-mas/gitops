@@ -6,7 +6,7 @@
 {{ $role_name :=  "postsync-ibm-sls-update-sm-r" }}
 {{ $sa_name :=    "postsync-ibm-sls-update-sm-sa" }}
 {{ $rb_name :=    "postsync-ibm-sls-update-sm-rb" }}
-{{ $job_name :=   "postsync-ibm-sls-update-sm-job" }}
+{{ $job_label :=  "postsync-ibm-sls-update-sm-job" }}
 
 
 
@@ -23,7 +23,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: {{ $job_name }}
+      app: {{ $job_label }}
   egress:
     - {}
   policyTypes:
@@ -91,7 +91,12 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $job_name }}
+  # Generate the job name by suffixing the label with a hash of all chart values
+  # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes
+  # Any change to instance config will trigger a rerun of the job. 
+  # We can refine this in future to only take into account a subset of instance config (perhaps just values under ibm_sls?).
+  # But the job is idempotent and quick so no real harm in running it when we don't actually need to.
+  name: "{{ $job_label }}-{{ .Values | toYaml | adler32sum }}"
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "112"
@@ -99,7 +104,7 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ $job_name }}
+        app: {{ $job_label }}
     spec:
       containers:
         - name: run

@@ -6,7 +6,8 @@
 {{ $role_name :=  "postsync-ibm-sls-update-sm-r" }}
 {{ $sa_name :=    "postsync-ibm-sls-update-sm-sa" }}
 {{ $rb_name :=    "postsync-ibm-sls-update-sm-rb" }}
-{{ $job_name :=   printf "postsync-ibm-sls-update-sm-job-%s" (randAlphaNum 5 | lower) }}
+{{ $job_label :=  "postsync-ibm-sls-update-sm-job" }}
+{{ $job_name :=   printf "postsync-ibm-sls-update-sm-job-%s" (.Values | toYaml | adler32sum) }}
 
 
 
@@ -23,7 +24,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: {{ $job_name }}
+      app: {{ $job_label }}
   egress:
     - {}
   policyTypes:
@@ -99,7 +100,7 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ $job_name }}
+        app: {{ $job_label }}
     spec:
       containers:
         - name: run

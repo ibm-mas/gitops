@@ -45,7 +45,7 @@ spec:
             "targetRevision": "<source-repo-revision>"
           },
           "argoapp_namespace": "<argoapp-namespace>",
-          "argo_project_rootapps": "<argo-project-rootapps>"
+          "argo_project_rootapps": "<argo-project-rootapps>",
           "argo_project_apps": "<argo-project-apps>"
         }
   syncPolicy:

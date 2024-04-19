@@ -53,6 +53,11 @@ spec:
       - CreateNamespace=false
 ```
 
+
+The following figure shows a simplified view of how MAS Applications and ApplicationSets are laid out. For brevity this shows only a subset of the Applications in the `<argo-project-apps>` project and a single MAS cluster/instance:
+
+![Simplified view of MAS Application layout in MCSP](docs/drawio/mcsp-argocd-mas-layout.png?raw=true "Simplified view of MAS Application layout in MCSP")
+
 # Sync-Waves
 
 Sync-waves are used in the ArgoCD Application and ApplicationSets to ensure that the correct order of syncing occurs to deploy MAS and any MAS Apps. Each root applications has the sync-wave starting range defined in the name of the yaml, and the corresponding helm applications will be part of that range. Below is a summary of the ranges:

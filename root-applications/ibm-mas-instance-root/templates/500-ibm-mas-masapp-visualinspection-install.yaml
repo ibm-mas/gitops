@@ -1,10 +1,10 @@
-{{- if not (empty .Values.ibm_suite_app_health_install) }}
+{{- if not (empty .Values.ibm_mas_masapp_visualinspection_install) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: health.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: visualinspection.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argoapp_namespace }}
   labels:
     cloud: aws
@@ -12,9 +12,9 @@ metadata:
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id }}'
-    masapp: 'health'
+    masapp: 'visualinspection'
   annotations:
-    argocd.argoproj.io/sync-wave: "510"
+    argocd.argoproj.io/sync-wave: "500"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ .Values.notifications.slack_channel_id }}
@@ -29,14 +29,14 @@ spec:
   source:
     repoURL: https://github.com/ibm-mas/gitops
     targetRevision: "{{ .Values.source.targetRevision }}"
-    path: applications/500-ibm-mas-suite-app-install-stub
+    path: applications/500-ibm-mas-masapp-install-stub
     plugin:
       env:
         - name: HELM_VALUES
           value: |
-            {{ unset (set .Values "ibm_suite_app_install" .Values.ibm_suite_app_health_install) "ibm_suite_app_health_install" | toRawJson }}
+            {{ unset (set .Values "ibm_suite_app_install" .Values.ibm_suite_app_visualinspection_install) "ibm_suite_app_visualinspection_install" | toRawJson }}
         - name: ARGOCD_APP_NAME
-          value: "health-install"
+          value: "visualinspection-install"
   syncPolicy:
     automated:
       prune: true

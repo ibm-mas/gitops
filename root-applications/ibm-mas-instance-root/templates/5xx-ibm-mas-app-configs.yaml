@@ -1,0 +1,75 @@
+{{- /*
+When inside the range loop below, make sure you prefix any references to chart values NOT under .Values.ibm_mas_masapp_configs with $.
+For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
+*/}}
+
+{{- range $i, $value := .Values.ibm_mas_masapp_configs }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: "ma-cfg.{{ $.Values.account.id }}.{{ $.Values.region.id }}.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
+  namespace: {{ $.Values.argoapp_namespace }}
+  annotations:
+{{- if eq .Values.mas_application_id "assist" }}
+    argocd.argoproj.io/sync-wave: "505"
+{{- else if eq .Values.mas_application_id "iot" }}
+    argocd.argoproj.io/sync-wave: "505"
+{{- else if eq .Values.mas_application_id "manage" }}
+    argocd.argoproj.io/sync-wave: "505"
+{{- else if eq .Values.mas_application_id "visualinspection" }}
+    argocd.argoproj.io/sync-wave: "505"
+{{- else if eq .Values.mas_application_id "health" }}
+    argocd.argoproj.io/sync-wave: "515"
+{{- else if eq .Values.mas_application_id "monitor" }}
+    argocd.argoproj.io/sync-wave: "515"
+{{- else if eq .Values.mas_application_id "optimizer" }}
+    argocd.argoproj.io/sync-wave: "515"
+{{- else if eq .Values.mas_application_id "predict" }}
+    argocd.argoproj.io/sync-wave: "525"
+{{- end }}
+    {{- if and $.Values.notifications $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ $.Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    cloud: aws
+    environment: '{{ $.Values.account.id }}'
+    region: '{{ $.Values.region.id }}'
+    cluster: '{{ $.Values.cluster.id }}'
+    instance: '{{ $.Values.instance.id }}'
+spec:
+  project: mas
+  destination:
+    server: {{ $.Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: https://github.com/ibm-mas/gitops
+    targetRevision: "{{ $.Values.source.targetRevision }}"
+    path: applications/510-ibm-mas-masapp-config
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            {{ $value | toRawJson }}
+        - name: ARGOCD_APP_NAME
+          value: "{{ `{{.masapp.id}}` }}-config"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+      - /imagePullSecrets
+  - group: 'marketplace.redhat.com/v1alpha1'
+    kind: MarketplaceConfig
+    jsonPointers:
+      - /spec
+{{- end }}

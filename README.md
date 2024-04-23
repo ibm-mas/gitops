@@ -8,7 +8,8 @@ A GitOps approach to managing Maximo Application Suite
 Register one of these applications per account to be managed by the ArgoCD worker:
 
 > Replace the following:
->   - `<source-repo-revision>`: The branch of https://github.com/ibm-mas/gitops to source charts from, e.g. `master`.
+>   - `<source-repo-url>`: The url of the source helm charts and argo apps. e.g. https://github.com/ibm-mas/gitops.
+>   - `<source-repo-revision>`: The branch of `<source-repo-url>` to source charts from, e.g. `master`.
 >   - `<config-repo>`: The github repo to source cluster/instance configuration from, e.g. `git@github.ibm.com:maximoappsuite/gitops-envs.git`.
 >   - `<config-repo>-revision>`: The revision of `<config-repo>` to source cluster/instance configuration from, e.g. `master`.
 >   - `<account-id>`: The ID of the account this root application manages. This also determines the root folder in `<config-repo>`:`<config-repo-revision` to source cluster/instance configuration from, e.g. `aws-dev`.
@@ -29,7 +30,7 @@ spec:
   project: "<argo-project-rootapps>"
   source:
     path: root-applications/ibm-mas-account-root
-    repoURL: 'https://github.com/ibm-mas/gitops'
+    repoURL: <source-repo-url>
     targetRevision: "<source-repo-revision>"
     helm:
       values: |
@@ -42,7 +43,8 @@ spec:
             "revision": "<config-repo-branch>"
           },
           "source": {
-            "targetRevision": "<source-repo-revision>"
+            "targetRevision": "<source-repo-revision>",
+            "repoURL": "<source-repo-url>"
           },
           "argoapp_namespace": "<argoapp-namespace>",
           "argo_project_rootapps": "<argo-project-rootapps>",

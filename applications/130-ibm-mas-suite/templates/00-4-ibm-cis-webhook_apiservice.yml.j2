@@ -1,0 +1,27 @@
+{{- if and (eq .Values.ibm_mas_suite.dns_provider "cis") (eq .Values.ibm_mas_suite.mas_manual_cert_mgmt false) }}
+
+{{ $cert_manager_namespace    :=   "cert-manager" }}
+{{ $cis_apiservice_group_name :=   "acme.cis.ibm.com" }}
+
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "135"
+  name: "v1alpha1.{{ cis_apiservice_group_name }}"
+  namespace: "{{ cert_manager_namespace }}"
+  labels:
+    app: "cert-manager-webhook-ibm-cis"
+  annotations:
+    cert-manager.io/inject-ca-from: "{{ cert_manager_namespace }}/cert-manager-webhook-ibm-cis-serving-cert"
+spec:
+  group: "{{ cis_apiservice_group_name }}"
+  groupPriorityMinimum: 1000
+  versionPriority: 15
+  service:
+    name: cert-manager-webhook-ibm-cis
+    namespace: "{{ cert_manager_namespace }}"
+  version: v1alpha1
+
+{{- end }}

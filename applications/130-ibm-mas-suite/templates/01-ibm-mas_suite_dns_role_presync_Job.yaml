@@ -1,12 +1,24 @@
 {{- if and (eq .Values.ibm_mas_suite.dns_provider "cis") (eq .Values.ibm_mas_suite.mas_manual_cert_mgmt false) }}
 
-{{ $ns := printf "mas-%s-core" .Values.ibm_mas_suite.mas_instance_id }}
-{{ $suite_dns_secret := "presync-ibm-suite-dns-role-secret"}}
-{{ $hook := "PreSync"}}
-{{ $role_name :=  "presync-ibm-suite-dns-role-r" }}
-{{ $sa_name :=    "presync-ibm-suite-dns-role-sa" }}
-{{ $rb_name :=    "presync-ibm-suite-dns-role-rb" }}
-{{ $job_name :=   "presync-ibm-suite-dns-role-job" }}
+{{ $ns                :=  printf "mas-%s-suite-dns-role" .Values.ibm_mas_suite.mas_instance_id }}
+{{ $suite_dns_secret  :=  "presync-ibm-suite-dns-role-secret"}}
+{{ $hook              :=  "PreSync"}}
+{{ $role_name         :=  "presync-ibm-suite-dns-role-r" }}
+{{ $sa_name           :=  "presync-ibm-suite-dns-role-sa" }}
+{{ $rb_name           :=  "presync-ibm-suite-dns-role-rb" }}
+{{ $job_name          :=  "presync-ibm-suite-dns-role-job" }}
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    argocd.argoproj.io/hook: {{ $hook }}
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+  labels:
+    argocd.argoproj.io/managed-by: {{ .Values.argoapp_namespace }}
 
 ---
 kind: Secret
@@ -15,12 +27,11 @@ metadata:
   name: {{ $suite_dns_secret }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "132"
+    argocd.argoproj.io/sync-wave: "130"
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 stringData:
   cis_apikey: {{ .Values.ibm_mas_suite.cis_apikey }}
-  cis_crn: {{ .Values.ibm_mas_suite.cis_crn }}
 type: Opaque
 
 ---
@@ -30,7 +41,7 @@ metadata:
   name: {{ $sa_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "132"
+    argocd.argoproj.io/sync-wave: "130"
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 
@@ -41,7 +52,7 @@ metadata:
   name: {{ $role_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "132"
+    argocd.argoproj.io/sync-wave: "130"
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 rules:
@@ -65,7 +76,7 @@ metadata:
   name: {{ $rb_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "132"
+    argocd.argoproj.io/sync-wave: "130"
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 subjects:
@@ -84,7 +95,7 @@ metadata:
   name: {{ $job_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "132"
+    argocd.argoproj.io/sync-wave: "130"
     argocd.argoproj.io/hook: {{ $hook }}
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
@@ -120,9 +131,15 @@ spec:
             - name: CIS_EMAIL
               value: {{ .Values.ibm_mas_suite.cis_email }}
             #- name: CIS_APIKEY
-            #- name: CIS_CRN
+            - name: CIS_CRN
+              value: {{ .Values.ibm_mas_suite.cis_crn }}
             - name: CIS_SUBDOMAIN
               value: {{ .Values.ibm_mas_suite.cis_subdomain }}
+            - name: CIS_MAS_DOMAIN
+              value: {{ .Values.ibm_mas_suite.cis_mas_domain }}
+
+            - name: OCP_CLUSTER_DOMAIN
+              value: {{ .Values.ibm_mas_suite.ocp_cluster_domain }}
             - name: CIS_ENHANCED_SECURITY
               value: {{ .Values.ibm_mas_suite.cis_enhanced_security }}
             - name: CIS_WAF
@@ -154,7 +171,6 @@ spec:
               set -e
 
               export CIS_APIKEY=$(cat /etc/mas/creds/suite_dns_secret/cis_apikey)
-              export CIS_CRN=$(cat /etc/mas/creds/suite_dns_secret/cis_crn)
 
               echo ""
               echo "================================================================================"
@@ -169,6 +185,8 @@ spec:
               echo "CIS CRN ............................. ${COLOR_MAGENTA}${CIS_CRN}"
               echo "IBM CLOUD APIKEY .................... ${COLOR_MAGENTA}${CIS_APIKEY:0:4}<snip>"
               echo "MAS Domain .......................... ${COLOR_MAGENTA}${MAS_DOMAIN}"
+              echo "CIS MAS Domain ...................... ${COLOR_MAGENTA}${CIS_MAS_DOMAIN}"
+              echo "OCP Cluster Domain .................. ${COLOR_MAGENTA}${OCP_CLUSTER_DOMAIN}"
               echo "CIS subdomain ....................... ${COLOR_MAGENTA}${CIS_SUBDOMAIN}"
               echo "CIS enhanced security Flag........... ${COLOR_MAGENTA}${CIS_ENHANCED_SECURITY}"
               echo "CIS WAF ............................. ${COLOR_MAGENTA}${CIS_WAF}"

@@ -33,6 +33,9 @@ done
 : ${SOURCE?"Need to set -s|--source argument for source directory"}
 : ${TARGET?"Need to set -t|--target argument for target directory"}
 
+echo "Deleting all files in target"
+rm -rf ${TARGET}/*
+
 echo "Copying gitops"
 cp -vr ${SOURCE}/applications/* ${TARGET}/applications/
 cp -vr ${SOURCE}/root-applications/* ${TARGET}/root-applications/

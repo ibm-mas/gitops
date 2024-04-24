@@ -1,0 +1,60 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: syncres.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argoapp_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "90"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
+  project: "{{ .Values.argo_project_apps | default "mas" }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: "{{ .Values.source.repoURL }}"
+    path: applications/90-ibm-sync-resources
+    targetRevision: "{{ .Values.source.targetRevision }}"
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            {{- if not (empty .Values.instance) }}
+            instance:
+              id: {{ .Values.instance.id }}
+            {{- end }}
+            {{- if not (empty .Values.sm) }}
+            sm:
+              aws_access_key_id: {{ .Values.sm.aws_access_key_id }}
+              aws_secret_access_key:  {{ .Values.sm.aws_secret_access_key }}
+              aws_region: {{ .Values.region_id }}
+            {{- end }}
+            {{- if not (empty .Values.ibm_sls) }}
+            docdb:
+              master_username: {{ .Values.ibm_sls.docdb_master_username }}
+              master_password: {{ .Values.ibm_sls.docdb_master_password }}
+              instance_username: {{ .Values.ibm_sls.sls_mongo_username }}
+              instance_password: {{ .Values.ibm_sls.sls_mongo_password }}
+              master_info:
+                {{ .Values.ibm_sls.docdb_master_info | indent 16 }}
+            {{- end }}
+        - name: ARGOCD_APP_NAME
+          value: syncres
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true

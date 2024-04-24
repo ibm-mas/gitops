@@ -1,0 +1,39 @@
+name: Update Internal GHE Repo
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - '**'
+jobs:
+  update-repo:
+    runs-on: ubuntu-latest
+  steps:
+    - name: Checkout local repo
+      uses: actions/checkout@v4
+      with:
+        path: source
+
+    - name: Checkout remote repo
+      uses: actions/checkout@v4
+      with:
+        github-server-url: https://github.ibm.com
+        repository: automation-paas-cd-pipeline/mas-gitops
+        ref: ${GITHUB_REF##*/}
+        token:  ${{ secrets.ACTIONS_GITHUB_TOKEN }}
+        path: target
+
+    - name: Copy over files
+      run: $GITHUB_WORKSPACE/build/bin/copy-gitops.sh -s $GITHUB_WORKSPACE/source -t $GITHUB_WORKSPACE/target
+
+    - name: Setup git config
+      run: |
+        cd $GITHUB_WORKSPACE/target
+        git config user.name "GitHub Actions Bot"
+        git config user.email "<>"
+
+    - name: Commit changes to remote repo 
+      run: |
+        echo "Push changes to ${GITHUB_REF##*/} branch of https://github.ibm.com/automation-paas-cd-pipeline/mas-gitops"
+        git push origin ${GITHUB_REF##*/}
+        

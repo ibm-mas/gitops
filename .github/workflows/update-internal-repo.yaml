@@ -38,5 +38,14 @@ jobs:
           cd $GITHUB_WORKSPACE/target
           git config user.name "GitHub Actions Bot"
           git config user.email "<>"
+
+          echo "git: Adding all files in $$GITHUB_WORKSPACE/target directory"
+          export FILES_ADDED=$(git add -v . | wc -l | xargs)
+          echo "git: Added ${FILES_ADDED} files"
+          if [ "$FILES_ADDED" != "0" ]; then
+            echo "git: Committing files"
+            git commit -m "Synch commit between ibm-mas/gitops and $REMOTE_REPO"
+          fi
+
           echo "Push changes to ${{ env.GITHUB_BRANCH }} branch of https://github.ibm.com/${{ env.REMOTE_REPO }}"
           git push origin ${{ env.GITHUB_BRANCH }}

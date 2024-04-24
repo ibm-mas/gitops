@@ -37,8 +37,4 @@ echo "Deleting all files in target"
 rm -rf ${TARGET}/*
 
 echo "Copying gitops"
-cp -vr ${SOURCE}/applications/* ${TARGET}/applications/
-cp -vr ${SOURCE}/root-applications/* ${TARGET}/root-applications/
-cp -vr ${SOURCE}/docs/* ${TARGET}/docs/
-cp -vr ${SOURCE}/README.md* ${TARGET}/README.md
-cp -vr ${SOURCE}/LICENSE ${TARGET}/LICENSE
+cp -vr ${SOURCE}/* ${TARGET}

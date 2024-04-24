@@ -1,7 +1,9 @@
 {{- if and (eq .Values.ibm_mas_suite.dns_provider "cis") (eq .Values.ibm_mas_suite.mas_manual_cert_mgmt false) }}
 
-{{ $cert_manager_namespace    :=   "cert-manager" }}
-{{ $cis_apiservice_group_name :=   "acme.cis.ibm.com" }}
+{{ $cert_manager_namespace          :=   "cert-manager" }}
+{{ $cert_manager_service_account    :=   "cert-manager" }}
+{{ $cis_apiservice_group_name       :=   "acme.cis.ibm.com" }}
+
 
 ---
 apiVersion: v1
@@ -10,7 +12,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "130"
   name: "cert-manager-webhook-ibm-cis"
-  namespace: "{{ cert_manager_namespace }}"
+  namespace: "{{ $cert_manager_namespace }}"
   labels:
     app: "cert-manager-webhook-ibm-cis"
 
@@ -23,7 +25,7 @@ kind: RoleBinding
 metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "131"
-  namespace: "{{ cert_manager_namespace }}"
+  namespace: "{{ $cert_manager_namespace }}"
   name: "cert-manager-webhook-ibm-cis"
   labels:
     app: "cert-manager-webhook-ibm-cis"
@@ -35,7 +37,7 @@ subjects:
   - apiGroup: ""
     kind: ServiceAccount
     name: "cert-manager-webhook-ibm-cis"
-    namespace: {{ cert_manager_namespace }}
+    namespace: {{ $cert_manager_namespace }}
 
 ---
 # Grant cert-manager permission to validate using our apiserver
@@ -45,7 +47,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "130"
   name: "cert-manager-webhook-ibm-cis"
-  namespace: "{{ cert_manager_namespace }}"
+  namespace: "{{ $cert_manager_namespace }}"
   labels:
     app: "cert-manager-webhook-ibm-cis"
 rules:
@@ -77,7 +79,7 @@ subjects:
   - apiGroup: ""
     kind: ServiceAccount
     name: "cert-manager-webhook-ibm-cis"
-    namespace: "{{ cert_manager_namespace }}"
+    namespace: "{{ $cert_manager_namespace }}"
 
 ---
 # apiserver gets the auth-delegator role to delegate auth decisions to
@@ -98,7 +100,7 @@ subjects:
   - apiGroup: ""
     kind: ServiceAccount
     name: "cert-manager-webhook-ibm-cis"
-    namespace: "{{ cert_manager_namespace }}"
+    namespace: "{{ $cert_manager_namespace }}"
 
 ---
 # Grant cert-manager permission to validate using our apiserver
@@ -112,7 +114,7 @@ metadata:
     app: "cert-manager-webhook-ibm-cis"
 rules:
   - apiGroups:
-      - "{{ cis_apiservice_group_name }}"
+      - "{{ $cis_apiservice_group_name }}"
     resources:
       - '*'
     verbs:
@@ -134,7 +136,7 @@ roleRef:
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
-    name: "{{ cert_manager_service_account }}"
-    namespace: "{{ cert_manager_namespace }}"
+    name: "{{ $cert_manager_service_account }}"
+    namespace: "{{ $cert_manager_namespace }}"
 
 {{- end }}

@@ -12,48 +12,48 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: {{ $ns }}
+  name: "{{ $ns }}"
   annotations:
     argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: {{ $hook }}
+    argocd.argoproj.io/hook: "{{ $hook }}"
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
   labels:
-    argocd.argoproj.io/managed-by: {{ .Values.argoapp_namespace }}
+    argocd.argoproj.io/managed-by: "{{ .Values.argoapp_namespace }}"
 
 ---
 kind: Secret
 apiVersion: v1
 metadata:
   name: "presync-ibm-suite-dns-role-secret"
-  namespace: {{ $ns }}
+  namespace: "{{ $ns }}"
   annotations:
     argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: {{ $hook }}
+    argocd.argoproj.io/hook: "{{ $hook }}"
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 stringData:
-  cis_apikey: {{ .Values.ibm_mas_suite.cis_apikey }}
+  cis_apikey: "{{ .Values.ibm_mas_suite.cis_apikey }}"
 type: Opaque
 
 ---
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: {{ $sa_name }}
-  namespace: {{ $ns }}
+  name: "{{ $sa_name }}"
+  namespace: "{{ $ns }}"
   annotations:
     argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: {{ $hook }}
+    argocd.argoproj.io/hook: "{{ $hook }}"
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 
 ---
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ $role_name }}
-  namespace: {{ $ns }}
+  name: "{{ $role_name }}"
+  namespace: "{{ $ns }}"
   annotations:
     argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: {{ $hook }}
+    argocd.argoproj.io/hook: "{{ $hook }}"
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 rules:
   - verbs:
@@ -73,30 +73,30 @@ rules:
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ $rb_name }}
-  namespace: {{ $ns }}
+  name: "{{ $rb_name }}"
+  namespace: "{{ $ns }}"
   annotations:
     argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: {{ $hook }}
+    argocd.argoproj.io/hook: "{{ $hook }}"
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 subjects:
   - kind: ServiceAccount
-    name: {{ $sa_name }}
-    namespace: {{ $ns }}
+    name: "{{ $sa_name }}"
+    namespace: "{{ $ns }}"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ $role_name }}
+  name: "{{ $role_name }}"
 
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $job_name }}
-  namespace: {{ $ns }}
+  name: "{{ $job_name }}"
+  namespace: "{{ $ns }}"
   annotations:
     argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: {{ $hook }}
+    argocd.argoproj.io/hook: "{{ $hook }}"
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   template:
@@ -115,45 +115,45 @@ spec:
           env:
             # dns
             - name: DNS_PROVIDER
-              value: {{ .Values.ibm_mas_suite.dns_provider }}
+              value: "{{ .Values.ibm_mas_suite.dns_provider }}"
             - name: MAS_MANUAL_CERT_MGMT
-              value: {{ .Values.ibm_mas_suite.mas_manual_cert_mgmt }}
+              value: "{{ .Values.ibm_mas_suite.mas_manual_cert_mgmt }}"
             - name: MAS_INSTANCE_ID
-              value: {{ .Values.ibm_mas_suite.mas_instance_id }}
+              value: "{{ .Values.ibm_mas_suite.mas_instance_id }}"
             - name: MAS_WORKSPACE_ID
-              value: {{ .Values.ibm_mas_suite.mas_workspace_id }}
+              value: "{{ .Values.ibm_mas_suite.mas_workspace_id }}"
             - name: MAS_DOMAIN
-              value: {{ .Values.ibm_mas_suite.mas_domain }}
+              value: "{{ .Values.ibm_mas_suite.mas_domain }}"
             - name: MAS_CONFIG_DIR
-              value: {{ .Values.ibm_mas_suite.mas_config_dir }}
+              value: "{{ .Values.ibm_mas_suite.mas_config_dir }}"
 
             - name: CIS_EMAIL
-              value: {{ .Values.ibm_mas_suite.cis_email }}
+              value: "{{ .Values.ibm_mas_suite.cis_email }}"
             #- name: CIS_APIKEY
             - name: CIS_CRN
-              value: {{ .Values.ibm_mas_suite.cis_crn }}
+              value: "{{ .Values.ibm_mas_suite.cis_crn }}"
             - name: CIS_SUBDOMAIN
-              value: {{ .Values.ibm_mas_suite.cis_subdomain }}
+              value: "{{ .Values.ibm_mas_suite.cis_subdomain }}"
             - name: CIS_MAS_DOMAIN
-              value: {{ .Values.ibm_mas_suite.cis_mas_domain }}
+              value: "{{ .Values.ibm_mas_suite.cis_mas_domain }}"
 
             - name: OCP_CLUSTER_DOMAIN
-              value: {{ .Values.ibm_mas_suite.ocp_cluster_domain }}
+              value: "{{ .Values.ibm_mas_suite.ocp_cluster_domain }}"
             - name: CIS_ENHANCED_SECURITY
-              value: {{ .Values.ibm_mas_suite.cis_enhanced_security }}
+              value: "{{ .Values.ibm_mas_suite.cis_enhanced_security }}"
             - name: CIS_WAF
-              value: {{ .Values.ibm_mas_suite.cis_waf }}
+              value: "{{ .Values.ibm_mas_suite.cis_waf }}"
             - name: CIS_PROXY
-              value: {{ .Values.ibm_mas_suite.cis_proxy }}
+              value: "{{ .Values.ibm_mas_suite.cis_proxy }}"
             - name: CIS_SERVICE_NAME
-              value: {{ .Values.ibm_mas_suite.cis_service_name }}
+              value: "{{ .Values.ibm_mas_suite.cis_service_name }}"
 
             - name: UPDATE_DNS_ENTRIES
-              value: {{ .Values.ibm_mas_suite.update_dns_entries }}
+              value: "{{ .Values.ibm_mas_suite.update_dns_entries }}"
             - name: DELETE_WILDCARDS
-              value: {{ .Values.ibm_mas_suite.delete_wildcards }}
+              value: "{{ .Values.ibm_mas_suite.delete_wildcards }}"
             - name: OVERRIDE_EDGE_CERTS
-              value: {{ .Values.ibm_mas_suite.override_edge_certs }}
+              value: "{{ .Values.ibm_mas_suite.override_edge_certs }}"
 
             # Hard-coded for now:
             - name: AVP_TYPE
@@ -206,7 +206,7 @@ spec:
 
       restartPolicy: Never
 
-      serviceAccountName: {{ $sa_name }}
+      serviceAccountName: "{{ $sa_name }}"
       volumes:
         - name: "presync-ibm-suite-dns-role-secret"
           secret:

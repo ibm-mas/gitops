@@ -8,24 +8,24 @@ For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: "ma-cfg.{{ $.Values.account.id }}.{{ $.Values.region.id }}.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
+  name: "ma-cfg.{{ $.Values.account.id }}.{{ $.Values.region.id }}.{{ $.Values.cluster.id }}.{{ $value.mas_instance_id }}.{{ $value.mas_app_id }}"
   namespace: {{ $.Values.argoapp_namespace }}
   annotations:
-{{- if eq .Values.mas_application_id "assist" }}
+{{- if eq $value.mas_app_id "assist" }}
     argocd.argoproj.io/sync-wave: "510"
-{{- else if eq .Values.mas_application_id "iot" }}
+{{- else if eq $value.mas_app_id "iot" }}
     argocd.argoproj.io/sync-wave: "510"
-{{- else if eq .Values.mas_application_id "manage" }}
+{{- else if eq $value.mas_app_id "manage" }}
     argocd.argoproj.io/sync-wave: "510"
-{{- else if eq .Values.mas_application_id "visualinspection" }}
+{{- else if eq $value.mas_app_id "visualinspection" }}
     argocd.argoproj.io/sync-wave: "510"
-{{- else if eq .Values.mas_application_id "health" }}
+{{- else if eq $value.mas_app_id "health" }}
     argocd.argoproj.io/sync-wave: "530"
-{{- else if eq .Values.mas_application_id "monitor" }}
+{{- else if eq $value.mas_app_id "monitor" }}
     argocd.argoproj.io/sync-wave: "530"
-{{- else if eq .Values.mas_application_id "optimizer" }}
+{{- else if eq $value.mas_app_id "optimizer" }}
     argocd.argoproj.io/sync-wave: "530"
-{{- else if eq .Values.mas_application_id "predict" }}
+{{- else if eq $value.mas_app_id "predict" }}
     argocd.argoproj.io/sync-wave: "550"
 {{- end }}
     {{- if and $.Values.notifications $.Values.notifications.slack_channel_id }}
@@ -41,21 +41,39 @@ metadata:
     cluster: '{{ $.Values.cluster.id }}'
     instance: '{{ $.Values.instance.id }}'
 spec:
-  project: mas
+  project: "{{ $.Values.argo_project_apps | default "mas" }}"
   destination:
     server: {{ $.Values.cluster.url }}
     namespace: default
   source:
-    repoURL: https://github.com/ibm-mas/gitops
-    targetRevision: "{{ $.Values.source.targetRevision }}"
+    repoURL: "{{ $.Values.source.repoURL | default "https://github.com/ibm-mas/gitops" }}"
     path: applications/510-ibm-mas-masapp-config-stub
+    targetRevision: "{{ $.Values.source.targetRevision }}"
     plugin:
       env:
-        - name: HELM_VALUES
+        - name: HELM_ARGS
           value: |
-            {{ $value | toRawJson }}
+            --set mas_instance_id={{ $value.mas_instance_id }}
+            --set mas_app_id={{ $value.mas_app_id }}
+            --set ca_crt={{ $value.ca_crt }}
+            --set cpd_admin_password={{ $value.cpd_admin_password }}
+            --set cpd_admin_username={{ $value.cpd_admin_username }}
+            --set mas_app_namespace={{ $value.mas_app_namespace }}
+            --set mas_app_settings_server_bundles_size={{ $value.mas_app_settings_server_bundles_size }}
+            --set mas_app_ws_apiversion={{ $value.mas_app_ws_apiversion }}
+            --set mas_app_ws_kind={{ $value.mas_app_ws_kind }}
+            --set mas_appws_spec={{ $value.mas_appws_spec }}
+            --set mas_manual_cert_mgmt={{ $value.mas_manual_cert_mgmt }}
+            --set mas_workspace_id={{ $value.mas_workspace_id }}
+            --set public_tls_secret_name={{ $value.public_tls_secret_name }}
+            --set server_bundles_add_server_config_content={{ $value.server_bundles_add_server_config_content }}
+            --set server_bundles_add_server_config_no_activation_content={{ $value.server_bundles_add_server_config_no_activation_content }}
+            --set server_bundles_jms_add_server_config_content={{ $value.server_bundles_jms_add_server_config_content }}
+            --set tls_cert={{ $value.tls_cert }}
+            --set tls_key={{ $value.tls_key }}
+            --set wd_yaml={{ $value.wd_yaml }}
         - name: ARGOCD_APP_NAME
-          value: "{{ `{{.masapp.id}}` }}-config"
+          value: "ma-cfg-{{ $value.mas_app_id }}"
   syncPolicy:
     automated:
       prune: true

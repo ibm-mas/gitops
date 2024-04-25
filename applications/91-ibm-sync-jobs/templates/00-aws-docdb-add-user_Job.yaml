@@ -109,26 +109,10 @@ spec:
               echo
 
               mkdir -p ${MAS_CONFIG_DIR}
-              # /opt/app-root/src/run-role.sh aws_documentdb_user
-              echo "TODO: Run /opt/app-root/src/run-role.sh aws_documentdb_user (user action ${USER_ACTION})"
+              /opt/app-root/src/run-role.sh aws_documentdb_user
 
               # The role should have created a file ${OUTPUT_FILE} containing the username/password it applied
               # Read these so we can set the values in the instance's mongo secret in AWS SM
-
-              # mock it up for now
-              DOCDB_INSTANCE_USERNAME_MOCK_OUTPUT="masinst_${MAS_INSTANCE_ID}"
-              DOCDB_INSTANCE_PASSWORD_MOCK_OUTPUT=${DOCDB_INSTANCE_PASSWORD:-`cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 20`}
-              echo '
-                apiVersion: v1
-                kind: Secret
-                type: Opaque
-                metadata:
-                  name: "unimportant"
-                data:
-                  docdb_username: "'$(echo ${DOCDB_INSTANCE_USERNAME_MOCK_OUTPUT} | base64)'"
-                  docdb_password: "'$(echo ${DOCDB_INSTANCE_PASSWORD_MOCK_OUTPUT} | base64)'"
-              ' > $OUTPUT_FILE
-
               DOCDB_INSTANCE_USERNAME=$(/usr/bin/yq '.data.docdb_username' $OUTPUT_FILE | base64 -d)
               DOCDB_INSTANCE_PASSWORD=$(/usr/bin/yq '.data.docdb_password' $OUTPUT_FILE | base64 -d)
               

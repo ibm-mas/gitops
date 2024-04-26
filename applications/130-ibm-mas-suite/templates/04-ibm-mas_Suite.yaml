@@ -18,11 +18,13 @@ metadata:
 spec:
   domain: "{{ .Values.ibm_mas_suite.domain }}"
   certManagerNamespace: {{ .Values.ibm_mas_suite.cert_manager_namespace | default "cert-manager" }}
-{{- if and .Values.ibm_mas_suite.dns_provider (eq .Values.ibm_mas_suite.mas_manual_cert_mgmt "False") }}
+{{- if eq .Values.ibm_mas_suite.mas_manual_cert_mgmt "False" }}
+{{- if or (eq .Values.ibm_mas_suite.dns_provider "akamai") (eq .Values.ibm_mas_suite.dns_provider "cis") }}
   certificateIssuer:
     duration: 8760h0m0s
     name: "{{ .Values.ibm_mas_suite.mas_instance_id }}-{{ .Values.ibm_mas_suite.dns_provider }}-le-prod" 
     renewBefore: 720h0m0s
+{{ end }}
 {{ end }}
   license:
     accept: true

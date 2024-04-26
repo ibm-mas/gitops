@@ -1,4 +1,4 @@
-IBM MAS Sync Resources
+IBM MAS Sync Jobs
 ===============================================================================
 Instantiated by the /gitops/root-applications/ibm-mas-instance-root/templates/91-ibm-sync-jobs.yaml root application.
 

@@ -3,6 +3,9 @@ A GitOps approach to managing Maximo Application Suite
 
 
 
+
+  
+
 # Root application example
 
 Register one of these applications per account to be managed by the ArgoCD worker:

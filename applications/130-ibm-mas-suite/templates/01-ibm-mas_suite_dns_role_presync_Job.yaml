@@ -32,6 +32,8 @@ metadata:
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
 stringData:
   cis_apikey: "{{ .Values.ibm_mas_suite.cis_apikey }}"
+  sm_aws_access_key_id: "{{ .Values.ibm_mas_suite.sm_aws_access_key_id }}"
+  sm_aws_secret_access_key: "{{ .Values.ibm_mas_suite.sm_aws_secret_access_key }}"
 type: Opaque
 
 ---
@@ -176,6 +178,14 @@ spec:
             - name: OVERRIDE_EDGE_CERTS
               value: "{{ .Values.ibm_mas_suite.override_edge_certs }}"
 
+            - name: SM_AWS_REGION
+              value: "{{ .Values.ibm_mas_suite.sm_aws_region }}"
+
+            - name: ACCOUNT
+              value: "{{ .Values.account.id }}"
+            - name: CLUSTER
+              value: "{{ .Values.cluster.id }}"
+
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
@@ -190,7 +200,11 @@ spec:
 
               set -e
 
+              source /mascli/functions/gitops_utils
+
               export CIS_APIKEY=$(cat /etc/mas/creds/suite_dns_secret/cis_apikey)
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/suite_dns_secret/sm_aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/suite_dns_secret/sm_aws_secret_access_key)
 
               echo ""
               echo "================================================================================"
@@ -216,16 +230,44 @@ spec:
               echo "DELETE_WILDCARDS Flag ............... ${COLOR_MAGENTA}${DELETE_WILDCARDS}"
               echo "OVERRIDE_EDGE_CERTS Flag ............ ${COLOR_MAGENTA}${OVERRIDE_EDGE_CERTS}"
 
+              echo "SM_AWS_REGION ....................... ${COLOR_MAGENTA}${SM_AWS_REGION}"
+              echo "SM_AWS_ACCESS_KEY_ID ................ ${COLOR_MAGENTA}${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
+              echo "SM_AWS_SECRET_ACCESS_KEY ............ ${COLOR_MAGENTA}${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"
+
               echo ""
               echo "================================================================================"
               export MAS_DOMAIN=$CIS_MAS_DOMAIN
               mkdir -p ${MAS_CONFIG_DIR}
 
-              export ROLE_NAME=suite_dns
-              ansible-playbook ibm.mas_devops.run_role
+              sm_login
+              export SECRETS_KEY_SEPERATOR="/"
+              export SECRET_NAME=${ACCOUNT}${SECRETS_KEY_SEPERATOR}${CLUSTER}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}suite_dns_role
+              export SUITE_DNS_ROLE_SECRET_FILE=$MAS_CONFIG_DIR/suite-dns-role-secret.json
+              sm_get_secret_file $SECRET_NAME $SUITE_DNS_ROLE_SECRET_FILE
+              
+              SUITE_DNS_ROLE_COMPLETION_STATUS=$(jq -r .completion_status $SUITE_DNS_ROLE_SECRET_FILE)
+              SUITE_DNS_ROLE_COMPLETION_ON=$(jq -r .completion_on $SUITE_DNS_ROLE_SECRET_FILE)
 
-              rc=$?
-              [ $rc -ne 0 ] && exit $rc
+              echo "SUITE_DNS_ROLE_COMPLETION_STATUS=${SUITE_DNS_ROLE_COMPLETION_STATUS}"
+              echo "SUITE_DNS_ROLE_COMPLETION_ON=${SUITE_DNS_ROLE_COMPLETION_ON}"
+
+              if [ "$SUITE_DNS_ROLE_COMPLETION_STATUS" != "success" ]; then
+                export ROLE_NAME=suite_dns
+                #ansible-playbook ibm.mas_devops.run_role
+                #rc=$?
+                #echo "suite_dns rc=${rc}"
+                #[ $rc -ne 0 ] && exit $rc
+
+                COMPLETION_ON=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                echo "COMPLETION_ON=${COMPLETION_ON}"
+                export SECRET_VALUE="{\"completion_status\":\"success\",\"completion_on\":\"$COMPLETION_ON\"}"
+
+                sm_update_secret $SECRET_NAME $SECRET_VALUE
+
+                exit 0
+              fi
+              exit 0
+
 
       restartPolicy: Never
 

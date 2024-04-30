@@ -130,6 +130,41 @@ spec:
                 return 1
               }
 
+              # DB2 operator does not automatically apply dbConfig parameters set on the Db2uCluster CR
+              # Instead, a script /db2u/scripts/apply-db2cfg-settings.sh must be executed on one of the db2u pods
+              # However, this does not always seem to work and no indication is given in the output of the script whether it worked or not.
+              # One approach is to check the current configuration parameters (db2 get db cfg for ${DB2_DBNAME}) one by one and verify that their value aligns with that set in the CR.
+              # However, this is not straightforward since DB2 implicitly reformats certain param values (e.g. APPLHEAPSZ: '8192 AUTOMATIC' is reformatted to AUTOMATIC(8192)).
+              # Until we can come up with a better way of doing this (or the Db2u operator is fixed), we will take the approach used in ansible-devops,
+              # whereby the value of single parameter (CHNGPGS_THRESH) is checked against a known value (40) to see if the script executed successfully (and retry if not)
+              # See https://github.com/ibm-mas/ansible-devops/blob/b9f3ef5b7999640b0a31d0aba518ba85ef8b704f/ibm/mas_devops/roles/suite_db2_setup_for_manage/tasks/apply-db2-config-settings.yml#L39
+              function db2apply {
+                RETRIES=${1:-5}
+                RETRY_DELAY_SECONDS=${2:-30}
+
+                for (( c=1; c<="${RETRIES}"; c++ )); do
+                  echo ""
+                  echo "... attempt ${c} of ${RETRIES}"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
+                  # no useful info in return code of this script
+
+                  rc=0
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc 'db2 get db cfg for ${DB2_DBNAME} | grep "(CHNGPGS_THRESH) = 40"' db2inst1 || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+                    return 0
+                  fi
+
+                  if [[ "${c}" -lt "${RETRIES}" ]]; then
+                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                    sleep $RETRY_DELAY_SECONDS
+                  fi
+                done
+
+                echo "...... failed, no attempts remain"
+                return 1
+              }
+
               export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config
 
               echo ""
@@ -169,21 +204,11 @@ spec:
               echo "================================================================================"
               wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
 
-
               echo ""
               echo "================================================================================"
               echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "================================================================================"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
-              echo ".... rc $?"
-
-              echo ""
-              echo "================================================================================"
-              echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0 again as db2u doesn't always apply the first time"
-              echo "================================================================================"
-              sleep 30
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
-              echo ".... rc $?"
+              db2apply || exit $?
 
               echo ""
               echo "================================================================================"

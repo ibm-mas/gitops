@@ -36,12 +36,17 @@ spec:
     path: applications/130-{{ $value.mas_config_chart }}
     targetRevision: "{{ $.Values.source.targetRevision }}"
     plugin:
+      name: {{ $.Values.avp.name }} 
       env:
-        - name: HELM_VALUES
+        - name: {{ $.Values.avp.values_varname }}
           value: |
             {{ $value | toRawJson }}
         - name: ARGOCD_APP_NAME
           value: {{ $value.mas_config_name }}
+        {{- if not (empty $.Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ $.Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

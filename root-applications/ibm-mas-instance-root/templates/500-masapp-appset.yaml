@@ -59,8 +59,9 @@ spec:
           targetRevision: "{{ .Values.source.targetRevision }}"
           path: applications/500-ibm-mas-suite-app-install
           plugin:
+            name: {{ .Values.avp.name }} 
             env:
-              - name: HELM_VALUES
+              - name: {{ .Values.avp.values_varname }}
                 value: |
                   {{` 
                     {{
@@ -89,12 +90,17 @@ spec:
                   `}}
               - name: ARGOCD_APP_NAME
                 value: "{{ `{{.masapp.id}}` }}-install"
+              {{- if not (empty .Values.avp.secret) }}
+              - name: AVP_SECRET
+                value: {{ .Values.avp.secret }}
+              {{- end }}
         - repoURL: "{{ .Values.source.repoURL }}"
           targetRevision: "{{ .Values.source.targetRevision }}"
           path: applications/600-ibm-mas-suite-app-config
           plugin:
+            name: {{ .Values.avp.name }} 
             env:
-              - name: HELM_VALUES
+              - name: {{ .Values.avp.values_varname }}
                 value: |
                   {{` 
                     {{
@@ -123,6 +129,10 @@ spec:
                   `}}
               - name: ARGOCD_APP_NAME
                 value: "{{ `{{.masapp.id}}` }}-config"
+              {{- if not (empty .Values.avp.secret) }}
+              - name: AVP_SECRET
+                value: {{ .Values.avp.secret }}
+              {{- end }}
       destination:
         server: "{{ .Values.cluster.url }}"
         namespace: "default"

@@ -12,7 +12,7 @@ Register one of these applications per account to be managed by the ArgoCD worke
 >   - `<source-repo-revision>`: The branch of `<source-repo-url>` to source charts from, e.g. `master`.
 >   - `<config-repo>`: The github repo to source cluster/instance configuration from, e.g. `git@github.ibm.com:maximoappsuite/gitops-envs.git`.
 >   - `<config-repo>-revision>`: The revision of `<config-repo>` to source cluster/instance configuration from, e.g. `master`.
->   - `<account-id>`: The ID of the account this root application manages. This also determines the root folder in `<config-repo>`:`<config-repo-revision` to source cluster/instance configuration from, e.g. `aws-dev`.
+>   - `<account-id>`: The ID of the account this root ap"plication manages. This also determines the root folder in `<config-repo>`:`<config-repo-revision` to source cluster/instance configuration from, e.g. `aws-dev`.
 >   - `<argoapp-namespace>`: The namespace on cluster running ArgoCD in which to create ArgoCD Application resources. E.g. `openshift-gitops` (internal clusters), `argocd-worker` (MCSP)
 >   - `<argo-project-rootapps>`: The ArgoCD project in which to create root applications (including this Application and the root applications that it generates). The project must be configured to permit creation of `argoproj.io.Application` and `argoproj.io.ApplicationSet` resources in the `<argoapp-namespace>` of the cluster in which ArgoCD is running (i.e. `https://kubernetes.default.svc`). In fvtsaas, this project is currently `mas`. In the MCSP dev worker, it is `mas-argoproj-resources`.
 >   - `<argo-project-apps>`: The ArgoCD project in which to create the applications that deploy MAS resources (and their dependencies) to external MAS clusters. The project must be configured to permit creation of any resource in any namespace of all external MAS clusters targeted by this account. In fvtsaas, this project is currently `mas`. In the MCSP dev worker, it is also `mas`.
@@ -48,7 +48,13 @@ spec:
           },
           "argoapp_namespace": "<argoapp-namespace>",
           "argo_project_rootapps": "<argo-project-rootapps>",
-          "argo_project_apps": "<argo-project-apps>"
+          "argo_project_apps": "<argo-project-apps>",
+
+          "avp": {
+            "name": "",
+            "secret": "",
+            "values_varname": ""
+          }
         }
   syncPolicy:
     syncOptions:

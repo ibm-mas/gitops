@@ -33,13 +33,17 @@ spec:
     repoURL: "{{ $.Values.source.repoURL }}"
     path: applications/120-ibm-db2u-database
     targetRevision: "{{ $.Values.source.targetRevision }}"
-    plugin:
+    name: {{ $.Values.avp.name }} 
       env:
-        - name: HELM_VALUES
+        - name: {{ $.Values.avp.values_varname }}
           value: |
             {{ $value | toRawJson }}
         - name: ARGOCD_APP_NAME
           value: "db2dbapp-{{ $value.mas_application_id }}"
+        {{- if not (empty $.Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ $.Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

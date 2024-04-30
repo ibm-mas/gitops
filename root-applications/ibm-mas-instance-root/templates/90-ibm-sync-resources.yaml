@@ -27,8 +27,9 @@ spec:
     path: applications/90-ibm-sync-resources
     targetRevision: "{{ .Values.source.targetRevision }}"
     plugin:
+      name: {{ .Values.avp.name }} 
       env:
-        - name: HELM_VALUES
+        - name: {{ .Values.avp.values_varname }}
           value: |
             argoapp_namespace: {{ .Values.argoapp_namespace }}
             {{- if not (empty .Values.account) }}
@@ -62,6 +63,10 @@ spec:
             {{- end }}
         - name: ARGOCD_APP_NAME
           value: syncres
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

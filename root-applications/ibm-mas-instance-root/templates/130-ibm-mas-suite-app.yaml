@@ -24,12 +24,17 @@ spec:
     path: applications/130-ibm-mas-suite
     targetRevision: "{{ .Values.source.targetRevision }}"
     plugin:
+      name: {{ .Values.avp.name }} 
       env:
-        - name: HELM_VALUES
+        - name: {{ .Values.avp.values_varname }}
           value: |
             {{ .Values | toRawJson }}
         - name: ARGOCD_APP_NAME
           value: suiteapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

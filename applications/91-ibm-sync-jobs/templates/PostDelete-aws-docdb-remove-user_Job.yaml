@@ -39,6 +39,11 @@ spec:
                 secretKeyRef:
                   name: aws-docdb
                   key: docdb_master_password
+            - name: DOCDB_MASTER_INFO
+              valueFrom:
+                secretKeyRef:
+                  name: aws-docdb
+                  key: docdb_master_info
 
             - name: SM_AWS_REGION
               valueFrom:
@@ -85,7 +90,7 @@ spec:
               echo
 
               mkdir -p ${MAS_CONFIG_DIR}
-              /opt/app-root/src/run-role.sh aws_documentdb_user
+              /opt/app-root/src/run-role.sh aws_documentdb_user || exit $?
 
               echo 
               echo "================================================================================"
@@ -107,7 +112,7 @@ spec:
 
               source /mascli/functions/gitops_utils
               sm_login
-              sm_delete_secret "${SECRET_NAME_MONGO}"
+              sm_delete_secret "${SECRET_NAME_MONGO}" || exit $?
 
       restartPolicy: Never
       serviceAccountName: aws-docdb-user-job

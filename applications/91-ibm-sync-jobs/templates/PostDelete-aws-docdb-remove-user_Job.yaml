@@ -1,0 +1,121 @@
+{{- if not (empty .Values.docdb) }}
+---
+
+# Deletes user "masinst_${MAS_INSTANCE_ID}" from docdb an deletes the acc/cluster/instance/mongo#password secret from AWS SM
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aws-docdb-remove-user
+  namespace: mas-{{ .Values.instance.id }}-syncres
+  annotations:
+    argocd.argoproj.io/hook: "PostDelete"
+spec:
+  template:
+    metadata:
+      labels:
+        app: "sync-job"
+    spec:
+      containers:
+        - name: aws-docdb-process-user
+          image: quay.io/ibmmas/cli:8.1.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          env:
+
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account.id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster.id }}"
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance.id }}"
+
+            - name: DOCDB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: aws-docdb
+                  key: docdb_host
+            - name: DOCDB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: aws-docdb
+                  key: docdb_port
+            - name: DOCDB_MASTER_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: aws-docdb
+                  key: docdb_master_username
+            - name: DOCDB_MASTER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: aws-docdb
+                  key: docdb_master_password
+
+            - name: SM_AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_default_region
+            - name: SM_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_access_key_id
+            - name: SM_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_secret_access_key
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              echo
+              echo "================================================================================"
+              echo "/opt/app-root/src/run-role.sh aws_documentdb_user"
+              echo "================================================================================"
+
+              export MAS_CONFIG_DIR="/tmp/${MAS_INSTANCE_ID}/aws_documentdb_user"
+              export USER_ACTION="remove"
+
+              echo "Params:"
+              echo "    - MAS_INSTANCE_ID         ................... ${MAS_INSTANCE_ID}"
+              echo "    - MAS_CONFIG_DIR          ................... ${MAS_CONFIG_DIR}"
+              echo "    - DOCDB_HOST              ................... ${DOCDB_HOST}"
+              echo "    - DOCDB_PORT              ................... ${DOCDB_PORT}"
+              echo "    - DOCDB_MASTER_USERNAME   ................... ${DOCDB_MASTER_USERNAME:0:2}<snip>"
+              echo "    - DOCDB_MASTER_PASSWORD   ................... ${DOCDB_MASTER_PASSWORD:0:2}<snip>"
+              echo "    - DOCDB_INSTANCE_PASSWORD ................... ${DOCDB_INSTANCE_PASSWORD:0:2}<snip>"
+              echo "    - USER_ACTION             ................... ${USER_ACTION}"
+              echo
+
+              mkdir -p ${MAS_CONFIG_DIR}
+              /opt/app-root/src/run-role.sh aws_documentdb_user
+
+              echo 
+              echo "================================================================================"
+              echo "Deleting Instance Mongo Secret"
+              echo "================================================================================"
+
+              SECRETS_KEY_SEPERATOR="/"
+              SECRET_NAME_MONGO=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}mongo
+
+              echo "Params:"
+              echo "    - ACCOUNT_ID                 ................... ${ACCOUNT_ID}"
+              echo "    - CLUSTER_ID                 ................... ${CLUSTER_ID}"
+              echo "    - MAS_INSTANCE_ID            ................... ${MAS_INSTANCE_ID}"
+              echo "    - SECRET_NAME_MONGO          ................... ${SECRET_NAME_MONGO}"
+              echo "    - SM_AWS_REGION              ................... ${SM_AWS_REGION}"
+              echo "    - SM_AWS_ACCESS_KEY_ID       ................... ${SM_AWS_ACCESS_KEY_ID:0:2}<snip>"
+              echo "    - SM_AWS_SECRET_ACCESS_KEY   ................... ${SM_AWS_SECRET_ACCESS_KEY:0:2}<snip>"
+              echo
+
+              source /mascli/functions/gitops_utils
+              sm_login
+              sm_delete_secret "${SECRET_NAME_MONGO}"
+
+      restartPolicy: Never
+      serviceAccountName: aws-docdb-user-job
+  backoffLimit: 4
+{{- end }}

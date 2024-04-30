@@ -64,6 +64,7 @@ metadata:
 rules:
   - verbs:
       - get
+      - list
     apiGroups:
       - ""
     resources:
@@ -265,12 +266,11 @@ data:
       if not mvi_apikey_secret:
         assert False, f"Could not find any visual inspection dnn secret in {mvi_namespace}"
 
-      mvi_apikey_secret_name = mvi_apikey_secret['metadata']['name']
+      mvi_apikey_secret_name = mvi_apikey_secret.items[0]['metadata']['name']
       try:
-        dnn_apikey_b64 = mvi_apikey_secret['data']['dnn-apikey']
-      except KeyError as e:
+        dnn_apikey_b64 = mvi_apikey_secret.items[0]['data']['dnn-apikey']
+      except:
         assert False, "Expected data.dnn-apikey field not present in secret {mvi_apikey_secret_name} in {mvi_namespace}"
-
       yield base64.b64decode(dnn_apikey_b64)
 
 

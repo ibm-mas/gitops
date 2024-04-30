@@ -10,18 +10,18 @@ metadata:
     argocd.argoproj.io/sync-wave: "050"
     healthCheckTimeout: "1800"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
-    notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ .Values.notifications.slack_channel_id }}
-    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
     {{- end }}
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: mas
+  project: "{{ .Values.argo_project_apps | default "mas" }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
-    repoURL: https://github.com/ibm-mas/gitops
+    repoURL: "{{ .Values.source.repoURL }}"
     path: applications/050-nvidia-gpu-operator
     targetRevision: "{{ .Values.source.targetRevision }}"
     plugin:

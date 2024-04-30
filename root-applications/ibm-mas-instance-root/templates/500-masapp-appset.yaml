@@ -49,13 +49,13 @@ spec:
       annotations:
         argocd.argoproj.io/sync-wave: "500"
         {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
-        notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ .Values.notifications.slack_channel_id }}
-        notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ .Values.notifications.slack_channel_id }}
+        notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+        notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
         {{- end }}
     spec:
-      project: mas
+      project: "{{ .Values.argo_project_apps | default "mas" }}"
       sources:
-        - repoURL: https://github.com/ibm-mas/gitops
+        - repoURL: "{{ .Values.source.repoURL }}"
           targetRevision: "{{ .Values.source.targetRevision }}"
           path: applications/500-ibm-mas-suite-app-install
           plugin:
@@ -76,7 +76,9 @@ spec:
                           )
                           (
                             dict "source" (
-                              dict "targetRevision" "`}}{{ .Values.source.targetRevision }}{{`"
+                              dict 
+                                "targetRevision" "`}}{{ .Values.source.targetRevision }}{{`"
+                                "repoURL" "`}}{{ .Values.source.repoURL }}{{`"
                             )
                           )
                           (
@@ -87,7 +89,7 @@ spec:
                   `}}
               - name: ARGOCD_APP_NAME
                 value: "{{ `{{.masapp.id}}` }}-install"
-        - repoURL: https://github.com/ibm-mas/gitops
+        - repoURL: "{{ .Values.source.repoURL }}"
           targetRevision: "{{ .Values.source.targetRevision }}"
           path: applications/600-ibm-mas-suite-app-config
           plugin:
@@ -108,7 +110,9 @@ spec:
                           )
                           (
                             dict "source" (
-                              dict "targetRevision" "`}}{{ .Values.source.targetRevision }}{{`"
+                              dict 
+                                "targetRevision" "`}}{{ .Values.source.targetRevision }}{{`"
+                                "repoURL" "`}}{{ .Values.source.repoURL }}{{`"
                             )
                           )
                           (

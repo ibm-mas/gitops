@@ -64,13 +64,13 @@ spec:
         healthCheckTimeout: "1800"
         argocd.argoproj.io/sync-wave: "099"
         {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
-        notifications.argoproj.io/subscribe.on-sync-failed.slack: {{ .Values.notifications.slack_channel_id }}
-        notifications.argoproj.io/subscribe.on-sync-succeeded.slack: {{ .Values.notifications.slack_channel_id }}
+        notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+        notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
         {{- end }}
     spec:
-      project: mas
+      project: "{{ .Values.argo_project_rootapps | default "mas" }}"
       source:
-          repoURL: https://github.com/ibm-mas/gitops
+          repoURL: "{{ .Values.source.repoURL }}"
           targetRevision: "{{ .Values.source.targetRevision }}"
           path: root-applications/ibm-mas-instance-root
           helm:
@@ -84,12 +84,18 @@ spec:
                 value: "{{ .Values.generator.revision }}"
               - name: "source.targetRevision"
                 value: "{{ .Values.source.targetRevision }}"
+              - name: "source.repoURL"
+                value: "{{ .Values.source.repoURL }}"
               - name: argoapp_namespace
                 value: "{{ .Values.argoapp_namespace }}"
                 {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
               - name: "notifications.slack_channel_id"
                 value: "{{ .Values.notifications.slack_channel_id }}"
                 {{- end }}
+              - name: argo_project_rootapps
+                value: "{{ .Values.argo_project_rootapps | default "mas" }}"
+              - name: argo_project_apps
+                value: "{{ .Values.argo_project_apps | default "mas" }}"
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argoapp_namespace }}

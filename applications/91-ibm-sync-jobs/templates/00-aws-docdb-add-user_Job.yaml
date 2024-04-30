@@ -33,16 +33,6 @@ spec:
             - name: MAS_INSTANCE_ID
               value: "{{ .Values.instance.id }}"
 
-            - name: DOCDB_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: aws-docdb
-                  key: docdb_host
-            - name: DOCDB_PORT
-              valueFrom:
-                secretKeyRef:
-                  name: aws-docdb
-                  key: docdb_port
             - name: DOCDB_MASTER_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -96,6 +86,10 @@ spec:
               export MAS_CONFIG_DIR="/tmp/${MAS_INSTANCE_ID}/aws_documentdb_user"
               OUTPUT_FILE=${MAS_CONFIG_DIR}/docdb-${MAS_INSTANCE_ID}-instance-credentials.yml
               export USER_ACTION="add"
+
+              # Grab one of the hosts/ports out of docdb master info
+              export DOCDB_HOST=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | /usr/bin/yq '.config.hosts[0].host')
+              export DOCDB_PORT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | /usr/bin/yq '.config.hosts[0].port')
 
               echo "Params:"
               echo "    - MAS_INSTANCE_ID         ................... ${MAS_INSTANCE_ID}"

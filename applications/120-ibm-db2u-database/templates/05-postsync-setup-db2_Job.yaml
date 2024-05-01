@@ -149,7 +149,7 @@ spec:
                   # no useful info in return code of this script
 
                   rc=0
-                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc 'db2 get db cfg for ${DB2_DBNAME} | grep "(CHNGPGS_THRESH) = 40"' db2inst1 || rc=$?
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc 'db2 get db cfg for '${DB2_DBNAME}' | grep "(CHNGPGS_THRESH) = 40"' db2inst1 || rc=$?
                   if [[ "$rc" == "0" ]]; then
                     echo "...... success"
                     return 0
@@ -184,7 +184,6 @@ spec:
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               export SM_AWS_REGION=${REGION_ID}
-              sm_login
              
               echo ""
               echo "================================================================================"
@@ -317,32 +316,27 @@ spec:
                 echo ""
                 echo "Copy ${SETUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc cp ${SETUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${SETUPDB_SH_PATH} -c db2u
-                echo ".... rc $?"
+                oc cp ${SETUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${SETUPDB_SH_PATH} -c db2u || exit $?
 
                 echo ""
                 echo "Executing ${SETUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1
-                echo ".... rc $?"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1 || exit $?
 
                 echo ""
                 echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1
-                echo ".... rc $?"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1 || exit $?
 
                 echo ""
                 echo "Creating /mnt/bludata0/db2/archive_log in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/bludata0/db2/archive_log/" db2inst1
-                echo ".... rc $?"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/bludata0/db2/archive_log/" db2inst1 || exit $?
 
                 echo ""
                 echo "Creating /mnt/backup/staging in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1
-                echo ".... rc $?"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1 || exit $?
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
 
@@ -434,19 +428,17 @@ spec:
               EOF
               # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
 
-              chmod +x ${BACKUPDB_SH_PATH}
+              chmod +x ${BACKUPDB_SH_PATH} || exit $?
 
               echo ""
               echo "Copy ${BACKUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
-              oc cp ${BACKUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${BACKUPDB_SH_PATH} -c db2u
-              echo ".... rc $?"
+              oc cp ${BACKUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${BACKUPDB_SH_PATH} -c db2u || exit $?
 
               echo ""
               echo "Executing ${BACKUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUPDB_SH_PATH} | tee /tmp/backupdb.log" db2inst1
-              echo ".... rc $?"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUPDB_SH_PATH} | tee /tmp/backupdb.log" db2inst1 || exit $?
 
               echo ""
               echo "================================================================================"
@@ -477,8 +469,8 @@ spec:
               echo ""
               echo "Updating Secrets Manager"
               echo "--------------------------------------------------------------------------------"
-              sm_update_secret ${DB2_CONFIG_SECRET} "{ \"tls_serviceport\": \"${DB2_TLS_SERVICEPORT}\", \"ca_b64\": \"${DB2_CA_PEM}\" }"
-              echo ".... rc $?"
+              sm_login
+              sm_update_secret ${DB2_CONFIG_SECRET} "{ \"tls_serviceport\": \"${DB2_TLS_SERVICEPORT}\", \"ca_b64\": \"${DB2_CA_PEM}\" }" || exit $?
 
 
       restartPolicy: Never

@@ -13,7 +13,7 @@ metadata:
   name: aws-docdb-add-user-{{ .Values.docdb | toYaml | adler32sum }}
   namespace: mas-{{ .Values.instance.id }}-syncres
   annotations:
-    argocd.argoproj.io/sync-wave: "02"
+    argocd.argoproj.io/sync-wave: "00"
 spec:
   template:
     metadata:
@@ -33,16 +33,6 @@ spec:
             - name: MAS_INSTANCE_ID
               value: "{{ .Values.instance.id }}"
 
-            - name: DOCDB_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: aws-docdb
-                  key: docdb_host
-            - name: DOCDB_PORT
-              valueFrom:
-                secretKeyRef:
-                  name: aws-docdb
-                  key: docdb_port
             - name: DOCDB_MASTER_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -97,6 +87,10 @@ spec:
               OUTPUT_FILE=${MAS_CONFIG_DIR}/docdb-${MAS_INSTANCE_ID}-instance-credentials.yml
               export USER_ACTION="add"
 
+              # Grab one of the hosts/ports out of docdb master info
+              export DOCDB_HOST=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | /usr/bin/yq '.config.hosts[0].host')
+              export DOCDB_PORT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | /usr/bin/yq '.config.hosts[0].port')
+
               echo "Params:"
               echo "    - MAS_INSTANCE_ID         ................... ${MAS_INSTANCE_ID}"
               echo "    - MAS_CONFIG_DIR          ................... ${MAS_CONFIG_DIR}"
@@ -110,7 +104,7 @@ spec:
               echo
 
               mkdir -p ${MAS_CONFIG_DIR}
-              /opt/app-root/src/run-role.sh aws_documentdb_user
+              /opt/app-root/src/run-role.sh aws_documentdb_user || exit $?
 
               # The role should have created a file ${OUTPUT_FILE} containing the username/password it applied
               # Read these so we can set the values in the instance's mongo secret in AWS SM
@@ -143,8 +137,8 @@ spec:
               
 
               source /mascli/functions/gitops_utils
-              sm_login     
-              sm_update_secret $SECRET_NAME_MONGO "{\"info\":\"$DOCDB_MASTER_INFO_ESCAPED\", \"username\":\"$DOCDB_INSTANCE_USERNAME\", \"password\":\"$DOCDB_INSTANCE_PASSWORD\"}"
+              sm_login
+              sm_update_secret $SECRET_NAME_MONGO "{\"info\":\"$DOCDB_MASTER_INFO_ESCAPED\", \"username\":\"$DOCDB_INSTANCE_USERNAME\", \"password\":\"$DOCDB_INSTANCE_PASSWORD\"}" || exit $?
 
       restartPolicy: Never
       serviceAccountName: aws-docdb-user-job

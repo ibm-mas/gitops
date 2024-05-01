@@ -130,6 +130,41 @@ spec:
                 return 1
               }
 
+              # DB2 operator does not automatically apply dbConfig parameters set on the Db2uCluster CR
+              # Instead, a script /db2u/scripts/apply-db2cfg-settings.sh must be executed on one of the db2u pods
+              # However, this does not always seem to work and no indication is given in the output of the script whether it worked or not.
+              # One approach is to check the current configuration parameters (db2 get db cfg for ${DB2_DBNAME}) one by one and verify that their value aligns with that set in the CR.
+              # However, this is not straightforward since DB2 implicitly reformats certain param values (e.g. APPLHEAPSZ: '8192 AUTOMATIC' is reformatted to AUTOMATIC(8192)).
+              # Until we can come up with a better way of doing this (or the Db2u operator is fixed), we will take the approach used in ansible-devops,
+              # whereby the value of single parameter (CHNGPGS_THRESH) is checked against a known value (40) to see if the script executed successfully (and retry if not)
+              # See https://github.com/ibm-mas/ansible-devops/blob/b9f3ef5b7999640b0a31d0aba518ba85ef8b704f/ibm/mas_devops/roles/suite_db2_setup_for_manage/tasks/apply-db2-config-settings.yml#L39
+              function db2apply {
+                RETRIES=${1:-5}
+                RETRY_DELAY_SECONDS=${2:-30}
+
+                for (( c=1; c<="${RETRIES}"; c++ )); do
+                  echo ""
+                  echo "... attempt ${c} of ${RETRIES}"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
+                  # no useful info in return code of this script
+
+                  rc=0
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc 'db2 get db cfg for '${DB2_DBNAME}' | grep "(CHNGPGS_THRESH) = 40"' db2inst1 || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+                    return 0
+                  fi
+
+                  if [[ "${c}" -lt "${RETRIES}" ]]; then
+                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                    sleep $RETRY_DELAY_SECONDS
+                  fi
+                done
+
+                echo "...... failed, no attempts remain"
+                return 1
+              }
+
               export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config
 
               echo ""
@@ -149,7 +184,6 @@ spec:
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               export SM_AWS_REGION=${REGION_ID}
-              sm_login
              
               echo ""
               echo "================================================================================"
@@ -168,119 +202,6 @@ spec:
               echo "Waiting for service c-${DB2_INSTANCE_NAME}-db2u-engn-svc to be present before continuing (timeout 300s)"
               echo "================================================================================"
               wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
-
-
-              echo ""
-              echo "================================================================================"
-              echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "================================================================================"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
-              echo ".... rc $?"
-
-              echo ""
-              echo "================================================================================"
-              echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0 again as db2u doesn't always apply the first time"
-              echo "================================================================================"
-              sleep 30
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
-              echo ".... rc $?"
-
-              echo ""
-              echo "================================================================================"
-              echo "Invoke Suite DB2 Backup"
-              echo "================================================================================"
-              # Some parameters like LOGARCHMETH1 being set can cause a backup to be needed as it moves
-              # to archival logging. 
-              # Copy and run a script on the db2u pod to perform that backup now if we are in that state.
-
-              # Path to the generated script, on both this pod and on the db2u pod
-              BACKUPDB_SH_PATH="/tmp/backupdb.sh"
-
-              echo ""
-              echo "Create ${BACKUPDB_SH_PATH}"
-              echo "--------------------------------------------------------------------------------"
-
-              # Generate a script to copy and run on the db2u pod
-              cat > ${BACKUPDB_SH_PATH} << EOF
-                #!/bin/bash
-
-                # Check that connect returns SQL1116N which means BACKUP PENDING state
-                if db2 connect to ${DB2_DBNAME} | grep SQL1116N >/dev/null; then
-                  echo "backupdb.sh: Database connect returning SQL1116N, do backup now"
-                else
-                  echo "backupdb.sh: Database connect not returning SQL1116N, nothing to do, exit now"
-                  exit 0
-                fi
-
-                echo "backupdb.sh: Creating backup folder /mnt/backup"
-                mkdir -p /mnt/backup
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2 force applications"
-                db2 force application all
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: Turn off comms manager"
-                db2set -null DB2COMM
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: Deactivate database"
-                db2 deactivate database ${DB2_DBNAME}
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2stop"
-                db2stop force
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2start in admin mode"
-                db2start admin mode restricted access
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                # dbstart does not always start straight away, wait 20 seconds
-                sleep 20
-
-                echo "backupdb.sh: db2 backup db ${DB2_DBNAME} on all dbpartitionnums"
-                db2 backup db ${DB2_DBNAME} on all dbpartitionnums to /mnt/backup
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2stop"
-                db2stop force
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2set comms manager"
-                db2set DB2COMM=TCPIP,SSL
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2start"
-                db2start
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-              EOF
-              # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
-
-              chmod +x ${BACKUPDB_SH_PATH}
-
-              echo ""
-              echo "Copy ${BACKUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc cp ${BACKUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${BACKUPDB_SH_PATH} -c db2u
-              echo ".... rc $?"
-
-              echo ""
-              echo "Executing ${BACKUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUPDB_SH_PATH} | tee /tmp/backupdb.log" db2inst1
-              echo ".... rc $?"
-
 
               if [[ "$MAS_APP_ID" == "manage" ]]; then
                 echo ""
@@ -395,34 +316,130 @@ spec:
                 echo ""
                 echo "Copy ${SETUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc cp ${SETUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${SETUPDB_SH_PATH} -c db2u
-                echo ".... rc $?"
+                oc cp ${SETUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${SETUPDB_SH_PATH} -c db2u || exit $?
 
                 echo ""
                 echo "Executing ${SETUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1
-                echo ".... rc $?"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1 || exit $?
 
                 echo ""
                 echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1
-                echo ".... rc $?"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1 || exit $?
 
                 echo ""
                 echo "Creating /mnt/bludata0/db2/archive_log in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/bludata0/db2/archive_log/" db2inst1
-                echo ".... rc $?"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/bludata0/db2/archive_log/" db2inst1 || exit $?
 
                 echo ""
                 echo "Creating /mnt/backup/staging in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1
-                echo ".... rc $?"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1 || exit $?
+
+                echo ""
+                echo "================================================================================"
+                echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "================================================================================"
+                db2apply || exit $?
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
+
+
+              echo ""
+              echo "================================================================================"
+              echo "Invoke Suite DB2 Backup"
+              echo "================================================================================"
+              # Some parameters like LOGARCHMETH1 being set can cause a backup to be needed as it moves
+              # to archival logging. 
+              # Copy and run a script on the db2u pod to perform that backup now if we are in that state.
+
+              # Path to the generated script, on both this pod and on the db2u pod
+              BACKUPDB_SH_PATH="/tmp/backupdb.sh"
+
+              echo ""
+              echo "Create ${BACKUPDB_SH_PATH}"
+              echo "--------------------------------------------------------------------------------"
+
+              # Generate a script to copy and run on the db2u pod
+              cat > ${BACKUPDB_SH_PATH} << EOF
+                #!/bin/bash
+
+                # Check that connect returns SQL1116N which means BACKUP PENDING state
+                if db2 connect to ${DB2_DBNAME} | grep SQL1116N >/dev/null; then
+                  echo "backupdb.sh: Database connect returning SQL1116N, do backup now"
+                else
+                  echo "backupdb.sh: Database connect not returning SQL1116N, nothing to do, exit now"
+                  exit 0
+                fi
+
+                echo "backupdb.sh: Creating backup folder /mnt/backup"
+                mkdir -p /mnt/backup
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2 force applications"
+                db2 force application all
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: Turn off comms manager"
+                db2set -null DB2COMM
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: Deactivate database"
+                db2 deactivate database ${DB2_DBNAME}
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2stop"
+                db2stop force
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2start in admin mode"
+                db2start admin mode restricted access
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                # dbstart does not always start straight away, wait 20 seconds
+                sleep 20
+
+                echo "backupdb.sh: db2 backup db ${DB2_DBNAME} on all dbpartitionnums"
+                db2 backup db ${DB2_DBNAME} on all dbpartitionnums to /mnt/backup
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2stop"
+                db2stop force
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2set comms manager"
+                db2set DB2COMM=TCPIP,SSL
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2start"
+                db2start
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+              EOF
+              # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
+
+              chmod +x ${BACKUPDB_SH_PATH} || exit $?
+
+              echo ""
+              echo "Copy ${BACKUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc cp ${BACKUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${BACKUPDB_SH_PATH} -c db2u || exit $?
+
+              echo ""
+              echo "Executing ${BACKUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUPDB_SH_PATH} | tee /tmp/backupdb.log" db2inst1 || exit $?
 
               echo ""
               echo "================================================================================"
@@ -453,8 +470,8 @@ spec:
               echo ""
               echo "Updating Secrets Manager"
               echo "--------------------------------------------------------------------------------"
-              sm_update_secret ${DB2_CONFIG_SECRET} "{ \"tls_serviceport\": \"${DB2_TLS_SERVICEPORT}\", \"ca_b64\": \"${DB2_CA_PEM}\" }"
-              echo ".... rc $?"
+              sm_login
+              sm_update_secret ${DB2_CONFIG_SECRET} "{ \"tls_serviceport\": \"${DB2_TLS_SERVICEPORT}\", \"ca_b64\": \"${DB2_CA_PEM}\" }" || exit $?
 
 
       restartPolicy: Never

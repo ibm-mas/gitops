@@ -29,16 +29,6 @@ spec:
             - name: MAS_INSTANCE_ID
               value: "{{ .Values.instance.id }}"
 
-            - name: DOCDB_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: aws-docdb
-                  key: docdb_host
-            - name: DOCDB_PORT
-              valueFrom:
-                secretKeyRef:
-                  name: aws-docdb
-                  key: docdb_port
             - name: DOCDB_MASTER_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -49,6 +39,11 @@ spec:
                 secretKeyRef:
                   name: aws-docdb
                   key: docdb_master_password
+            - name: DOCDB_MASTER_INFO
+              valueFrom:
+                secretKeyRef:
+                  name: aws-docdb
+                  key: docdb_master_info
 
             - name: SM_AWS_REGION
               valueFrom:
@@ -79,6 +74,10 @@ spec:
               export MAS_CONFIG_DIR="/tmp/${MAS_INSTANCE_ID}/aws_documentdb_user"
               export USER_ACTION="remove"
 
+              # Grab one of the hosts/ports out of docdb master info
+              export DOCDB_HOST=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | /usr/bin/yq '.config.hosts[0].host')
+              export DOCDB_PORT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | /usr/bin/yq '.config.hosts[0].port')
+
               echo "Params:"
               echo "    - MAS_INSTANCE_ID         ................... ${MAS_INSTANCE_ID}"
               echo "    - MAS_CONFIG_DIR          ................... ${MAS_CONFIG_DIR}"
@@ -91,7 +90,7 @@ spec:
               echo
 
               mkdir -p ${MAS_CONFIG_DIR}
-              /opt/app-root/src/run-role.sh aws_documentdb_user
+              /opt/app-root/src/run-role.sh aws_documentdb_user || exit $?
 
               echo 
               echo "================================================================================"
@@ -113,7 +112,7 @@ spec:
 
               source /mascli/functions/gitops_utils
               sm_login
-              sm_delete_secret "${SECRET_NAME_MONGO}"
+              sm_delete_secret "${SECRET_NAME_MONGO}" || exit $?
 
       restartPolicy: Never
       serviceAccountName: aws-docdb-user-job

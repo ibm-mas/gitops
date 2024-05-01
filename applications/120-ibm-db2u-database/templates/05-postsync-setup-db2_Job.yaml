@@ -204,109 +204,6 @@ spec:
               echo "================================================================================"
               wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
 
-              echo ""
-              echo "================================================================================"
-              echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "================================================================================"
-              db2apply || exit $?
-
-              echo ""
-              echo "================================================================================"
-              echo "Invoke Suite DB2 Backup"
-              echo "================================================================================"
-              # Some parameters like LOGARCHMETH1 being set can cause a backup to be needed as it moves
-              # to archival logging. 
-              # Copy and run a script on the db2u pod to perform that backup now if we are in that state.
-
-              # Path to the generated script, on both this pod and on the db2u pod
-              BACKUPDB_SH_PATH="/tmp/backupdb.sh"
-
-              echo ""
-              echo "Create ${BACKUPDB_SH_PATH}"
-              echo "--------------------------------------------------------------------------------"
-
-              # Generate a script to copy and run on the db2u pod
-              cat > ${BACKUPDB_SH_PATH} << EOF
-                #!/bin/bash
-
-                # Check that connect returns SQL1116N which means BACKUP PENDING state
-                if db2 connect to ${DB2_DBNAME} | grep SQL1116N >/dev/null; then
-                  echo "backupdb.sh: Database connect returning SQL1116N, do backup now"
-                else
-                  echo "backupdb.sh: Database connect not returning SQL1116N, nothing to do, exit now"
-                  exit 0
-                fi
-
-                echo "backupdb.sh: Creating backup folder /mnt/backup"
-                mkdir -p /mnt/backup
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2 force applications"
-                db2 force application all
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: Turn off comms manager"
-                db2set -null DB2COMM
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: Deactivate database"
-                db2 deactivate database ${DB2_DBNAME}
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2stop"
-                db2stop force
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2start in admin mode"
-                db2start admin mode restricted access
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                # dbstart does not always start straight away, wait 20 seconds
-                sleep 20
-
-                echo "backupdb.sh: db2 backup db ${DB2_DBNAME} on all dbpartitionnums"
-                db2 backup db ${DB2_DBNAME} on all dbpartitionnums to /mnt/backup
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2stop"
-                db2stop force
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2set comms manager"
-                db2set DB2COMM=TCPIP,SSL
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-
-                echo "backupdb.sh: db2start"
-                db2start
-                rc=\$?
-                [ \$rc -ne 0 ] && exit \$rc
-              EOF
-              # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
-
-              chmod +x ${BACKUPDB_SH_PATH}
-
-              echo ""
-              echo "Copy ${BACKUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc cp ${BACKUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${BACKUPDB_SH_PATH} -c db2u
-              echo ".... rc $?"
-
-              echo ""
-              echo "Executing ${BACKUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUPDB_SH_PATH} | tee /tmp/backupdb.log" db2inst1
-              echo ".... rc $?"
-
-
               if [[ "$MAS_APP_ID" == "manage" ]]; then
                 echo ""
                 echo "================================================================================"
@@ -448,6 +345,108 @@ spec:
                 echo ".... rc $?"
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
+
+              echo ""
+              echo "================================================================================"
+              echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "================================================================================"
+              db2apply || exit $?
+
+              echo ""
+              echo "================================================================================"
+              echo "Invoke Suite DB2 Backup"
+              echo "================================================================================"
+              # Some parameters like LOGARCHMETH1 being set can cause a backup to be needed as it moves
+              # to archival logging. 
+              # Copy and run a script on the db2u pod to perform that backup now if we are in that state.
+
+              # Path to the generated script, on both this pod and on the db2u pod
+              BACKUPDB_SH_PATH="/tmp/backupdb.sh"
+
+              echo ""
+              echo "Create ${BACKUPDB_SH_PATH}"
+              echo "--------------------------------------------------------------------------------"
+
+              # Generate a script to copy and run on the db2u pod
+              cat > ${BACKUPDB_SH_PATH} << EOF
+                #!/bin/bash
+
+                # Check that connect returns SQL1116N which means BACKUP PENDING state
+                if db2 connect to ${DB2_DBNAME} | grep SQL1116N >/dev/null; then
+                  echo "backupdb.sh: Database connect returning SQL1116N, do backup now"
+                else
+                  echo "backupdb.sh: Database connect not returning SQL1116N, nothing to do, exit now"
+                  exit 0
+                fi
+
+                echo "backupdb.sh: Creating backup folder /mnt/backup"
+                mkdir -p /mnt/backup
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2 force applications"
+                db2 force application all
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: Turn off comms manager"
+                db2set -null DB2COMM
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: Deactivate database"
+                db2 deactivate database ${DB2_DBNAME}
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2stop"
+                db2stop force
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2start in admin mode"
+                db2start admin mode restricted access
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                # dbstart does not always start straight away, wait 20 seconds
+                sleep 20
+
+                echo "backupdb.sh: db2 backup db ${DB2_DBNAME} on all dbpartitionnums"
+                db2 backup db ${DB2_DBNAME} on all dbpartitionnums to /mnt/backup
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2stop"
+                db2stop force
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2set comms manager"
+                db2set DB2COMM=TCPIP,SSL
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2start"
+                db2start
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+              EOF
+              # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
+
+              chmod +x ${BACKUPDB_SH_PATH}
+
+              echo ""
+              echo "Copy ${BACKUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc cp ${BACKUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${BACKUPDB_SH_PATH} -c db2u
+              echo ".... rc $?"
+
+              echo ""
+              echo "Executing ${BACKUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUPDB_SH_PATH} | tee /tmp/backupdb.log" db2inst1
+              echo ".... rc $?"
 
               echo ""
               echo "================================================================================"

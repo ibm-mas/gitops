@@ -1,0 +1,288 @@
+{{- if and (eq .Values.ibm_mas_suite.dns_provider "cis") (eq .Values.ibm_mas_suite.mas_manual_cert_mgmt "False") }}
+
+{{ $ns                :=  printf "mas-%s-suite-dns-role" .Values.ibm_mas_suite.mas_instance_id }}
+{{ $suite_dns_secret  :=  "presync-ibm-suite-dns-role-secret" }}
+{{ $hook              :=  "PreSync" }}
+{{ $role_name         :=  "presync-ibm-suite-dns-role-r" }}
+{{ $sa_name           :=  "presync-ibm-suite-dns-role-sa" }}
+{{ $rb_name           :=  "presync-ibm-suite-dns-role-rb" }}
+{{ $job_name          :=  "presync-ibm-suite-dns-role-job" }}
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    argocd.argoproj.io/hook: "{{ $hook }}"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+  labels:
+    argocd.argoproj.io/managed-by: "{{ .Values.argoapp_namespace }}"
+
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: "presync-ibm-suite-dns-role-secret"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    argocd.argoproj.io/hook: "{{ $hook }}"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+stringData:
+  cis_apikey: "{{ .Values.ibm_mas_suite.cis_apikey }}"
+  sm_aws_access_key_id: "{{ .Values.ibm_mas_suite.sm_aws_access_key_id }}"
+  sm_aws_secret_access_key: "{{ .Values.ibm_mas_suite.sm_aws_secret_access_key }}"
+type: Opaque
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "{{ $sa_name }}"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    argocd.argoproj.io/hook: "{{ $hook }}"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "{{ $role_name }}"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    argocd.argoproj.io/hook: "{{ $hook }}"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+  - verbs:
+      - get
+    apiGroups:
+      - route.openshift.io
+    resources:
+      - routes
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "{{ $rb_name }}"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    argocd.argoproj.io/hook: "{{ $hook }}"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+subjects:
+  - kind: ServiceAccount
+    name: "{{ $sa_name }}"
+    namespace: "{{ $ns }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: "{{ $role_name }}"
+
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "cluster-{{ $rb_name }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    argocd.argoproj.io/hook: "{{ $hook }}"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+subjects:
+  - kind: ServiceAccount
+    name: "{{ $sa_name }}"
+    namespace: "{{ $ns }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ $job_name }}"
+  generateName: "{{ $job_name }}-"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    argocd.argoproj.io/hook: "{{ $hook }}"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  ttlSecondsAfterFinished: 120
+  template:
+    spec:
+      containers:
+        - name: suite-dns-role-run
+          image: quay.io/ibmmas/cli:8.1.0-pre.gitops
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            # dns
+            - name: DNS_PROVIDER
+              value: "{{ .Values.ibm_mas_suite.dns_provider }}"
+            - name: MAS_MANUAL_CERT_MGMT
+              value: "{{ .Values.ibm_mas_suite.mas_manual_cert_mgmt }}"
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.ibm_mas_suite.mas_instance_id }}"
+            - name: MAS_WORKSPACE_ID
+              value: "{{ .Values.ibm_mas_suite.mas_workspace_id }}"
+            - name: MAS_DOMAIN
+              value: "{{ .Values.ibm_mas_suite.mas_domain }}"
+            - name: MAS_CONFIG_DIR
+              value: "{{ .Values.ibm_mas_suite.mas_config_dir }}"
+
+            - name: CIS_EMAIL
+              value: "{{ .Values.ibm_mas_suite.cis_email }}"
+            #- name: CIS_APIKEY
+            - name: CIS_CRN
+              value: "{{ .Values.ibm_mas_suite.cis_crn }}"
+            - name: CIS_SUBDOMAIN
+              value: "{{ .Values.ibm_mas_suite.cis_subdomain }}"
+            - name: CIS_MAS_DOMAIN
+              value: "{{ .Values.ibm_mas_suite.cis_mas_domain }}"
+
+            - name: OCP_CLUSTER_DOMAIN
+              value: "{{ .Values.ibm_mas_suite.ocp_cluster_domain }}"
+            - name: CIS_ENHANCED_SECURITY
+              value: "{{ .Values.ibm_mas_suite.cis_enhanced_security }}"
+            - name: CIS_WAF
+              value: "{{ .Values.ibm_mas_suite.cis_waf }}"
+            - name: CIS_PROXY
+              value: "{{ .Values.ibm_mas_suite.cis_proxy }}"
+            - name: CIS_SERVICE_NAME
+              value: "{{ .Values.ibm_mas_suite.cis_service_name }}"
+
+            - name: UPDATE_DNS_ENTRIES
+              value: "{{ .Values.ibm_mas_suite.update_dns_entries }}"
+            - name: DELETE_WILDCARDS
+              value: "{{ .Values.ibm_mas_suite.delete_wildcards }}"
+            - name: OVERRIDE_EDGE_CERTS
+              value: "{{ .Values.ibm_mas_suite.override_edge_certs }}"
+
+            - name: SM_AWS_REGION
+              value: "{{ .Values.ibm_mas_suite.sm_aws_region }}"
+
+            - name: ACCOUNT
+              value: "{{ .Values.account.id }}"
+            - name: CLUSTER
+              value: "{{ .Values.cluster.id }}"
+
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+
+          volumeMounts:
+            - name: "presync-ibm-suite-dns-role-secret"
+              mountPath: /etc/mas/creds/suite_dns_secret
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              source /mascli/functions/gitops_utils
+
+              export CIS_APIKEY=$(cat /etc/mas/creds/suite_dns_secret/cis_apikey)
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/suite_dns_secret/sm_aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/suite_dns_secret/sm_aws_secret_access_key)
+
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "DNS Provider ........................ ${COLOR_MAGENTA}${DNS_PROVIDER}"
+              echo "Manual Cert Mgmt Flag ............... ${COLOR_MAGENTA}${MAS_MANUAL_CERT_MGMT}"
+              echo "MAS Instance Id ..................... ${COLOR_MAGENTA}${MAS_INSTANCE_ID}"
+              echo "MAS Workspace ID .................... ${COLOR_MAGENTA}${MAS_WORKSPACE_ID}"
+              echo "MAS CONFIG DIR ...................... ${COLOR_MAGENTA}${MAS_CONFIG_DIR}"
+              echo "CIS Email ........................... ${COLOR_MAGENTA}${CIS_EMAIL}"
+              echo "CIS CRN ............................. ${COLOR_MAGENTA}${CIS_CRN}"
+              echo "IBM CLOUD APIKEY .................... ${COLOR_MAGENTA}${CIS_APIKEY:0:4}<snip>"
+              echo "MAS Domain .......................... ${COLOR_MAGENTA}${MAS_DOMAIN}"
+              echo "CIS MAS Domain ...................... ${COLOR_MAGENTA}${CIS_MAS_DOMAIN}"
+              echo "OCP Cluster Domain .................. ${COLOR_MAGENTA}${OCP_CLUSTER_DOMAIN}"
+              echo "CIS subdomain ....................... ${COLOR_MAGENTA}${CIS_SUBDOMAIN}"
+              echo "CIS enhanced security Flag........... ${COLOR_MAGENTA}${CIS_ENHANCED_SECURITY}"
+              echo "CIS WAF ............................. ${COLOR_MAGENTA}${CIS_WAF}"
+              echo "CIS proxy ........................... ${COLOR_MAGENTA}${CIS_PROXY}"
+              echo "CIS service name .................... ${COLOR_MAGENTA}${CIS_SERVICE_NAME}"
+              echo "update DNS entries Flag ............. ${COLOR_MAGENTA}${UPDATE_DNS_ENTRIES}"
+              echo "DELETE_WILDCARDS Flag ............... ${COLOR_MAGENTA}${DELETE_WILDCARDS}"
+              echo "OVERRIDE_EDGE_CERTS Flag ............ ${COLOR_MAGENTA}${OVERRIDE_EDGE_CERTS}"
+
+              echo "SM_AWS_REGION ....................... ${COLOR_MAGENTA}${SM_AWS_REGION}"
+              echo "SM_AWS_ACCESS_KEY_ID ................ ${COLOR_MAGENTA}${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
+              echo "SM_AWS_SECRET_ACCESS_KEY ............ ${COLOR_MAGENTA}${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"
+
+              echo ""
+              echo "================================================================================"
+              export MAS_DOMAIN=$CIS_MAS_DOMAIN
+              mkdir -p ${MAS_CONFIG_DIR}
+
+              sm_login
+              export SECRETS_KEY_SEPERATOR="/"
+              export SECRET_NAME=${ACCOUNT}${SECRETS_KEY_SEPERATOR}${CLUSTER}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}suite_dns_role
+              export SUITE_DNS_ROLE_SECRET_FILE=$MAS_CONFIG_DIR/suite-dns-role-secret.json
+              sm_get_secret_file $SECRET_NAME $SUITE_DNS_ROLE_SECRET_FILE
+              
+              SUITE_DNS_ROLE_COMPLETION_STATUS=$(jq -r .completion_status $SUITE_DNS_ROLE_SECRET_FILE)
+              SUITE_DNS_ROLE_COMPLETION_ON=$(jq -r .completion_on $SUITE_DNS_ROLE_SECRET_FILE)
+
+              echo "SUITE_DNS_ROLE_COMPLETION_STATUS=${SUITE_DNS_ROLE_COMPLETION_STATUS}"
+              echo "SUITE_DNS_ROLE_COMPLETION_ON=${SUITE_DNS_ROLE_COMPLETION_ON}"
+
+              if [ "$SUITE_DNS_ROLE_COMPLETION_STATUS" != "success" ]; then
+                export ROLE_NAME=suite_dns
+                ansible-playbook ibm.mas_devops.run_role
+                rc=$?
+                echo "suite_dns rc=${rc}"
+                [ $rc -ne 0 ] && exit $rc
+
+                COMPLETION_ON=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                echo "COMPLETION_ON=${COMPLETION_ON}"
+                export SECRET_VALUE="{\"completion_status\":\"success\",\"completion_on\":\"$COMPLETION_ON\"}"
+
+                echo ""
+                echo "Updating Secrets Manager"
+                echo "--------------------------------------------------------------------------------"
+                sm_update_secret $SECRET_NAME $SECRET_VALUE
+
+                exit 0
+              fi
+              exit 0
+
+
+      restartPolicy: Never
+
+      serviceAccountName: "{{ $sa_name }}"
+      volumes:
+        - name: "presync-ibm-suite-dns-role-secret"
+          secret:
+            secretName: "presync-ibm-suite-dns-role-secret"
+            defaultMode: 420
+            optional: false
+
+  backoffLimit: 4
+
+{{- end }}

@@ -1,4 +1,3 @@
-{{- if not .Values.delete }}
 ---
 # We need to embed the supplied JDBC creds in a K8S secret so we can safely access them from
 # the Job without exposing them via the ArgoCD resources
@@ -10,7 +9,7 @@ kind: Secret
 type: Opaque
 metadata:
   name: "presync-creds-jdbccfg-{{ .Values.mas_config_name }}"
-  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  namespace: "mas-{{ .Values.instance_id }}-core"
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
@@ -25,7 +24,7 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
-  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  namespace: "mas-{{ .Values.instance_id }}-core"
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
@@ -41,7 +40,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
-    namespace: "mas-{{ .Values.mas_instance_id }}-core"
+    namespace: "mas-{{ .Values.instance_id }}-core"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -56,7 +55,7 @@ kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
   name: "presync-jdbccfg-np-{{ .Values.mas_config_name }}"
-  namespace: "mas-{{ .Values.mas_instance_id}}-core"
+  namespace: "mas-{{ .Values.instance_id }}-core"
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
@@ -75,7 +74,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: "presync-jdbc-crt-user-{{ .Values.mas_config_name }}"
-  namespace: "mas-{{ .Values.mas_instance_id }}-core"
+  namespace: "mas-{{ .Values.instance_id }}-core"
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
@@ -274,4 +273,3 @@ spec:
             defaultMode: 420
             optional: false
   backoffLimit: 4
-{{- end }}

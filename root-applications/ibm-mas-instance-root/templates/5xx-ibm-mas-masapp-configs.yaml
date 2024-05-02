@@ -46,34 +46,27 @@ spec:
     server: {{ $.Values.cluster.url }}
     namespace: default
   source:
-    repoURL: "{{ $.Values.source.repoURL | default "https://github.com/ibm-mas/gitops" }}"
+    repoURL: "{{ $.Values.source.repoURL }}"
     path: applications/510-ibm-mas-suite-app-config-stub
     targetRevision: "{{ $.Values.source.targetRevision }}"
     plugin:
+      name: {{ $.Values.avp.name }} 
       env:
-        - name: HELM_ARGS
+        - name: {{ $.Values.avp.values_varname }}
           value: |
-            --set mas_instance_id={{ $.Values.instance.id }}
-            --set mas_app_id={{ $value.mas_app_id }}
-            --set ca_crt={{ $value.ca_crt }}
-            --set cpd_admin_password={{ $value.cpd_admin_password }}
-            --set cpd_admin_username={{ $value.cpd_admin_username }}
-            --set mas_app_namespace={{ $value.mas_app_namespace }}
-            --set mas_app_settings_server_bundles_size={{ $value.mas_app_settings_server_bundles_size }}
-            --set mas_app_ws_apiversion={{ $value.mas_app_ws_apiversion }}
-            --set mas_app_ws_kind={{ $value.mas_app_ws_kind }}
-            --set mas_appws_spec={{ $value.mas_appws_spec }}
-            --set mas_manual_cert_mgmt={{ $value.mas_manual_cert_mgmt }}
-            --set mas_workspace_id={{ $value.mas_workspace_id }}
-            --set public_tls_secret_name={{ $value.public_tls_secret_name }}
-            --set server_bundles_add_server_config_content={{ $value.server_bundles_add_server_config_content }}
-            --set server_bundles_add_server_config_no_activation_content={{ $value.server_bundles_add_server_config_no_activation_content }}
-            --set server_bundles_jms_add_server_config_content={{ $value.server_bundles_jms_add_server_config_content }}
-            --set tls_cert={{ $value.tls_cert }}
-            --set tls_key={{ $value.tls_key }}
-            --set wd_yaml={{ $value.wd_yaml }}
+            account_id: {{ $.Values.account.id }}
+            region_id: {{ $.Values.region.id }}
+            cluster_id: {{ $.Values.cluster.id }}
+            instance_id: {{ $.Values.instance.id }}
+            sm_aws_access_key_id: {{ $.Values.sm.aws_access_key_id }}
+            sm_aws_secret_access_key: {{ $.Values.sm.aws_secret_access_key }}
+            {{ $value | toYaml | nindent 12 }}
         - name: ARGOCD_APP_NAME
           value: "ma-cfg-{{ $value.mas_app_id }}"
+        {{- if not (empty $.Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ $.Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

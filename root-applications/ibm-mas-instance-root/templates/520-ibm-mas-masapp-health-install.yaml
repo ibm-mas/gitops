@@ -31,12 +31,17 @@ spec:
     path: applications/500-ibm-mas-suite-app-install-stub
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
+      name: {{ .Values.avp.name }} 
       env:
-        - name: HELM_VALUES
+        - name: {{ .Values.avp.values_varname }}
           value: |
             {{ unset (set .Values "ibm_suite_app_install" .Values.ibm_suite_app_health_install) "ibm_suite_app_health_install" | toRawJson }}
         - name: ARGOCD_APP_NAME
           value: "health-install"
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

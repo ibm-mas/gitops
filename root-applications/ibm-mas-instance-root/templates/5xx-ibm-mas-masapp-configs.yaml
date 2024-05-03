@@ -50,8 +50,9 @@ spec:
     path: applications/510-ibm-mas-suite-app-config-stub
     targetRevision: "{{ $.Values.source.revision }}"
     plugin:
+      name: {{ $.Values.avp.name }} 
       env:
-        - name: HELM_ARGS
+        - name: {{ $.Values.avp.values_varname }}
           value: |
             --set mas_instance_id={{ $.Values.instance.id }}
             --set mas_app_id={{ $value.mas_app_id }}
@@ -74,6 +75,10 @@ spec:
             --set wd_yaml={{ $value.wd_yaml }}
         - name: ARGOCD_APP_NAME
           value: "ma-cfg-{{ $value.mas_app_id }}"
+        {{- if not (empty $.Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ $.Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

@@ -35,7 +35,28 @@ spec:
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            {{ unset (set .Values "ibm_suite_app_install" .Values.ibm_suite_app_iot_install) "ibm_suite_app_iot_install" | toRawJson }}
+            instance_id: "{{ .Values.instance.id }}"
+            argo_namespace: "{{ .Values.argo.namespace }}"
+            mas_app_api_version: "{{ .Values.ibm_suite_app_iot_install.mas_app_api_version }}"
+            mas_app_kind: "{{ .Values.ibm_suite_app_iot_install.mas_app_kind }}"
+            mas_app_namespace: "{{ .Values.ibm_suite_app_iot_install.mas_app_namespace }}"
+            ibm_entitlement_key: "{{ .Values.ibm_suite_app_iot_install.ibm_entitlement_key }}"
+            mas_app_id: "{{ .Values.ibm_suite_app_iot_install.mas_app_id }}"
+            mas_app_catalog_source: "{{ .Values.ibm_suite_app_iot_install.mas_app_catalog_source }}"
+            mas_app_channel: "{{ .Values.ibm_suite_app_iot_install.mas_app_channel }}"
+            mas_edition: "{{ .Values.ibm_suite_app_iot_install.mas_edition }}"
+            run_sync_hooks: {{ .Values.ibm_suite_app_iot_install.run_sync_hooks }}
+            mas_manual_cert_mgmt: "{{ .Values.ibm_suite_app_iot_install.mas_manual_cert_mgmt }}"
+            public_tls_secret_name: "{{ .Values.ibm_suite_app_iot_install.public_tls_secret_name }}"
+            {{- if eq .Values.ibm_suite_app_iot_install.mas_manual_cert_mgmt "True" }}
+            ca_cert: |
+              {{ .Values.ibm_suite_app_iot_install.ca_cert }}
+            tls_cert: |
+              {{ .Values.ibm_suite_app_iot_install.tls_cert }}
+            tls_key: |
+              {{ .Values.ibm_suite_app_iot_install.tls_key }}
+            {{- end }}
+            mas_app_spec: {{ .Values.ibm_suite_app_iot_install.mas_app_spec| toYaml | nindent 14}}
         - name: ARGOCD_APP_NAME
           value: "iot-install"
         {{- if not (empty .Values.avp.secret) }}

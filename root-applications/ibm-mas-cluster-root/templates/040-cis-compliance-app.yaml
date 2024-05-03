@@ -5,7 +5,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: cis-compliance.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
-  namespace: {{ .Values.argoapp_namespace }}
+  namespace: {{ .Values.argo.namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "040"
     healthCheckTimeout: "1800"
@@ -16,7 +16,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: "{{ .Values.argo_project_apps | default "mas" }}"
+  project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
@@ -29,7 +29,7 @@ spec:
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            argoapp_namespace: {{ .Values.argoapp_namespace }}
+            argo_namespace: {{ .Values.argo.namespace }}
         - name: ARGOCD_APP_NAME
           value: ciscomplianceapp
         {{- if not (empty .Values.avp.secret) }}

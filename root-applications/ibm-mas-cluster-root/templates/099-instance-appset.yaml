@@ -5,7 +5,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: instance-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
-  namespace: {{ .Values.argoapp_namespace }}
+  namespace: {{ .Values.argo.namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "099"
 spec:
@@ -68,7 +68,7 @@ spec:
         notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
         {{- end }}
     spec:
-      project: "{{ .Values.argo_project_rootapps | default "mas" }}"
+      project: "{{ .Values.argo.projects.rootapps }}"
       source:
           repoURL: "{{ .Values.source.repo_url }}"
           targetRevision: "{{ .Values.source.revision }}"
@@ -85,16 +85,16 @@ spec:
                 value: "{{ .Values.source.revision }}"
               - name: "source.repo_url"
                 value: "{{ .Values.source.repo_url }}"
-              - name: argoapp_namespace
-                value: "{{ .Values.argoapp_namespace }}"
+              - name: argo.namespace
+                value: "{{ .Values.argo.namespace }}"
                 {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
               - name: "notifications.slack_channel_id"
                 value: "{{ .Values.notifications.slack_channel_id }}"
                 {{- end }}
-              - name: argo_project_rootapps
-                value: "{{ .Values.argo_project_rootapps | default "mas" }}"
-              - name: argo_project_apps
-                value: "{{ .Values.argo_project_apps | default "mas" }}"
+              - name: argo.projects.rootapps
+                value: "{{ .Values.argo.projects.rootapps }}"
+              - name: argo.projects.apps
+                value: "{{ .Values.argo.projects.apps }}"
               - name: avp.name
                 value: "{{ .Values.avp.name }}"
               - name: avp.secret
@@ -103,7 +103,7 @@ spec:
                 value: "{{ .Values.avp.values_varname }}"
       destination:
         server: 'https://kubernetes.default.svc'
-        namespace: {{ .Values.argoapp_namespace }}
+        namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
           prune: true

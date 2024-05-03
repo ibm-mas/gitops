@@ -5,7 +5,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: nvidia-gpu.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
-  namespace: {{ .Values.argoapp_namespace }}
+  namespace: {{ .Values.argo.namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "050"
     healthCheckTimeout: "1800"
@@ -16,7 +16,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: "{{ .Values.argo_project_apps | default "mas" }}"
+  project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
@@ -29,7 +29,7 @@ spec:
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            argoapp_namespace: {{ .Values.argoapp_namespace }}
+            argo_namespace: {{ .Values.argo.namespace }}
             nfd_namespace: {{ .Values.nvidia_gpu_operator.nfd_namespace }}
             nfd_channel: {{ .Values.nvidia_gpu_operator.nfd_channel }}
             gpu_namespace: {{ .Values.nvidia_gpu_operator.gpu_namespace }}

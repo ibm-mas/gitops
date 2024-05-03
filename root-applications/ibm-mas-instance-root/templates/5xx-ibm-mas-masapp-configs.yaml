@@ -54,25 +54,38 @@ spec:
       env:
         - name: {{ $.Values.avp.values_varname }}
           value: |
-            --set mas_instance_id={{ $.Values.instance.id }}
-            --set mas_app_id={{ $value.mas_app_id }}
-            --set ca_crt={{ $value.ca_crt }}
-            --set cpd_admin_password={{ $value.cpd_admin_password }}
-            --set cpd_admin_username={{ $value.cpd_admin_username }}
-            --set mas_app_namespace={{ $value.mas_app_namespace }}
-            --set mas_app_settings_server_bundles_size={{ $value.mas_app_settings_server_bundles_size }}
-            --set mas_app_ws_apiversion={{ $value.mas_app_ws_apiversion }}
-            --set mas_app_ws_kind={{ $value.mas_app_ws_kind }}
-            --set mas_appws_spec={{ $value.mas_appws_spec }}
-            --set mas_manual_cert_mgmt={{ $value.mas_manual_cert_mgmt }}
-            --set mas_workspace_id={{ $value.mas_workspace_id }}
-            --set public_tls_secret_name={{ $value.public_tls_secret_name }}
-            --set server_bundles_add_server_config_content={{ $value.server_bundles_add_server_config_content }}
-            --set server_bundles_add_server_config_no_activation_content={{ $value.server_bundles_add_server_config_no_activation_content }}
-            --set server_bundles_jms_add_server_config_content={{ $value.server_bundles_jms_add_server_config_content }}
-            --set tls_cert={{ $value.tls_cert }}
-            --set tls_key={{ $value.tls_key }}
-            --set wd_yaml={{ $value.wd_yaml }}
+            instance_id: "{{ .Values.instance.id }}"
+            mas_app_id: "{{ $value.mas_app_id }}"
+            mas_workspace_id: "{{ $value.mas_workspace_id }}"
+            mas_app_namespace: "{{ $value.mas_app_namespace }}"
+            mas_app_ws_apiversion: "{{ $value.mas_app_ws_apiversion }}"
+            mas_app_ws_kind: "{{ $value.mas_app_ws_kind }}"
+            mas_appws_spec: {{ $value.mas_appws_spec | toYaml | nindent 14 }}
+
+            mas_manual_cert_mgmt: "{{ $value.mas_manual_cert_mgmt }}"
+            {{- if eq $value.mas_manual_cert_mgmt "True" }}
+            public_tls_secret_name: "{{ $value.public_tls_secret_name }}"
+            ca_cert: |
+              {{ $value.ca_cert }}
+            tls_cert: |
+              {{ $value.tls_cert }}
+            tls_key: |
+              {{ $value.tls_key }}
+            {{- end }}
+
+            {{- if eq .Values.mas_app_id "manage" }}
+            server_bundles_add_server_config_content: "{{ $value.server_bundles_add_server_config_content }}"
+            server_bundles_add_server_config_no_activation_content: "{{ $value.server_bundles_add_server_config_no_activation_content }}"
+            server_bundles_jms_add_server_config_content: "{{ $value.server_bundles_jms_add_server_config_content }}"
+            mas_app_settings_server_bundles_size: "{{ $value.mas_app_settings_server_bundles_size }}"
+            {{- end }}
+
+            {{- if eq $value.mas_app_id "assist" }}
+            wd_yaml: {{ $value.wd_yaml | toYaml | nindent 14 }}
+            cpd_admin_password: "{{ $value.cpd_admin_password }}"
+            cpd_admin_username: "{{ $value.cpd_admin_username }}"
+            {{- end }}
+
         - name: ARGOCD_APP_NAME
           value: "ma-cfg-{{ $value.mas_app_id }}"
         {{- if not (empty $.Values.avp.secret) }}

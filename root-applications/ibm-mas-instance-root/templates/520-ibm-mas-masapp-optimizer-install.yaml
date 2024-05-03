@@ -1,0 +1,47 @@
+{{- if not (empty .Values.ibm_suite_app_optimizer_install) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: optimizer.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argoapp_namespace }}
+  labels:
+    cloud: aws
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+    masapp: 'optimizer'
+  annotations:
+    argocd.argoproj.io/sync-wave: "510"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo_project_apps | default "mas" }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: "{{ .Values.source.repoURL }}"
+    path: applications/500-ibm-mas-suite-app-install-stub
+    targetRevision: "{{ .Values.source.targetRevision }}"
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            {{ unset (set .Values "ibm_suite_app_install" .Values.ibm_suite_app_optimizer_install) "ibm_suite_app_optimizer_install" | toRawJson }}
+        - name: ARGOCD_APP_NAME
+          value: "optimizer-install"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+{{- end }}

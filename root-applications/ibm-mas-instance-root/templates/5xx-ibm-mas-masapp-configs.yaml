@@ -1,0 +1,93 @@
+{{- /*
+When inside the range loop below, make sure you prefix any references to chart values NOT under .Values.ibm_mas_masapp_configs with $.
+For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
+*/}}
+
+{{- range $i, $value := .Values.ibm_mas_masapp_configs }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: "ma-cfg.{{ $.Values.account.id }}.{{ $.Values.region.id }}.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_app_id }}.{{ $value.mas_workspace_id }}"
+  namespace: {{ $.Values.argoapp_namespace }}
+  annotations:
+    {{- if eq $value.mas_app_id "assist" }}
+    argocd.argoproj.io/sync-wave: "510"
+    {{- else if eq $value.mas_app_id "iot" }}
+    argocd.argoproj.io/sync-wave: "510"
+    {{- else if eq $value.mas_app_id "manage" }}
+    argocd.argoproj.io/sync-wave: "510"
+    {{- else if eq $value.mas_app_id "visualinspection" }}
+    argocd.argoproj.io/sync-wave: "510"
+    {{- else if eq $value.mas_app_id "health" }}
+    argocd.argoproj.io/sync-wave: "530"
+    {{- else if eq $value.mas_app_id "monitor" }}
+    argocd.argoproj.io/sync-wave: "530"
+    {{- else if eq $value.mas_app_id "optimizer" }}
+    argocd.argoproj.io/sync-wave: "530"
+    {{- else if eq $value.mas_app_id "predict" }}
+    argocd.argoproj.io/sync-wave: "550"
+    {{- end }}
+    {{- if and $.Values.notifications $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ $.Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    cloud: aws
+    environment: '{{ $.Values.account.id }}'
+    region: '{{ $.Values.region.id }}'
+    cluster: '{{ $.Values.cluster.id }}'
+    instance: '{{ $.Values.instance.id }}'
+spec:
+  project: "{{ $.Values.argo_project_apps | default "mas" }}"
+  destination:
+    server: {{ $.Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: "{{ $.Values.source.repoURL | default "https://github.com/ibm-mas/gitops" }}"
+    path: applications/510-ibm-mas-suite-app-config-stub
+    targetRevision: "{{ $.Values.source.targetRevision }}"
+    plugin:
+      env:
+        - name: HELM_ARGS
+          value: |
+            --set mas_instance_id={{ $.Values.instance.id }}
+            --set mas_app_id={{ $value.mas_app_id }}
+            --set ca_crt={{ $value.ca_crt }}
+            --set cpd_admin_password={{ $value.cpd_admin_password }}
+            --set cpd_admin_username={{ $value.cpd_admin_username }}
+            --set mas_app_namespace={{ $value.mas_app_namespace }}
+            --set mas_app_settings_server_bundles_size={{ $value.mas_app_settings_server_bundles_size }}
+            --set mas_app_ws_apiversion={{ $value.mas_app_ws_apiversion }}
+            --set mas_app_ws_kind={{ $value.mas_app_ws_kind }}
+            --set mas_appws_spec={{ $value.mas_appws_spec }}
+            --set mas_manual_cert_mgmt={{ $value.mas_manual_cert_mgmt }}
+            --set mas_workspace_id={{ $value.mas_workspace_id }}
+            --set public_tls_secret_name={{ $value.public_tls_secret_name }}
+            --set server_bundles_add_server_config_content={{ $value.server_bundles_add_server_config_content }}
+            --set server_bundles_add_server_config_no_activation_content={{ $value.server_bundles_add_server_config_no_activation_content }}
+            --set server_bundles_jms_add_server_config_content={{ $value.server_bundles_jms_add_server_config_content }}
+            --set tls_cert={{ $value.tls_cert }}
+            --set tls_key={{ $value.tls_key }}
+            --set wd_yaml={{ $value.wd_yaml }}
+        - name: ARGOCD_APP_NAME
+          value: "ma-cfg-{{ $value.mas_app_id }}"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+      - /imagePullSecrets
+  - group: 'marketplace.redhat.com/v1alpha1'
+    kind: MarketplaceConfig
+    jsonPointers:
+      - /spec
+{{- end }}

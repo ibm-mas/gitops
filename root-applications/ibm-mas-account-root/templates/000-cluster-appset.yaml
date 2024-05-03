@@ -21,43 +21,43 @@ spec:
         generators:
           # This is the "base" generator, it *must* be first in the list
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/ibm-mas-cluster-base.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/ibm-operator-catalog.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/redhat-cert-manager.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/ibm-dro.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/ibm-db2u.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/cis-compliance.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/*/nvidia-gpu-operator.yaml"
   template:
     metadata:
-      name: "cluster.{{.Values.account.id}}.{{ `{{.region.id}}` }}.{{ `{{.cluster.id}}` }}"
+      name: "cluster.{{ .Values.account.id }}.{{ `{{.region.id}}` }}.{{ `{{.cluster.id}}` }}"
       labels:
         cloud: aws
         environment: '{{ .Values.account.id }}'
@@ -66,25 +66,23 @@ spec:
       annotations:
         healthCheckTimeout: "1800"
     spec:
-      project: "{{ .Values.argo_project_rootapps | default "mas" }}"
+      project: "{{ .Values.argo_project_rootapps  | default "mas" }}"
       source:
-          repoURL: "{{ .Values.source.repoURL | default "https://github.com/ibm-mas/gitops" }}"
-          targetRevision: "{{ .Values.source.targetRevision }}"
+          repoURL: "{{ .Values.source.repo_url }}"
+          targetRevision: "{{ .Values.source.revision }}"
           path: root-applications/ibm-mas-cluster-root
           helm:
             releaseName: clusterappset
             values: "{{ `{{ toYaml . }}` }}"
             parameters:
-              - name: "generator.repoURL"
-                value: "{{ .Values.generator.repoURL }}"
+              - name: "generator.repo_url"
+                value: "{{ .Values.generator.repo_url }}"
               - name: "generator.revision"
                 value: "{{ .Values.generator.revision }}"
-              - name: "source.targetRevision"
-                value: "{{ .Values.source.targetRevision }}"
-              - name: "source.repoURL"
-                value: "{{ .Values.source.repoURL | default "https://github.com/ibm-mas/gitops" }}"
-              - name: argoapp_namespace
-                value: "{{ .Values.argoapp_namespace }}"
+              - name: "source.revision"
+                value: "{{ .Values.source.revision }}"
+              - name: "source.repo_url"
+                value: "{{ .Values.source.repo_url }}"
               - name: argoapp_namespace
                 value: "{{ .Values.argoapp_namespace }}"
               - name: argo_project_rootapps

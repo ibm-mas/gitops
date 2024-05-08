@@ -5,7 +5,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: redhat-cert-manager.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
-  namespace: {{ .Values.argoapp_namespace }}
+  namespace: {{ .Values.argo.namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "010"
     healthCheckTimeout: "1800"
@@ -16,21 +16,33 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: "{{ .Values.argo_project_apps | default "mas" }}"
+  project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
-    repoURL: "{{ .Values.source.repoURL }}"
+    repoURL: "{{ .Values.source.repo_url }}"
     path: applications/010-redhat-cert-manager
-    targetRevision: "{{ .Values.source.targetRevision }}"
+    targetRevision: "{{ .Values.source.revision }}"
     plugin:
+      name: {{ .Values.avp.name }} 
       env:
-        - name: HELM_VALUES
+        - name: {{ .Values.avp.values_varname }}
           value: |
-            {{ .Values | toRawJson }}
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            argo_namespace: "{{ .Values.argo.namespace }}"
+            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
+            channel: "{{ .Values.redhat_cert_manager.channel }}"
+            run_sync_hooks: {{ .Values.redhat_cert_manager.run_sync_hooks }}
         - name: ARGOCD_APP_NAME
           value: rcmapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

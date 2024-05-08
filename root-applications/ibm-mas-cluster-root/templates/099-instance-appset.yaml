@@ -5,7 +5,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: instance-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
-  namespace: {{ .Values.argoapp_namespace }}
+  namespace: {{ .Values.argo.namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "099"
 spec:
@@ -21,36 +21,80 @@ spec:
         generators:
           # This is the "base" generator, it *must* be first in the list
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-instance-base.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-sls.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-workspace.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite-configs.yaml"
           - git:
-              repoURL: "{{ .Values.generator.repoURL }}"
+              repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-db2u-databases.yaml"
-
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-masapp-manage-install.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-masapp-iot-install.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-masapp-assist-install.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-masapp-visualinspection-install.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-masapp-optimizer-install.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-masapp-monitor-install.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-masapp-predict-install.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-masapp-health-install.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-masapp-configs.yaml"
   template:
     metadata:
       name: "instance.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ `{{.instance.id}}` }}"
@@ -68,37 +112,42 @@ spec:
         notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
         {{- end }}
     spec:
-      project: "{{ .Values.argo_project_rootapps | default "mas" }}"
+      project: "{{ .Values.argo.projects.rootapps }}"
       source:
-          repoURL: "{{ .Values.source.repoURL }}"
-          targetRevision: "{{ .Values.source.targetRevision }}"
+          repoURL: "{{ .Values.source.repo_url }}"
+          targetRevision: "{{ .Values.source.revision }}"
           path: root-applications/ibm-mas-instance-root
           helm:
             releaseName: instanceappset
-            values: |
-              {{ `{{toRawJson .}}` }}
+            values: "{{ `{{ toYaml . }}` }}"
             parameters:
-              - name: "generator.repoURL"
-                value: "{{ .Values.generator.repoURL }}"
+              - name: "generator.repo_url"
+                value: "{{ .Values.generator.repo_url }}"
               - name: "generator.revision"
                 value: "{{ .Values.generator.revision }}"
-              - name: "source.targetRevision"
-                value: "{{ .Values.source.targetRevision }}"
-              - name: "source.repoURL"
-                value: "{{ .Values.source.repoURL }}"
-              - name: argoapp_namespace
-                value: "{{ .Values.argoapp_namespace }}"
+              - name: "source.revision"
+                value: "{{ .Values.source.revision }}"
+              - name: "source.repo_url"
+                value: "{{ .Values.source.repo_url }}"
+              - name: argo.namespace
+                value: "{{ .Values.argo.namespace }}"
                 {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
               - name: "notifications.slack_channel_id"
                 value: "{{ .Values.notifications.slack_channel_id }}"
                 {{- end }}
-              - name: argo_project_rootapps
-                value: "{{ .Values.argo_project_rootapps | default "mas" }}"
-              - name: argo_project_apps
-                value: "{{ .Values.argo_project_apps | default "mas" }}"
+              - name: argo.projects.rootapps
+                value: "{{ .Values.argo.projects.rootapps }}"
+              - name: argo.projects.apps
+                value: "{{ .Values.argo.projects.apps }}"
+              - name: avp.name
+                value: "{{ .Values.avp.name }}"
+              - name: avp.secret
+                value: "{{ .Values.avp.secret }}"
+              - name: avp.values_varname
+                value: "{{ .Values.avp.values_varname }}"
       destination:
         server: 'https://kubernetes.default.svc'
-        namespace: {{ .Values.argoapp_namespace }}
+        namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
           prune: true

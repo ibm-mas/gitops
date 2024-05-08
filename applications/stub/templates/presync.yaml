@@ -1,0 +1,43 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "testpresync"
+  annotations:
+    argocd.argoproj.io/hook: "PreSync"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  ttlSecondsAfterFinished: 120
+  template:
+    spec:
+      containers:
+        - name: suite-dns-role-run
+          image: quay.io/ibmmas/cli:8.1.0-pre.gitops
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+
+          volumeMounts:
+            - name: "presync-ibm-suite-dns-role-secret"
+              mountPath: /etc/mas/creds/suite_dns_secret
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "sleeping"
+              sleep 60
+              echo "done"
+
+
+      restartPolicy: Never
+
+      serviceAccountName: "default"
+      volumes:
+
+  backoffLimit: 4

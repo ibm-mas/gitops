@@ -1,9 +1,13 @@
 ---
+
+{{ $app_name := printf "tn.%s.%s.%s.%s" .Values.account.id .Values.region.id .Values.cluster.id .Values.instance.id }}
+{{ $app_dest_ns := "testing-namespace" }}
+
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: tn.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: {{ $app_name }}
   namespace: {{ .Values.argo.namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "000"
@@ -13,7 +17,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: testing-namespace
+    namespace: {{ $app_dest_ns }}
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: applications/stub
@@ -38,6 +42,9 @@ spec:
       - CreateNamespace=true
       - RespectIgnoreDifferences=true
     managedNamespaceMetadata:
-      labels: # The labels to set on the application namespace
-      annotations: # The annotations to set on the application namespace
+      labels:
+        argocd.argoproj.io/instance: {{ $app_name }}
+      annotations:
+        argocd.argoproj.io/tracking-id: >-
+            {{ $app_name }}:/Namespace:{{ $app_dest_ns }}/{{ $app_dest_ns }}
   ignoreDifferences: []

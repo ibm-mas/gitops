@@ -1,10 +1,14 @@
 {{- if not (empty .Values.ibm_mas_suite) }}
+
+{{ $app_name := printf "suite.%s.%s.%s.%s" .Values.account.id .Values.region.id .Values.cluster.id .Values.instance.id }}
+{{ $app_dest_ns := printf "mas-%s-core" .Values.instance.id }}
+
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: suite.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: {{ $app_name }}
   namespace: {{ .Values.argo.namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "130"
@@ -18,7 +22,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: default
+    namespace: {{ $app_dest_ns }}
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: applications/130-ibm-mas-suite
@@ -32,7 +36,6 @@ spec:
             region_id: "{{ .Values.region.id }}"
             cluster_id: "{{ .Values.cluster.id }}"
             instance_id: "{{ .Values.instance.id }}"
-            argo_namespace: "{{ .Values.argo.namespace }}"
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             sm_aws_region: "{{ .Values.region.id }}"
@@ -95,8 +98,15 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=false
+      - CreateNamespace=true
       - RespectIgnoreDifferences=true
+    managedNamespaceMetadata:
+      labels:
+        argocd.argoproj.io/instance: {{ $app_name }}
+        argocd.argoproj.io/managed-by: "{{ .Values.argo.namespace }}"
+      annotations:
+        argocd.argoproj.io/tracking-id: >-
+            {{ $app_name }}:/Namespace:{{ $app_dest_ns }}/{{ $app_dest_ns }}
   ignoreDifferences:
     - group: 'cert-manager.io'
       kind: ClusterIssuer

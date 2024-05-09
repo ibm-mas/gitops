@@ -1,53 +1,38 @@
+{{- if not (empty .Values.ibm_mas_workspace) }}
 ---
+# IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: syncjobs.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: workspace.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   annotations:
-    argocd.argoproj.io/sync-wave: "91"
+    argocd.argoproj.io/sync-wave: "200"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
     {{- end }}
   finalizers:
     - resources-finalizer.argocd.argoproj.io
-    - post-delete-finalizer.argocd.argoproj.io	
-    - post-delete-finalizer.argocd.argoproj.io/cleanup
 spec:
-  ignoreDifferences:
-  - group: '*'
-    kind: ServiceAccount
-    jsonPointers:
-    - /imagePullSecrets
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: applications/91-ibm-sync-jobs
+    path: instance-applications/220-ibm-mas-workspace
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            account_id: "{{ .Values.account.id }}"
-            region_id: "{{ .Values.region.id }}"
-            cluster_id: "{{ .Values.cluster.id }}"
             instance_id: "{{ .Values.instance.id }}"
-            {{- if not (empty .Values.ibm_sls) }}
-            {{- if eq .Values.ibm_sls.mongodb_provider "aws" }}
-            docdb:
-              master_username: "{{ .Values.ibm_sls.docdb_master_username }}"
-              master_password: "{{ .Values.ibm_sls.docdb_master_password }}"
-              instance_password: "{{ .Values.ibm_sls.sls_mongo_password }}"
-              master_info: {{ .Values.ibm_sls.docdb_master_info }}
-            {{- end }}
-            {{- end }}
+            mas_workspace_id: "{{ .Values.ibm_mas_workspace.mas_workspace_id }}"
+            mas_workspace_name: "{{ .Values.ibm_mas_workspace.mas_workspace_name }}"
         - name: ARGOCD_APP_NAME
-          value: syncres
+          value: workspaceapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}
@@ -59,3 +44,4 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - RespectIgnoreDifferences=true
+{{- end }}

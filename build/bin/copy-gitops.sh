@@ -34,7 +34,8 @@ done
 : ${TARGET?"Need to set -t|--target argument for target directory"}
 
 echo "Deleting files in target"
-rm -rvf ${TARGET}/applications/*
+rm -rvf ${TARGET}/instance-applications/*
+rm -rvf ${TARGET}/cluster-applications/*
 rm -rvf ${TARGET}/docs/*
 rm -rvf ${TARGET}/root-applications/*
 rm -v README.md

@@ -90,14 +90,6 @@ spec:
                 return_code=$?
                 set -e
 
-                if [ $return_code -ne 0 ]; then
-                  echo "oc delete timed out after 300s, forcing delete by removing finalizers"
-                  echo "oc patch $RESOURCE -n $NAMESPACE"
-
-                  # NOTE: set -e, so job will exit if this fails (which is what we want)
-                  oc patch $RESOURCE -n $NAMESPACE --type="json" -p '[{"op": "remove", "path":"/metadata/finalizers"}]' 2>/dev/null
-                fi
-
                 echo "Verify that resource $RESOURCE is now absent in namespace $NAMESPACE "
                 # don't want a non-zero rc from oc delete to cause the job to fail
                 # so, temporarily set +e

@@ -4,8 +4,13 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: instance-appset.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
+  name: instance-appset.{{ .Values.cluster.id }}
   namespace: {{ .Values.argo.namespace }}
+  labels:
+    cloud: aws
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "099"
 spec:
@@ -97,7 +102,7 @@ spec:
               - path: "{{ .Values.account.id }}/{{ .Values.region.id }}/{{ .Values.cluster.id }}/*/ibm-mas-masapp-configs.yaml"
   template:
     metadata:
-      name: "instance.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ `{{.instance.id}}` }}"
+      name: "instance.{{ .Values.cluster.id }}.{{ `{{.instance.id}}` }}"
       labels:
         cloud: aws
         environment: '{{ .Values.account.id }}'

@@ -1,0 +1,57 @@
+
+# postdelete-MarketplaceConfigs-resources template in the ibm-dro-cleanup chart depends on these resources
+# if you make any updates here, ensure that template is updated to align
+{{ $role_name := "postdelete-delete-marketplaceconfigs-r" }}
+{{ $sa_name :=   "postdelete-delete-marketplaceconfigs-sa" }}
+{{ $rb_name :=   "postdelete-delete-marketplaceconfigs-rb" }}
+{{ $np_name :=   "postdelete-delete-marketplaceconfigs-np" }}
+{{ $job_label := "postdelete-delete-marketplaceconfigs-job" }}
+{{ $ns :=         .Values.dro_namespace }}
+
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+rules:
+  - verbs:
+      - get
+      - watch
+      - list
+      - update
+      - delete
+    apiGroups:
+      - marketplace.redhat.com
+    resources:
+      - marketplaceconfigs
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "001"
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+

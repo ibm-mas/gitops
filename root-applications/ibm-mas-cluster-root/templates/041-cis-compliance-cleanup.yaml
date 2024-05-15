@@ -1,63 +1,43 @@
+{{- if not (empty .Values.cis_compliance) }}
 ---
+# IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: syncres.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: cis-compliance-cleanup.{{ .Values.cluster.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
-    instance: '{{ .Values.instance.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "000"
+    argocd.argoproj.io/sync-wave: "041"
+    healthCheckTimeout: "1800"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
     {{- end }}
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+    - post-delete-finalizer.argocd.argoproj.io	
+    - post-delete-finalizer.argocd.argoproj.io/cleanup
 spec:
-  ignoreDifferences:
-  - group: '*'
-    kind: ServiceAccount
-    jsonPointers:
-    - /imagePullSecrets
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/000-ibm-sync-resources
+    path: cluster-applications/041-cis-compliance-cleanup
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            account_id: "{{ .Values.account.id }}"
-            region_id: "{{ .Values.region.id }}"
-            cluster_id: "{{ .Values.cluster.id }}"
-            instance_id: "{{ .Values.instance.id }}"
             argo_namespace: "{{ .Values.argo.namespace }}"
-            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
-            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
-            sm_aws_region: "{{ .Values.region.id }}"
-            {{- if not (empty .Values.ibm_sls) }}
-            {{- if eq .Values.ibm_sls.mongodb_provider "aws" }}
-            docdb:
-              master_username: "{{ .Values.ibm_sls.docdb_master_username }}"
-              master_password: "{{ .Values.ibm_sls.docdb_master_password }}"
-              instance_password: "{{ .Values.ibm_sls.sls_mongo_password }}"
-              master_info: {{ .Values.ibm_sls.docdb_master_info }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.custom_labels }}
-            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
-            {{- end }}
         - name: ARGOCD_APP_NAME
-          value: syncres
+          value: ciscompliancecleanup
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}
@@ -66,6 +46,9 @@ spec:
     automated:
       prune: true
       selfHeal: true
+      allowEmpty: true
     syncOptions:
       - CreateNamespace=false
       - RespectIgnoreDifferences=true
+      - Validate=false
+{{- end }}

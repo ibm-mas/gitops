@@ -8,8 +8,14 @@ For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: "db2-db.{{ $.Values.account.id }}.{{ $.Values.region.id }}.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
+  name: "db2-db.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
   namespace: {{ $.Values.argo.namespace }}
+  labels:
+    environment: '{{ $.Values.account.id }}'
+    region: '{{ $.Values.region.id }}'
+    cluster: '{{ $.Values.cluster.id }}'
+    instance: '{{ $.Values.instance.id }}'
+    appId: '{{ $value.mas_application_id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "120"
     {{- if and $.Values.notifications $.Values.notifications.slack_channel_id }}
@@ -19,7 +25,6 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
   labels:
-    cloud: aws
     environment: '{{ $.Values.account.id }}'
     region: '{{ $.Values.region.id }}'
     cluster: '{{ $.Values.cluster.id }}'

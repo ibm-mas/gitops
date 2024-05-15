@@ -1,6 +1,6 @@
 {{- if not (empty .Values.ibm_mas_suite) }}
 
-{{ $app_name := printf "suite.%s.%s.%s.%s" .Values.account.id .Values.region.id .Values.cluster.id .Values.instance.id }}
+{{ $app_name := printf "suite.%s.%s" .Values.cluster.id .Values.instance.id }}
 {{ $app_dest_ns := printf "mas-%s-core" .Values.instance.id }}
 
 ---
@@ -10,6 +10,11 @@ kind: Application
 metadata:
   name: {{ $app_name }}
   namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "130"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}

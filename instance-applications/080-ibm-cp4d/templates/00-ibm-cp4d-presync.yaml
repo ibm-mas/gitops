@@ -1,11 +1,11 @@
-{{- if eq .Values.ibm_cp4d.cpd_product_version 4.8.0 }}
+{{- if eq .Values.cpd_product_version 4.8.0 }}
 ---
 # This config map is created via cpd-cli manage apply-cr command: https://www.ibm.com/docs/en/cloud-paks/cp-data/4.6.x?topic=si-installing-components
 kind: ConfigMap
 apiVersion: v1
 metadata:
   name: olm-utils-cm
-  namespace: "{{ cpd_instance_namespace }}"
+  namespace: "{{ .Values.cpd_instance_namespace }}"
   labels:
     app.kubernetes.io/name: olm-utils
 data:
@@ -1032,14 +1032,14 @@ data:
 {{ end }}
 
 
-{{- if eq .Values.ibm_cp4d.cpd_product_version 4.8.1 }}
+{{- if eq .Values.cpd_product_version 4.8.1 }}
 ---
 # This config map is created via cpd-cli manage apply-cr command: https://www.ibm.com/docs/en/cloud-paks/cp-data/4.6.x?topic=si-installing-components
 kind: ConfigMap
 apiVersion: v1
 metadata:
   name: olm-utils-cm
-  namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+  namespace: "{{ .Values.cpd_instance_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "081"
   labels:
@@ -2070,7 +2070,7 @@ kind: Secret
 apiVersion: v1
 metadata:
   name: aws
-  namespace: {{ .Values.ibm_cp4d.cpd_instance_namespace }}
+  namespace: {{ .Values.cpd_instance_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "081"
 data:
@@ -2083,7 +2083,7 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: presync-cpd-olm-sa
-  namespace: {{ .Values.ibm_cp4d.cpd_instance_namespace }}
+  namespace: {{ .Values.cpd_instance_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "081"
 
@@ -2118,7 +2118,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: presync-cpd-olm-sa
-    namespace: {{ .Values.ibm_cp4d.cpd_instance_namespace }}
+    namespace: {{ .Values.cpd_instance_namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -2133,7 +2133,7 @@ metadata:
   # Any change to cluster config will trigger a rerun of the job.
   # The job is idempotent and quick so no real harm in running it when we don't actually need to.
   name: "presync-cpd-olm-job-{{ .Values | toYaml | adler32sum }}"
-  namespace: {{ .Values.ibm_cp4d.cpd_instance_namespace }}
+  namespace: {{ .Values.cpd_instance_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "083"
 spec:
@@ -2157,6 +2157,8 @@ spec:
               value: {{ .Values.region_id }}
             - name: CLUSTER_ID
               value: {{ .Values.cluster_id }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
@@ -2173,6 +2175,13 @@ spec:
 
               # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
               source /mascli/functions/gitops_utils
+
+              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
 
               
               echo "Fetching channel for namespace scope"
@@ -2204,10 +2213,10 @@ spec:
               export SM_AWS_REGION=${REGION_ID}
               sm_login
 
-              SECRET_NAME_NAMESPACE_SCOPE_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/namespace_scope_channel
-              SECRET_NAME_LICENSING_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/licensing_channel
-              SECRET_NAME_LICENSING_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/licensing_version
-              SECRET_NAME_CPFS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/cpfs_channel
+              SECRET_NAME_NAMESPACE_SCOPE_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/namespace_scope_channel
+              SECRET_NAME_LICENSING_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/licensing_channel
+              SECRET_NAME_LICENSING_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/licensing_version
+              SECRET_NAME_CPFS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpfs_channel
 
               sm_update_secret $SECRET_NAME_NAMESPACE_SCOPE_CHANNEL "{\"namespace_scope_channel\": \"$NAMESPACE_SCOPE_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_LICENSING_CHANNEL "{\"licensing_channel\": \"$LICENSING_CHANNEL\" }"

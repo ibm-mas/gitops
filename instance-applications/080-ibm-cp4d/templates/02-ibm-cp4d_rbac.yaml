@@ -3,7 +3,7 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: ibm-namespace-scope-operator
-  namespace: {{ .Values.ibm_cp4d.cpd_operators_namespace }}
+  namespace: {{ .Values.cpd_operators_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "082"
 
@@ -11,8 +11,8 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: "{{ .Values.ibm_cp4d.cpd_admin_login_sa }}"
-  namespace: {{ .Values.ibm_cp4d.cpd_instance_namespace }}
+  name: "{{ .Values.cpd_admin_login_sa }}"
+  namespace: {{ .Values.cpd_instance_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "082"
 
@@ -20,8 +20,8 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: nss-managed-role-from-{{ .Values.ibm_cp4d.cpd_operators_namespace }}
-  namespace: {{ .Values.ibm_cp4d.cpd_operators_namespace }}
+  name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
+  namespace: {{ .Values.cpd_operators_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "082"
   labels:
@@ -45,8 +45,8 @@ rules:
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: nss-managed-role-from-{{ .Values.ibm_cp4d.cpd_operators_namespace }}
-  namespace: {{ .Values.ibm_cp4d.cpd_instance_namespace }}
+  name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
+  namespace: {{ .Values.cpd_instance_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "082"
   labels:
@@ -70,8 +70,8 @@ rules:
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: nss-runtime-managed-role-from-{{ .Values.ibm_cp4d.cpd_operators_namespace }}
-  namespace: {{ .Values.ibm_cp4d.cpd_instance_namespace }}
+  name: nss-runtime-managed-role-from-{{ .Values.cpd_operators_namespace }}
+  namespace: {{ .Values.cpd_instance_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "082"
 rules:
@@ -1511,8 +1511,8 @@ rules:
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: nss-managed-role-from-{{ .Values.ibm_cp4d.cpd_operators_namespace }}
-  namespace: {{ .Values.ibm_cp4d.cpd_operators_namespace }}
+  name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
+  namespace: {{ .Values.cpd_operators_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "082"
   labels:
@@ -1520,10 +1520,10 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: ibm-namespace-scope-operator
-  namespace: {{ .Values.ibm_cp4d.cpd_operators_namespace }}
+  namespace: {{ .Values.cpd_operators_namespace }}
 roleRef:
   kind: Role
-  name: nss-managed-role-from-{{ .Values.ibm_cp4d.cpd_operators_namespace }}
+  name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
   apiGroup: rbac.authorization.k8s.io/v1
 
 ---
@@ -1531,7 +1531,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: cpd-instance-admin-apply-olm
-  namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
+  namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "082"
 rules:
@@ -1575,8 +1575,8 @@ rules:
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: nss-managed-role-from-{{ .Values.ibm_cp4d.cpd_operators_namespace }}
-  namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+  name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
+  namespace: "{{ .Values.cpd_instance_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "082"
   labels:
@@ -1584,11 +1584,11 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: ibm-namespace-scope-operator
-    namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
+    namespace: "{{ .Values.cpd_operators_namespace }}"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: nss-managed-role-from-{{ .Values.ibm_cp4d.cpd_operators_namespace }}
+  name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
 
 
 ---
@@ -1596,7 +1596,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: cpd_cmd_adm_policy_to_user_operators
-  namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+  namespace: "{{ .Values.cpd_instance_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "082"
 spec:
@@ -1614,24 +1614,24 @@ spec:
 
             set -e
 
-            CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.ibm_cp4d.cpd_admin_login_sa }} --namespace={{ .Values.ibm_cp4d.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
+            CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
             until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERATOR_NS_PERMISSION_OUTPUT}']; do
-              CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.ibm_cp4d.cpd_admin_login_sa }} --namespace={{ .Values.ibm_cp4d.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
+              CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
             done
 
-            CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.ibm_cp4d.cpd_admin_login_sa }} --namespace={{ .Values.ibm_cp4d.cpd_instance_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
+            CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_instance_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
             until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERANDS_NS_PERMISSION_OUTPUT}']; do
-              CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.ibm_cp4d.cpd_admin_login_sa }} --namespace={{ .Values.ibm_cp4d.cpd_instance_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
+              CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_instance_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
             done
 
-            CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm -z {{ .Values.ibm_cp4d.cpd_admin_login_sa }} --namespace={{ .Values.ibm_cp4d.cpd_operators_namespace }} --role-namespace={{ .Values.ibm_cp4d.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+            CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
             until ['role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added' in '${CPD_APPLY_OLM_PERMISSION_OUTPUT}']; do
-              CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm -z {{ .Values.ibm_cp4d.cpd_admin_login_sa }} --namespace={{ .Values.ibm_cp4d.cpd_operators_namespace }} --role-namespace={{ .Values.ibm_cp4d.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+              CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
             done
 
-            CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z {{ .Values.ibm_cp4d.cpd_admin_login_sa }} --namespace={{ .Values.ibm_cp4d.cpd_operators_namespace }} --role-namespace=openshift-marketplace --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+            CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace=openshift-marketplace --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
             until ['role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added' in '${CPD_CATSRC_PERMISSION_OUTPUT}']; do
-              CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z {{ .Values.ibm_cp4d.cpd_admin_login_sa }} --namespace={{ .Values.ibm_cp4d.cpd_operators_namespace }} --role-namespace=openshift-marketplace --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+              CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace=openshift-marketplace --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
             done
       restartPolicy: Never
   backoffLimit: 4

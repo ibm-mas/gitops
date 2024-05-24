@@ -2207,9 +2207,9 @@ spec:
               fi
 
               echo "Fetching needed values from olm-utils-cm config map"
-              echo $((oc get ConfigMap olm-utils-cm -o json) | jq -r '.data.release_components_meta')
-              echo $((oc get ConfigMap olm-utils-cm -o json) | jq -r '.data.release_components_meta' | jq -r '.ibm-licensing')
-              export LICENSING_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | jq -r '.data.release_components_meta' | jq -r '.ibm-licensing.sub_channel')
+              echo $((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta')
+              echo $((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '["ibm-licensing"]')
+              export LICENSING_CHANNEL=$((oc get ConfigMap olm-utils-cm -o yaml) | yq -r '.data.release_components_meta' | yq -r '["ibm-licensing"].sub_channel')
               if [[ -z "${LICENSING_CHANNEL}" ]]; then
                 echo "Failed to fetch ibm licensing channel"
                 exit 1

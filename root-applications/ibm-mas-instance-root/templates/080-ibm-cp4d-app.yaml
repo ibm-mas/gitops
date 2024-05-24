@@ -1,8 +1,10 @@
+{{- if not (empty .Values.ibm_cp4d) }}
 ---
+# IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: syncjobs.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: cp4d.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -10,54 +12,44 @@ metadata:
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "010"
+    argocd.argoproj.io/sync-wave: "080"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
     {{- end }}
   finalizers:
     - resources-finalizer.argocd.argoproj.io
-    - post-delete-finalizer.argocd.argoproj.io	
-    - post-delete-finalizer.argocd.argoproj.io/cleanup
 spec:
-  ignoreDifferences:
-  - group: '*'
-    kind: ServiceAccount
-    jsonPointers:
-    - /imagePullSecrets
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/010-ibm-sync-jobs
+    path: instance-applications/080-ibm-cp4d
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            account_id: "{{ .Values.account.id }}"
-            region_id: "{{ .Values.region.id }}"
-            cluster_id: "{{ .Values.cluster.id }}"
-            instance_id: "{{ .Values.instance.id }}"
-            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
-            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
-            {{- if not (empty .Values.ibm_cp4d) }}
+            ibm_entitlement_key: "{{ .Values.ibm_cp4d.ibm_entitlement_key }}"
+            cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
+            cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+            cpd_cs_control_namespace: "{{ .Values.ibm_cp4d.cpd_cs_control_namespace }}"
+            cpd_admin_login_sa: "{{ .Values.ibm_cp4d.cpd_admin_login_sa }}"
+            namespace_scope_channel: "{{ .Values.ibm_cp4d.namespace_scope_channel }}"
+            cpd_ibm_licensing_channel: "{{ .Values.ibm_cp4d.cpd_ibm_licensing_channel }}"
+            cpd_ibm_licensing_version: "{{ .Values.ibm_cp4d.cpd_ibm_licensing_version }}"
+            cpfs_channel: "{{ .Values.ibm_cp4d.cpfs_channel }}"
+            cpd_channel: "{{ .Values.ibm_cp4d.cpd_channel }}"
+            cpd_platform_cr_name: "{{ .Values.ibm_cp4d.cpd_platform_cr_name }}"
             cpd_product_version: "{{ .Values.ibm_cp4d.cpd_product_version }}"
-            {{- end }}
-            {{- if not (empty .Values.ibm_sls) }}
-            {{- if eq .Values.ibm_sls.mongodb_provider "aws" }}
-            docdb:
-              master_username: "{{ .Values.ibm_sls.docdb_master_username }}"
-              master_password: "{{ .Values.ibm_sls.docdb_master_password }}"
-              instance_password: "{{ .Values.ibm_sls.sls_mongo_password }}"
-              master_info: {{ .Values.ibm_sls.docdb_master_info }}
-            {{- end }}
-            {{- end }}
+            cpd_iam_integration: "{{ .Values.ibm_cp4d.cpd_iam_integration }}"
+            cpd_primary_storage_class: "{{ .Values.ibm_cp4d.cpd_primary_storage_class }}"
+            cpd_metadata_storage_class: "{{ .Values.ibm_cp4d.cpd_metadata_storage_class }}"
         - name: ARGOCD_APP_NAME
-          value: syncres
+          value: cp4dapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}
@@ -68,4 +60,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
-      - RespectIgnoreDifferences=true
+{{- end }}

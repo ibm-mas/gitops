@@ -1,3 +1,5 @@
+{{- if not (empty .Values.cpd_product_version) }}
+
 {{- if eq .Values.cpd_product_version "4.8.0" }}
 ---
 # This config map is created via cpd-cli manage apply-cr command: https://www.ibm.com/docs/en/cloud-paks/cp-data/4.6.x?topic=si-installing-components
@@ -5,7 +7,9 @@ kind: ConfigMap
 apiVersion: v1
 metadata:
   name: olm-utils-cm
-  namespace: "{{ .Values.cpd_instance_namespace }}"
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "01"
   labels:
     app.kubernetes.io/name: olm-utils
 data:
@@ -1029,7 +1033,7 @@ data:
             - use
   release_version: 4.8.0
 
-{{ end }}
+{{- end }}
 
 
 {{- if eq .Values.cpd_product_version "4.8.1" }}
@@ -1039,9 +1043,9 @@ kind: ConfigMap
 apiVersion: v1
 metadata:
   name: olm-utils-cm
-  namespace: "{{ .Values.cpd_instance_namespace }}"
+  namespace: mas-{{ .Values.instance_id }}-syncres
   annotations:
-    argocd.argoproj.io/sync-wave: "081"
+    argocd.argoproj.io/sync-wave: "01"
   labels:
     app.kubernetes.io/name: olm-utils
 data:
@@ -2063,16 +2067,16 @@ data:
             - delete
             - use
   release_version: 4.8.1
-{{ end }}
+{{- end }}
 
 ---
 kind: Secret
 apiVersion: v1
 metadata:
   name: aws
-  namespace: {{ .Values.cpd_instance_namespace }}
+  namespace: mas-{{ .Values.instance_id }}-syncres
   annotations:
-    argocd.argoproj.io/sync-wave: "081"
+    argocd.argoproj.io/sync-wave: "001"
 data:
   aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
@@ -2083,9 +2087,9 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: presync-cpd-olm-sa
-  namespace: {{ .Values.cpd_instance_namespace }}
+  namespace: mas-{{ .Values.instance_id }}-syncres
   annotations:
-    argocd.argoproj.io/sync-wave: "081"
+    argocd.argoproj.io/sync-wave: "001"
 
 ---
 kind: ClusterRole
@@ -2093,7 +2097,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: presync-cpd-olm-role
   annotations:
-    argocd.argoproj.io/sync-wave: "081"
+    argocd.argoproj.io/sync-wave: "001"
 rules:
   - verbs:
       - get
@@ -2114,11 +2118,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: presync-cpd-olm-rb
   annotations:
-    argocd.argoproj.io/sync-wave: "082"
+    argocd.argoproj.io/sync-wave: "002"
 subjects:
   - kind: ServiceAccount
     name: presync-cpd-olm-sa
-    namespace: {{ .Values.cpd_instance_namespace }}
+    namespace: mas-{{ .Values.instance_id }}-syncres
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -2133,9 +2137,9 @@ metadata:
   # Any change to cluster config will trigger a rerun of the job.
   # The job is idempotent and quick so no real harm in running it when we don't actually need to.
   name: "presync-cpd-olm-job-{{ .Values | toYaml | adler32sum }}"
-  namespace: {{ .Values.cpd_instance_namespace }}
+  namespace: mas-{{ .Values.instance_id }}-syncres
   annotations:
-    argocd.argoproj.io/sync-wave: "083"
+    argocd.argoproj.io/sync-wave: "003"
 spec:
   template:
     spec:
@@ -2233,3 +2237,5 @@ spec:
             defaultMode: 420
             optional: false
   backoffLimit: 4
+
+{{- end }}

@@ -1,0 +1,105 @@
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: ibm-namespace-scope-operator
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  labels:
+    operators.coreos.com/ibm-namespace-scope-operator.{{ .Values.cpd_operators_namespace }}: ''
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+spec:
+  channel: "{{ .Values.namespace_scope_channel }}"
+  installPlanApproval: Automatic
+  name: ibm-namespace-scope-operator
+  source: opencloud-operators
+  sourceNamespace: "{{ .Values.cpd_operators_namespace }}"
+
+
+---
+apiVersion: operator.ibm.com/v1
+kind: NamespaceScope
+metadata:
+  name: cpd-operators
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "085"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  csvInjector:
+    enable: true
+    license:
+    accept: true
+  namespaceMembers:
+    - "{{ .Values.cpd_operators_namespace }}"
+    - "{{ .Values.cpd_instance_namespace }}"
+  restartLabels:
+    intent: projected
+
+
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: ibm-licensing-operator-app
+  namespace: "{{ .Values.cpd_cs_control_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+  labels:
+    operators.coreos.com/ibm-licensing-operator-app.{{ .Values.cpd_cs_control_namespace }}: ''
+spec:
+  channel: "{{ .Values.cpd_ibm_licensing_channel }}"
+  installPlanApproval: Automatic
+  name: ibm-licensing-operator-app
+  source: ibm-operator-catalog
+  sourceNamespace: openshift-marketplace
+
+
+---
+apiVersion: operator.ibm.com/v1alpha1
+kind: IBMLicensing
+metadata:
+  name: instance
+  annotations:
+    argocd.argoproj.io/sync-wave: "085"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  datasource: datacollector
+  httpsEnable: true
+  license:
+    accept: true
+  resources: {}
+  usageContainer:
+    resources: {}
+  version: "{{ .Values.cpd_ibm_licensing_version }}"
+
+
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: ibm-common-service-operator
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+  labels:
+    operators.coreos.com/ibm-common-service-operator.{{ .Values.cpd_operators_namespace }}: ''
+spec:
+  channel: "{{ .Values.cpfs_channel }}"
+  installPlanApproval: Automatic
+  name: ibm-common-service-operator
+  source: opencloud-operators
+  sourceNamespace: "{{ .Values.cpd_operators_namespace }}"
+
+
+---
+apiVersion: operator.ibm.com/v3
+kind: CommonService
+metadata:
+  name: common-service
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "085"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  size: small

@@ -8,8 +8,14 @@ For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: "db2-db.{{ $.Values.account.id }}.{{ $.Values.region.id }}.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
-  namespace: {{ $.Values.argoapp_namespace }}
+  name: "db2-db.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
+  namespace: {{ $.Values.argo.namespace }}
+  labels:
+    environment: '{{ $.Values.account.id }}'
+    region: '{{ $.Values.region.id }}'
+    cluster: '{{ $.Values.cluster.id }}'
+    instance: '{{ $.Values.instance.id }}'
+    appId: '{{ $value.mas_application_id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "120"
     {{- if and $.Values.notifications $.Values.notifications.slack_channel_id }}
@@ -18,28 +24,33 @@ metadata:
     {{- end }}
   finalizers:
     - resources-finalizer.argocd.argoproj.io
-  labels:
-    cloud: aws
-    environment: '{{ $.Values.account.id }}'
-    region: '{{ $.Values.region.id }}'
-    cluster: '{{ $.Values.cluster.id }}'
-    instance: '{{ $.Values.instance.id }}'
 spec:
-  project: "{{ $.Values.argo_project_apps | default "mas" }}"
+  project: "{{ $.Values.argo.projects.apps }}"
   destination:
     server: {{ $.Values.cluster.url }}
     namespace: default
   source:
-    repoURL: "{{ $.Values.source.repoURL }}"
-    path: applications/120-ibm-db2u-database
-    targetRevision: "{{ $.Values.source.targetRevision }}"
+    repoURL: "{{ $.Values.source.repo_url }}"
+    path: instance-applications/120-ibm-db2u-database
+    targetRevision: "{{ $.Values.source.revision }}"
     plugin:
+      name: {{ $.Values.avp.name }} 
       env:
-        - name: HELM_VALUES
+        - name: {{ $.Values.avp.values_varname }}
           value: |
-            {{ $value | toRawJson }}
+            account_id: "{{ $.Values.account.id }}"
+            region_id: "{{ $.Values.region.id }}"
+            cluster_id: "{{ $.Values.cluster.id }}"
+            instance_id: "{{ $.Values.instance.id }}"
+            sm_aws_access_key_id: "{{ $.Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ $.Values.sm.aws_secret_access_key }}"
+            {{ $value | toYaml | nindent 12 }}
         - name: ARGOCD_APP_NAME
           value: "db2dbapp-{{ $value.mas_application_id }}"
+        {{- if not (empty $.Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ $.Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

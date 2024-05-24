@@ -4,8 +4,13 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: sls.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
-  namespace: {{ .Values.argoapp_namespace }}
+  name: sls.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "100"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
@@ -20,21 +25,41 @@ spec:
     kind: ServiceAccount
     jsonPointers:
     - /imagePullSecrets
-  project: "{{ .Values.argo_project_apps | default "mas" }}"
+  project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
-    repoURL: "{{ .Values.source.repoURL }}"
-    path: applications/100-ibm-sls
-    targetRevision: "{{ .Values.source.targetRevision }}"
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/100-ibm-sls
+    targetRevision: "{{ .Values.source.revision }}"
     plugin:
+      name: {{ .Values.avp.name }} 
       env:
-        - name: HELM_VALUES
+        - name: {{ .Values.avp.values_varname }}
           value: |
-            {{ .Values | toRawJson }}
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            instance_id: "{{ .Values.instance.id }}"
+            argo_namespace: "{{ .Values.argo.namespace }}"
+            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
+            run_sync_hooks: {{.Values.ibm_sls.run_sync_hooks }}
+            sls_channel: "{{ .Values.ibm_sls.sls_channel }}"
+            ibm_entitlement_key: "{{ .Values.ibm_sls.ibm_entitlement_key }}"
+            sls_mongo_secret_name: "{{ .Values.ibm_sls.sls_mongo_secret_name }}"
+            sls_mongo_username: "{{ .Values.ibm_sls.sls_mongo_username }}"
+            sls_mongo_password: "{{ .Values.ibm_sls.sls_mongo_password }}"
+            sls_entitlement_file: "{{ .Values.ibm_sls.sls_entitlement_file }}"
+            icr_cp_open: "{{ .Values.ibm_sls.icr_cp_open }}"
+            mongo_spec: {{ .Values.ibm_sls.mongo_spec | toYaml | nindent 14}}
         - name: ARGOCD_APP_NAME
           value: slsapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

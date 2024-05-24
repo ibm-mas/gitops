@@ -1,0 +1,43 @@
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: "{{ .Values.mas_config_name }}-credentials"
+  namespace: "mas-{{ .Values.instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/sync-wave: "150"
+stringData:
+  username: "{{ .Values.db2_jdbc_username }}"
+  password: "{{ .Values.jdbc_instance_password }}"
+---
+apiVersion: config.mas.ibm.com/v1
+kind: JdbcCfg
+metadata:
+  name: "{{ .Values.mas_config_name }}"
+  namespace: "mas-{{ .Values.instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/sync-wave: "151"
+  labels:
+{{- if eq .Values.mas_config_scope "system" }}
+{{ .Values.system_suite_jdbccfg_labels | toYaml  | indent 4 }}
+{{ end }}
+{{- if eq .Values.mas_config_scope "ws" }}
+{{ .Values.ws_suite_jdbccfg_labels | toYaml  | indent 4 }}
+{{ end }}
+{{- if eq .Values.mas_config_scope "app" }}
+{{ .Values.app_suite_jdbccfg_labels | toYaml  | indent 4 }}
+{{ end }}
+{{- if eq .Values.mas_config_scope "wsapp" }}
+{{ .Values.wsapp_suite_jdbccfg_labels | toYaml  | indent 4 }}
+{{ end }}
+spec:
+  displayName: "{{ .Values.mas_config_name }}"
+  config:
+    url: "jdbc:db2://c-{{ .Values.db2_instance_name }}-db2u-engn-svc.{{ .Values.db2_namespace }}.svc:{{ .Values.db2_tls_serviceport | toString }}/{{ .Values.db2_dbname }}:sslConnection=true;sslVersion={{ .Values.tls_version }};"
+    sslEnabled: true
+    credentials:
+      secretName: "{{ .Values.mas_config_name }}-credentials" 
+  certificates:
+    - alias: "{{ .Values.db2_instance_name | lower }}"
+{{ .Values.db2_ca_pem | toYaml | indent 6 }}

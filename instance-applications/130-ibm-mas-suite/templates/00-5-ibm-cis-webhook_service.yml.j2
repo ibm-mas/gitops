@@ -1,0 +1,28 @@
+{{- if and (eq .Values.dns_provider "cis") (eq .Values.mas_manual_cert_mgmt "False") }}
+
+{{ $cis_webhook_service_type      :=   "ClusterIP" }}
+{{ $cis_webhook_service_port      :=   "443" }}
+{{ $cert_manager_namespace        :=   "cert-manager" }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "136"
+  name: "cert-manager-webhook-ibm-cis"
+  namespace: "{{ $cert_manager_namespace }}"
+  labels:
+    app: "cert-manager-webhook-ibm-cis"
+spec:
+  type: "{{ $cis_webhook_service_type }}"
+  ports:
+    - port: {{ $cis_webhook_service_port }}
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    app: "cert-manager-webhook-ibm-cis"
+
+
+{{- end }}

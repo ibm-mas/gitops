@@ -1,0 +1,24 @@
+---
+apiVersion: config.mas.ibm.com/v1
+kind: IDPCfg
+metadata:
+  name: "{{ .Values.mas_config_name }}"
+  namespace: mas-{{ .Values.instance_id }}-core
+  labels:
+    mas.ibm.com/configScope: system
+    mas.ibm.com/instanceId: "{{ .Values.instance_id }}"
+    mas.ibm.com/configId: default
+  annotations:
+    argocd.argoproj.io/sync-wave: "151"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  displayName: "{{ .Values.suite_ldap_display_name }}"
+  ldap:
+    url: {{ .Values.suite_ldap_url }}
+    baseDN: {{ .Values.suite_ldap_basedn }}
+    userIdMap: {{ .Values.suite_ldap_userid_map }}
+    credentials:
+      secretName: "{{ .Values.mas_config_name }}-credentials"
+  certificates:
+    - alias: ldapca
+{{ .Values.suite_ldap_certificate | toYaml | indent 6 }}

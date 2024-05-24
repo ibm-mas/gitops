@@ -4,8 +4,12 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: operator-catalog.{{.Values.account.id}}.{{.Values.region.id}}.{{ .Values.cluster.id }}
-  namespace: {{ .Values.argoapp_namespace }}
+  name: operator-catalog.{{ .Values.cluster.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "000"
     healthCheckTimeout: "1800"
@@ -21,21 +25,28 @@ spec:
     kind: ServiceAccount
     jsonPointers:
     - /imagePullSecrets
-  project: "{{ .Values.argo_project_apps | default "mas" }}"
+  project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
-    repoURL: "{{ .Values.source.repoURL }}"
-    path: applications/000-ibm-operator-catalog
-    targetRevision: "{{ .Values.source.targetRevision }}"
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: cluster-applications/000-ibm-operator-catalog
+    targetRevision: "{{ .Values.source.revision }}"
     plugin:
+      name: {{ .Values.avp.name }}
       env:
-        - name: HELM_VALUES
+        - name: {{ .Values.avp.values_varname }}
           value: |
-            {{ .Values | toRawJson }}
+            ibm_entitlement_key: "{{ .Values.ibm_operator_catalog.ibm_entitlement_key }}"
+            mas_catalog_version: "{{ .Values.ibm_operator_catalog.mas_catalog_version  }}"
+            mas_catalog_image: "{{ .Values.ibm_operator_catalog.mas_catalog_image }}"
         - name: ARGOCD_APP_NAME
           value: operatorcatalogapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
   syncPolicy:
     automated:
       prune: true

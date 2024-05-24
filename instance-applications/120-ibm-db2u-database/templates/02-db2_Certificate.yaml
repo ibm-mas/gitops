@@ -1,0 +1,35 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: "db2u-certificate-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "121"
+spec:
+  secretName: "db2u-certificate-{{ .Values.db2_instance_name }}"
+  duration: "175200h0m0s"
+  renewBefore: "2160h0m0s"
+  issuerRef:
+    name: "db2u-issuer-{{ .Values.db2_instance_name }}"
+    kind: Issuer
+  usages:
+    - cert sign
+    - digital signature
+    - key encipherment
+    - server auth
+  commonName: "db2u"
+  dnsNames:
+    - "{{ .Values.db2_instance_name | lower }}-{{ .Values.db2_namespace }}.{{ .Values.cluster_domain }}"
+    - "*.{{ .Values.db2_instance_name | lower }}-{{ .Values.db2_namespace }}.{{ .Values.cluster_domain }}"
+    - "c-{{ .Values.db2_instance_name | lower }}-db2u-engn-svc.{{ .Values.db2_namespace }}.svc"
+    - "*.c-{{ .Values.db2_instance_name | lower }}-db2u-engn-svc.{{  .Values.db2_namespace }}.svc"
+  subject:
+    countries:
+      - GB
+    streetAddresses:
+      - London
+    localities:
+      - London
+    organizationalUnits:
+      - IBM Maximo Application Suite DB2U

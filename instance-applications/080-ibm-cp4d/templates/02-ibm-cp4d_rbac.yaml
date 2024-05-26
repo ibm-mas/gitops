@@ -1627,7 +1627,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: cpd_cmd_adm_policy_to_user_operators
+  name: cpd-cmd-adm-policy-to-user-operators
   namespace: "{{ .Values.cpd_instance_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "082"
@@ -1643,6 +1643,20 @@ spec:
         # Just using CLI because all the other jobs are using it too
         image: quay.io/ibmmas/cli:8.1.0-pre.gitops
         imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: 200m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        env:
+          - name: CPD_ADMIN_LOGIN_SA
+            value: {{ .Values.cpd_admin_login_sa }}
+          - name: CPD_OPERATORS_NAMESPACE
+            value: {{ .Values.cpd_operators_namespace }}
+          - name: CPD_INSTANCE_NAMESPACE
+            value: {{ .Values.cpd_instance_namespace }}
         command: 
           - /bin/sh
           - -c
@@ -1650,24 +1664,24 @@ spec:
 
             set -e
 
-            CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
+            CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
             until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERATOR_NS_PERMISSION_OUTPUT}']; do
-              CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
+              CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
             done
 
-            CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_instance_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
+            CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
             until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERANDS_NS_PERMISSION_OUTPUT}']; do
-              CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_instance_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
+              CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
             done
 
-            CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+            CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
             until ['role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added' in '${CPD_APPLY_OLM_PERMISSION_OUTPUT}']; do
-              CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+              CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
             done
 
-            CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace=openshift-marketplace --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+            CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=openshift-marketplace --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
             until ['role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added' in '${CPD_CATSRC_PERMISSION_OUTPUT}']; do
-              CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace=openshift-marketplace --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+              CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=openshift-marketplace --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
             done
       restartPolicy: Never
   backoffLimit: 4

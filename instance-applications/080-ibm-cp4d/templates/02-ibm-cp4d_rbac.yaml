@@ -1663,18 +1663,19 @@ spec:
           - |
 
             set -e
+
             echo "first permission"
-            echo "oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac"
-            CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
+            echo "oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac"
+            CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
             until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERATOR_NS_PERMISSION_OUTPUT}']; do
               echo "inside loop"
-              CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
+              CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
             done
 
             echo "second permission"
-            CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
+            CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --role-namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
             until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERANDS_NS_PERMISSION_OUTPUT}']; do
-              CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
+              CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --role-namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
             done
 
             echo "third permission"

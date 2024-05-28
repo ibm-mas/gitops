@@ -1545,7 +1545,7 @@ subjects:
 roleRef:
   kind: Role
   name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
-  apiGroup: rbac.authorization.k8s.io
+  apiGroup: rbac.authorization.k8s.io/v1
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1618,7 +1618,7 @@ subjects:
     name: ibm-namespace-scope-operator
     namespace: "{{ .Values.cpd_operators_namespace }}"
 roleRef:
-  apiGroup: rbac.authorization.k8s.io
+  apiGroup: rbac.authorization.k8s.io/v1
   kind: Role
   name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
 
@@ -1664,8 +1664,10 @@ spec:
 
             set -e
             echo "first permission"
+            echo "oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac"
             CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
             until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERATOR_NS_PERMISSION_OUTPUT}']; do
+              echo "inside loop"
               CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
             done
 

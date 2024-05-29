@@ -1626,8 +1626,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: cpd-cmd-adm-policy-to-user-operators
-  namespace: "{{ .Values.cpd_instance_namespace }}"
+  name: cpd-cmd-adm-policy-to-user-permissions
   annotations:
     argocd.argoproj.io/sync-wave: "084"
 {{- if .Values.custom_labels }}
@@ -1663,7 +1662,7 @@ spec:
 
               set -e
               
-              CPD_NS_OUTPUT=$(oc project {{ .Values.cpd_instance_namespace }})
+              CPD_NS_OUTPUT=$(oc project ${CPD_INSTANCE_NAMESPACE})
               if [[ $CPD_NS_OUTPUT == *"not found"* ||  $CPD_NS_OUTPUT == *"Error"* ]]; then
                 echo "Failed to set context to the instance namespace"
                 exit 1
@@ -1679,7 +1678,7 @@ spec:
 
               while true; do
                 echo "second permission"
-                CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --role-namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
+                CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
                 if [[ ${CPD_OPERANDS_NS_PERMISSION_OUTPUT} == *"clusterrole.rbac.authorization.k8s.io/admin added"* ]]; then
                   break
                 fi
@@ -1695,7 +1694,7 @@ spec:
 
               while true; do
                 echo "forth permission"
-                CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+                CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
                 if [[ ${CPD_CATSRC_PERMISSION_OUTPUT} == *"role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added"* ]]; then
                   break
                 fi

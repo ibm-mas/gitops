@@ -1622,53 +1622,6 @@ roleRef:
   kind: Role
   name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
 
-
----
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: cpd-adm-user-role
-  namespace: "{{ .Values.cpd_instance_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "082"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-  - verbs:
-    - get
-    - list
-    - create
-    - patch
-    - update
-    apiGroups:
-    - rbac.authorization.k8s.io
-    - rbac.authorization.k8s.io/v1
-    resources:
-    - rolebindings
-    - roles
-
----
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: cpd-adm-user-rb
-  annotations:
-    argocd.argoproj.io/sync-wave: "083"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: "{{ .Values.cpd_admin_login_sa }}"
-    namespace: "{{ .Values.cpd_instance_namespace }}"
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: cpd-adm-user-role
-
 ---
 apiVersion: batch/v1
 kind: Job
@@ -1685,53 +1638,68 @@ spec:
   template:
     spec:
       containers:
-      - name: run
-        # Just using CLI because all the other jobs are using it too
-        image: quay.io/ibmmas/cli:9.0.0-pre.gitops
-        imagePullPolicy: IfNotPresent
-        resources:
-          limits:
-            cpu: 200m
-            memory: 512Mi
-          requests:
-            cpu: 10m
-            memory: 64Mi
-        env:
-          - name: CPD_ADMIN_LOGIN_SA
-            value: {{ .Values.cpd_admin_login_sa }}
-          - name: CPD_OPERATORS_NAMESPACE
-            value: {{ .Values.cpd_operators_namespace }}
-          - name: CPD_INSTANCE_NAMESPACE
-            value: {{ .Values.cpd_instance_namespace }}
-        command: 
-          - /bin/sh
-          - -c
-          - |
+        - name: run
+          # Just using CLI because all the other jobs are using it too
+          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_ADMIN_LOGIN_SA
+              value: {{ .Values.cpd_admin_login_sa }}
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ .Values.cpd_operators_namespace }}
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
+          command: 
+            - /bin/sh
+            - -c
+            - |
 
-            set -e
+              set -e
+              
+              CPD_NS_OUTPUT=$(oc project {{ .Values.cpd_instance_namespace }})
+              if [[ $CPD_NS_OUTPUT == *"not found"* ||  $CPD_NS_OUTPUT == *"Error"* ]]; then
+                echo "Failed to set context to the instance namespace"
+                exit 1
+              fi
 
-            echo "first permission"
-            CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
-            until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERATOR_NS_PERMISSION_OUTPUT}']; do
-              CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
-            done
+              while true; do
+                echo "first permission"
+                CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
+                if [[ ${CPD_OPERATOR_NS_PERMISSION_OUTPUT} == *"clusterrole.rbac.authorization.k8s.io/admin added"* ]]; then
+                  break
+                fi
+              done
 
-            echo "second permission"
-            CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --role-namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
-            until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERANDS_NS_PERMISSION_OUTPUT}']; do
-              CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --role-namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
-            done
+              while true; do
+                echo "second permission"
+                CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_INSTANCE_NAMESPACE} --role-namespace=${CPD_INSTANCE_NAMESPACE} --rolebinding-name=cpd-instance-admin-rbac)
+                if [[ ${CPD_OPERANDS_NS_PERMISSION_OUTPUT} == *"clusterrole.rbac.authorization.k8s.io/admin added"* ]]; then
+                  break
+                fi
+              done
 
-            echo "third permission"
-            CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
-            until ['role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added' in '${CPD_APPLY_OLM_PERMISSION_OUTPUT}']; do
-              CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
-            done
+              while true; do
+                echo "third permission"
+                CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+                if [[ $CPD_APPLY_OLM_PERMISSION_OUTPUT == *"role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added"*  ]]; then
+                  break
+                fi
+              done
 
-            echo "forth permission"
-            CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
-            until ['role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added' in '${CPD_CATSRC_PERMISSION_OUTPUT}']; do
-              CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc --serviceaccount=${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
-            done
+              while true; do
+                echo "forth permission"
+                CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z ${CPD_ADMIN_LOGIN_SA} --namespace=${CPD_OPERATORS_NAMESPACE} --role-namespace=${CPD_OPERATORS_NAMESPACE} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
+                if [[ ${CPD_CATSRC_PERMISSION_OUTPUT} == *"role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added"* ]]; then
+                  break
+                fi
+              done
+
       restartPolicy: Never
   backoffLimit: 4

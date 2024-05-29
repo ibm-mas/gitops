@@ -1,0 +1,42 @@
+{{- if .Values.setup_dro_cmm }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kazaam-configmap
+  namespace: "{{ .Values.dro_namespace }}"
+  annontations:
+    argocd.argoproj.io/sync-wave: "029"
+data:
+  kazaam.json: |
+    [
+        {
+            "operation": "timestamp",
+            "spec": {
+                "timestamp": {
+                "inputFormat": "2006-01-02T15:04:05.999999+00:00",
+                "outputFormat": "$unixmilli"
+                }
+            }
+        },
+        {
+            "operation": "shift",
+            "spec": {
+                "instances[0].instanceId": "properties.source",
+                "instances[0].startTime": "timestamp",
+                "instances[0].endTime": "timestamp",
+                "instances[0].metricUsage[0].metricId": "properties.unit",
+                "instances[0].metricUsage[0].quantity": "properties.quantity"
+            }
+        },
+        {
+            "operation": "default",
+            "spec": {
+                "meteringModel": "point-in-time",
+                "meteringPlan": "contract"
+            }
+        }
+    ]
+
+{{- end }}

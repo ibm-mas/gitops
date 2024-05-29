@@ -1,0 +1,54 @@
+{{- if .Values.setup_dro_cmm }}
+
+---
+apiVersion: marketplace.redhat.com/v1alpha1
+kind: DataReporterConfig
+metadata:
+  name: datareporterconfig
+  namespace: "{{ .Values.dro_namespace }}"
+  annontations:
+    argocd.argoproj.io/sync-wave: "030"
+spec:
+  confirmDelivery: false
+  dataFilters:
+  - altDestinations:
+    - authorization: 
+        authDestHeader: Authorization
+        authDestHeaderPrefix: 'Bearer '
+        bodyData:
+          secretKeyRef:
+            name: auth-body-data-secret
+            key: bodydata
+        header:
+          secret:
+            name: auth-header-map-secret
+        tokenExpr: $.token
+        url: "{{ .Values.dro_cmm.auth_url }}"
+      header:
+        secret:
+          name: dest-header-map-secret
+      transformer:
+        configMapKeyRef:
+          key: kazaam.json
+          name: kazaam-configmap
+        type: kazaam
+      url: "{{ .Values.dro_cmm.cmm_url }}"
+      urlSuffixExpr: $.properties.productId
+    manifestType: dataReporter
+    selector:
+      matchExpressions:
+      - $[?($.event == "Account Contractual Usage")]
+      - $.properties.productId
+      - $[?($.properties.source != null)]
+      - $[?($.properties.unit == "AppPoints")]
+      - $[?($.properties.quantity >= 0)]
+      - $[?($.timestamp != null)]
+      matchUsers:
+      - system:serviceaccount:redhat-marketplace:ibm-data-reporter-operator-api
+    transformer:
+      configMapKeyRef:
+        key: kazaam.json
+        name: kazaam-configmap
+      type: kazaam
+
+{{- end }}

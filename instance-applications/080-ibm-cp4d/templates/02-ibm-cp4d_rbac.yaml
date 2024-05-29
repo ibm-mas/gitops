@@ -1627,6 +1627,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: cpd-cmd-adm-policy-to-user-permissions
+  namespace: {{ .Values.cpd_instance_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "084"
 {{- if .Values.custom_labels }}
@@ -1635,12 +1636,11 @@ metadata:
 {{- end }}
 spec:
   template:
+    {{- if .Values.custom_labels }}
     metadata:
-      namespace: {{ .Values.cpd_instance_namespace }}
-{{- if .Values.custom_labels }}
       labels:
-{{ .Values.custom_labels | toYaml | indent 8 }}
-{{- end }}
+    {{ .Values.custom_labels | toYaml | indent 8 }}
+    {{- end }}
     spec:
       containers:
         - name: run
@@ -1710,4 +1710,5 @@ spec:
               done
 
       restartPolicy: Never
+      serviceAccountName: "ibm-namespace-scope-operator"
   backoffLimit: 4

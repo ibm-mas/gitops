@@ -2230,6 +2230,12 @@ spec:
                 exit 1
               fi
 
+              export CPD_PLATFORM_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.cpd_platform.sub_channel')
+              if [[ -z "${CPD_PLATFORM_CHANNEL}" ]]; then
+                echo "Failed to fetch cpd platform channel"
+                exit 1
+              fi
+
               export SM_AWS_REGION=${REGION_ID}
               sm_login
 
@@ -2237,11 +2243,15 @@ spec:
               SECRET_NAME_LICENSING_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/licensing_channel
               SECRET_NAME_LICENSING_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/licensing_version
               SECRET_NAME_CPFS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpfs_channel
+              SECRET_NAME_CPD_PLATFORM_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpd_platform_channel
+
 
               sm_update_secret $SECRET_NAME_NAMESPACE_SCOPE_CHANNEL "{\"namespace_scope_channel\": \"$NAMESPACE_SCOPE_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_LICENSING_CHANNEL "{\"licensing_channel\": \"$LICENSING_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_LICENSING_VERSION "{\"licensing_version\": \"$LICENSING_VERSION\" }"
               sm_update_secret $SECRET_NAME_CPFS_CHANNEL "{\"cpfs_channel\": \"$CPFS_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_CPD_PLATFORM_CHANNEL "{\"cpd_platform_channel\": \"$CPD_PLATFORM_CHANNEL\" }"
+
 
       restartPolicy: Never
       serviceAccountName: presync-cpd-olm-sa

@@ -56,6 +56,42 @@ spec:
               master_info: {{ .Values.ibm_sls.docdb_master_info }}
             {{- end }}
             {{- end }}
+
+            mas_manual_cert_mgmt: "{{.Values.ibm_mas_suite.mas_manual_cert_mgmt }}"
+            dns_provider: "{{ .Values.ibm_mas_suite.dns_provider }}"
+
+            {{- if and (eq .Values.ibm_mas_suite.dns_provider "cis") (eq .Values.ibm_mas_suite.mas_manual_cert_mgmt "False") }}
+            cis_apikey: "{{ .Values.ibm_mas_suite.cis_apikey }}"
+            ocp_cluster_domain: "{{ .Values.ibm_mas_suite.ocp_cluster_domain }}"
+            cis_email: "{{ .Values.ibm_mas_suite.cis_email }}"
+            cis_crn: "{{ .Values.ibm_mas_suite.cis_crn }}"
+            cis_subdomain: "{{ .Values.ibm_mas_suite.cis_subdomain }}"
+            cis_mas_domain: "{{ .Values.ibm_mas_suite.cis_mas_domain }}"
+            cis_enhanced_security: "{{ .Values.ibm_mas_suite.cis_enhanced_security }}"
+            cis_waf: "{{ .Values.ibm_mas_suite.cis_waf }}"
+            cis_proxy: "{{ .Values.ibm_mas_suite.cis_proxy }}"
+            cis_service_name: "{{ .Values.ibm_mas_suite.cis_service_name }}"
+            update_dns_entries: "{{ .Values.ibm_mas_suite.update_dns_entries }}"
+            delete_wildcards: "{{ .Values.ibm_mas_suite.delete_wildcards }}"
+            override_edge_certs: "{{ .Values.ibm_mas_suite.override_edge_certs }}"
+            {{- end }}
+
+            {{- if (eq .Values.ibm_mas_suite.mas_manual_cert_mgmt "True") }}
+
+            {{- if .Values.ibm_mas_suite.ca_cert }}
+            ca_cert: {{ .Values.ibm_mas_suite.ca_cert }}
+            {{- end }}
+            {{- if .Values.ibm_mas_suite.tls_cert }}
+            tls_cert: {{ .Values.ibm_mas_suite.tls_cert }}
+            {{- end }}
+            {{- if .Values.ibm_mas_suite.tls_key }}
+            tls_key: {{ .Values.ibm_mas_suite.tls_key }}
+            {{- end }}
+            {{- if .Values.ibm_mas_suite.manual_certs }}
+            manual_certs: {{ .Values.ibm_mas_suite.manual_certs | toYaml | nindent 14 }}
+            {{- end }}
+
+            {{- end }}
         - name: ARGOCD_APP_NAME
           value: syncres
         {{- if not (empty .Values.avp.secret) }}

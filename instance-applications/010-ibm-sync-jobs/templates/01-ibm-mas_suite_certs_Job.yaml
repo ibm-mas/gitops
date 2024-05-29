@@ -1,139 +1,39 @@
 {{- if and (eq .Values.dns_provider "cis") (eq .Values.mas_manual_cert_mgmt "True") }}
-
-{{ $ns                :=  printf "mas-%s-core" .Values.instance_id }}
-{{ $suite_dns_secret  :=  "presync-ibm-suite-certs-role-secret" }}
-{{ $hook              :=  "PreSync" }}
-{{ $role_name         :=  "presync-ibm-suite-certs-role-r" }}
-{{ $sa_name           :=  "presync-ibm-suite-certs-role-sa" }}
-{{ $rb_name           :=  "presync-ibm-suite-certs-role-rb" }}
-{{ $job_name          :=  "presync-ibm-suite-certs-role-job" }}
-
-
-
----
-kind: Secret
-apiVersion: v1
-metadata:
-  name: "presync-ibm-suite-certs-role-secret"
-  namespace: "{{ $ns }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: "{{ $hook }}"
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-stringData:
-  cis_apikey: "{{ .Values.cis_apikey }}"
-  #sm_aws_access_key_id: "{{ .Values.sm_aws_access_key_id }}"
-  #sm_aws_secret_access_key: "{{ .Values.sm_aws_secret_access_key }}"
-  manual_certs: "{{ .Values.manual_certs }}"
-type: Opaque
-
----
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: "{{ $sa_name }}"
-  namespace: "{{ $ns }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: "{{ $hook }}"
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-
----
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: "{{ $role_name }}"
-  namespace: "{{ $ns }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: "{{ $hook }}"
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-rules:
-  - verbs:
-      - get
-    apiGroups:
-      - ""
-    resources:
-      - secrets
-  - verbs:
-      - get
-    apiGroups:
-      - route.openshift.io
-    resources:
-      - routes
-
----
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: "{{ $rb_name }}"
-  namespace: "{{ $ns }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: "{{ $hook }}"
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-subjects:
-  - kind: ServiceAccount
-    name: "{{ $sa_name }}"
-    namespace: "{{ $ns }}"
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: "{{ $role_name }}"
-
-
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: "cluster-{{ $rb_name }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: "{{ $hook }}"
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-subjects:
-  - kind: ServiceAccount
-    name: "{{ $sa_name }}"
-    namespace: "{{ $ns }}"
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-
+{{- if not (empty .Values.manual_certs) }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "{{ $job_name }}"
-  generateName: "{{ $job_name }}-"
-  namespace: "{{ $ns }}"
+  name: ibm-suite-certs-{{ .Values.manual_certs | toYaml | adler32sum }}
+  namespace: mas-{{ .Values.instance_id }}-syncres
   annotations:
-    argocd.argoproj.io/sync-wave: "130"
-    argocd.argoproj.io/hook: "{{ $hook }}"
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "00"
 spec:
   ttlSecondsAfterFinished: 120
   template:
+    metadata:
+      labels:
+        app: "sync-job"
     spec:
       containers:
         - name: suite-certs-role-run
           image: quay.io/ibmmas/cli:8.1.0-pre.gitops
-          imagePullPolicy: Always
-          resources:
-            limits:
-              cpu: 200m
-              memory: 512Mi
-            requests:
-              cpu: 10m
-              memory: 64Mi
+          imagePullPolicy: IfNotPresent
+
           env:
+            - name: ACCOUNT
+              value: "{{ .Values.account_id }}"
+            - name: CLUSTER
+              value: "{{ .Values.cluster_id }}"
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+
             # dns
             - name: DNS_PROVIDER
               value: "{{ .Values.dns_provider }}"
             - name: MAS_MANUAL_CERT_MGMT
               value: "{{ .Values.mas_manual_cert_mgmt }}"
-            - name: MAS_INSTANCE_ID
-              value: "{{ .Values.instance_id }}"
+
             - name: MAS_WORKSPACE_ID
               value: "{{ .Values.mas_workspace_id }}"
             - name: MAS_CONFIG_DIR
@@ -145,18 +45,13 @@ spec:
             - name: CIS_PROXY
               value: "{{ .Values.cis_proxy }}"
 
-            - name: ACCOUNT
-              value: "{{ .Values.account_id }}"
-            - name: CLUSTER
-              value: "{{ .Values.cluster_id }}"
-
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
 
           volumeMounts:
-            - name: "presync-ibm-suite-certs-role-secret"
-              mountPath: /etc/mas/creds/suite_certs_secret
+            - name: "ibm-suite-certs"
+              mountPath: /etc/mas/creds/suite_certs
           command:
             - /bin/sh
             - -c
@@ -165,9 +60,9 @@ spec:
               set -e
               export MAS_CONFIG_DIR=${MAS_CONFIG_DIR:-"/tmp/suite_certs/configs"}
 
-              export CIS_APIKEY=$(cat /etc/mas/creds/suite_certs_secret/cis_apikey)
-              MANUAL_CERTS=$(cat /etc/mas/creds/suite_certs_secret/manual_certs)
-              MAS_MANUAL_CERTS_YAML=/etc/mas/creds/suite_certs_secret/manual_certs
+              export CIS_APIKEY=$(cat /etc/mas/creds/suite_certs/cis_apikey)
+              MANUAL_CERTS=$(cat /etc/mas/creds/suite_certs/manual_certs)
+              MAS_MANUAL_CERTS_YAML=/etc/mas/creds/suite_certs/manual_certs
 
               echo ""
               echo "================================================================================"
@@ -229,14 +124,15 @@ spec:
 
       restartPolicy: Never
 
-      serviceAccountName: "{{ $sa_name }}"
+      serviceAccountName: ibm-suite-certs-job
       volumes:
-        - name: "presync-ibm-suite-certs-role-secret"
+        - name: "ibm-suite-certs"
           secret:
-            secretName: "presync-ibm-suite-certs-role-secret"
+            secretName: "ibm-suite-certs"
             defaultMode: 420
             optional: false
 
   backoffLimit: 4
 
+{{- end }}
 {{- end }}

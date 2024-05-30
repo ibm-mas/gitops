@@ -3,10 +3,11 @@
 A GitOps approach to managing Maximo Application Suite.
 
 ## Table of Contents
-> TODO
+> TODO: make these links
 - Architecture
 - Application Structure
 - Config Git Repository Structure
+- Application and ApplicationSet Details
 - Deployment Orchestration
 
 ## Architecture
@@ -141,6 +142,107 @@ Here is the structure of an example _Config_ Git repo containing configuration f
         └── instance2
             └── *.yaml
 ```
+
+### Application and ApplicationSet Details
+
+> TODO: WIP needs cleaning up and finishing
+
+Let's take a more detailed look at the Applications and ApplicationSets we define, and how they all hang together.
+
+#### The Cluster ApplicationSet
+
+This has a a merged list of git generators, e.g.
+```yaml
+    - merge:
+        mergeKeys:
+          - 'merge-key'
+        generators:
+          - git:
+              files:
+              - path: "{{ .Values.account.id }}/*/ibm-mas-cluster-base.yaml"
+          - git:
+              files:
+              - path: "{{ .Values.account.id }}/*/ibm-operator-catalog.yaml"
+          ...
+```
+These cause ArgoCD to monitor for specific YAML configuration files at the cluster-directory level the **Git Config Repo**. As the files are pushed they are merged into a per-cluster blob of yaml according to their `merge-key`. Each will result in a new **Cluster Root Application**, which is passed this blob of yaml in its Helm values:
+```yaml
+          path: root-applications/ibm-mas-cluster-root
+          helm:
+            values: "{{ `{{ toYaml . }}` }}"
+```
+
+Additional global configuration parameters sourced from the Root Application are also passed down:
+```yaml
+            parameters:
+              - name: "generator.repo_url"
+                value: "{{ .Values.generator.repo_url }}"
+              - name: "generator.revision"
+                value: "{{ .Values.generator.revision }}"
+```
+
+For example, if our **Git Config Repo** contained the following:
+```
+├── dev
+│   ├── cluster1
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+│   └── cluster2
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+```
+
+and for cluster1 the files are:
+  `ibm-mas-cluster-base.yaml`:
+  ```yaml
+  merge-key: "dev/cluster1"
+  account:
+    id: dev
+  ```
+  `ibm-operator-catalog.yaml`:
+  ```yaml
+  merge-key: "dev/cluster1"
+  ibm_operator_catalog:
+      mas_catalog_version: v8-240430-amd64
+  ```
+
+and for cluster2, the files are:
+  `ibm-mas-cluster-base.yaml`:
+  ```yaml
+  merge-key: "dev/cluster2"
+  account:
+    id: dev
+  ```
+  `ibm-operator-catalog.yaml`:
+  ```yaml
+  merge-key: "dev/cluster2"
+  ibm_operator_catalog:
+      mas_catalog_version: v8-240405-amd64
+  ```
+
+this would result in two blobs of YAML:
+```yaml
+  merge-key: "dev/cluster1"
+  account:
+    id: dev
+  ibm_operator_catalog:
+      mas_catalog_version: v8-240430-amd64
+```
+
+```yaml
+  merge-key: "dev/cluster2"
+  account:
+    id: dev
+  ibm_operator_catalog:
+      mas_catalog_version: v8-240405-amd64
+```
+
+and two cluster root applications with the respect helm values in their manifests.
+
+#### The Cluster Root Application
+
+The Helm Chart for this application contains templates to render more Applications conditionally when their configuration appears in the **Config Git Repo**
+
 
 
 ### Account Root Application Manifest

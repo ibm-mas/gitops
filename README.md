@@ -21,7 +21,6 @@ ArgoCD is installed and configured on some **Management Cluster**. A single **Ac
 
 The **Account Root Application** is the only Application that is created directly. We employ the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) whereby the **Account Root Application** uses the artifacts in the **Source Git Repo**, **Config Git Repo** and **Secrets Vault** to dynamically generate (a tree of) further Applications (and ApplicationSets) which themselves may generate other Applications and/or configure a set of resources on one of the **Target Clusters**.
 
-> TODO: update config git repo screenshot; we don't have region id anymore
 ![Architecture](docs/png/architecture.png)
 
 ## Application Structure
@@ -146,8 +145,6 @@ Here is the structure of an example _Config_ Git repo containing configuration f
 
 ### Account Root Application Manifest
 
-Register one of these applications per account to be managed by the ArgoCD worker:
-
 > Replace the following:
 >   - `<source-repo-url>`: The url of the source helm charts and argo apps. e.g. https://github.com/ibm-mas/gitops.
 >   - `<source-repo-revision>`: The branch of `<source-repo-url>` to source charts from, e.g. `master`.
@@ -219,3 +216,4 @@ To ensure that we sync resources in the correct order they are annotated with an
 This is primarily due to a limitation we have inherited to be compatible with internal IBM systems where we must have everything under a single ArgoCD project. This limitation could be addressed by adding support for multi-project configurations, assigning each **Account Root Application** its own project in ArgoCD. This is something we'd like to do in the long term but it's not a priority at the moment.
 
 
+#### AWS Secrets Manager only (for now)

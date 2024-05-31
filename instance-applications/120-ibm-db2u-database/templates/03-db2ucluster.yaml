@@ -7,6 +7,10 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "122"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true  
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
 spec:
   account:
     privileged: true
@@ -15,6 +19,10 @@ spec:
   addOns:
     graph: {}
     rest: {}
+{{- if .Values.db2_addons_audit_config }}
+    audit:
+{{ .Values.db2_addons_audit_config | toYaml | indent 6 }}
+{{- end }}
   version: "{{ .Values.db2_version }}"
   size: {{ .Values.db2_num_pods }}
   environment:
@@ -108,5 +116,16 @@ spec:
           requests:
             storage: "{{ .Values.db2_temp_storage_size }}"
         storageClassName: "{{ .Values.db2_temp_storage_class }}"
+      type: template
+{{- end }}
+{{- if .Values.db2_audit_logs_storage_class }}
+    - name: auditlogs
+      spec:
+        accessModes:
+          - "{{ .Values.db2_audit_logs_storage_accessmode }}"
+        resources:
+          requests:
+            storage: "{{ .Values.db2_audit_logs_storage_size }}"
+        storageClassName: "{{ .Values.db2_audit_logs_storage_class }}"
       type: template
 {{- end }}

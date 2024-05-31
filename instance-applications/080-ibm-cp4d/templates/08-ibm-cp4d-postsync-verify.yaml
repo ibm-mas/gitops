@@ -47,9 +47,12 @@ spec:
               while true; do
                 ZS_LOOKUP=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec}')
                 if [[ ! -z $ZS_LOOKUP ]]; then
-                  IS_PATCHED=$ZS_LOOKUP.ZenCoreMetaDb
+                  echo "ZenService spec has been fetched"
+                  IS_PATCHED=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.ZenCoreMetaDb}')
                   if [[ -z $IS_PATCHED ]]; then
-                    oc patch --type='merge' ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"scaleConfig:\"\"$CPD_SCALE_CONFIG\",\"ZenCoreMetaDb\":{ \"name\":\"zen-metastoredb\",\"kind\":\"StatefulSet\",\"container\":\"zen-metastoredb\",\"replicas\":\"3\",\"resources\":{ \"limits\":{ \"cpu\":\"2\",\"memory\":\"4Gi\"},\"requests\":{ \"cpu\":\"200m\",\"memory\":\"1024Mi\"}}}}}"
+                    echo "patching zenservice"
+                    oc patch --type='merge' ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"scaleConfig\":\"$CPD_SCALE_CONFIG\",\"ZenCoreMetaDb\":{ \"name\":\"zen-metastoredb\",\"kind\":\"StatefulSet\",\"container\":\"zen-metastoredb\",\"replicas\":\"3\",\"resources\":{ \"limits\":{ \"cpu\":\"2\",\"memory\":\"4Gi\"},\"requests\":{ \"cpu\":\"200m\",\"memory\":\"1024Mi\"}}}}}"
+                    echo "scaling zen operator"
                     oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
                     oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
                   fi

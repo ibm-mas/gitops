@@ -29,6 +29,13 @@ spec:
             requests:
               cpu: 10m
               memory: 64Mi
+          env:
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ .Values.cpd_operators_namespace }}
+            - name: CPD_SCALE_CONFIG
+              value: {{ .Values.cpd_scale_config }}
           command:
             - /bin/sh
             - -c
@@ -36,10 +43,19 @@ spec:
 
               set -e
 
-              echo "Debug Cloud Pak for Data $CPD_PRODUCT_VERSION Details"
-              echo "CP4D Dashboard .........................  cpd_admin_url "
-              echo "CP4D Admin Username ....................  cpd_admin_username "
-              echo "CP4D Admin Password ....................  cpd_admin_password_text "
+
+              while true; do
+                ZS_LOOKUP=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec}')
+                if [[ $CS_LOOKUP != *"not found"* &&  $CS_LOOKUP != *"Error"* ]]; then
+                  IS_PATCHED=$ZS_LOOKUP.ZenCoreMetaDb
+                  if [[ -z $IS_PATCHED ]]; then
+                    oc patch --type='merge' ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"scaleConfig:\"\"$CPD_SCALE_CONFIG\",\"ZenCoreMetaDb\":{ \"name\":\"zen-metastoredb\",\"kind\":\"StatefulSet\",\"container\":\"zen-metastoredb\",\"replicas\":\"3\",\"resources\":{ \"limits\":{ \"cpu\":\"2\",\"memory\":\"4Gi\"},\"requests\":{ \"cpu\":\"200m\",\"memory\":\"1024Mi\"}}}}}"
+                    oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+                    oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
+                  fi
+                  break
+                fi
+              done
 
       restartPolicy: Never
       serviceAccountName: presync-cpd-prereq-sa

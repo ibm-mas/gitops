@@ -1,0 +1,87 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "cpd-prereq-{{ .Values | toYaml | adler32sum }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "082"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ .Values.cpd_operators_namespace }}
+            - name: CPFS_CHANNEL
+              value: {{ .Values.cpfs_channel }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              
+              export CPFS_NAMESPACE=ibm-common-services
+              # - Scale down ibm-common-service-operator, operand-deployment-lifecycle-manager and ibm-zen-operator deployments from ibm-common-services namespace (will be recreated when CPFS/ODLM v4 is installed)
+              # - Delete common-service operandconfig and operandregistry (will be recreated when ODLM v4 is installed)
+              # - Delete all namespace scope instances from ibm-common-services namespace (will be recreated when NamespaceScope v4 is installed)
+
+              oc scale deployment ibm-common-service-operator -n ${CPFS_NAMESPACE} --replicas=0 --ignore-not-found
+              oc scale deployment operand-deployment-lifecycle-manager -n ${CPFS_NAMESPACE} --replicas=0 --ignore-not-found
+              oc scale deployment ibm-zen-operator -n ${CPFS_NAMESPACE} --replicas=0 --ignore-not-found
+
+              oc delete operandregistry -n ${CPFS_NAMESPACE} --ignore-not-found common-service
+              oc delete operandconfig -n ${CPFS_NAMESPACE} --ignore-not-found common-service
+
+              oc delete namespacescopes.operator.ibm.com nss-managedby-odlm -n ${CPFS_NAMESPACE} --ignore-not-found
+              oc delete namespacescopes.operator.ibm.com odlm-scope-managedby-odlm -n ${CPFS_NAMESPACE} --ignore-not-found
+              oc delete namespacescopes.operator.ibm.com nss-odlm-scope -n ${CPFS_NAMESPACE} --ignore-not-found
+              oc delete namespacescopes.operator.ibm.com common-service -n ${CPFS_NAMESPACE} --ignore-not-found
+
+              export CPFS_AVAILABLE_CHANNEL=$((oc get PackageManifest ibm-common-service-operator -o json) | jq -r '[.status.channels | .[].name] | last')
+
+              if [ ! -z "${CPFS_AVAILABLE_CHANNEL}" ] && [ $CPFS_AVAILABLE_CHANNEL -ge $CPFS_CHANNEL ]; then
+                # Backup and Delete existing common-service-maps configmap
+                CSM_DATA=$(oc get ConfigMap common-service-maps -n kube-public -o json)
+
+                if [[ $CSM_DATA != *"not found"* &&  $CSM_DATA != *"Error"* ]]; then
+                  BK_CM=${CSM_DATA.metadata.name}-bkp-$(date +"%Y-%m-%dT%H:%M:%S%z")
+                  echo "Creating backup config map ${BK_CM}"
+                  BK_OUTPUT=$(oc patch cm common-service-maps -n kube-public  -p "{\"metadata\":{ \"name\":\"$BK_NAME\" }}" --dry-run=client -o yaml | oc apply -f -)
+                  
+                  if [[ $BK_OUTPUT == *"created"* ]]; then
+                    oc delete ConfigMap common-service-maps -n kube-public
+                  fi
+
+                fi
+
+                # Clean up old ibm-common-service and cpd-platform operators
+                oc delete Subscription cpd-platform-operator -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                oc delete Subscription ibm-common-service-operator -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                oc delete ClusterServiceVersion cpd-platform-operator -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                oc delete ClusterServiceVersion ibm-common-service-operator -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+
+              fi
+
+      restartPolicy: Never
+      serviceAccountName: presync-cpd-olm-sa
+  backoffLimit: 4

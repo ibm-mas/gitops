@@ -1,0 +1,47 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "cpd-postsync-verify-{{ .Values | toYaml | adler32sum }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "089"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              echo "Debug Cloud Pak for Data $CPD_PRODUCT_VERSION Details"
+              echo "CP4D Dashboard .........................  cpd_admin_url "
+              echo "CP4D Admin Username ....................  cpd_admin_username "
+              echo "CP4D Admin Password ....................  cpd_admin_password_text "
+
+      restartPolicy: Never
+      serviceAccountName: presync-cpd-olm-sa
+  backoffLimit: 4
+
+{{- end }}

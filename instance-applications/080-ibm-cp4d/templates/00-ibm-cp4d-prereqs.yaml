@@ -31,6 +31,7 @@ rules:
       - patch
       - scale
       - update
+      - watch
     apiGroups:
       - "*"
     resources:
@@ -116,9 +117,8 @@ spec:
               oc delete namespacescopes.operator.ibm.com nss-odlm-scope -n ${CPFS_NAMESPACE} --ignore-not-found
               oc delete namespacescopes.operator.ibm.com common-service -n ${CPFS_NAMESPACE} --ignore-not-found
 
-              export CPFS_AVAILABLE_CHANNEL=$((oc get PackageManifest ibm-common-service-operator -o json) | jq -r '[.status.channels | .[].name] | last')
-
-              if [ ! -z "${CPFS_AVAILABLE_CHANNEL}" ] && [ $CPFS_AVAILABLE_CHANNEL -ge $CPFS_CHANNEL ]; then
+              export CPFS_AVAILABLE_CHANNEL=$((oc get PackageManifest ibm-common-service-operator -o json) | jq -r '[.status.channels | .[].name] | last | split ("v") | last')
+              if [ ! -z "${CPFS_AVAILABLE_CHANNEL}" ] && [ $CPFS_AVAILABLE_CHANNEL -ge ${CPFS_CHANNEL:1} ]; then
                 # Backup and Delete existing common-service-maps configmap
                 CSM_DATA=$(oc get ConfigMap common-service-maps -n kube-public -o json)
 

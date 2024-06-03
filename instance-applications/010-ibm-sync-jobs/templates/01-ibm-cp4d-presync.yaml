@@ -2202,34 +2202,50 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
+              echo 
+              echo "================================================================================"
+              echo "Storing CP4D Dependencies' Channel and Version info in AWS Secret Manager"
+              echo "================================================================================"
 
               
-              echo "Fetching channel for namespace scope"
+              echo 
+              echo "Fetching channel for namespace scope from PackageManifest"
+              echo "================================================================================"
+
               export NAMESPACE_SCOPE_CHANNEL=$((oc get PackageManifest ibm-namespace-scope-operator -o json) | jq -r '[.status.channels | .[].name] | last')
               if [[ -z "${NAMESPACE_SCOPE_CHANNEL}" ]]; then
                 echo "Failed to fetch namespace scope channel"
                 exit 1
               fi
 
-              echo "Fetching needed values from olm-utils-cm config map"
+              echo 
+              echo "Fetching values from olm-utils-cm config map"
+              echo "================================================================================"
+              echo "Fetching IBM Licensing Channel..."
               export LICENSING_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.["ibm-licensing"].sub_channel')
               if [[ -z "${LICENSING_CHANNEL}" ]]; then
                 echo "Failed to fetch ibm licensing channel"
                 exit 1
               fi
 
+              echo
+              echo "Fetching IBM Licensing Version..."
               export LICENSING_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.["ibm-licensing"].csv_version')
               if [[ -z "${LICENSING_VERSION}" ]]; then
                 echo "Failed to fetch ibm licensing version"
                 exit 1
               fi
 
+              echo
+              echo "Fetching CPFS Channel..."
               export CPFS_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.cpfs.sub_channel')
               if [[ -z "${CPFS_CHANNEL}" ]]; then
                 echo "Failed to fetch cpfs channel"
                 exit 1
               fi
 
+              echo
+              echo "Fetching CPD Platform Channel..."
               export CPD_PLATFORM_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.cpd_platform.sub_channel')
               if [[ -z "${CPD_PLATFORM_CHANNEL}" ]]; then
                 echo "Failed to fetch cpd platform channel"
@@ -2245,12 +2261,33 @@ spec:
               SECRET_NAME_CPFS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpfs_channel
               SECRET_NAME_CPD_PLATFORM_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpd_platform_channel
 
+              echo
+              echo 
+              echo "Updating secrets in Secret Manager"
+              echo "================================================================================"
+
+              echo
+              echo "Debug:"
+              echo "    - ACCOUNT_ID                          ................... ${ACCOUNT_ID}"
+              echo "    - REGION_ID                           ................... ${REGION_ID}"
+              echo "    - CLUSTER_ID                          ................... ${CLUSTER_ID}"
+              echo "    - INSTANCE_ID                         ................... ${INSTANCE_ID}"
+              echo "    - SECRET_NAME_NAMESPACE_SCOPE_CHANNEL ................... ${SECRET_NAME_NAMESPACE_SCOPE_CHANNEL}"
+              echo "    - SECRET_NAME_LICENSING_CHANNEL       ................... ${SECRET_NAME_LICENSING_CHANNEL}"
+              echo "    - SECRET_NAME_LICENSING_VERSION       ................... ${SECRET_NAME_LICENSING_VERSION}"
+              echo "    - SECRET_NAME_CPFS_CHANNEL            ................... ${SECRET_NAME_CPFS_CHANNEL}"
+              echo "    - SECRET_NAME_CPD_PLATFORM_CHANNEL    ................... ${SECRET_NAME_CPD_PLATFORM_CHANNEL}"
+              echo
+
 
               sm_update_secret $SECRET_NAME_NAMESPACE_SCOPE_CHANNEL "{\"namespace_scope_channel\": \"$NAMESPACE_SCOPE_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_LICENSING_CHANNEL "{\"licensing_channel\": \"$LICENSING_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_LICENSING_VERSION "{\"licensing_version\": \"$LICENSING_VERSION\" }"
               sm_update_secret $SECRET_NAME_CPFS_CHANNEL "{\"cpfs_channel\": \"$CPFS_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_CPD_PLATFORM_CHANNEL "{\"cpd_platform_channel\": \"$CPD_PLATFORM_CHANNEL\" }"
+
+
+              echo "Done"
 
 
       restartPolicy: Never

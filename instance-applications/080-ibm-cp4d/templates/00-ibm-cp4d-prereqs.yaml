@@ -96,71 +96,129 @@ spec:
               value: {{ .Values.cpfs_channel }}
             - name: CPD_PLATFORM_CHANNEL
               value: {{ .Values.cpd_platform_channel }}
+            - name: CPD_PRODUCT_VERSION
+              value: {{ .Values.cpd_product_version }}
           command:
             - /bin/sh
             - -c
             - |
 
               set -e
+
+              echo
+              echo "================================================================================"
+              echo "Required Cleanup before installing CP4D Platform operator"
+              echo "================================================================================"
               
               export CPFS_NAMESPACE=ibm-common-services
-              # - Scale down ibm-common-service-operator, operand-deployment-lifecycle-manager and ibm-zen-operator deployments from ibm-common-services namespace (will be recreated when CPFS/ODLM v4 is installed)
-              # - Delete common-service operandconfig and operandregistry (will be recreated when ODLM v4 is installed)
-              # - Delete all namespace scope instances from ibm-common-services namespace (will be recreated when NamespaceScope v4 is installed)
+              echo
+              echo "- Scale down ibm-common-service-operator, operand-deployment-lifecycle-manager and ibm-zen-operator deployments from ibm-common-services namespace (will be recreated when CPFS/ODLM v4 is installed)"
+              echo "- Delete common-service operandconfig and operandregistry (will be recreated when ODLM v4 is installed)"
+              echo "- Delete all namespace scope instances from ibm-common-services namespace (will be recreated when NamespaceScope v4 is installed)"
               
-              echo "scale down ibm-common-service operator and others if exists in ibm-common-services namespace"
+              echo
+              echo
+              echo "========================="
+              echo "Scaling Deployments"
+              echo "========================="
+              echo
+              echo "scaling down ibm-common-service deployment in ibm-common-services namespace if exists..."
 
               DEP1=$(oc get deployment ibm-common-service-operator -n ${CPFS_NAMESPACE} --ignore-not-found)
               if [[ ! -z $DEP1 ]]; then
                 oc scale deployment ibm-common-service-operator -n ${CPFS_NAMESPACE} --replicas=0
               fi
 
+              echo
+              echo "scaling down operand-deployment-lifecycle-manager deployment in ibm-common-services namespace if exists..."
+
               DEP2=$(oc get deployment operand-deployment-lifecycle-manager -n ${CPFS_NAMESPACE} --ignore-not-found)
               if [[ ! -z $DEP2 ]]; then
                 oc scale deployment operand-deployment-lifecycle-manager -n ${CPFS_NAMESPACE} --replicas=0
               fi
+
+              echo
+              echo "scaling down ibm-zen-operator deployment in ibm-common-services namespace if exists..."
 
               DEP3=$(oc get deployment ibm-zen-operator -n ${CPFS_NAMESPACE} --ignore-not-found)
               if [[ ! -z $DEP3 ]]; then
                 oc scale deployment ibm-zen-operator -n ${CPFS_NAMESPACE} --replicas=0
               fi
 
+              echo
+              echo
+              echo "========================="
+              echo "Deletion"
+              echo "========================="
+
+              echo
+              echo "Delete Common Service operandregistry from ibm-common-services namespace if exists..."
               oc delete operandregistry -n ${CPFS_NAMESPACE} --ignore-not-found common-service
+
+              echo
+              echo "Delete Common Service operandconfig from ibm-common-services namespace if exists..."
               oc delete operandconfig -n ${CPFS_NAMESPACE} --ignore-not-found common-service
 
+              echo
+              echo "Delete Namespace Scope nss-managedby-odlm from ibm-common-services namespace if exists..."
               oc delete namespacescopes.operator.ibm.com nss-managedby-odlm -n ${CPFS_NAMESPACE} --ignore-not-found
+
+              echo
+              echo "Delete Namespace Scope odlm-scope-managedby-odlm from ibm-common-services namespace if exists..."
               oc delete namespacescopes.operator.ibm.com odlm-scope-managedby-odlm -n ${CPFS_NAMESPACE} --ignore-not-found
+
+              echo
+              echo "Delete Namespace Scope nss-odlm-scope from ibm-common-services namespace if exists..."
               oc delete namespacescopes.operator.ibm.com nss-odlm-scope -n ${CPFS_NAMESPACE} --ignore-not-found
+
+              echo
+              echo "Delete Namespace Scope common-service from ibm-common-services namespace if exists..."
               oc delete namespacescopes.operator.ibm.com common-service -n ${CPFS_NAMESPACE} --ignore-not-found
 
+              # function to compare the channel versions
               compare_channels(){
                 CH1=$(echo "$1" | tr -d '.')
                 CH2=$(echo "$2" | tr -d '.')
                 echo $(( $CH1 - $CH2 ))
               }
 
+              echo "Verify that the available channel in the packagemanifests is enough for the product version currently installing"
               export CPFS_AVAILABLE_CHANNEL=$((oc get PackageManifest ibm-common-service-operator -o json) | jq -r '[.status.channels | .[].name] | last | split ("v") | last')
+
+              echo
+              echo "Debug:"
+              echo "- IBM Foundational Services channel in package manifest ............ v${CPFS_AVAILABLE_CHANNEL}"
+              echo "- IBM Foundational Services channel ................................ ${CPFS_CHANNEL}"
+              echo "- CP4D Product Verion .............................................. ${CPD_PRODUCT_VERSION}"
+              echo
+
               if [[ ! -z "${CPFS_AVAILABLE_CHANNEL}" ]]; then
                 COMPARE=$(compare_channels ${CPFS_AVAILABLE_CHANNEL} ${CPFS_CHANNEL:1})
-                echo "Existing CPFS channel ............................. ${CPFS_AVAILABLE_CHANNEL}"
-                echo "Expected CPFS channel ............................. ${CPFS_CHANNEL}"
+
                 if [[ ${COMPARE} -ge 0 ]]; then
-                  # Backup and Delete existing common-service-maps configmap
+                  echo
+                  echo "Backup and Delete existing common-service-maps configmap"
+                  echo "================================================================================"
+                  echo
                   CSM_NAME=$((oc get ConfigMap common-service-maps -n kube-public --ignore-not-found -o json) | jq -r '.metadata.name')
 
                   if [[ ! -z $CSM_NAME ]]; then
                     BK_CM=$CSM_NAME-bkp-$(date +"%Y-%m-%d-%H-%M-%S")
-                    echo "Creating backup config map ${BK_CM}"
+                    echo "Creating backup config map ${BK_CM}..."
                     BK_OUTPUT=$(oc patch cm common-service-maps -n kube-public -p "{\"metadata\":{ \"name\":\"$BK_CM\" }}" --dry-run=client -o yaml | oc apply -f -)
                     
                     if [[ $BK_OUTPUT == *"created"* ]]; then
+                      echo "deleting existing common-service-maps ConfigMap..."
                       oc delete ConfigMap common-service-maps -n kube-public
                     fi
+
                   fi
 
+                  echo
+                  echo "Cleanup old or existing ibm-common-service and cpd-platform operators from ${CPD_OPERATORS_NAMESPACE}"
+                  echo "================================================================================"
+                  echo
 
-                  # Clean up old ibm-common-service and cpd-platform operators
-                  echo "clean up old ibm-common-service and cpd-platform operators"
                   OP1=$(oc get Subscription --selector="operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')
                   OP2=$(oc get Subscription --selector="operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')
                   if [[ ! -z $OP1 ]]; then
@@ -178,7 +236,11 @@ spec:
                       oc delete ClusterServiceVersion --selector="operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
                     fi
                   fi
-
+                  echo "Done"
+                else
+                  echo "The channel available in ibm-common-service-operator package manifest (v${CPFS_AVAILABLE_CHANNEL}) is older than the minimum required version ${CPFS_CHANNEL} needed by Cloud Pak for Data ${CPD_PRODUCT_VERSION}!"
+                  echo "exiting..."
+                  exit 1
                 fi
               fi
 

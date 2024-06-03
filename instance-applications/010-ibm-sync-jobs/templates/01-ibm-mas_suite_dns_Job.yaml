@@ -17,6 +17,9 @@ spec:
     metadata:
       labels:
         app: "sync-job"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
     spec:
       containers:
         - name: suite-dns-role-run
@@ -24,9 +27,9 @@ spec:
           imagePullPolicy: IfNotPresent
 
           env:
-            - name: ACCOUNT
+            - name: ACCOUNT_ID
               value: "{{ .Values.account_id }}"
-            - name: CLUSTER
+            - name: CLUSTER_ID
               value: "{{ .Values.cluster_id }}"
             - name: MAS_INSTANCE_ID
               value: "{{ .Values.instance_id }}"
@@ -101,6 +104,8 @@ spec:
               echo "================================================================================"
               echo "DNS Provider ........................ ${COLOR_MAGENTA}${DNS_PROVIDER}"
               echo "Manual Cert Mgmt Flag ............... ${COLOR_MAGENTA}${MAS_MANUAL_CERT_MGMT}"
+              echo "Account Id .......................... ${COLOR_MAGENTA}${ACCOUNT_ID}"
+              echo "Cluster Id .......................... ${COLOR_MAGENTA}${CLUSTER_ID}"
               echo "MAS Instance Id ..................... ${COLOR_MAGENTA}${MAS_INSTANCE_ID}"
               echo "MAS Workspace ID .................... ${COLOR_MAGENTA}${MAS_WORKSPACE_ID}"
               echo "MAS CONFIG DIR ...................... ${COLOR_MAGENTA}${MAS_CONFIG_DIR}"
@@ -130,7 +135,7 @@ spec:
 
               sm_login
               export SECRETS_KEY_SEPERATOR="/"
-              export SECRET_NAME=${ACCOUNT}${SECRETS_KEY_SEPERATOR}${CLUSTER}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}suite_dns_role
+              export SECRET_NAME=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}suite_dns_role
               export SUITE_DNS_ROLE_SECRET_FILE=$MAS_CONFIG_DIR/suite-dns-role-secret.json
               sm_get_secret_file $SECRET_NAME $SUITE_DNS_ROLE_SECRET_FILE
               

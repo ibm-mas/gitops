@@ -12,22 +12,24 @@ A GitOps approach to managing Maximo Application Suite.
 
 ## Architecture
 
-The **Source Git Repo** provides Helm Charts that define all of the Kubernetes resources required to deploy MAS instances using ArgoCD. This repository can be used directly as the **Source Git Repo**, or a fork can be used if desired.
+![Architecture](docs/png/architecture.png)
 
-The **Config Git Repo** provides configuration YAML files that define the Values for rendering the Helm Charts in the **Source Git Repo**. The  **Config Git Repo** defines how many MAS instances will be deployed and where and how each of the MAS instances are configured. Each top-level folder contains the config for one **Account** (e.g. "dev", "staging", "production"). Each **Account**  has a subfolder per **Target Cluster**. And each **Target Cluster** has a subfolder per **MAS Instance**.
+The **Source Git Repo** provides Helm Charts that define all of the Kubernetes resources required to deploy MAS instances using ArgoCD. The [ibm-mas/gitops](https://github.com/ibm-mas/gitops/tree/demo2) repository can be used directly as the **Source Git Repo**, or a fork can be used if desired.
+
+The **Config Git Repo** provides configuration YAML files that define the Values for rendering the Helm Charts in the **Source Git Repo**. The  **Config Git Repo** defines how many MAS instances will be deployed and where and how each of the MAS instances are configured. Each top-level folder contains the config for one **Account** (e.g. "dev", "staging", "production"). Each **Account**  has a subfolder per **Target Cluster**. And each **Target Cluster** has a subfolder per **MAS Instance** that should run on that cluster.
 
 The **Secrets Vault** is used to store sensitive values that should not be exposed in the **Source Git Repo**. They are fetched at runtime using the [ArgoCD Vault Plugin](https://argocd-vault-plugin.readthedocs.io/en/stable/) from some backend implementation (e.g. AWS Secrets Manager). 
 
 ArgoCD is installed and configured on some **Management Cluster**. A single **Account Root Application** is registered with ArgoCD. This tells ArgoCD how to access the **Source Git Repo**, **Config Git Repo** and **Secrets Vault** and which **Account ID** (i.e. which top-level folder of the **Config Git Repo**)  to monitor for configuration files. 
 
-The **Account Root Application** is the only Application that is created directly. We employ the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) whereby the **Account Root Application** uses the artifacts in the **Source Git Repo**, **Config Git Repo** and **Secrets Vault** to dynamically generate (a tree of) further Applications (and ApplicationSets) which themselves may generate other Applications and/or configure a set of resources on one of the **Target Clusters**.
+The **Account Root Application** is the only Application that is created directly. We employ the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) whereby the **Account Root Application** uses the artifacts in the **Source Git Repo**, **Config Git Repo** and **Secrets Vault** to dynamically generate (a tree of) further Applications (and ApplicationSets) which themselves may generate other Applications (and ApplicationSets) and/or configure a set of resources on one of the **Target Clusters**.
 
-![Architecture](docs/png/architecture.png)
+
 
 ## Application Structure
 
 
-The following figure shows the generated tree of ArgoCD applications (and ApplicationSets), starting with the **Account Root Application** at the top:
+The following figure shows the generated tree of ArgoCD applications and ApplicationSets, starting with the **Account Root Application** at the top:
 
 ![Application Structure](docs/png/appstructure.png)
 
@@ -68,22 +70,22 @@ There are some special templates in the **MAS Instance Root Application** [Helm 
 - [MAS App Configs](https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-instance-root/templates/510-550-ibm-mas-masapp-configs) ([Helm Chart](https://github.com/ibm-mas/gitops/blob/demo2/instance-applications/510-550-ibm-mas-suite-app-config))
 - [Suite Configs](https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml)
   - This application is responsible for installing various types of suite configuration types (Mongo, BAS, SMTP, etc) at various scopes (system, app, ws, wsapp). The Helm Chart it uses is chosen dynanmically based on the configuration type:
-    - [JDBC Config](https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-instance-root/templates/130-ibm-db2u-jdbc-config)
-    - [Kafka Config](https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-instance-root/templates/130-ibm-kafka-config)
-    - [BAS Config](https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-bas-config)
-    - [IDP Config](https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-idp-config)
-    - [Mongo Config](https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-mongo-config)
-    - [SLS Config](https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-sls-config)
-    - [SMTP Config](https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-smtp-config)
-    - [COS Config](https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-instance-root/templates/130-ibm-objectstorage-config)
+    - [JDBC Config](https://github.com/ibm-mas/gitops/blob/demo2/instance-applications/130-ibm-db2u-jdbc-config)
+    - [Kafka Config](https://github.com/ibm-mas/gitops/blob/demo2/instance-applications/templates/130-ibm-kafka-config)
+    - [BAS Config](https://github.com/ibm-mas/gitops/blob/demo2/instance-applications/templates/130-ibm-mas-bas-config)
+    - [IDP Config](https://github.com/ibm-mas/gitops/blob/demo2/instance-applications/templates/130-ibm-mas-idp-config)
+    - [Mongo Config](https://github.com/ibm-mas/gitops/blob/demo2/instance-applications/templates/130-ibm-mas-mongo-config)
+    - [SLS Config](https://github.com/ibm-mas/gitops/blob/demo2/instance-applications/templates/130-ibm-mas-sls-config)
+    - [SMTP Config](https://github.com/ibm-mas/gitops/blob/demo2/instance-applications/templates/130-ibm-mas-smtp-config)
+    - [COS Config](https://github.com/ibm-mas/gitops/blob/demo2/instance-applications/templates/130-ibm-objectstorage-config)
 
 > **Why not use ApplicationSets for dynamic generation of DB2 Database, MAS Workspace, MAS App Config and Suite Config Applications?** We encountered some limitations when using ApplicationSets for this purpose. For instance, Applications generated by ApplicationSets do not participate in the [ArgoCD syncwave](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/) with other Applications so we would have no way of ensuring that resources would be configured in the correct order. Instead, we make use of the Helm `range` control structure in the Helm template to dynamically generate applications that are direct children of the parent application. 
 
 ### Config Git Repository Structure
 
-The **Config Git Repo** represents the "source of truth" that (along with the Charts in the _Source Git Repo_ and the secrets in the _Secrets Vault_) provides everything ArgoCD needs to install and manage MAS instances across the target clusters. Configuration is structured as a hierarchy; with "accounts" (e.g. dev/prod/staging) at the top, followed by "clusters", followed by "instances". 
+The **Config Git Repo** represents the "source of truth" that (along with the Charts in the **Source Git Repo** and the secrets in the **Secrets Vault**) provides everything ArgoCD needs to install and manage MAS instances across the target clusters. 
 
-The **Config Git Repo** contains a tree of different types of `.yaml` configuration files. Each `.yaml` file will cause ArgoCD to generate one (or more) application(s), which in turn render Helm charts into the target cluster.
+The **Config Git Repo** is structured as a hierarchy, with "accounts" (e.g. dev/prod/staging) at the top, followed by "clusters", followed by "instances". Each level contains different types of `.yaml` configuration files. Each `.yaml` file will cause ArgoCD to generate one (or more) application(s), which in turn render Helm charts into the appropriate target cluster.
 
 ```
 ├── <ACCOUNT_ID>
@@ -110,9 +112,9 @@ The **Config Git Repo** contains a tree of different types of `.yaml` configurat
 │       └── redhat-cert-manager.yaml
 ```
 
-The `example-config` directory in this repository contains examples of each of these `.yaml` files.
+> See the `example-config` directory in this repository for some actual examples of each of these `.yaml` files.
 
-Here is the structure of an example _Config_ Git repo containing configuration for three accounts (`dev`, `staging`, `production`) with a number of clusters and MAS instances. For brevity, the actual `.yaml` files are not shown here.
+Here is the structure of an example **Config Git Repo** containing configuration for three accounts (`dev`, `staging`, `production`) with a number of clusters and MAS instances. For brevity, the actual `.yaml` file names are not shown here.
 ```
 ├── dev
 │   ├── cluster1

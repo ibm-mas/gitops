@@ -1,6 +1,7 @@
 IBM DB2U JDBC Configuration
 ===============================================================================
-Provide MAS with JDBC config for a DB2u database.
+Create a JdbcCfg CR instance and associated credentials secret for use by MAS.
+Only supports DB2 at present.
 
 Contains a pre-sync hook (`00-presync-create-db2-user_Job.yaml`) that set up an LDAP user in DB2 with the credentials provided in the JDBC config. 
 

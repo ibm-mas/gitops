@@ -34,9 +34,9 @@ The following figure shows the generated tree of ArgoCD applications and Applica
 ![Application Structure](docs/png/appstructure.png)
 
 
-The **Account Root Application** [Helm Chart]((https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-account-root)) installs the **[Cluster Root Application Set](https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml)**. This generates a set of **MAS Cluster Root Applications** based on the configuration in the **Config Git Repo*. 
+The **Account Root Application** [Helm Chart](root-applications/ibm-mas-account-root) installs the **[Cluster Root Application Set](root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml)**. This generates a set of **MAS Cluster Root Applications** based on the configuration in the **Config Git Repo*. 
 
-The **Cluster Root Application** [Helm Chart](https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root) contains templates that generate ArgoCD Applications for configuring various dependencies shared by MAS instances on the target cluster, including:
+The **Cluster Root Application** [Helm Chart](root-applications/ibm-mas-cluster-root) contains templates that generate ArgoCD Applications for configuring various dependencies shared by MAS instances on the target cluster, including:
 
 - [Operator Catalog](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml) ([Helm Chart](cluster-applications/))
 - [Redhat Certificate Manager](root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml) ([Helm Chart](cluster-applications/010-redhat-cert-manager))
@@ -46,11 +46,11 @@ The **Cluster Root Application** [Helm Chart](https://github.com/ibm-mas/gitops/
 - [Nvidia GPU Operator](root-applications/ibm-mas-cluster-root/templates/050-nvidia-gpu-operator-app) ([Helm Chart](cluster-applications/050-nvidia-gpu-operator))
 
 
-The **Cluster Root Application** [Helm Chart](https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root) also installs the **[MAS Instance Root Application Set](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml)**. This generates a set of **MAS Instance Root Applications** based on the configuration in the **Config Git Repo**.  
+The **Cluster Root Application** [Helm Chart](root-applications/ibm-mas-cluster-root) also installs the **[MAS Instance Root Application Set](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml)**. This generates a set of **MAS Instance Root Applications** based on the configuration in the **Config Git Repo**.  
 
-The **MAS Instance Root Application** [Helm Chart](https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-instance-root) contains templates for generating ArgoCD Applications that install and configure some instance-level dependencies (e.g. SLS, DB2 Databases), MAS Core and various (MAS) applications (e.g. Manage, Monitor, etc) in the appropriate namespace on the target cluster:
+The **MAS Instance Root Application** [Helm Chart](root-applications/ibm-mas-instance-root) contains templates for generating ArgoCD Applications that install and configure some instance-level dependencies (e.g. SLS, DB2 Databases), MAS Core and various (MAS) applications (e.g. Manage, Monitor, etc) in the appropriate namespace on the target cluster:
  
-- [CP4D](root-applications/ibm-mas-instance-root/templates/080-ibm-cp4d.yaml) ([Helm Chart](instance-applications/080-ibm-cp4d))
+- [CP4D](root-applications/ibm-mas-instance-root/templates/080-ibm-cp4d-app.yaml) ([Helm Chart](instance-applications/080-ibm-cp4d))
 - [SLS (Suite License Service)](root-applications/ibm-mas-instance-root/templates/100-ibm-sls-app.yaml) ([Helm Chart](instance-applications/100-ibm-sls))
 - [MAS Suite](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml) ([Helm Chart](instance-applications/130-ibm-mas-suite))
 - [MAS App Assist Install](root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-assist-install.yaml) ([Helm Chart](instance-applications/500-540-ibm-mas-suite-app-install))
@@ -63,7 +63,7 @@ The **MAS Instance Root Application** [Helm Chart](https://github.com/ibm-mas/gi
 - [MAS App Predict Install](root-applications/ibm-mas-instance-root/templates/540-ibm-mas-masapp-predict-install.yaml) ([Helm Chart](instance-applications/500-540-ibm-mas-suite-app-install))
 
 
-There are some special templates in the **MAS Instance Root Application** [Helm Chart](https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-instance-root) that are capable of generating multiple Applications; necessary when there may be one or more instances of that type of resource, which will vary between MAS instances - for instance DB2 databases, suite configs, and suite/application workspaces:
+There are some special templates in the **MAS Instance Root Application** [Helm Chart](root-applications/ibm-mas-instance-root) that are capable of generating multiple Applications; necessary when there may be one or more instances of that type of resource, which will vary between MAS instances - for instance DB2 databases, suite configs, and suite/application workspaces:
 
 - [DB2 Databases](root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml) ([Helm Chart](instance-applications/120-ibm-db2u-database))
 - [MAS Workspaces](root-applications/ibm-mas-instance-root/templates/200-ibm-mas-workspaces.yaml) ([Helm Chart](instance-applications/220-ibm-mas-workspace))

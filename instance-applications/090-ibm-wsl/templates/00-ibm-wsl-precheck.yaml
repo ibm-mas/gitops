@@ -1,0 +1,61 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "cpd-wsl-precheck"
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "090"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "Check that ibmcpd-cr is ready"
+              echo "================================================================================"
+
+              echo
+              echo "Checking if controlPlaneStatus is complete..."
+
+              IBMCPD_LOOKUP=$(oc get Ibmcpd ibmcpd-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.controlPlaneStatus}')
+              if [[ ! -z ${IBMCPD_LOOKUP} && ${IBMCPD_LOOKUP} == *"Completed"* ]]; then
+                echo "ibmcpd controlPlaneStatus is complete and ready for services install"
+              else
+                echo "Failed! IBM Cloud Pak for Data must be ready and successfully installed before installing any CloudPak for Data service."
+                echo "Current IBM Cloud Pak for Data installation status is ${IBMCPD_LOOKUP}"
+                echo "exiting..."
+                exit 1
+              fi
+          
+      restartPolicy: Never
+      serviceAccountName: presync-cpd-prereq-sa
+  backoffLimit: 4

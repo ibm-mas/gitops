@@ -1,0 +1,275 @@
+{{- if eq .Values.mas_app_id "manage" }}
+
+
+{{ $ns              :=  .Values.mas_app_namespace }}
+{{ $np_name         :=  "postsync-verify-manage-np" }}
+{{ $role_name       :=  "postsync-verify-manage-role" }}
+{{ $sa_name         :=  "postsync-verify-manage-sa" }}
+{{ $rb_name         :=  "postsync-verify-manage-rb" }}
+{{ $tests_cm_name   :=  "postsync-verify-tests-manage-cm" }}
+{{ $job_name        :=  "postsync-verify-manage-job" }}
+
+
+
+---
+# Permit outbound communication by the Job pod
+# (Needed to communicate with the K8S HTTP API, PyPI, manage Route)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_name }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+
+---
+# -------------------------------------
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - "apps.mas.ibm.com"
+    resources:
+      - manageworkspace
+      - manageapp
+      - manageworkspaces
+      - manageapps
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+# -------------------------------------
+
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ $tests_cm_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "102"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+immutable: false
+data:
+  requirements.txt: |-
+    pytest
+    kubernetes
+    openshift
+  tests.py: |-
+    from kubernetes import client,config
+    from kubernetes.client import Configuration
+    from openshift.dynamic import DynamicClient
+    import pytest
+    import os
+
+    mas_instance_id = os.getenv("MAS_INSTANCE_ID")
+    if mas_instance_id is None:
+      raise Exception(f"Required MAS_INSTANCE_ID environment variable is not set")
+
+    # e.g. "masdev"
+    mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
+    if mas_workspace_id is None:
+      raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
+
+    manage_namespace = f"mas-{mas_instance_id}-manage"
+
+    @pytest.fixture(scope="session")
+    def dyn_client():
+      if "KUBERNETES_SERVICE_HOST" in os.environ:
+        config.load_incluster_config()
+        k8s_config = Configuration.get_default_copy()
+        k8s_client = client.api_client.ApiClient(configuration=k8s_config)
+      else:
+        k8s_client = config.new_client_from_config()
+      dyn_client = DynamicClient(k8s_client)
+      yield dyn_client
+
+    @pytest.fixture(scope="session")
+    def v1_manageworkspace(dyn_client):
+      yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+
+    @pytest.fixture(scope="session")
+    def v1_manageapp(dyn_client):
+      yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageApp')
+
+    @pytest.fixture(scope="session")
+    def mange_workspace_reconciled_version(mange_workspace_cr):
+      try:
+        yield mange_workspace_cr['status']['versions']['reconciled']
+      except KeyError as e:
+        assert False, f"Unable to determine ManageWorkspace reconciled version. Error details: {e}"
+
+    @pytest.fixture(scope="session")
+    def manage_version(mange_app_cr):
+      try:
+        yield mange_app_cr['status']['components']['manage']['version']
+      except KeyError as e:
+        assert False, f"Unable to determine ManageApp component version. Error details: {e}"
+
+    @pytest.fixture(scope="session")
+    def mange_workspace_cr(v1_manageworkspace):
+      yield v1_manageworkspace.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
+
+    @pytest.fixture(scope="session")
+    def mange_app_cr(v1_manageapp):
+      yield v1_manageapp.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
+
+
+    def test_expected_reconciled_version(mange_workspace_reconciled_version, manage_version):
+      assert manage_version == mange_workspace_reconciled_version, f"Expected ManageWorkspace Reconciled version: {mange_workspace_reconciled_version} to match Manage Operator version: {manage_version}"
+
+    def test_languages_set(mange_workspace_cr):
+      status_langs = mange_workspace_cr['status']['settings']['languages']
+      spec_langs = mange_workspace_cr['spec']['settings']['languages']
+      if spec_langs != None:
+        assert status_langs == spec_langs, f"Expected languages set in the spec: {spec_langs} to be equal to the languages in the status: {status_langs}"
+
+
+    def test_addons_enabled(mange_workspace_cr):
+      for component in mange_workspace_cr['spec']['components']:
+        print(f"check component {component[0]} in status")
+        assert mange_workspace_cr['status']['components'][component[0]]["enabled"], f"Expected component {component} to be enabled in status"
+
+    def test_bundle_sizes(mange_workspace_cr):
+      spec_serverbundles = mange_workspace_cr['spec']['settings']['deployment']['serverBundles']
+      status_serverbundles = mange_workspace_cr['status']['settings']['deployment']['serverBundles']
+      if spec_serverbundles != None:
+        assert status_serverbundles == spec_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the languages in the status: {status_serverbundles}"
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "103"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_name }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      imagePullSecrets: []
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+            - name: MAS_WORKSPACE_ID
+              value: "{{ .Values.mas_workspace_id }}"
+          volumeMounts:
+            - name: tests
+              mountPath: /tmp/tests
+          command:
+            - /bin/sh
+            - -c
+            - |
+              pip install -r /tmp/tests/requirements.txt
+              pytest -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py 
+      restartPolicy: Never
+      serviceAccountName: {{ $sa_name }}
+      volumes:
+        - name: tests
+          configMap:
+            name: {{ $tests_cm_name }}
+            items:
+              - key: requirements.txt
+                path: requirements.txt
+              - key: tests.py
+                path: tests.py
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+
+
+{{- end }}

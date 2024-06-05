@@ -143,11 +143,9 @@ Here is the structure of an example **Config Git Repo** containing configuration
             └── *.yaml
 ```
 
-### The Applications and ApplicationSets in Detail
+### The Applications and Application Sets in Detail
 
-> TODO: WIP needs cleaning up and finishing
-
-Let's take a more detailed look at the Applications and ApplicationSets and how they all hang together.
+Let's take a more detailed look at the Applications and Application Sets and how they all hang together.
 
 #### The Cluster Root Application Set
 
@@ -428,15 +426,115 @@ The [Instance Root Application Set](root-applications/ibm-mas-cluster-root/templ
   ```
 - The generated **Instance Root Applications** source the [ibm-mas-instance-root Helm Chart](root-applications/ibm-mas-instance-root).
 
-> TODO: Worked example
+To continue our example above, our **Git Config Repo** now contains some additional instance-level config files (only showing `cluster1` now for brevity):
+> 
+> ```
+> ├── dev
+> │   ├── cluster1
+> │   │   ├── ibm-mas-cluster-base.yaml
+> │   │   ├── ibm-operator-catalog.yaml
+> │       ├── instance1
+> │       │   ├── ibm-mas-instance-base.yaml
+> │       │   ├── ibm-mas-suite.yaml
+> ...
+> ```
+> dev/cluster1/instance1/ibm-mas-instance-base.yaml:
+> ```yaml
+> merge-key: "dev/cluster1/instance1"
+> account:
+>   id: dev
+> cluster:
+>   id: cluster1
+>   url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+> instance:
+>   id: instance1
+> ```
+> dev/cluster1/instance1/ibm-mas-suite.yaml:
+> ```yaml
+> merge-key: "dev/cluster1/instance1"
+> ibm_mas_suite:
+>   mas_channel: "8.11.x"
+> ```
+>
+
+The **Instance Root Application Set** generators would produce a YAML object:
+> ```yaml
+> merge-key: "dev/cluster1/instance1"
+> account:
+>   id: dev
+> cluster:
+>   id: cluster1
+>   url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+> instance:
+>   id: instance1
+> ibm_mas_suite:
+>   mas_channel: "8.11.x"
+> ```
+
+This would be used to render the **Instance Root Application Set** template and generate an **Instance Root Application**:
+> ```yaml
+> kind: Application
+> metadata:
+>   name: instance.cluster1.instance1
+> spec:
+>   source:
+>     path: root-applications/ibm-mas-instance-root
+>     helm:
+>       values: |-
+>         merge-key: dev/cluster1/instance1
+>         account:
+>           id: dev
+>         cluster:
+>           id: cluster1
+>           url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+>         instance:
+>           id: instance1
+>         ibm_mas_suite:
+>           mas_channel: "8.11.x"
+>       parameters:
+>         - name: source.repo_url
+>           value: "https://github.com/..."
+>         - name: argo.namespace
+>           value: "openshift-gitops"
+>   destination:
+>     server: 'https://kubernetes.default.svc'
+>     namespace: openshift-gitops
+> ```
+
+The **Instance Root Application** Helm chart will generate further Applications in the ArgoCD cluster and namespace.
 
 #### The Instance Root Application
 
-> TODO
+The **Instance Root Application** Helm chart contains templates to conditionally render ArgoCD Applications once the configuration for the ArgoCD Application is present. It follows the same pattern as the **Cluster Root Application** described [above](#the-cluster-root-application); specific applications are enabled once their configuration becomes present. For instance, the [130-ibm-mas-suite-app.yaml](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml) template generates an Application that deploys the MAS `Suite` CR to the target cluster once configuration under the `ibm_mas_suite` key is present.
+
+Some special templates are capable of generating multiple applications: [120-db2-databases-app.yaml](root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml), [130-ibm-mas-suite-configs-app.yaml)](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml), [200-ibm-mas-workspaces.yaml](root-applications/ibm-mas-instance-root/templates/200-ibm-mas-workspaces.yaml) and [130-ibm-mas-suite-configs-app.yaml](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml). These are special cases where there can be more than one instance of the *type* of resource that these Applications are responsible for managing. For instance, the MAS instance may require more than one DB2 Database. In these cases, we make use of the Helm `range` control structure to iterate over a YAML list held in the configuration, e.g. [120-db2-databases-app.yaml](root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml):
+```yaml
+{{- range $i, $value := .Values.ibm_db2u_databases }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: "db2-db.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
+...
+{{- end}}
+```
+
+Iterates over the list held in the `ibm-db2u-databases.yaml` configuration file for the instance to generate any number of DB2 Database Applications each configured as needed.
+```yaml
+ibm_db2u_databases:
+  - mas_application_id: iot
+    db2_memory_limits: 12Gi
+    ...
+  - mas_application_id: manage
+    db2_memory_limits: 16Gi
+    db2_database_db_config:
+      CHNGPGS_THRESH: '40'
+      ...
+    ...
+```
 
 
-> **Why not use ApplicationSets for dynamic generation of DB2 Database, MAS Workspace, MAS App Config and Suite Config Applications?** We encountered some limitations when using ApplicationSets for this purpose. For instance, Applications generated by ApplicationSets do not participate in the [ArgoCD syncwave](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/) with other Applications so we would have no way of ensuring that resources would be configured in the correct order. Instead, we make use of the Helm `range` control structure in the Helm template to dynamically generate applications that are direct children of the parent application. 
-
+> **Why not use ApplicationSets here?** We encountered some limitations when using ApplicationSets for this purpose. For instance, Applications generated by ApplicationSets do not participate in the [ArgoCD syncwave](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/) with other Applications so we would have no way of ensuring that resources would be configured in the correct order. By using the Helm `range` control structure we generate "normal" Applications that do not suffer from this limitation. This means, for instance, that we can ensure that DB2 Databases are configured **before** attempting to provide the corresponding JDBC configuration to MAS.
 
 
 ### Deployment Orchestration

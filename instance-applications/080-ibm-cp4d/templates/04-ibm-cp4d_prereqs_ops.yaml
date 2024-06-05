@@ -36,7 +36,7 @@ metadata:
 spec:
   csvInjector:
     enable: true
-    license:
+  license:
     accept: true
   namespaceMembers:
     - "{{ .Values.cpd_operators_namespace }}"
@@ -90,6 +90,28 @@ spec:
 
 
 ---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: common-service-maps
+  namespace: kube-public
+  labels:
+    operator.ibm.com/managedByCsOperator: 'true'
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+data:
+  common-service-maps.yaml: |
+    controlNamespace: {{ .Values.cpd_cs_control_namespace }}
+    namespaceMapping:
+    - map-to-common-service-namespace: {{ .Values.cpd_instance_namespace }}
+      requested-from-namespace:
+      - {{ .Values.cpd_instance_namespace }}
+      - {{ .Values.cpd_operators_namespace }}
+
+---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -109,19 +131,62 @@ spec:
   source: opencloud-operators
   sourceNamespace: "{{ .Values.cpd_operators_namespace }}"
 
-
 ---
-apiVersion: operator.ibm.com/v3
-kind: CommonService
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: common-service
+  name: "patch-common-service-job"
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "085"
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  size: small
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ .Values.cpd_operators_namespace }}
+            - name: CPFS_SIZE
+              value: {{ .Values.cpfs_size }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              echo
+              echo "================================================================================"
+              echo "Wait for Common Service CR to be available to patch"
+              echo "================================================================================"
+
+              while true; do
+                CS_LOOKUP=$(oc get CommonService common-service -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found)
+                if [[ ! -z $CS_LOOKUP ]]; then
+                  oc patch --type='merge' CommonService common-service -n ${CPD_OPERATORS_NAMESPACE} -p "{\"spec\":{ \"size\":\"$CPFS_SIZE\"}}"
+                  break
+                fi
+              done
+
+      restartPolicy: Never
+      serviceAccountName: presync-cpd-prereq-sa
+  backoffLimit: 4

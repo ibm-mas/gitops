@@ -1,0 +1,317 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "cpd-wml-post-verify-job-part-a"
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "096"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ .Values.cpd_operators_namespace }}
+            - name: CPD_SERVICE_STORAGE_CLASS
+              value: {{ .Values.cpd_service_storage_class }}
+            - name: CPD_SERVICE_BLOCK_STORAGE_CLASS
+              value: {{ .Values.cpd_service_block_storage_class }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "Wait for CCS Cr to be ready and patch if needed"
+              echo "================================================================================"
+              echo
+              
+              echo
+              echo "Waiting for ccs-cr to be ready..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+60))
+                if [ $wait_period -gt 1800 ]; then
+                  echo "ccs-cr is not ready after 30 minutes of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 60
+                fi
+
+                CCS_CR_LOOKUP=$(oc get CCS ccs-cr -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
+                if [[ ! -z $CCS_CR_LOOKUP ]]; then
+                  echo "CCS Cr is available"
+                  break
+                fi
+              done
+
+              echo "Patching CCS ccs-cr if not already patched"
+              CCS_COUCHDB_RES=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.couchdb_resources}')
+              CCS_BLOCKSTORAGE=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.blockStorageClass}')
+              CCS_IMAGEPULLSECRET=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.imagePullSecret}')
+
+              if [[ -z $CCS_COUCHDB_RES || -z $CCS_BLOCKSTORAGE || -z $CCS_IMAGEPULLSECRET ]]; then
+                echo "CCS CR needs to be patched"
+                echo "patching CCS Cr..."
+                oc patch --type='merge' CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\",\"blockStorageClass\":\"$CPD_SERVICE_BLOCK_STORAGE_CLASS\",\"fileStorageClass\":\"$CPD_SERVICE_STORAGE_CLASS\",\"couchdb_resources\":{ \"limits\":{ \"cpu\":\"16\",\"memory\":\"16Gi\"},\"requests\":{ \"cpu\":\"3\",\"memory\":\"256Mi\"},\"couchdb_search_resources\":{ \"limits\":{ \"cpu\":\"4\",\"memory\":\"6Gi\"},\"requests\":{ \"cpu\":\"250m\",\"memory\":\"256Mi\"}}}}}"
+                echo "scaling CCS operator down and up to force reconcile when the pod is restarted"
+                oc scale deployment ibm-cpd-ccs-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+                oc scale deployment ibm-cpd-ccs-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
+              fi
+
+              echo
+              echo "Waiting for ibm-cpd-ccs-operator to be ready again..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+60))
+                if [ $wait_period -gt 1200 ]; then
+                  echo "CCS operator is not ready after 20 minutes of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 60
+                fi
+
+                CCS_OPERATOR_LOOKUP=$(oc get deployment ibm-cpd-ccs-operator -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+                if [[ ! -z $CCS_OPERATOR_LOOKUP ]]; then
+                  echo "CCS Operator is ready again"
+                  break
+                fi
+              done
+
+              echo
+              echo "================================================================================"
+              echo "Wait for Elastic Search to be ready and patch if needed before checking ccsStatus"
+              echo "================================================================================"
+              echo
+
+              echo
+              echo "Waiting for elasticsearch-master to be ready..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+60))
+                if [ $wait_period -gt 1800 ]; then
+                  echo "elasticsearch-master is not ready after 30 minutes of waiting. Exiting..."
+                  exit 1
+                else
+                  sleep 60
+                fi
+
+                ELASTICSEARCH_CR_LOOKUP=$(oc get ElasticsearchCluster elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
+                if [[ ! -z $ELASTICSEARCH_CR_LOOKUP ]]; then
+                  echo "Elasticsearch Cr is available"
+                  break
+                fi
+              done
+
+              echo "Patching ElasticsearchCluster elasticsearch-master if not already patched"
+              while true; do
+                ELASTICSEARCH_IMAGEPULLSECRET=$(oc get ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.imagePullSecret}')
+
+                if [[ -z $ELASTICSEARCH_IMAGEPULLSECRET ]]; then
+                  echo "elasticsearch-master needs to be patched"
+                  echo "patching elasticsearch-master and forcing reconcile..."
+                  oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+                  oc delete Job elasticsearch-master-ibm-elasticsearch-create-snapshot-repo-job -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
+                  oc delete StatefulSet -n ${CPD_INSTANCE_NAMESPACE} --selector="app.kubernetes.io/instance=elasticsearch-master --ignore-not-found"
+                  oc patch --type='merge' ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\"}}"
+                  oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
+                  break
+                fi
+              done
+
+              echo
+              echo "Waiting for ibm-elasticsearch-operator to be ready again..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+60))
+                if [ $wait_period -gt 1200 ];then
+                  echo "Elasticsearch operator is not ready after 20 minutes of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 60
+                fi
+
+                ELASTICSEARCH_OPERATOR_LOOKUP=$(oc get deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+                if [[ ! -z $ELASTICSEARCH_OPERATOR_LOOKUP ]]; then
+                  echo "Elasticsearch Operator is ready again"
+                  break
+                fi
+              done
+
+              echo
+              echo "================================================================================"
+              echo "Back to CCS"
+              echo "================================================================================"
+              echo
+              echo "Waiting for ccsStatus to be 'Completed'..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+300))
+                if [ $wait_period -gt 15000 ];then
+                  echo "ccsStatus is not complete after 4 hours and 10 minutes of waiting. Exiting..."
+                  exit 1
+                else
+                  sleep 300
+                fi
+
+                CCSSTATUS_LOOKUP=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.ccsStatus}')
+                if [[ ! -z ${CCSSTATUS_LOOKUP} && ${CCSSTATUS_LOOKUP} == *"Completed"* ]]; then
+                  echo "CCS is complete"
+                  break
+                fi
+              done
+
+
+              echo
+              echo "================================================================================"
+              echo "Wait for WSL to be ready and patch if needed"
+              echo "================================================================================"
+              echo
+
+              echo "Waiting for notebookruntimes.ws.cpd.ibm.com CRD to be available..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+5))
+                if [ $wait_period -gt 600 ];then
+                  echo "notebookruntimes.ws.cpd.ibm.com CRD is not avalable after 10 minutes of waiting. Exiting..."
+                  exit 1
+                else
+                  sleep 5
+                fi
+
+                WS_LOOKUP=$(oc get CustomResourceDefinition notebookruntimes.ws.cpd.ibm.com --ignore-not-found)
+                if [[ ! -z ${WS_LOOKUP} ]]; then
+                  echo "notebookruntimes.ws.cpd.ibm.com is available"
+                  break
+                fi
+              done
+
+      restartPolicy: Never
+      serviceAccountName: presync-cpd-prereq-sa
+  backoffLimit: 4
+
+
+---
+apiVersion: ws.cpd.ibm.com/v1beta1
+kind: NotebookRuntime
+metadata:
+  name: "{{ .Values.cpd_instance_namespace }}-ws-runtime-py39"
+  namespace: "{{ .Values.cpd_instance_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "097"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  kind: "{{ .Values.cpd_instance_namespace }}-ws-runtime-py39"
+  license:
+    accept: true
+  version: "{{ .Values.ws_runtimes_version }}"
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "cpd-wsl-post-verify-job-part b"
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "098"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ .Values.cpd_operators_namespace }}
+            - name: CPD_SERVICE_STORAGE_CLASS
+              value: {{ .Values.cpd_service_storage_class }}
+            - name: CPD_SERVICE_BLOCK_STORAGE_CLASS
+              value: {{ .Values.cpd_service_block_storage_class }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "Wait for WS Status to be Completed"
+              echo "================================================================================"
+              echo
+              
+              echo "Waiting for wsStatus to be 'Completed'..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+300))
+                if [ $wait_period -gt 9000 ];then
+                  echo "wsStatus is not complete after 2 hours and 30 minutes of waiting."
+                  echo "Watson Studio install failed (wsStatus). Exiting..."
+                  exit 1
+                else
+                  sleep 300
+                fi
+
+                WSSTATUS_LOOKUP=$(oc get WS ws-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.wsStatus}')
+                if [[ ! -z ${WSSTATUS_LOOKUP} && ${WSSTATUS_LOOKUP} == *"Completed"* ]]; then
+                  echo "Watson Studio is complete"
+                  break
+                fi
+              done
+
+      restartPolicy: Never
+      serviceAccountName: presync-cpd-prereq-sa
+  backoffLimit: 4

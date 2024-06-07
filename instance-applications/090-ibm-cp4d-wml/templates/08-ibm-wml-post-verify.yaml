@@ -193,25 +193,66 @@ spec:
 
               echo
               echo "================================================================================"
-              echo "Wait for WSL to be ready and patch if needed"
+              echo "Wait for WML to be ready and patch if needed"
               echo "================================================================================"
               echo
 
-              echo "Waiting for notebookruntimes.ws.cpd.ibm.com CRD to be available..."
+              echo "Wait for the WmLBase custom resource to appear..."
 
               wait_period=0
               while true; do
                 wait_period=$(($wait_period+5))
                 if [ $wait_period -gt 600 ];then
-                  echo "notebookruntimes.ws.cpd.ibm.com CRD is not avalable after 10 minutes of waiting. Exiting..."
+                  echo "WmLBase.wml.cpd.ibm.com CRD is not defined after 10 minutes of waiting. Exiting..."
                   exit 1
                 else
                   sleep 5
                 fi
 
-                WS_LOOKUP=$(oc get CustomResourceDefinition notebookruntimes.ws.cpd.ibm.com --ignore-not-found)
+                WS_LOOKUP=$(oc get CustomResourceDefinition WmLBase.wml.cpd.ibm.com --ignore-not-found)
                 if [[ ! -z ${WS_LOOKUP} ]]; then
-                  echo "notebookruntimes.ws.cpd.ibm.com is available"
+                  echo "WmLBase.wml.cpd.ibm.com is available"
+                  break
+                fi
+              done
+
+
+              echo "Wait for the wml-cpd-etcd statefulset to appear..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+5))
+                if [ $wait_period -gt 60 ];then
+                  echo "wml-cpd-etcd StatefulSet is not defined after 1 minute of waiting. Exiting..."
+                  exit 1
+                else
+                  sleep 5
+                fi
+
+                WML_ETCD_LOOKUP=$(oc get StatefulSet wml-cpd-etcd -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found)
+                if [[ ! -z ${WML_ETCD_LOOKUP} ]]; then
+                  echo "wml-cpd-etcd StatefulSet is available"
+                  break
+                fi
+              done
+
+
+              echo
+              echo "Waiting for Watson Machine Learning operator (ibm-cpd-wml-operator) to be ready..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+60))
+                if [ $wait_period -gt 1200 ];then
+                  echo "Watson Machine Learning operator (ibm-cpd-wml-operator) is not ready after 20 minutes of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 60
+                fi
+
+                WML_OPERATOR_LOOKUP=$(oc get deployment.v1.apps ibm-cpd-wml-operator -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+                if [[ ! -z $WML_OPERATOR_LOOKUP ]]; then
+                  echo "Watson Machine Learning Operator (ibm-cpd-wml-operator) is ready"
                   break
                 fi
               done
@@ -219,26 +260,6 @@ spec:
       restartPolicy: Never
       serviceAccountName: presync-cpd-prereq-sa
   backoffLimit: 4
-
-
----
-apiVersion: ws.cpd.ibm.com/v1beta1
-kind: NotebookRuntime
-metadata:
-  name: "{{ .Values.cpd_instance_namespace }}-ws-runtime-py39"
-  namespace: "{{ .Values.cpd_instance_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "097"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  kind: "{{ .Values.cpd_instance_namespace }}-ws-runtime-py39"
-  license:
-    accept: true
-  version: "{{ .Values.ws_runtimes_version }}"
-
 
 ---
 apiVersion: batch/v1
@@ -274,12 +295,6 @@ spec:
           env:
             - name: CPD_INSTANCE_NAMESPACE
               value: {{ .Values.cpd_instance_namespace }}
-            - name: CPD_OPERATORS_NAMESPACE
-              value: {{ .Values.cpd_operators_namespace }}
-            - name: CPD_SERVICE_STORAGE_CLASS
-              value: {{ .Values.cpd_service_storage_class }}
-            - name: CPD_SERVICE_BLOCK_STORAGE_CLASS
-              value: {{ .Values.cpd_service_block_storage_class }}
           command:
             - /bin/sh
             - -c
@@ -288,26 +303,26 @@ spec:
               set -e
               echo
               echo "================================================================================"
-              echo "Wait for WS Status to be Completed"
+              echo "Wait for WML Status to be Completed"
               echo "================================================================================"
               echo
               
-              echo "Waiting for wsStatus to be 'Completed'..."
+              echo "Waiting for wmlStatus to be 'Completed'..."
 
               wait_period=0
               while true; do
                 wait_period=$(($wait_period+300))
                 if [ $wait_period -gt 9000 ];then
-                  echo "wsStatus is not complete after 2 hours and 30 minutes of waiting."
-                  echo "Watson Studio install failed (wsStatus). Exiting..."
+                  echo "wmlStatus is not complete after 2 hours and 30 minutes of waiting."
+                  echo "Watson Machine Learning install failed (wmlStatus). Exiting..."
                   exit 1
                 else
                   sleep 300
                 fi
 
-                WSSTATUS_LOOKUP=$(oc get WS ws-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.wsStatus}')
-                if [[ ! -z ${WSSTATUS_LOOKUP} && ${WSSTATUS_LOOKUP} == *"Completed"* ]]; then
-                  echo "Watson Studio is complete"
+                WSSTATUS_LOOKUP=$(oc get WmlBase.v1beta1.wml.cpd.ibm.com wml-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.wmlStatus}')
+                if [[ ! -z ${WMLSTATUS_LOOKUP} && ${WMLSTATUS_LOOKUP} == *"Completed"* ]]; then
+                  echo "Watson Machine Learning is complete"
                   break
                 fi
               done

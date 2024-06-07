@@ -38,19 +38,19 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 rules:
-- apiGroups:
-  - "*"
-  resources:
-  - "*"
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-  - deletecollection
+  - apiGroups:
+    - "*"
+    resources:
+    - "*"
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+    - deletecollection
 
 ---
 kind: Role
@@ -1532,20 +1532,20 @@ metadata:
   name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
   namespace: {{ .Values.cpd_operators_namespace }}
   annotations:
-    argocd.argoproj.io/sync-wave: "082"
+    argocd.argoproj.io/sync-wave: "083"
   labels:
     managed-by: nss
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 subjects:
-- kind: ServiceAccount
-  name: ibm-namespace-scope-operator
-  namespace: {{ .Values.cpd_operators_namespace }}
+  - kind: ServiceAccount
+    name: ibm-namespace-scope-operator
+    namespace: {{ .Values.cpd_operators_namespace }}
 roleRef:
   kind: Role
   name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
-  apiGroup: rbac.authorization.k8s.io/v1
+  apiGroup: rbac.authorization.k8s.io
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1560,24 +1560,24 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 rules:
-- apiGroups:
-  - operators.coreos.com
-  resources:
-  - operatorgroups
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-- apiGroups:
-  - operators.coreos.com
-  resources:
-  - catalogsources
-  verbs:
-  - create
-  - get
-  - list
+  - apiGroups:
+    - operators.coreos.com
+    resources:
+    - operatorgroups
+    verbs:
+    - create
+    - get
+    - list
+    - patch
+    - update
+  - apiGroups:
+    - operators.coreos.com
+    resources:
+    - catalogsources
+    verbs:
+    - create
+    - get
+    - list
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1592,13 +1592,13 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 rules:
-- apiGroups:
-  - operators.coreos.com
-  resources:
-  - catalogsources
-  verbs:
-  - get
-  - list
+  - apiGroups:
+    - operators.coreos.com
+    resources:
+    - catalogsources
+    verbs:
+    - get
+    - list
 
 ---
 kind: RoleBinding
@@ -1607,7 +1607,7 @@ metadata:
   name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
   namespace: "{{ .Values.cpd_instance_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "082"
+    argocd.argoproj.io/sync-wave: "083"
   labels:
     managed-by: nss
 {{- if .Values.custom_labels }}
@@ -1622,57 +1622,143 @@ roleRef:
   kind: Role
   name: nss-managed-role-from-{{ .Values.cpd_operators_namespace }}
 
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "cpd-instance-op-admin-rbac"
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: "{{ .Values.cpd_admin_login_sa }}"
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
 
 ---
-apiVersion: batch/v1
-kind: Job
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: cpd_cmd_adm_policy_to_user_operators
-  namespace: "{{ .Values.cpd_instance_namespace }}"
+  name: "cpd-instance-admin-rbac"
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: "{{ .Values.cpd_admin_login_sa }}"
+    namespace: "{{ .Values.cpd_instance_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "cpd-instance-admin-apply-olm-rbac"
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: "{{ .Values.cpd_admin_login_sa }}"
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cpd-instance-admin-apply-olm
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "cpd-instance-admin-read-catsrc-rbac"
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: "{{ .Values.cpd_admin_login_sa }}"
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cpd-instance-admin-read-catsrc
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: presync-cpd-prereq-sa
+  namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "082"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
-spec:
-  template:
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: presync-cpd-prereq-role
+  annotations:
+    argocd.argoproj.io/sync-wave: "082"
 {{- if .Values.custom_labels }}
-    metadata:
-      labels:
-{{ .Values.custom_labels | toYaml | indent 8 }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
-    spec:
-      containers:
-      - name: run
-        # Just using CLI because all the other jobs are using it too
-        image: quay.io/ibmmas/cli:8.1.0-pre.gitops
-        imagePullPolicy: IfNotPresent
-        command: 
-          - /bin/sh
-          - -c
-          - |
+rules:
+  - verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - scale
+      - update
+      - watch
+    apiGroups:
+      - "*"
+    resources:
+      - "*"
 
-            set -e
-
-            CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
-            until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERATOR_NS_PERMISSION_OUTPUT}']; do
-              CPD_OPERATOR_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
-            done
-
-            CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_instance_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
-            until ['clusterrole.rbac.authorization.k8s.io/admin added' in '${CPD_OPERANDS_NS_PERMISSION_OUTPUT}']; do
-              CPD_OPERANDS_NS_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user admin -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_instance_namespace }} --rolebinding-name=cpd-instance-admin-rbac)
-            done
-
-            CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
-            until ['role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added' in '${CPD_APPLY_OLM_PERMISSION_OUTPUT}']; do
-              CPD_APPLY_OLM_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-apply-olm -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace={{ .Values.cpd_operators_namespace }} --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
-            done
-
-            CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace=openshift-marketplace --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
-            until ['role.rbac.authorization.k8s.io/cpd-instance-admin-apply-olm added' in '${CPD_CATSRC_PERMISSION_OUTPUT}']; do
-              CPD_CATSRC_PERMISSION_OUTPUT=$(oc adm policy add-role-to-user cpd-instance-admin-read-catsrc -z {{ .Values.cpd_admin_login_sa }} --namespace={{ .Values.cpd_operators_namespace }} --role-namespace=openshift-marketplace --rolebinding-name=cpd-instance-admin-apply-olm-rbac)
-            done
-      restartPolicy: Never
-  backoffLimit: 4
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: presync-cpd-prereq-rb
+  annotations:
+    argocd.argoproj.io/sync-wave: "083"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: presync-cpd-prereq-sa
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: presync-cpd-prereq-role

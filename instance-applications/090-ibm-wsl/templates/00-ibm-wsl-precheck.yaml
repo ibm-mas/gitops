@@ -1,11 +1,84 @@
 ---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: wsl-precheck-sa
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "090"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: wsl-precheck-role
+  annotations:
+    argocd.argoproj.io/sync-wave: "090"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - patch
+      - scale
+    apiGroups:
+      - ''
+      - apps
+      - zen.cpd.ibm.com
+      - cpd.ibm.com
+      - operator.ibm.com
+    resources:
+      - ibmcpds
+      - deployments
+      - zenservices
+      - secrets
+      - commonservices
+  - verbs:
+      - get
+      - list
+      - patch
+      - scale
+    apiGroups:
+      - "*"
+    resources:
+      - "*"
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: wsl-precheck-rb
+  annotations:
+    argocd.argoproj.io/sync-wave: "091"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: wsl-precheck-sa
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: wsl-precheck-role
+
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: "cpd-wsl-precheck"
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "090"
+    argocd.argoproj.io/sync-wave: "092"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -57,5 +130,5 @@ spec:
               fi
           
       restartPolicy: Never
-      serviceAccountName: presync-cpd-prereq-sa
+      serviceAccountName: wsl-precheck-sa
   backoffLimit: 4

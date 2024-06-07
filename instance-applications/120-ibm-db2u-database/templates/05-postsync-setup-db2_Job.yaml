@@ -103,8 +103,8 @@ spec:
               value: "{{ .Values.db2_instance_name }}"
             - name: DB2_DBNAME
               value: "{{ .Values.db2_dbname }}"
-            - name: TLS_VERSION
-              value: "{{ .Values.tls_version }}"
+            - name: DB2_TLS_VERSION
+              value: "{{ .Values.db2_tls_version }}"
 
           volumeMounts:
             - name: aws
@@ -183,7 +183,7 @@ spec:
                 return 1
               }
 
-              export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config
+              export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/${DB2_INSTANCE_NAME}/config
 
               echo ""
               echo "================================================================================"
@@ -483,13 +483,16 @@ spec:
                 exit 1
               fi
 
-              # MASCORE-2025: Intentionally writing DB2_TLS_SERVICEPORT into SM as a String 
-              # so that it can be incorporated into jdbc_url
+              echo ""
+              echo "Construsting JDBC_CONNECTION_URL"
+              echo "--------------------------------------------------------------------------------"
+              export JDBC_CONNECTION_URL="jdbc:db2://c-${DB2_INSTANCE_NAME}-db2u-engn-svc.${DB2_NAMESPACE}.svc:${DB2_TLS_SERVICEPORT}/${DB2_DBNAME}:sslConnection=true;sslVersion=${DB2_TLS_VERSION};"
+
               echo ""
               echo "Updating Secrets Manager"
               echo "--------------------------------------------------------------------------------"
               sm_login
-              sm_update_secret ${DB2_CONFIG_SECRET} "{ \"tls_serviceport\": \"${DB2_TLS_SERVICEPORT}\", \"ca_b64\": \"${DB2_CA_PEM}\" }" || exit $?
+              sm_update_secret ${DB2_CONFIG_SECRET} "{ \"jdbc_connection_url\": \"${JDBC_CONNECTION_URL}\", \"jdbc_instance_name\": \"${DB2_INSTANCE_NAME}\", \"ca_b64\": \"${DB2_CA_PEM}\", \"db2_dbname\": \"${DB2_DBNAME}\", \"db2_namespace\": \"${DB2_NAMESPACE}\" }" || exit $?
 
 
       restartPolicy: Never

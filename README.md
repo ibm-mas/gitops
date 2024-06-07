@@ -70,7 +70,7 @@ There are some special templates in the **MAS Instance Root Application** [Helm 
 - [MAS App Configs](root-applications/ibm-mas-instance-root/templates/510-550-ibm-mas-masapp-configs) ([Helm Chart](instance-applications/510-550-ibm-mas-suite-app-config))
 - [Suite Configs](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml)
   - This application is responsible for installing various types of suite configuration types (Mongo, BAS, SMTP, etc) at various scopes (system, app, ws, wsapp). The Helm Chart it uses is chosen dynanmically based on the configuration type:
-    - [JDBC Config](instance-applications/130-ibm-db2u-jdbc-config)
+    - [JDBC Config](instance-applications/130-ibm-jdbc-config)
     - [Kafka Config](instance-applications/130-ibm-kafka-config)
     - [BAS Config](instance-applications/130-ibm-mas-bas-config)
     - [IDP Config](instance-applications/130-ibm-mas-idp-config)
@@ -621,3 +621,14 @@ This is primarily due to a limitation we have inherited to be compatible with in
 
 
 #### AWS Secrets Manager only (for now)
+
+
+
+> TODO: Any modifications made via the MAS admin UI or REST API that result in modifications to existing K8S resources will be undone by ArgoCD. We plan to provide a gitops-specific configuration option in MAS to disable these UI/REST APIs when in gitops-management mode
+
+
+
+
+### TODO
+
+> Note that generic on or off cluster JDBC databases are supported in an addition to Gitops-managed oncluster DB2.

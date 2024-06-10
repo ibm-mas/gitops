@@ -2,7 +2,7 @@
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: presync-wml-sa
+  name: wml-precheck-sa
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "090"
@@ -15,7 +15,7 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: presync-wml-role
+  name: wml-precheck-role
   annotations:
     argocd.argoproj.io/sync-wave: "090"
 {{- if .Values.custom_labels }}
@@ -29,11 +29,12 @@ rules:
       - "*"
     resources:
       - "Ibmcpd"
+
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: presync-wml-rb
+  name: wml-precheck-rb
   annotations:
     argocd.argoproj.io/sync-wave: "091"
 {{- if .Values.custom_labels }}
@@ -42,12 +43,13 @@ metadata:
 {{- end }}
 subjects:
   - kind: ServiceAccount
-    name: presync-wml-sa
+    name: wml-precheck-sa
     namespace: "{{ .Values.cpd_operators_namespace }}"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: presync-wml-role
+  name: wml-precheck-role
+
 
 ---
 apiVersion: batch/v1
@@ -108,5 +110,5 @@ spec:
               fi
           
       restartPolicy: Never
-      serviceAccountName: presync-wml-sa
+      serviceAccountName: wml-precheck-sa
   backoffLimit: 4

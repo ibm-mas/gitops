@@ -1,4 +1,7 @@
+{{- if eq .Values.jdbc_type "incluster-db2" }}
+
 ---
+
 # We need to embed the supplied JDBC creds in a K8S secret so we can safely access them from
 # the Job without exposing them via the ArgoCD resources
 # NOTE: do not want to use the actual usersupplied jdbc creds secret as I'd have to annotate that
@@ -18,7 +21,7 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 stringData:
-  username: "{{ .Values.db2_jdbc_username }}"
+  username: "{{ .Values.jdbc_instance_username }}"
   password: "{{ .Values.jdbc_instance_password }}"
 
 ---
@@ -124,7 +127,7 @@ spec:
             - name: DB2_NAMESPACE
               value: "{{ .Values.db2_namespace }}"
             - name: DB2_INSTANCE_NAME
-              value: "{{ .Values.db2_instance_name }}"
+              value: "{{ .Values.jdbc_instance_name }}"
             - name: DB2_DBNAME
               value: "{{ .Values.db2_dbname }}"
           volumeMounts:
@@ -296,3 +299,5 @@ spec:
             defaultMode: 420
             optional: false
   backoffLimit: 4
+
+{{- end }}

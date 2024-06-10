@@ -2252,6 +2252,63 @@ spec:
                 exit 1
               fi
 
+              echo
+              echo "Fetching Watson Machine Learning Version..."
+              export WML_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.wml.cr_version')
+              if [[ -z "${WML_VERSION}" ]]; then
+                echo "Failed to fetch watson machine learning version"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Watson Machine Learning Channel..."
+              export WML_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.wml.sub_channel')
+              if [[ -z "${WML_CHANNEL}" ]]; then
+                echo "Failed to fetch watson machine learning channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching CCS Version..."
+              export CCS_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ccs.cr_version')
+              if [[ -z "${CCS_VERSION}" ]]; then
+                echo "Failed to fetch ccs version"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching CCS Channel..."
+              export CCS_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ccs.sub_channel')
+              if [[ -z "${CCS_CHANNEL}" ]]; then
+                echo "Failed to fetch ccs channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Watson Studio Runtimes Channel..."
+              export WS_RUNTIMES_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ws_runtimes.sub_channel')
+              if [[ -z "${WS_RUNTIMES_CHANNEL}" ]]; then
+                echo "Failed to fetch watson studio runtimes channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching DataRefinery Channel..."
+              export DATAREFINERY_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.datarefinery.sub_channel')
+              if [[ -z "${DATAREFINERY_CHANNEL}" ]]; then
+                echo "Failed to fetch datarefinery channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Opencontent Elasticsearch Channel..."
+              export ELASTICSEARCH_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.opencontent_elasticsearch.sub_channel')
+              if [[ -z "${ELASTICSEARCH_CHANNEL}" ]]; then
+                echo "Failed to fetch opencontent elasticsearch channel"
+                exit 1
+              fi
+
+
               export SM_AWS_REGION=${REGION_ID}
               sm_login
 
@@ -2260,6 +2317,13 @@ spec:
               SECRET_NAME_LICENSING_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/licensing_version
               SECRET_NAME_CPFS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpfs_channel
               SECRET_NAME_CPD_PLATFORM_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpd_platform_channel
+              SECRET_NAME_WML_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wml_version
+              SECRET_NAME_WML_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wml_channel
+              SECRET_NAME_CCS_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ccs_version
+              SECRET_NAME_CCS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ccs_channel
+              SECRET_NAME_WS_RUNTIMES_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ws_runtimes_channel
+              SECRET_NAME_DATAREFINERY_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/datarefinery_channel
+              SECRET_NAME_ELASTICSEARCH_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_elasticsearch_channel
 
               echo
               echo 
@@ -2268,15 +2332,22 @@ spec:
 
               echo
               echo "Debug:"
-              echo "    - ACCOUNT_ID                          ................... ${ACCOUNT_ID}"
-              echo "    - REGION_ID                           ................... ${REGION_ID}"
-              echo "    - CLUSTER_ID                          ................... ${CLUSTER_ID}"
-              echo "    - INSTANCE_ID                         ................... ${INSTANCE_ID}"
+              echo "    - ACCOUNT_ID ............................................ ${ACCOUNT_ID}"
+              echo "    - REGION_ID ............................................. ${REGION_ID}"
+              echo "    - CLUSTER_ID ............................................ ${CLUSTER_ID}"
+              echo "    - INSTANCE_ID ........................................... ${INSTANCE_ID}"
               echo "    - SECRET_NAME_NAMESPACE_SCOPE_CHANNEL ................... ${SECRET_NAME_NAMESPACE_SCOPE_CHANNEL}"
-              echo "    - SECRET_NAME_LICENSING_CHANNEL       ................... ${SECRET_NAME_LICENSING_CHANNEL}"
-              echo "    - SECRET_NAME_LICENSING_VERSION       ................... ${SECRET_NAME_LICENSING_VERSION}"
-              echo "    - SECRET_NAME_CPFS_CHANNEL            ................... ${SECRET_NAME_CPFS_CHANNEL}"
-              echo "    - SECRET_NAME_CPD_PLATFORM_CHANNEL    ................... ${SECRET_NAME_CPD_PLATFORM_CHANNEL}"
+              echo "    - SECRET_NAME_LICENSING_CHANNEL ......................... ${SECRET_NAME_LICENSING_CHANNEL}"
+              echo "    - SECRET_NAME_LICENSING_VERSION ......................... ${SECRET_NAME_LICENSING_VERSION}"
+              echo "    - SECRET_NAME_CPFS_CHANNEL .............................. ${SECRET_NAME_CPFS_CHANNEL}"
+              echo "    - SECRET_NAME_CPD_PLATFORM_CHANNEL ...................... ${SECRET_NAME_CPD_PLATFORM_CHANNEL}"
+              echo "    - SECRET_NAME_WML_VERSION ............................... ${SECRET_NAME_WML_VERSION}"
+              echo "    - SECRET_NAME_WML_CHANNEL ............................... ${SECRET_NAME_WML_CHANNEL}"
+              echo "    - SECRET_NAME_CCS_VERSION ............................... ${SECRET_NAME_CCS_VERSION}"
+              echo "    - SECRET_NAME_CCS_CHANNEL ............................... ${SECRET_NAME_CCS_CHANNEL}"
+              echo "    - SECRET_NAME_WS_RUNTIMES_CHANNEL ....................... ${SECRET_NAME_WS_RUNTIMES_CHANNEL}"
+              echo "    - SECRET_NAME_DATAREFINERY_CHANNEL ...................... ${SECRET_NAME_DATAREFINERY_CHANNEL}"
+              echo "    - SECRET_NAME_ELASTICSEARCH_CHANNEL ..................... ${SECRET_NAME_ELASTICSEARCH_CHANNEL}"
               echo
 
 
@@ -2285,6 +2356,13 @@ spec:
               sm_update_secret $SECRET_NAME_LICENSING_VERSION "{\"licensing_version\": \"$LICENSING_VERSION\" }"
               sm_update_secret $SECRET_NAME_CPFS_CHANNEL "{\"cpfs_channel\": \"$CPFS_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_CPD_PLATFORM_CHANNEL "{\"cpd_platform_channel\": \"$CPD_PLATFORM_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_WML_VERSION "{\"wml_version\": \"$WML_VERSION\" }"
+              sm_update_secret $SECRET_NAME_WML_CHANNEL "{\"wml_channel\": \"$WML_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_CCS_VERSION "{\"ccs_version\": \"$CCS_VERSION\" }"
+              sm_update_secret $SECRET_NAME_CCS_CHANNEL "{\"ccs_channel\": \"$CCS_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_WS_RUNTIMES_CHANNEL "{\"ws_runtimes_channel\": \"$WS_RUNTIMES_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_DATAREFINERY_CHANNEL "{\"datarefinery_channel\": \"$DATAREFINERY_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_ELASTICSEARCH_CHANNEL "{\"opencontent_elasticsearch_channel\": \"$ELASTICSEARCH_CHANNEL\" }"
 
 
               echo "Done"

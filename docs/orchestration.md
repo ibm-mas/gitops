@@ -17,8 +17,9 @@ This is achieved using a combination of the following ArgoCD mechanisms:
 
   - [Automated Sync Policies](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/#automated-sync-policy)
   - [Sync Waves](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/)
+  - [Custom Resource Healthchecks](https://argo-cd.readthedocs.io/en/stable/operator-manual/health/#custom-health-checks)
   - [Resource Hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/resource_hooks/) that perform various tasks at the appropriate time
-  - [Custom resource healthchecks](https://argo-cd.readthedocs.io/en/stable/operator-manual/health/#custom-health-checks)
+
 
 
 
@@ -33,10 +34,10 @@ syncPolicy:
     prune: true
 ```
 
-The ArgoCD Application Set git generators will automatically pick up configuration files pushed the the **Config Repo**. The resulting Applications will then be sychronized automatically due to the sync policy above. In addition:
+The ArgoCD Application Set git generators will automatically pick up configuration files pushed the the **Config Repo**. The generated Applications will then be sychronized automatically due to the sync policy above. In addition:
 
-- `selfHeal: true` will make ArgoCD undo any changes made manually to any cluster resources that it is managing. This ensures that proper...
-- `prune: true` 
+- [`selfHeal: true`](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/#automatic-self-healing): causes ArgoCD to trigger a sync if changes are made to a ArgoCD-managed resource in the live cluster by something other than ArgoCD (e.g. a human operator). This forces any updates to MAS configuration to be made by pushing a commit to the **Config Repo**, ensuring that the configuration in the **Config Repo** is always the "source of truth". 
+- [`prune: true`](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/#automatic-pruning): this allows ArgoCD to automatically deprovision MAS resources when their corresponding configuration files are deleted from the **Config Repo**.
 
 !!! info
   
@@ -45,30 +46,25 @@ The ArgoCD Application Set git generators will automatically pick up configurati
 Sync Waves
 -------------------------------------------------------------------------------
 
+All Kubernetes resources defined in the MAS GitOps Helm charts are annotated with an ArgoCD [sync wave](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/). This ensures that all resources (including generated ArgoCD Applications on the **Management Cluster** and Kubernetes resources on **Target Cluster**s) are synced in the correct order; a resource is only permitted to being syncing once its dependencies are installed (and healthy).
 
-Sync Waves
+!!! note
+
+    For clarity, all resource filenames are prefixed with the sync wave that they belong to.
+
+!!! note
+
+    Sync waves are *local* to each ArgoCD application (i.e. each Helm chart).
+
+Custom Resource Healthchecks
 -------------------------------------------------------------------------------
 
+MAS GitOps requires a set of [Custom resource healthchecks](https://argo-cd.readthedocs.io/en/stable/operator-manual/health/#custom-health-checks) to be registered with the ArgoCD in the **Management Cluster**. This allows ArgoCD to properly interpret and report the health status of a given resource. This is particularly important to ensure that resources have finished reconciling before allowing subsequent sync waves (which may contain dependent resources) to proceed. The set of custom Resource Healthchecks required by MAS GitOps can be found in the [ibm-mas/cli project](https://github.com/ibm-mas/cli/blob/45cc815ec6244c9d58e050900ec0e27403d9ea92/image/cli/mascli/templates/gitops/bootstrap/argocd.yaml#L83).
 
-Custom resource healthchecks
+
+Custom Resource Healthchecks
 -------------------------------------------------------------------------------
-
-This has been achieved using the ArgoCD [sync wave] mechanism combined with 
-
-No connectivity is required
-
-
-Once ArgoCD is installed and configured on the **Management Cluster**
-
-- All configuration files for a MAS instance can be pushed to the **Config Repo** at the same time and ArgoCD will ensure that resources are created in **Target Clusters** in the correct order.
-- No connectivity is required between 
-
-
-To ensure that we sync resources in the correct order they are annotated with an  For clarity, we also prefix all resource filenames with the sync wave that they belong to. Note that sync waves are *local* to each ArgoCD application (i.e. each Helm chart).
 
 > TODO: document the various use of ArgoCD hooks for creating secrets / running scripts / etc.
 
 > TODO: we often don't use post-sync hooks - instead we use normal jobs that run last. These jobs often perform pre-requisite steps for subsequent sync waves (e.g. setting up secrets in the **Secrets Vault**) and having them as "normal" jobs ensures that ArgoCD will wait for their completion before allowing Applications in subsequent syncwaves to proceed.
-
-> TODO: Document custom health checks, in particular the Application healthcheck required for the App of Apps pattern to work:  https://argo-cd.readthedocs.io/en/stable/operator-manual/health/#argocd-app
-

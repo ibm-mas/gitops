@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="canonical" href="https://pages.github.com/ibm-mas/gitops/sourcerepo/" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Source Repository - MAS GitOps</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+        <link href="../extra.css" rel="stylesheet" />
+        <link href="https://cdn.jsdelivr.net/gh/fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" rel="stylesheet" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Source Repository";
+        var mkdocs_page_input_path = "sourcerepo.md";
+        var mkdocs_page_url = "/ibm-mas/gitops/sourcerepo/";
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> MAS GitOps
+        </a>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul class="current">
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Source Repository</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#application-structure">Application Structure</a>
+    </li>
+    </ul>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../configrepo/">Config Repository</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../configtoinstances/">Mapping Config to MAS Instances</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../orchestration/">Deployment Orchestration</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../reference/">Reference</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../limitations/">Known Limitations</a>
+                </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">MAS GitOps</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Source Repository</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/ibm-mas/gitops/blob/demo2/docs/sourcerepo.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="source-repository">Source Repository<a class="headerlink" href="#source-repository" title="Permanent link"></a></h1>
+<p>The <a href="https://github.com/ibm-mas/gitops">ibm-mas/gitops</a> repository provides Helm Charts that define all of the Kubernetes resources required to deploy MAS instances using ArgoCD. The Helm Charts are split across three sub directories, depending on their intended target:</p>
+<ul>
+<li>Helm Charts under <code>root-applications</code> contain templates that define other ArgoCD Applications and Application Sets and target the cluster (and namespace) on which ArgoCD is running.</li>
+<li>Helm Charts under <code>cluster-applications</code> contain templates that define Kubernetes resources for installing cluster-wide MAS pre-requisites on <strong>Target Clusters</strong></li>
+<li>Helm Charts under <code>instance-applications</code> contain templates that define Kubernetes resources for installing one or more MAS instances on <strong>Target Clusters</strong>.</li>
+</ul>
+<h2 id="application-structure">Application Structure<a class="headerlink" href="#application-structure" title="Permanent link"></a></h2>
+<p>The following figure shows a tree of ArgoCD applications and Application Sets defined by the Helm Charts under <code>root-applications</code>, starting with the <strong>Account Root Application</strong> at the top:</p>
+<p><img alt="Application Structure" src="../png/appstructure.png" /></p>
+<p>The <strong>Account Root Application</strong> <a href="root-applications/ibm-mas-account-root">Helm Chart</a> installs the <strong><a href="root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a></strong>. This generates a set of <strong>MAS Cluster Root Applications</strong> based on the configuration in the *<em>Config Git Repo</em>. </p>
+<p>The <strong>Cluster Root Application</strong> <a href="root-applications/ibm-mas-cluster-root">Helm Chart</a> contains templates that generate ArgoCD Applications for configuring various dependencies shared by MAS instances on the target cluster, including:</p>
+<ul>
+<li><a href="root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">Operator Catalog</a> (<a href="cluster-applications/">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml">Redhat Certificate Manager</a> (<a href="cluster-applications/010-redhat-cert-manager">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-cluster-root/templates/010-ibm-dro-app.yaml">DRO</a> (<a href="cluster-applications/020-ibm-dro">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-cluster-root/templates/020-ibm-db2u-app.yaml">Db2u Operator</a> (<a href="cluster-applications/060-ibm-db2u">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-cluster-root/templates/040-cis-compliance-app.yaml">CIS Compliance</a> (<a href="cluster-applications/040-cis-compliance">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-cluster-root/templates/050-nvidia-gpu-operator-app">Nvidia GPU Operator</a> (<a href="cluster-applications/050-nvidia-gpu-operator">Helm Chart</a>)</li>
+</ul>
+<p>The <strong>Cluster Root Application</strong> <a href="root-applications/ibm-mas-cluster-root">Helm Chart</a> also installs the <strong><a href="root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">MAS Instance Root Application Set</a></strong>. This generates a set of <strong>MAS Instance Root Applications</strong> based on the configuration in the <strong>Config Git Repo</strong>.  </p>
+<p>The <strong>MAS Instance Root Application</strong> <a href="root-applications/ibm-mas-instance-root">Helm Chart</a> contains templates for generating ArgoCD Applications that install and configure some instance-level dependencies (e.g. SLS, DB2 Databases), MAS Core and various (MAS) applications (e.g. Manage, Monitor, etc) in the appropriate namespace on the target cluster:</p>
+<ul>
+<li><a href="root-applications/ibm-mas-instance-root/templates/080-ibm-cp4d-app.yaml">CP4D</a> (<a href="instance-applications/080-ibm-cp4d">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/100-ibm-sls-app.yaml">SLS (Suite License Service)</a> (<a href="instance-applications/100-ibm-sls">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml">MAS Suite</a> (<a href="instance-applications/130-ibm-mas-suite">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-assist-install.yaml">MAS App Assist Install</a> (<a href="instance-applications/500-540-ibm-mas-suite-app-install">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-iot-install.yaml">MAS App IoT Install</a> (<a href="instance-applications/500-540-ibm-mas-suite-app-install">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-manage-install.yaml">MAS App Manage Install</a> (<a href="instance-applications/500-540-ibm-mas-suite-app-install">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-visualinspection-install.yaml">MAS App VisualInspection Install</a> (<a href="instance-applications/500-540-ibm-mas-suite-app-install">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-health-install.yaml">MAS App Health Install</a> (<a href="instance-applications/500-540-ibm-mas-suite-app-install">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-monitor-install.yaml">MAS App Monitor Install</a> (<a href="instance-applications/500-540-ibm-mas-suite-app-install">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-optimizer-install.yaml">MAS App Optimizer Install</a> (<a href="instance-applications/500-540-ibm-mas-suite-app-install">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/540-ibm-mas-masapp-predict-install.yaml">MAS App Predict Install</a> (<a href="instance-applications/500-540-ibm-mas-suite-app-install">Helm Chart</a>)</li>
+</ul>
+<p>There are some special templates in the <strong>MAS Instance Root Application</strong> <a href="root-applications/ibm-mas-instance-root">Helm Chart</a> that are capable of generating multiple Applications; necessary when there may be one or more instances of that type of resource, which will vary between MAS instances - for instance DB2 databases, suite configs, and suite/application workspaces:</p>
+<ul>
+<li><a href="root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml">DB2 Databases</a> (<a href="instance-applications/120-ibm-db2u-database">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/200-ibm-mas-workspaces.yaml">MAS Workspaces</a> (<a href="instance-applications/220-ibm-mas-workspace">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/510-550-ibm-mas-masapp-configs">MAS App Configs</a> (<a href="instance-applications/510-550-ibm-mas-suite-app-config">Helm Chart</a>)</li>
+<li><a href="root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml">Suite Configs</a></li>
+<li>This application is responsible for installing various types of suite configuration types (Mongo, BAS, SMTP, etc) at various scopes (system, app, ws, wsapp). The Helm Chart it uses is chosen dynanmically based on the configuration type:<ul>
+<li><a href="instance-applications/130-ibm-jdbc-config">JDBC Config</a></li>
+<li><a href="instance-applications/130-ibm-kafka-config">Kafka Config</a></li>
+<li><a href="instance-applications/130-ibm-mas-bas-config">BAS Config</a></li>
+<li><a href="instance-applications/130-ibm-mas-idp-config">IDP Config</a></li>
+<li><a href="instance-applications/130-ibm-mas-mongo-config">Mongo Config</a></li>
+<li><a href="instance-applications/130-ibm-mas-sls-config">SLS Config</a></li>
+<li><a href="instance-applications/130-ibm-mas-smtp-config">SMTP Config</a></li>
+<li><a href="instance-applications/130-ibm-objectstorage-config">COS Config</a></li>
+</ul>
+</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/ibm-mas/gitops" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href=".." style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../configrepo/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

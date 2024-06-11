@@ -5,7 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="canonical" href="https://pages.github.com/ibm-mas/gitops/configtoinstances/" />
       <link rel="shortcut icon" href="../img/favicon.ico" />
-    <title>Mapping Config to MAS Instances - MAS GitOps</title>
+    <title>Generated Applications - MAS GitOps</title>
     <link rel="stylesheet" href="../css/theme.css" />
     <link rel="stylesheet" href="../css/theme_extra.css" />
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
@@ -14,7 +14,7 @@
     
       <script>
         // Current page data
-        var mkdocs_page_name = "Mapping Config to MAS Instances";
+        var mkdocs_page_name = "Generated Applications";
         var mkdocs_page_input_path = "configtoinstances.md";
         var mkdocs_page_url = "/ibm-mas/gitops/configtoinstances/";
       </script>
@@ -43,15 +43,19 @@
                 </li>
               </ul>
               <ul>
-                <li class="toctree-l1"><a class="reference internal" href="../sourcerepo/">Source Repository</a>
+                <li class="toctree-l1"><a class="reference internal" href="../helmcharts/">Helm Charts</a>
                 </li>
               </ul>
               <ul>
                 <li class="toctree-l1"><a class="reference internal" href="../configrepo/">Config Repository</a>
                 </li>
               </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../accountrootmanifest/">Account Root Application Manifest</a>
+                </li>
+              </ul>
               <ul class="current">
-                <li class="toctree-l1 current"><a class="reference internal current" href="#">Mapping Config to MAS Instances</a>
+                <li class="toctree-l1 current"><a class="reference internal current" href="#">Generated Applications</a>
     <ul class="current">
     <li class="toctree-l2"><a class="reference internal" href="#the-account-root-application">The Account Root Application</a>
     </li>
@@ -92,7 +96,7 @@
         <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
   <ul class="wy-breadcrumbs">
     <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
-      <li class="breadcrumb-item active">Mapping Config to MAS Instances</li>
+      <li class="breadcrumb-item active">Generated Applications</li>
     <li class="wy-breadcrumbs-aside">
           <a href="https://github.com/ibm-mas/gitops/blob/demo2/docs/configtoinstances.md" class="icon icon-github"> Edit on GitHub</a>
     </li>
@@ -102,10 +106,10 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
             <div class="section" itemprop="articleBody">
               
-                <h1 id="mapping-config-to-mas-instances">Mapping Config to MAS Instances<a class="headerlink" href="#mapping-config-to-mas-instances" title="Permanent link"></a></h1>
-<p>The following demonstrates how <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/">ArgoCD Application Sets</a> are combined with the <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern">App of Apps pattern</a> in order to map the configuration files in the <strong>Config Repo</strong> to running MAS instances in <strong>Target Clusters</strong>.</p>
+                <h1 id="generated-applications">Generated Applications<a class="headerlink" href="#generated-applications" title="Permanent link"></a></h1>
+<p>The following demonstrates how <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/">ArgoCD Application Sets</a> are combined with the <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern">App of Apps pattern</a> to generate a tree of ArgoCD Applications that manage MAS instances in <strong>Target Clusters</strong> based on the configuration files in the <strong>Config Repo</strong>.</p>
 <h2 id="the-account-root-application">The Account Root Application<a class="headerlink" href="#the-account-root-application" title="Permanent link"></a></h2>
-<p>The <strong>Account Root Application</strong> is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS Gitops code and is where several key pieces of global configuration values are provided:</p>
+<p>It all begins with the <strong>Account Root Application</strong> . This is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS Gitops Helm Charts and is where several key pieces of global configuration values are provided.</p>
 <p><img alt="Account Root Application" src="../png/appstructure-accountrootapp.png" /></p>
 <p>The manifest for the <strong>Account Root Application</strong> in our example is shown in the snippet below. The account ID, source repo, config (aka "generator") repo are configured here.</p>
 <pre><code class="language-yaml">apiVersion: argoproj.io/v1alpha1
@@ -210,7 +214,7 @@ spec:
  ibm_operator_catalog:
    mas_catalog_version: v8-240405-amd64
 </code></pre>
-<p>Each YAML object is used to render the <strong>Cluster Root Application Set</strong> template to generate a new <strong>Cluster Root Application</strong>:</p>
+<p>Each YAML object is used to render the <strong>Cluster Root Application Set</strong> template:</p>
 <pre><code class="language-yaml">  template:
     metadata:
       name: &quot;cluster.{{ `{{.cluster.id}}` }}&quot;
@@ -238,7 +242,7 @@ spec:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}
 </code></pre>
-<p>Given the configuration in our example, two <strong>Cluster Root Applications</strong> would be generated:</p>
+<p>Given the configuration in our example, two <strong>Cluster Root Applications</strong> are generated:</p>
 <pre><code class="language-yaml">kind: Application
 metadata:
   name: cluster.cluster1
@@ -296,7 +300,7 @@ spec:
 <pre><code class="language-yaml">{{- if not (empty .Values.ibm_operator_catalog) }}
 </code></pre>
 <p>Following on from the example above, because <code>dev/cluster1/ibm-operator-catalog.yaml</code> has been pushed to the <strong>Git Config Repo</strong>, the <code>ibm_operator_catalog</code> key will appear in the Helm values passed to the  <strong>Cluster Root Application</strong>s. This will result in an ArgoCD Applications that will render the <a href="cluster-applications/000-ibm-operator-catalog">ibm-operator-catalog Helm Chart</a> into each <strong>Target Cluster</strong></p>
-<p>Looking again at <a href="root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a>, we can see it will generate an ArgoCD application named <code>operator-catalog.{{ .Values.cluster.id}}</code> (e.g. <code>operator-catalog.cluster1</code>, <code>operator-catalog.cluster2</code>). It will render the <a href="cluster-applications/000-ibm-operator-catalog">ibm-operator-catalog Helm Chart</a> into the targer cluster identified by the <code>.Values.cluster.url</code> value from the global cluster configuration in <code>ibm-mas-cluster-base.yaml</code>. In thie case, we know some of the values will be <a href="https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders">inline-path placeholders</a> for referencing secrets in the <strong>Secrets Vault</strong>, so we use the AVP plugin source to render the Helm chart.</p>
+<p>Looking again at <a href="root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a>:</p>
 <pre><code class="language-yaml">kind: Application
 metadata:
   name: operator-catalog.{{ .Values.cluster.id }}
@@ -312,6 +316,7 @@ spec:
           value: |
             mas_catalog_version: &quot;{{ .Values.ibm_operator_catalog.mas_catalog_version  }}&quot;
 </code></pre>
+<p>We can see it will generate an ArgoCD application named <code>operator-catalog.{{ .Values.cluster.id}}</code> (e.g. <code>operator-catalog.cluster1</code>, <code>operator-catalog.cluster2</code>). It will render the <a href="cluster-applications/000-ibm-operator-catalog">ibm-operator-catalog Helm Chart</a> into the target cluster identified by the <code>.Values.cluster.url</code> value from the global cluster configuration in <code>ibm-mas-cluster-base.yaml</code>. In this case, we know some of the values will be <a href="https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders">inline-path placeholders</a> for referencing secrets in the <strong>Secrets Vault</strong>, so we use the AVP plugin source to render the Helm chart.</p>
 <p>Based on our example configuration, two <strong>Cluster Root Application</strong>s will be generated:</p>
 <pre><code class="language-yaml">kind: Application
 metadata:
@@ -346,7 +351,7 @@ spec:
 <p>The other Application templates (e.g. <a href="root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml">010-ibm-redhat-cert-manager-app.yaml</a>, <a href="root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml">020-ibm-dro-app.yaml</a> and so on) all follow this pattern and work in a similar way.</p>
 <p>The <strong>Cluster Root Application</strong> chart also includes the <a href="root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">099-instance-appset.yaml</a> which generates a new <strong>Instance Root Application Set</strong> for each cluster.</p>
 <h2 id="the-instance-root-application-set">The Instance Root Application Set<a class="headerlink" href="#the-instance-root-application-set" title="Permanent link"></a></h2>
-<p>The <a href="root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">Instance Root Application Set</a> is responsible for generating an <strong>Instance Root Application</strong> per MAS instance on the target cluster. </p>
+<p>The <a href="root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">Instance Root Application Set</a> is responsible for generating an <strong>Instance Root Application</strong> per MAS instance on <strong>Target Cluster</strong>s. </p>
 <p><img alt="Instance Root Application Set" src="../png/appstructure-instancerootappset.png" /></p>
 <p>It follows the same pattern as the Cluster Root Application Set described <a href="#the-cluster-root-application-set">above</a>. The key differences are:</p>
 <ul>
@@ -368,7 +373,7 @@ spec:
               files:
               - path: &quot;{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite.yaml&quot;
 </code></pre>
-<p>To continue our example above, our <strong>Git Config Repo</strong> now contains some additional instance-level config files (only showing <code>cluster1</code> now for brevity):</p>
+<p>To continue our example above, our <strong>Git Config Repo</strong> now contains some additional instance-level config files (only showing <code>cluster1</code> this time for brevity):</p>
 <pre><code>├── dev
 │   ├── cluster1
 │   │   ├── ibm-mas-cluster-base.yaml
@@ -493,7 +498,7 @@ metadata:
         </span>
     
     
-      <span><a href="../configrepo/" style="color: #fcfcfc">&laquo; Previous</a></span>
+      <span><a href="../accountrootmanifest/" style="color: #fcfcfc">&laquo; Previous</a></span>
     
     
       <span><a href="../orchestration/" style="color: #fcfcfc">Next &raquo;</a></span>

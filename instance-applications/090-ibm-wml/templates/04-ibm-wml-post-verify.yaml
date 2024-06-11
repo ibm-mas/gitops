@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "cpd-wml-post-verify-job-part-a"
+  name: "cpd-wml-post-verify-job"
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "096"
@@ -46,7 +46,7 @@ spec:
               set -e
               echo
               echo "================================================================================"
-              echo "Part A - Waiting for WML and its dependencies to be complete"
+              echo "Waiting for WML and its dependencies to be complete"
               echo "Wait for CCS Cr to be ready and patch if needed"
               echo "================================================================================"
               echo
@@ -256,55 +256,6 @@ spec:
                 fi
               done
 
-      restartPolicy: Never
-      serviceAccountName: presync-cpd-prereq-sa
-  backoffLimit: 4
-
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: "cpd-wml-post-verify-job-part b"
-  namespace: "{{ .Values.cpd_operators_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "098"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  template:
-{{- if .Values.custom_labels }}
-    metadata:
-      labels:
-{{ .Values.custom_labels | toYaml | indent 8 }}
-{{- end }}
-    spec:
-      containers:
-        - name: run
-          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
-          imagePullPolicy: IfNotPresent
-          resources:
-            limits:
-              cpu: 200m
-              memory: 512Mi
-            requests:
-              cpu: 10m
-              memory: 64Mi
-          env:
-            - name: CPD_INSTANCE_NAMESPACE
-              value: {{ .Values.cpd_instance_namespace }}
-          command:
-            - /bin/sh
-            - -c
-            - |
-
-              set -e
-              echo
-              echo "================================================================================"
-              echo "Wait for WML Status to be Completed"
-              echo "================================================================================"
-              echo
               
               echo "Waiting for wmlStatus to be 'Completed'..."
 

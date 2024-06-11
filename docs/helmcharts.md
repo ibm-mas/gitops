@@ -1,4 +1,4 @@
-Source Repository
+Helm Charts
 ===============================================================================
 
 The [ibm-mas/gitops](https://github.com/ibm-mas/gitops) repository provides Helm Charts that define all of the Kubernetes resources required to deploy MAS instances using ArgoCD. The Helm Charts are split across three sub directories, depending on their intended target:

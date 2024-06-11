@@ -1,6 +1,10 @@
 Deployment Orchestration
 ===============================================================================
 
+ArgoCD is solely responsible for ensuring that resources are created in **Target Clusters** in the correct order.
+
+All configuration files can be pushed to the **Git Config** 
+
 To ensure that we sync resources in the correct order they are annotated with an ArgoCD [sync wave](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/). For clarity, we also prefix all resource filenames with the sync wave that they belong to. Note that sync waves are *local* to each ArgoCD application (i.e. each Helm chart).
 
 > TODO: document the various use of ArgoCD hooks for creating secrets / running scripts / etc.

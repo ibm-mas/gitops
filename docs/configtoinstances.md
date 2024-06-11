@@ -1,12 +1,12 @@
-Mapping Config to MAS Instances
+Generated Applications
 ===============================================================================
 
-The following demonstrates how [ArgoCD Application Sets](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/) are combined with the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) in order to map the configuration files in the **Config Repo** to running MAS instances in **Target Clusters**.
+The following demonstrates how [ArgoCD Application Sets](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/) are combined with the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) to generate a tree of ArgoCD Applications that manage MAS instances in **Target Clusters** based on the configuration files in the **Config Repo**.
 
 The Account Root Application
 -------------------------------------------------------------------------------
 
-The **Account Root Application** is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS Gitops code and is where several key pieces of global configuration values are provided:
+It all begins with the **Account Root Application** . This is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS Gitops Helm Charts and is where several key pieces of global configuration values are provided.
 
 ![Account Root Application](png/appstructure-accountrootapp.png)
 
@@ -43,8 +43,6 @@ spec:
         argo:
           namespace: "openshift-gitops"
 ```
-
-
 
 
 
@@ -136,7 +134,7 @@ The **Cluster Root Application Set**  generators would produce two YAML objects:
    mas_catalog_version: v8-240405-amd64
 ```
 
-Each YAML object is used to render the **Cluster Root Application Set** template to generate a new **Cluster Root Application**:
+Each YAML object is used to render the **Cluster Root Application Set** template:
 
 ```yaml
   template:
@@ -171,7 +169,7 @@ The **Cluster Root Application** Helm Chart defines further ArgoCD Applications 
         namespace: {{ .Values.argo.namespace }}
 ```
 
-Given the configuration in our example, two **Cluster Root Applications** would be generated:
+Given the configuration in our example, two **Cluster Root Applications** are generated:
 
 ```yaml
 kind: Application
@@ -241,7 +239,8 @@ Application-specific configuration is held under a unique top-level field, e.g. 
 ```
 Following on from the example above, because `dev/cluster1/ibm-operator-catalog.yaml` has been pushed to the **Git Config Repo**, the `ibm_operator_catalog` key will appear in the Helm values passed to the  **Cluster Root Application**s. This will result in an ArgoCD Applications that will render the [ibm-operator-catalog Helm Chart](cluster-applications/000-ibm-operator-catalog) into each **Target Cluster**
 
-Looking again at [000-ibm-operator-catalog-app template](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml), we can see it will generate an ArgoCD application named `operator-catalog.{{ .Values.cluster.id}}` (e.g. `operator-catalog.cluster1`, `operator-catalog.cluster2`). It will render the [ibm-operator-catalog Helm Chart](cluster-applications/000-ibm-operator-catalog) into the targer cluster identified by the `.Values.cluster.url` value from the global cluster configuration in `ibm-mas-cluster-base.yaml`. In thie case, we know some of the values will be [inline-path placeholders](https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders) for referencing secrets in the **Secrets Vault**, so we use the AVP plugin source to render the Helm chart.
+Looking again at [000-ibm-operator-catalog-app template](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml):
+
 ```yaml
 kind: Application
 metadata:
@@ -258,6 +257,9 @@ spec:
           value: |
             mas_catalog_version: "{{ .Values.ibm_operator_catalog.mas_catalog_version  }}"
 ```
+
+
+We can see it will generate an ArgoCD application named `operator-catalog.{{ .Values.cluster.id}}` (e.g. `operator-catalog.cluster1`, `operator-catalog.cluster2`). It will render the [ibm-operator-catalog Helm Chart](cluster-applications/000-ibm-operator-catalog) into the target cluster identified by the `.Values.cluster.url` value from the global cluster configuration in `ibm-mas-cluster-base.yaml`. In this case, we know some of the values will be [inline-path placeholders](https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders) for referencing secrets in the **Secrets Vault**, so we use the AVP plugin source to render the Helm chart.
 
 Based on our example configuration, two **Cluster Root Application**s will be generated:
 
@@ -303,7 +305,7 @@ The **Cluster Root Application** chart also includes the [099-instance-appset.ya
 The Instance Root Application Set
 -------------------------------------------------------------------------------
 
-The [Instance Root Application Set](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml) is responsible for generating an **Instance Root Application** per MAS instance on the target cluster. 
+The [Instance Root Application Set](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml) is responsible for generating an **Instance Root Application** per MAS instance on **Target Cluster**s. 
 
 ![Instance Root Application Set](png/appstructure-instancerootappset.png)
 
@@ -330,7 +332,7 @@ spec:
 ```
 
 
-To continue our example above, our **Git Config Repo** now contains some additional instance-level config files (only showing `cluster1` now for brevity):
+To continue our example above, our **Git Config Repo** now contains some additional instance-level config files (only showing `cluster1` this time for brevity):
 
 ```
 ├── dev

@@ -1,0 +1,246 @@
+{{- if not (empty .Values.promotion) }}
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: cluster-promoter-{{ .Values.region_id }}-{{ .Values.cluster_id }}-cm
+  namespace: {{ .Values.argo.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "092"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+immutable: false
+data:
+  requirements.txt: |-
+    pyyaml
+  yaml_updater.py: |-
+    #!/usr/bin/env python3
+    # Licensed Materials - Property of IBM
+    # 5737-M66, 5900-AAA
+    # (C) Copyright IBM Corp. 2024 All Rights Reserved.
+    # US Government Users Restricted Rights - Use, duplication, or disclosure
+    # restricted by GSA ADP Schedule Contract with IBM Corp.
+
+    import argparse
+    import collections.abc
+    import os
+    import yaml
+
+    def _merge_dict(dct, merge_dct):
+        for k, _ in merge_dct.items():
+            if (
+                k in dct
+                and isinstance(dct[k], dict)
+                and isinstance(merge_dct[k], collections.abc.Mapping)
+            ):
+                return _merge_dict(dct[k], merge_dct[k])
+            else:
+                if k in dct:
+                    dct[k] = merge_dct[k]
+                    return True
+
+    def update_yaml(path, key_value_yaml):
+        """Update a YAML file with new values.
+
+        Args:
+            path (str): The path to the YAML file.
+            key_value (dict): A dictionary containing the keys and values to be updated.
+
+        Returns:
+            None
+        """
+        key_value = yaml.safe_load(key_value_yaml)
+
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                if file.endswith(".yaml"):
+                    full_path = os.path.join(root, file)
+                    with open(full_path, "r") as file:
+                        data = yaml.safe_load(file)
+                    updated = _merge_dict(data, key_value)
+                    if updated:
+                        print(f"Updated {full_path}")
+                        with open(full_path, "w") as file:
+                            yaml.dump(data, file, sort_keys=False, explicit_start=True, line_break=True)
+
+    if __name__ == "__main__":
+        parser = argparse.ArgumentParser()
+
+        # Primary Options
+        parser.add_argument("--path", required=True, help="Path to yaml files to update")
+        parser.add_argument("--valuesYaml", required=True, help="Comma seperated list of yaml entries that need updating in the path")
+        args, unknown = parser.parse_known_args()
+        
+        path = args.path
+        key_values_yaml = args.valuesYaml
+        split_key_values_yaml = key_values_yaml.split(",")
+        for key_values in split_key_values_yaml:
+            update_yaml(path, key_values)
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cluster-promoter-{{ .Values.region_id }}-{{ .Values.cluster_id }}
+  namespace: {{ .Values.argo.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "00"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: "cluster-promoter-job"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: cluster-promoter
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          env:
+
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: REGION_ID
+              value: "{{ .Values.region_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+            - name: GITHUB_PAT
+              value: "{{ .Values.github_pat }}"
+            - name: TARGET_GITHUB_REPO
+              value: "{{ .Values.target_github_repo }}"
+            - name: TARGET_GITHUB_ORG
+              value: "{{ .Values.target_github_org }}"
+            - name: TARGET_GITHUB_PATH
+              value: "{{ .Values.target_github_path }}"
+            - name: TARGET_GIT_BRANCH
+              value: "{{ .Values.target_git_branch }}"
+            - name: CREATE_TARGET_PR
+              value: "{{ .Values.create_target_pr }}"
+            - name: TARGET_PR_GIT_BRANCH
+              value: "{{ .Values.target_pr_git_branch }}"
+            - name: CLUSTER_VALUES
+              value: "{{ .Values.cluster_values }}"
+          volumeMounts:
+            - name: python
+              mountPath: /tmp/python
+
+          command:
+            - /bin/bash
+            - -c
+            - |
+
+              set -e -o pipefail
+              pip install -r /tmp/python/requirements.txt
+              
+              function createPR {
+                  WORKING_BRANCH=$1
+                  TARGET_BRANCH=$2
+                  COMMIT_MESSAGE_TITLE=$3
+                  BODY="MAS Gitops Promotion PR, automatically created from ArgoCD"
+
+                  GITHUB_AUTH_HEADER="Authorization:token $GITHUB_PAT"
+                  GITHUB_API=https://$GITHUB_HOST/api/v3/repos/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO/pulls
+                  PR_FILE=$WORK_DIR/pr_text.json
+                  echo "{\"title\":\"$COMMIT_MESSAGE_TITLE\",\"body\":"\"$BODY\"",\"head\":\"$WORKING_BRANCH\",\"base\":\"$TARGET_BRANCH\"}" > $PR_FILE
+                  echo "Opening PR against $TARGET_BRANCH via $GITHUB_API"
+                  PR_URL=$(curl -X POST -s -H "Accept: application/vnd.github+json" -H "$GITHUB_AUTH_HEADER" $GITHUB_API -d @"$PR_FILE" | jq '.url')
+                  echo "PR opened against $TARGET_BRANCH here $PR_URL"
+              }
+
+              git config --global user.name "MAS Automation"
+              git config --global user.email "you@example.com"
+              git config --global user.password $GITHUB_PAT
+
+              export TARGET_LOCAL_DIR="/tmp/target_repo"
+              mkdir -p $TARGET_LOCAL_DIR
+              cd $TARGET_LOCAL_DIR
+              echo "git: Cloning $GITHUB_HOST:$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO branch $TARGET_GIT_BRANCH into $TARGET_LOCAL_DIR working directory"
+              git clone https://git:$GITHUB_PAT@$GITHUB_HOST/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO.git -b $TARGET_GIT_BRANCH || exit 
+
+              export FULL_PATH="$TARGET_LOCAL_DIR/$TARGET_GITHUB_REPO/$TARGET_GITHUB_PATH"
+              mkdir -p $FULL_PATH
+
+              echo "Full path to update is $FULL_PATH"
+              echo "Updating to values $CLUSTER_VALUES"
+
+              python3 /tmp/python/yaml_updater.py --path "$FULL_PATH" --valuesYaml "$CLUSTER_VALUES"
+
+              cd $FULL_PATH
+
+              echo "git: Adding all files in $TARGET_LOCAL_DIR working directory"
+              FILES_ADDED_OUTPUT="$(git add -v .)"
+              return_code=$?
+              if [ $return_code -ne 0 ]; then
+                echo "git: Add files failed with error: $return_code"
+                exit $return_code
+              fi
+              export FILES_ADDED=$(echo "$FILES_ADDED_OUTPUT" | awk NF | wc -l | xargs)
+              echo "git: Added ${FILES_ADDED} files"
+
+              export COMMIT_MSG="gitops-initiator deploy for $CLUSTER_NAME"
+              if [ "$FILES_ADDED" != "0" ]; then
+                echo "git: Committing files using message $COMMIT_MSG"
+                git commit -m "$COMMIT_MSG" || exit 1
+                retries=5
+                interval=30
+                index=0
+                while true; do
+                  echo "git: fetch origin $TARGET_GIT_BRANCH"
+                  git fetch origin $TARGET_GIT_BRANCH || exit 1
+
+                  echo "git: pull origin --rebase"
+                  git pull origin --rebase || exit 1
+
+                  echo "git: pull origin $TARGET_GIT_BRANCH --rebase"
+                  git pull origin $TARGET_GIT_BRANCH --rebase || exit 1
+
+                  echo "git: Pushing changes to branch $TARGET_GIT_BRANCH"
+                  git push -u origin $TARGET_GIT_BRANCH
+                  return_code=$?
+                  if [ $return_code -eq 0 ]; then
+                    echo "git: Pushing changes to branch $TARGET_GIT_BRANCH success"
+                    sleep 10
+                    break
+                  fi
+                
+                  if [[ ${index} -eq ${retries} ]]; then
+                    echo "git: Pushing changes to branch $TARGET_GIT_BRANCH failed even after $retries retries, exit with error"
+                    exit 1
+                  fi
+                  echo "git: Pushing changes to branch $TARGET_GIT_BRANCH failed, retry after $interval sec ..."      
+                  sleep $interval
+                  ((index++))
+                done
+
+                if [[ $CREATE_TARGET_PR == true ]]; then
+                    createPR $TARGET_GIT_BRANCH $TARGET_PR_GIT_BRANCH $COMMIT_MESSAGE_TITLE
+                fi
+              else
+                echo "No changes found so no commit made"
+              fi
+
+      restartPolicy: Never
+      volumes:
+        - name: python
+          configMap:
+            name: cluster-promoter-{{ .Values.region_id }}-{{ .Values.cluster_id }}-cm
+            items:
+              - key: requirements.txt
+                path: requirements.txt
+              - key: yaml_updater.py
+                path: yaml_updater.py
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+{{- end }}

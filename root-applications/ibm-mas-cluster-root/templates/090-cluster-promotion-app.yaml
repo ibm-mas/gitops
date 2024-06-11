@@ -1,0 +1,66 @@
+{{- if not (empty .Values.promotion) }}
+---
+# Cluster Promotion
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-promotion.{{ .Values.region_id }}.{{ .Values.cluster.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "090"
+    healthCheckTimeout: "1800"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: cluster-applications/090-cluster-promotion
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            argo_namespace: "{{ .Values.argo.namespace }}"
+            {{- if .Values.promotion }}
+            github_pat: "{{ .Values.promotion.github_pat }}"
+            target_github_repo: "{{ .Values.promotion.github_pat }}"
+            target_github_org: "{{ .Values.promotion.target_github_org }}"
+            target_github_path: "{{ .Values.promotion.target_github_path }}"
+            target_git_branch: "{{ .Values.promotion.target_git_branch }}"
+            create_target_pr: "{{ .Values.promotion.create_target_pr }}"
+            target_pr_git_branch: "{{ .Values.promotion.target_pr_git_branch }}"
+            cluster_values: "{{ .Values.promotion.cluster_values }}"
+            {{- end }}
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+        - name: ARGOCD_APP_NAME
+          value: promoteapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+{{- end }}

@@ -285,6 +285,10 @@ spec:
               value: {{ .Values.instance_id }}
             - name: CPD_WSL_PROJECT_NAME
               value: {{ .Values.cpd_wsl_project_name }}
+            - name: CPD_WSL_PROJECT_DESCRIPTION
+              value: {{ .Values.cpd_wsl_project_description }}
+            - name: CPD_WSL_PROJECT_STORAGE_GUID
+              value: {{ .Values.cpd_wsl_project_storage_guid }}
           command:
             - /bin/sh
             - -c
@@ -322,7 +326,6 @@ spec:
               echo
               echo "================================================================================"
               echo "Lookup Cloud Pak for Data admin username"
-              echo "================================================================================"
               USERNAME=$(oc get secret ibm-iam-bindinfo-platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -o json | jq -r '.data.admin_username' | base64 -d)
 
               if [[ -z ${USERNAME} ]]; then
@@ -343,12 +346,14 @@ spec:
 
               echo
               echo "Lookup Cloud Pak for Data admin url"
-              CPD_ADMIN_URL=$(oc get ZenService lite-cr -o jsonpath="{.status.url}{'\n'}" -n ${CPD_INSTANCE_NAMESPACE})
+              URL=$(oc get ZenService lite-cr -o jsonpath="{.status.url}{'\n'}" -n ${CPD_INSTANCE_NAMESPACE})
 
-              if [[ -z ${CPD_ADMIN_URL} || -z ${CPD_ADMIN_USERNAME} || -z ${CPD_ADMIN_PASSWORD} ]]; then
+              if [[ -z ${URL} || -z ${CPD_ADMIN_USERNAME} || -z ${CPD_ADMIN_PASSWORD} ]]; then
                 echo "CPD admin username/password/url details are missing, please check your Cloud Pak For Data instance health!"
                 exit 1
               fi
+
+              CPD_ADMIN_URL="https://${URL}"
 
               echo
               echo
@@ -361,16 +366,79 @@ spec:
 
               echo
               echo "================================================================================"
-              echo "Generate MAS Config into $MAS_CONFIG_DIR folder"
+              echo "Generate MAS Config for WSL in $MAS_CONFIG_DIR folder"
               echo "================================================================================"
               echo "- CP4D WSL Project Name .................. ${CPD_WSL_PROJECT_NAME}"
               echo "- MAS Config Directory ................... ${MAS_CONFIG_DIR}"
+              echo
 
               echo "Authorize CP4D Admin and get bearer token"
-              CPD_BEARER_TOKEN=$(curl -k -X POST --location "${CPD_ADMIN_URL}/icp4d-api/v1/authorize" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"username\":\"$CPD_ADMIN_USERNAME\",\"password\":\"$CPD_ADMIN_PASSWORD\"}")
-              # WSL_PROJECT_ID=$(curl -X GET --location "${CPD_ADMIN_URL}/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"username\":\"$CPD_ADMIN_USERNAME\",\"password\":\"$CPD_ADMIN_PASSWORD\"}")
-              echo "${CPD_BEARER_TOKEN}"
+              CPD_BEARER_TOKEN=$(curl -k -X POST --location "${CPD_ADMIN_URL}/icp4d-api/v1/authorize" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"username\":\"$CPD_ADMIN_USERNAME\",\"password\":\"$CPD_ADMIN_PASSWORD\"}" | jq -r '.token')
 
+              echo "Look for the project with the name ${CPD_WSL_PROJECT_NAME}"
+              WSL_PROJECT_ID=$(curl -k -X GET --location "${CPD_ADMIN_URL}/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" | jq -r '.resources')
+              
+              if [[ -z ${WSL_PROJECT_ID} ]]; then 
+                echo "Project ${CPD_WSL_PROJECT_NAME} does not exist in the project list. A new project will be created."
+                echo "================================================================================"
+                echo "- Project Name ......................... ${CPD_WSL_PROJECT_NAME}"
+                echo "- Project Description .................. ${CPD_WSL_PROJECT_DESCRIPTION}"
+                echo "- Project Storage Guid ................. ${CPD_WSL_PROJECT_STORAGE_GUID}"
+                echo "================================================================================"
+                echo
+                echo "Ensure that the cpd amin user has permission to create projects"
+                curl -k -X PUT --location "${CPD_ADMIN_URL}/usermgmt/v1/role/zen_administrator_role" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"role_name\":\"Administrator\",\"description\":\"Administrator role\",\"permissions\":[\"administrator\",\"can_provision\",\"manage_catalog\",\"create_space\",\"create_project\"]}"
+
+                echo "Creating project..."
+                WSL_PROJECT_ID=$(curl -k -X POST --location "${CPD_ADMIN_URL}/transactional/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"name\":\"$CPD_WSL_PROJECT_NAME\",\"description\":\"$CPD_WSL_PROJECT_DESCRIPTION\",\"generator\":\"cp4d-$CPD_ADMIN_USERNAME\",\"public\":false,\"storage\":{ \"type\":\"assetfiles\",\"guid\":\"$CPD_WSL_PROJECT_STORAGE_GUID\"}}" | jq -r '.location | regex_search("[^/]*$")')
+                
+                if [[ -z WSL_PROJECT_ID ]]; then
+                  echo "error creating project. Could not fetch project id."
+                fi
+
+              else
+                echo "Project named ${CPD_WSL_PROJECT_NAME} has been found"
+              fi
+
+              echo "- Project Id ............................. ${WSL_PROJECT_ID}"
+              echo "================================================================================"
+              echo "Writing WatsonStudio config file into MAS config directory..."
+              cat > ${MAS_CONFIG_DIR}/${INSTANCE_ID}-watsonstudio-system.yml << "EOF"
+              "---"
+              "apiVersion: v1"
+              "kind: Secret"
+              "metadata:"
+                "name: ${INSTANCE_ID}-usersupplied-watsonstudio-creds-system"
+                "namespace: "mas-${INSTANCE_ID}-core""
+              "stringData:"
+                "password: ${CPD_ADMIN_PASSWORD}"
+                "username: ${CPD_ADMIN_USERNAME}"
+              "---"
+              "apiVersion: config.mas.ibm.com/v1"
+              "kind: WatsonStudioCfg"
+              "metadata:"
+                "name: ${INSTANCE_ID}-watsonstudio-system"
+                "namespace: mas-${INSTANCE_ID}-core"
+                "labels:"
+                  "mas.ibm.com/configScope: system"
+                  "mas.ibm.com/instanceId: ${INSTANCE_ID}"
+              "spec:"
+                "config:"
+                  "credentials:"
+                    "secretName: ${INSTANCE_ID}-usersupplied-watsonstudio-creds-system"
+                  "endpoint: ${CPD_ADMIN_URL}"
+                "displayName: MAS - Watson Studio configuration"
+                "type: external"
+              
+              EOF
+              echo "================================================================================"
+              cat ${MAS_CONFIG_DIR}/${INSTANCE_ID}-watsonstudio-system.yml
+
+              echo "================================================================================"
+              echo "Wrting WSL Project ID into MAS Configuration Directory"
+              echo $WSL_PROJECT_ID > ${MAS_CONFIG_DIR}/$CPD_WSL_PROJECT_NAME.id
+
+              cat ${MAS_CONFIG_DIR}/$CPD_WSL_PROJECT_NAME.id
 
 
       restartPolicy: Never

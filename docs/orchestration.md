@@ -1,32 +1,21 @@
 Deployment Orchestration
 ===============================================================================
 
-The MAS GitOps Helm Charts have been developed with the aim of simplifying the orchestration of MAS deployments (i.e. ensuring tasks and resources are applied in the proper sequence) as much as possible.
-
-Once a **Target Cluster** has been provisioned and registered with the ArgoCD instance running in the **Management Cluster**, MAS instances can be deployed and managed on that **Target Cluster** solely by registering secrets in the **Secrets Vault** and pushing configuration files to the **Config Repo**.
-
-- There is no need to run any commands against ArgoCD or the **Target Cluster** to initiate or control synchronization.
-- To stand up MAS instances, all configuration files for a MAS cluster and its instances can be pushed at once to the **Config Repo** in a single commit .
-- To deprovision MAS instances, all configuration files for the instance can be deleted at once from the **Config Repo** in a single commit.
-
-!!! warning
-
-    For automated deprovisioning of MAS instances to work as intended, ArgoCD version 2.11.0 or greater must be used. This is due to a [known issue](https://github.com/argoproj/argo-cd/issues/15074) in older versions of ArgoCD where resources were not being correctly pruned in reverse syncwave order. 
+The MAS GitOps Helm Charts have been developed with the aim of simplifying the orchestration of MAS deployments as much as possible. 
+Once a **Target Cluster** has been provisioned and registered with the ArgoCD instance running in the **Management Cluster**, MAS instances can be deployed and managed on that **Target Cluster** solely by registering secrets in the **Secrets Vault** and pushing configuration files to the **Config Repo**. There is no need to run any commands against ArgoCD or the **Target Cluster** to initiate or control synchronization.
 
 This is achieved using a combination of the following ArgoCD mechanisms:
 
   - [Automated Sync Policies](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/#automated-sync-policy)
   - [Sync Waves](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/)
   - [Custom Resource Healthchecks](https://argo-cd.readthedocs.io/en/stable/operator-manual/health/#custom-health-checks)
-  - [Resource Hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/resource_hooks/) that perform various tasks at the appropriate time
-
-
+  - [Resource Hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/resource_hooks/)
 
 
 Automated Sync Policies
 -------------------------------------------------------------------------------
 
-The ArgoCD Application Set git generators polls the **Config Repo** every three minutes and will automatically pick up configuration files pushed the the **Config Repo**.
+The ArgoCD Application Set git generators poll the **Config Repo** every three minutes and will automatically pick up configuration files pushed the the **Config Repo**.
 
 !!! tip
 
@@ -51,7 +40,7 @@ In addition:
 Sync Waves
 -------------------------------------------------------------------------------
 
-All Kubernetes resources defined in the MAS GitOps Helm charts are annotated with an ArgoCD [sync wave](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/). This ensures that all resources (including generated ArgoCD Applications on the **Management Cluster** and Kubernetes resources on **Target Cluster**s) are synced in the correct order; a resource is only permitted to being syncing once its dependencies are installed (and healthy).
+All Kubernetes resources defined in the MAS GitOps Helm Charts are annotated with an ArgoCD [sync wave](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/). This ensures that resources (including generated ArgoCD Applications on the **Management Cluster** and Kubernetes resources on **Target Cluster**s) are synced in the correct order.
 
 !!! note
 
@@ -64,7 +53,7 @@ All Kubernetes resources defined in the MAS GitOps Helm charts are annotated wit
 Custom Resource Healthchecks
 -------------------------------------------------------------------------------
 
-MAS GitOps requires a set of [Custom resource healthchecks](https://argo-cd.readthedocs.io/en/stable/operator-manual/health/#custom-health-checks) to be registered with the ArgoCD in the **Management Cluster**. 
+MAS GitOps requires a set of [Custom Resource Healthchecks](https://argo-cd.readthedocs.io/en/stable/operator-manual/health/#custom-health-checks) to be registered with the ArgoCD in the **Management Cluster**. 
 
 This allows ArgoCD to properly interpret and report the health status of the various custom resources used by MAS. This is a crucial part of ensuring that resources have finished reconciling before allowing subsequent sync waves (which may contain dependent resources) to proceed.
 
@@ -74,7 +63,7 @@ The set of Custom Resource Healthchecks required by MAS GitOps can be found in t
 Resource Hooks
 -------------------------------------------------------------------------------
 
-At various points in the MAS synchronization procedure various configuration tasks have to be performed. We achieve this via the use of ArgoCD [Resource Hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/resource_hooks/).
+Configuration tasks have to be performed at various points during the MAS synchronization procedure. We achieve this via the use of ArgoCD [Resource Hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/resource_hooks/).
 
 
 #### PreSync Hooks
@@ -82,12 +71,14 @@ Tasks that must be performed **before** an Application begins syncing are define
 
 
 ### "PostSync" Hooks
-Tasks that must be performed **after** an Application finishes syncing (before **before** it can report `Healthy`) are performed by Kuberenetes Jobs in the final sync wave of the Application. These typically perform some post-install configuration (e.g. [05-postsync-setup-db2_Job](instance-applications/120-ibm-db2u-database/templates/05-postsync-setup-db2_Job.yaml)) and/or register some runtime-generated information as a secret in the **Secrets Vault** for use by downstream applications (e.g. [08-postsync-update-sm_Job](cluster-applications/020-ibm-dro/templates/08-postsync-update-sm_Job.yaml)).
+Tasks that must be performed **after** an Application finishes syncing (before **before** it can report `Healthy`) are performed by Kubernetes Jobs in the final sync wave of the Application.
+
+Jobs of this kind typically perform some post-install configuration (e.g. [05-postsync-setup-db2_Job](instance-applications/120-ibm-db2u-database/templates/05-postsync-setup-db2_Job.yaml)) and/or register some runtime-generated information as a secret in the **Secrets Vault** for use by downstream applications (e.g. [08-postsync-update-sm_Job](cluster-applications/020-ibm-dro/templates/08-postsync-update-sm_Job.yaml)).
 
 
 !!! info
 
-    You may notice that we do not actually use the `PostSync` ArgoCD annotation on many of these Jobs. This is because the completion status of Jobs annotated as `PostSync` is not taken into account when computing the overall health status of an application. Since the tasks we perform are typically required steps that must be performed before downstream applications in later sync waves are allowed to sync, we instead use "ordinary" Kuberenetes Jobs. Since the health status of "ordinary" Kuberenetes Jobs **is** taken into account, subsequent sync waves will not be allowed to start until the Job has completed successfully.
+    You may notice that we do not actually use the `PostSync` ArgoCD annotation on many of these Jobs. This is because the completion status of Jobs annotated as `PostSync` is not taken into account when computing the overall health status of an application. Since the tasks we perform are typically required steps that must be performed before downstream applications in later sync waves are allowed to sync, we instead use "ordinary" Kuberenetes Jobs. Since the health status of "ordinary" Kubernetes Jobs **is** taken into account, subsequent sync waves will not be allowed to start until the Job has completed successfully.
 
 
 

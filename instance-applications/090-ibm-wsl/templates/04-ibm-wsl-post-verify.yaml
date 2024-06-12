@@ -244,6 +244,24 @@ spec:
     accept: true
   version: "{{ .Values.ws_runtimes_version }}"
 
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: aws
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "097"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key }}
+type: Opaque
+
+
 
 ---
 apiVersion: batch/v1
@@ -279,16 +297,26 @@ spec:
           env:
             - name: CPD_INSTANCE_NAMESPACE
               value: {{ .Values.cpd_instance_namespace }}
-            - name: MAS_CONFIG_DIR
-              value: {{ .Values.mas_config_dir }}
-            - name: INSTANCE_ID
-              value: {{ .Values.instance_id }}
             - name: CPD_WSL_PROJECT_NAME
               value: {{ .Values.cpd_wsl_project_name }}
             - name: CPD_WSL_PROJECT_DESCRIPTION
               value: {{ .Values.cpd_wsl_project_description }}
             - name: CPD_WSL_PROJECT_STORAGE_GUID
               value: {{ .Values.cpd_wsl_project_storage_guid }}
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
           command:
             - /bin/sh
             - -c
@@ -369,15 +397,22 @@ spec:
               echo "Generate MAS Config for WSL in $MAS_CONFIG_DIR folder"
               echo "================================================================================"
               echo "- CP4D WSL Project Name .................. ${CPD_WSL_PROJECT_NAME}"
-              echo "- MAS Config Directory ................... ${MAS_CONFIG_DIR}"
               echo
 
               echo "Authorize CP4D Admin and get bearer token"
               CPD_BEARER_TOKEN=$(curl -k -X POST --location "${CPD_ADMIN_URL}/icp4d-api/v1/authorize" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"username\":\"$CPD_ADMIN_USERNAME\",\"password\":\"$CPD_ADMIN_PASSWORD\"}" | jq -r '.token')
 
               echo "Look for the project with the name ${CPD_WSL_PROJECT_NAME}"
-              WSL_PROJECT_ID=$(curl -k -X GET --location "${CPD_ADMIN_URL}/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" | jq -r '.resources')
+              WSL_PROJECT_LIST=$(curl -k -X GET --location "${CPD_ADMIN_URL}/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" | jq -r ['.resources.[]'])
               
+              WSL_PROJECT_ID=""
+              for p in ${WSL_PROJECT_LIST[@]}; do
+                if [[ $p['entity']['name'] == ${CPD_WSL_PROJECT_NAME} ]]; then
+                  export WSL_PROJECT_ID=$p['metadata']['guid']
+                  break;
+                fi
+              done
+
               if [[ -z ${WSL_PROJECT_ID} ]]; then 
                 echo "Project ${CPD_WSL_PROJECT_NAME} does not exist in the project list. A new project will be created."
                 echo "================================================================================"
@@ -397,50 +432,27 @@ spec:
                 fi
 
               else
-                echo "Project named ${CPD_WSL_PROJECT_NAME} has been found"
+                echo "Project named ${CPD_WSL_PROJECT_NAME} exists"
               fi
 
               echo "- Project Id ............................. ${WSL_PROJECT_ID}"
-              echo "================================================================================"
-              echo "Writing WatsonStudio config file into MAS config directory..."
-              cat > ${MAS_CONFIG_DIR}/${INSTANCE_ID}-watsonstudio-system.yml << "EOF"
-              "---"
-              "apiVersion: v1"
-              "kind: Secret"
-              "metadata:"
-                "name: ${INSTANCE_ID}-usersupplied-watsonstudio-creds-system"
-                "namespace: "mas-${INSTANCE_ID}-core""
-              "stringData:"
-                "password: ${CPD_ADMIN_PASSWORD}"
-                "username: ${CPD_ADMIN_USERNAME}"
-              "---"
-              "apiVersion: config.mas.ibm.com/v1"
-              "kind: WatsonStudioCfg"
-              "metadata:"
-                "name: ${INSTANCE_ID}-watsonstudio-system"
-                "namespace: mas-${INSTANCE_ID}-core"
-                "labels:"
-                  "mas.ibm.com/configScope: system"
-                  "mas.ibm.com/instanceId: ${INSTANCE_ID}"
-              "spec:"
-                "config:"
-                  "credentials:"
-                    "secretName: ${INSTANCE_ID}-usersupplied-watsonstudio-creds-system"
-                  "endpoint: ${CPD_ADMIN_URL}"
-                "displayName: MAS - Watson Studio configuration"
-                "type: external"
-              
-              EOF
-              echo "================================================================================"
-              cat ${MAS_CONFIG_DIR}/${INSTANCE_ID}-watsonstudio-system.yml
+              echo "Writing WSL Project ID into Secret Manager"
 
-              echo "================================================================================"
-              echo "Wrting WSL Project ID into MAS Configuration Directory"
-              echo $WSL_PROJECT_ID > ${MAS_CONFIG_DIR}/$CPD_WSL_PROJECT_NAME.id
+              source /mascli/functions/gitops_utils
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
 
-              cat ${MAS_CONFIG_DIR}/$CPD_WSL_PROJECT_NAME.id
+              SECRET_NAME_WSL_PROJECT_ID=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/$CPD_WSL_PROJECT_NAME
+              sm_update_secret $SECRET_NAME_WSL_PROJECT_ID "{\"wsl_project_id\": \"$WSL_PROJECT_ID\" }"
 
+              echo "Done"
 
       restartPolicy: Never
       serviceAccountName: wsl-precheck-sa
+      volumes:
+        - name: aws
+          secret:
+            secretName: aws
+            defaultMode: 420
+            optional: false
   backoffLimit: 4

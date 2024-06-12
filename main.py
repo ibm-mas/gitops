@@ -8,13 +8,25 @@ def define_env(env):
 
 
   def config_repo():
-    return "**Config Repo**"
+    return "**Config Repository**"
   env.macro(config_repo)
+
+  def source_repo():
+    return "**Source Repository**"
+  env.macro(source_repo)
+
+  def secrets_vault():
+    return "**Secrets Vault**"
+  env.macro(secrets_vault)
 
   def management_cluster():
     return "**Management Cluster**"
   env.macro(management_cluster)
 
+
+  def target_cluster():
+    return "**Target Cluster**"
+  env.macro(target_cluster)
 
   def target_clusters():
     return "**Target Clusters**"

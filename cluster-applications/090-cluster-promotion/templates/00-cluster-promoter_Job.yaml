@@ -127,8 +127,6 @@ spec:
               value: "{{ .Values.target_git_branch }}"
             - name: CREATE_TARGET_PR
               value: "{{ .Values.create_target_pr }}"
-            - name: TARGET_PR_GIT_BRANCH
-              value: "{{ .Values.target_pr_git_branch }}"
             - name: CLUSTER_VALUES
               value: "{{ .Values.cluster_values }}"
           volumeMounts:
@@ -178,6 +176,11 @@ spec:
 
               cd $FULL_PATH
 
+              if [[ $CREATE_TARGET_PR == true ]]; then
+                  #Create a new branch if we need a PR
+                  export TARGET_GIT_BRANCH=auto-$TARGET_GIT_BRANCH
+                  git branch $TARGET_GIT_BRANCH
+              fi
               echo "git: Adding all files in $TARGET_LOCAL_DIR working directory"
               FILES_ADDED_OUTPUT="$(git add -v .)"
               return_code=$?
@@ -196,15 +199,17 @@ spec:
                 interval=30
                 index=0
                 while true; do
-                  echo "git: fetch origin $TARGET_GIT_BRANCH"
-                  git fetch origin $TARGET_GIT_BRANCH || exit 1
+                  if [[ $CREATE_TARGET_PR == false ]]; then
+                    echo "git: fetch origin $TARGET_GIT_BRANCH"
+                    git fetch origin $TARGET_GIT_BRANCH || exit 1
 
-                  echo "git: pull origin --rebase"
-                  git pull origin --rebase || exit 1
+                    echo "git: pull origin --rebase"
+                    git pull origin --rebase || exit 1
 
-                  echo "git: pull origin $TARGET_GIT_BRANCH --rebase"
-                  git pull origin $TARGET_GIT_BRANCH --rebase || exit 1
-
+                    echo "git: pull origin $TARGET_GIT_BRANCH --rebase"
+                    git pull origin $TARGET_GIT_BRANCH --rebase || exit 1
+                  fi
+                  
                   echo "git: Pushing changes to branch $TARGET_GIT_BRANCH"
                   git push -u origin $TARGET_GIT_BRANCH
                   return_code=$?
@@ -224,7 +229,7 @@ spec:
                 done
 
                 if [[ $CREATE_TARGET_PR == true ]]; then
-                    createPR $TARGET_GIT_BRANCH $TARGET_PR_GIT_BRANCH $COMMIT_MESSAGE_TITLE
+                    createPR $TARGET_GIT_BRANCH $TARGET_GIT_BRANCH $COMMIT_MESSAGE_TITLE
                 fi
               else
                 echo "No changes found so no commit made"

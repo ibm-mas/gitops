@@ -5,7 +5,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="canonical" href="https://pages.github.com/ibm-mas/gitops/configtoinstances/" />
       <link rel="shortcut icon" href="../img/favicon.ico" />
-    <title>Generated Applications - MAS GitOps</title>
+    <title>Mapping Config to MAS Deployments - MAS GitOps</title>
     <link rel="stylesheet" href="../css/theme.css" />
     <link rel="stylesheet" href="../css/theme_extra.css" />
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
@@ -14,7 +14,7 @@
     
       <script>
         // Current page data
-        var mkdocs_page_name = "Generated Applications";
+        var mkdocs_page_name = "Mapping Config to MAS Deployments";
         var mkdocs_page_input_path = "configtoinstances.md";
         var mkdocs_page_url = "/ibm-mas/gitops/configtoinstances/";
       </script>
@@ -42,39 +42,42 @@
                 <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
                 </li>
               </ul>
+              <p class="caption"><span class="caption-text">Architecture</span></p>
               <ul>
-                <li class="toctree-l1"><a class="reference internal" href="../architecture/">Architecture</a>
-                </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../helmcharts/">The Source Repository</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../configrepo/">The Config Repository</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../secrets/">The Secrets Vault</a>
+                  </li>
               </ul>
-              <ul>
-                <li class="toctree-l1"><a class="reference internal" href="../helmcharts/">Helm Charts</a>
-                </li>
-              </ul>
-              <ul>
-                <li class="toctree-l1"><a class="reference internal" href="../configrepo/">Config Repository</a>
-                </li>
-              </ul>
-              <ul>
-                <li class="toctree-l1"><a class="reference internal" href="../secrets/">Secrets</a>
-                </li>
-              </ul>
-              <ul>
-                <li class="toctree-l1"><a class="reference internal" href="../accountrootmanifest/">Account Root Application Manifest</a>
-                </li>
-              </ul>
+              <p class="caption"><span class="caption-text">Details</span></p>
               <ul class="current">
-                <li class="toctree-l1 current"><a class="reference internal current" href="#">Generated Applications</a>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Mapping Config to MAS Deployments</a>
     <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#the-account-root-application">The Account Root Application</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-cluster-root-application-set">The Cluster Root Application Set</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-cluster-root-application">The Cluster Root Application</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-instance-root-application-set">The Instance Root Application Set</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-instance-root-application">The Instance Root Application</a>
+    </li>
     </ul>
-                </li>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../orchestration/">Deployment Orchestration</a>
+                  </li>
               </ul>
+              <p class="caption"><span class="caption-text">Reference</span></p>
               <ul>
-                <li class="toctree-l1"><a class="reference internal" href="../orchestration/">Deployment Orchestration</a>
-                </li>
-              </ul>
-              <ul>
-                <li class="toctree-l1"><a class="reference internal" href="../limitations/">Known Limitations</a>
-                </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../accountrootmanifest/">Account Root Application Manifest</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../limitations/">Known Limitations</a>
+                  </li>
               </ul>
       </div>
     </div>
@@ -90,7 +93,8 @@
         <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
   <ul class="wy-breadcrumbs">
     <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
-      <li class="breadcrumb-item active">Generated Applications</li>
+          <li class="breadcrumb-item">Details</li>
+      <li class="breadcrumb-item active">Mapping Config to MAS Deployments</li>
     <li class="wy-breadcrumbs-aside">
           <a href="https://github.com/ibm-mas/gitops/blob/demo2/docs/configtoinstances.md" class="icon icon-github"> Edit on GitHub</a>
     </li>
@@ -100,11 +104,418 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
             <div class="section" itemprop="articleBody">
               
-                <h1 id="macro-syntax-error"><em>Macro Syntax Error</em><a class="headerlink" href="#macro-syntax-error" title="Permanent link"></a></h1>
-<p><em>File</em>: <code>configtoinstances.md</code></p>
-<p><em>Line 69 in Markdown file:</em> <strong>unexpected '.'</strong></p>
-<pre><code class="language-markdown">              - path: &quot;{{ .Values.account.id }}/*/ibm-mas-cluster-base.yaml&quot;
+                <h1 id="mapping-config-to-mas-deployments">Mapping Config to MAS Deployments<a class="headerlink" href="#mapping-config-to-mas-deployments" title="Permanent link"></a></h1>
+<p>The following demonstrates how <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/">ArgoCD Application Sets</a> are combined with the <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern">App of Apps pattern</a> to generate a tree of ArgoCD Applications that manage MAS instances in <strong>Target Clusters</strong> based on the configuration files in the <strong>Config Repository</strong>.</p>
+<h2 id="the-account-root-application">The Account Root Application<a class="headerlink" href="#the-account-root-application" title="Permanent link"></a></h2>
+<p>It begins with the <strong>Account Root Application</strong>. This is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS Gitops Helm Charts and is where several key pieces of global configuration values are provided.</p>
+<p><img alt="Account Root Application" src="../png/appstructure-accountrootapp.png" /></p>
+<p>The manifest for the <strong>Account Root Application</strong> in our example is shown in the snippet below. The account ID, source repo, config (aka "generator") repo are configured here.</p>
+<pre><code class="language-yaml">apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root.dev
+  namespace: openshift-gitops
+spec:
+  destination:
+    namespace: openshift-gitops
+    server: 'https://kubernetes.default.svc'
+  project: &quot;mas&quot;
+  source:
+    path: root-applications/ibm-mas-account-root
+    repoURL: https://github.com/ibm-mas/gitops
+    targetRevision: master
+    helm:
+      values: |
+        account:
+          id: dev
+
+        source:
+          repo_url: &quot;https://github.com/ibm-mas/gitops&quot;
+          revision: &quot;mas&quot;
+
+        generator:
+          repo_url: &quot;https://github.com/me/my-config-repo&quot;
+          revision: &quot;main&quot;
+
+        argo:
+          namespace: &quot;openshift-gitops&quot;
 </code></pre>
+<h2 id="the-cluster-root-application-set">The Cluster Root Application Set<a class="headerlink" href="#the-cluster-root-application-set" title="Permanent link"></a></h2>
+<p>The <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> generates a set of <strong>Cluster Root Applications</strong> based on the configuration in the <strong>Config Repository</strong>.</p>
+<p><img alt="Cluster Root Application Set" src="../png/appstructure-clusterrootappset.png" /></p>
+<p>The <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> employs an ArgoCD <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Merge/">Merge Generator</a> with a list of ArgoCD <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/#git-generator-files">Git File Generators</a>. The Git File Generators monitor for named YAML configuration files at the cluster level in the <strong>Config Repository</strong> and the Merge Generator combines each of these files into a single YAML object per MAS cluster. </p>
+<p>A simplified and abridged snippet showing the Merge and Git File generators from the <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> template is shown below:</p>
+<pre><code class="language-yaml">spec:
+  ...
+  generators:
+    - merge:
+        mergeKeys:
+          - 'merge-key'
+        generators:
+          - git:
+              files:
+              - path: &quot;{{ .Values.account.id }}/*/ibm-mas-cluster-base.yaml&quot;
+          - git:
+              files:
+              - path: &quot;{{ .Values.account.id }}/*/ibm-operator-catalog.yaml&quot;
+          ...
+</code></pre>
+<p>To illustrate, the following shows an example <strong>Config Repository</strong> that defines  a <code>dev</code> account containing configuration for two <strong>Target Clusters</strong> (<code>cluster1</code> and <code>cluster2</code>). These are the files that the Git File Generators above are looking for.</p>
+<pre><code class="language-none">├── dev
+│   ├── cluster1
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+│   └── cluster2
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+</code></pre>
+<p>Now let's take a look at the contents of these files:</p>
+<pre><code>├── dev
+│   ├── cluster1
+|   |   |-------------------------------------------
+│   │   ├── ibm-mas-cluster-base.yaml
+|   |   |-------------------------------------------
+|   |   |   merge-key: &quot;dev/cluster1&quot;
+|   |   |   account:
+|   |   |     id: dev
+|   |   |   cluster:
+|   |   |     id: cluster1
+|   |   |     url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+|   |   |
+|   |   |-------------------------------------------
+│   │   ├── ibm-operator-catalog.yaml
+|   |   |-------------------------------------------
+|   |   |   merge-key: &quot;dev/cluster1&quot;
+|   |   |   ibm_operator_catalog:
+|   |   |      mas_catalog_version: v8-240430-amd64
+|   |   |
+│   └── cluster2
+|   |   |-------------------------------------------
+│   │   ├── ibm-mas-cluster-base.yaml
+|   |   |-------------------------------------------
+|   |   |   merge-key: &quot;dev/cluster2&quot;
+|   |   |   account:
+|   |   |      id: dev
+|   |   |   cluster:
+|   |   |     id: cluster2
+|   |   |     url: https://api.cluster2.jsig.p3.openshiftapps.com:443
+|   |   |
+|   |   |-------------------------------------------
+│   │   ├── ibm-operator-catalog.yaml
+|   |   |-------------------------------------------
+|   |   |   merge-key: &quot;dev/cluster2&quot;
+|   |   |   ibm_operator_catalog:
+|   |   |   mas_catalog_version: v8-240405-amd64
+</code></pre>
+<p>All of the files contain a <code>merge-key</code> which includes the account ID and the cluster ID (e.g. <code>dev/cluster1</code>). The is what the Merge generator uses to group together configuration into per-cluster YAML objects.</p>
+<p>The <code>ibm-mas-cluster-base.yaml</code> file contains global configuration for the target cluster, including the <code>account.id</code>, and the <code>cluster.id</code> and the <code>cluster.url</code> which determines the <strong>Target Cluster</strong> that ArgoCD will deploy resources to.</p>
+<p>The other YAML configuration files (such as <code>ibm-operator-catalog.yaml</code> shown above) represent one type of cluster-level resource that we wish to install on the <strong>Target Cluster</strong>.</p>
+<p>Based on the config shown above, <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> would generate two YAML objects:</p>
+<pre><code class="language-yaml"> merge-key: &quot;dev/cluster1&quot;
+ account:
+   id: dev
+ cluster:
+   id: cluster1
+   url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+ ibm_operator_catalog:
+   mas_catalog_version: v8-240430-amd64
+</code></pre>
+<pre><code class="language-yaml"> merge-key: &quot;dev/cluster2&quot;
+ account:
+   id: dev
+ cluster:
+   id: cluster2
+   url: https://api.cluster2.jsig.p3.openshiftapps.com:443
+ ibm_operator_catalog:
+   mas_catalog_version: v8-240405-amd64
+</code></pre>
+<p>The generated YAML objects are used to render the template defined in the <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> to generate <strong>Cluster Root Applications</strong> in the <strong>Management Cluster</strong>. <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/">Go Template</a> expressions are used to inject values from the cluster's YAML object into the template.</p>
+<p>A simplified and abridged snippet of the template is shown below, followed by a breakdown of the purpose of each section:</p>
+<pre><code class="language-yaml">  template:
+    metadata:
+      name: &quot;cluster.{{ `{{.cluster.id}}` }}&quot;
+      ...
+    spec:
+      source:
+        path: root-applications/ibm-mas-cluster-root
+        helm:
+          values: &quot;{{ `{{ toYaml . }}` }}&quot;
+
+        parameters:
+          - name: &quot;source.repo_url&quot;
+            value: &quot;{{ .Values.source.repo_url }}&quot;
+          - name: &quot;argo.namespace&quot;
+            value: &quot;{{ .Values.argo.namespace }}&quot;
+
+      destination:
+        server: 'https://kubernetes.default.svc'
+        namespace: {{ .Values.argo.namespace }}
+</code></pre>
+<p>The <strong>Cluster Root Applications</strong> are named according to their ID:</p>
+<pre><code class="language-yaml">template:
+  metadata:
+    name: &quot;cluster.{{ `{{.cluster.id}}` }}&quot;
+</code></pre>
+<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a>:</p>
+<pre><code class="language-yaml">      source:
+        path: root-applications/ibm-mas-cluster-root
+</code></pre>
+<p>The entire cluster's YAML object is passed in as Helm values to the <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a>:</p>
+<pre><code class="language-yaml">        helm:
+          values: &quot;{{ `{{ toYaml . }}` }}&quot;
+</code></pre>
+<p>Additional global configuration parameters (such as details of the <strong>Source Repository</strong> and the namespace where ArgoCD is running) set on the the <strong>Account Root Application</strong> are passed down as additional Helm parameters:</p>
+<pre><code class="language-yaml">        arameters:
+          - name: &quot;source.repo_url&quot;
+            value: &quot;{{ .Values.source.repo_url }}&quot;
+          - name: &quot;argo.namespace&quot;
+            value: &quot;{{ .Values.argo.namespace }}&quot;
+</code></pre>
+<p><strong>Cluster Root Applications</strong> are created in the the ArgoCD namespace in the <strong>Management Cluster</strong>:</p>
+<pre><code class="language-yaml">      destination:
+        server: 'https://kubernetes.default.svc'
+        namespace: {{ .Values.argo.namespace }}
+</code></pre>
+<div class="admonition info">
+<p class="admonition-title">What are the backticks for?</p>
+<p>Since the <strong>Cluster Root Application Set</strong> is itself a Helm template (rendered by the <strong>Account Root Application</strong>), we need to tell Helm to not attempt to parse the Go Template expressions and treat them as literals instead. This achieved by wrapping the go template expressions in backticks. The expressions in the snippet above will be rendered by Helm as <code>"cluster.{{.cluster.id}}"</code> and <code>"{{ toYaml . }}"</code>.</p>
+</div>
+<p>Given the configuration in the example above, two <strong>Cluster Root Applications</strong> are generated:</p>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: cluster.cluster1
+spec:
+  source:
+    path: root-applications/ibm-mas-cluster-root
+    helm:
+      values: |-
+        merge-key: dev/cluster1`
+        account:
+          id: dev
+        cluster:
+          id: cluster1
+          url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+        ibm_operator_catalog:
+          mas_catalog_version: v8-240430-amd64
+      parameters:
+        - name: source.repo_url
+          value: &quot;https://github.com/...&quot;
+        - name: argo.namespace
+          value: &quot;openshift-gitops&quot;
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: openshift-gitops
+</code></pre>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: cluster.cluster2
+spec:
+  source:
+    path: root-applications/ibm-mas-cluster-root
+    helm:
+      values: |-
+        merge-key: dev/cluster2`
+        account:
+          id: dev
+        cluster:
+          id: cluster2
+          url: https://api.cluster2.jsig.p3.openshiftapps.com:443
+        ibm_operator_catalog:
+          mas_catalog_version: v8-240405-amd64
+      parameters:
+        - name: source.repo_url
+        - value: &quot;https://github.com/...&quot;
+        - name: argo.namespace
+          value: &quot;openshift-gitops&quot;
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: openshift-gitops
+</code></pre>
+<h2 id="the-cluster-root-application">The Cluster Root Application<a class="headerlink" href="#the-cluster-root-application" title="Permanent link"></a></h2>
+<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> into the <strong>Management Cluster</strong>. It contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to <strong>Target Clusters</strong> once the configuration for those resources in present in the <strong>Config Repository</strong></p>
+<p><img alt="Cluster Root Application" src="../png/appstructure-clusterrootapp.png" /></p>
+<p>Application-specific configuration is held under a unique top-level field. For example, the <code>ibm_operator_catalog</code> field in our example above holds all configuration for the <a href="https://github.com/ibm-mas/gitops/tree/demo2/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a>. The <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a> that renders this chart is guarded by:</p>
+<pre><code class="language-yaml">
+{{- if not (empty .Values.ibm_operator_catalog) }}
+
+</code></pre>
+<p>Following on from the example above, because <code>dev/cluster1/ibm-operator-catalog.yaml</code> has been pushed to the <strong>Git Config Repo</strong>, the <code>ibm_operator_catalog</code> key will appear in the Helm values passed to the  <strong>Cluster Root Application</strong>s. This will result in an ArgoCD Applications that will render the <a href="cluster-applications/000-ibm-operator-catalog">ibm-operator-catalog Helm Chart</a> into each <strong>Target Cluster</strong></p>
+<p>Looking again at <a href="root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a>:</p>
+<pre><code class="language-yaml">
+kind: Application
+metadata:
+  name: operator-catalog.{{ .Values.cluster.id }}
+spec:
+  destination:
+    server: {{ .Values.cluster.url }}
+  source:
+    path: cluster-applications/000-ibm-operator-catalog
+    plugin:
+      name: argocd-vault-plugin-helm
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_catalog_version: &quot;{{ .Values.ibm_operator_catalog.mas_catalog_version  }}&quot;
+
+</code></pre>
+<p>We can see it will generate an ArgoCD application named <code>operator-catalog.{{ .Values.cluster.id}}</code> (e.g. <code>operator-catalog.cluster1</code>, <code>operator-catalog.cluster2</code>). It will render the <a href="cluster-applications/000-ibm-operator-catalog">ibm-operator-catalog Helm Chart</a> into the target cluster identified by the <code>.Values.cluster.url</code> value from the global cluster configuration in <code>ibm-mas-cluster-base.yaml</code>. In this case, we know some of the values will be <a href="https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders">inline-path placeholders</a> for referencing secrets in the <strong>Secrets Vault</strong>, so we use the AVP plugin source to render the Helm chart.</p>
+<p>Based on our example configuration, two <strong>Cluster Root Application</strong>s will be generated:</p>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: operator-catalog.cluster1
+spec:
+  destination:
+    server: https://api.cluster1.cakv.p3.openshiftapps.com:443
+  source:
+    path: cluster-applications/000-ibm-operator-catalog
+    plugin:
+      name: argocd-vault-plugin-helm
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_catalog_version: &quot;v8-240430-amd64&quot;
+</code></pre>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: operator-catalog.cluster2
+spec:
+  destination:
+    server: https://api.cluster2.jsig.p3.openshiftapps.com:443
+  source:
+    path: cluster-applications/000-ibm-operator-catalog
+    plugin:
+      name: argocd-vault-plugin-helm
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_catalog_version: &quot;v8-240405-amd64&quot;
+</code></pre>
+<p>The other Application templates (e.g. <a href="root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml">010-ibm-redhat-cert-manager-app.yaml</a>, <a href="root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml">020-ibm-dro-app.yaml</a> and so on) all follow this pattern and work in a similar way.</p>
+<p>The <strong>Cluster Root Application</strong> chart also includes the <a href="root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">099-instance-appset.yaml</a> which generates a new <strong>Instance Root Application Set</strong> for each cluster.</p>
+<h2 id="the-instance-root-application-set">The Instance Root Application Set<a class="headerlink" href="#the-instance-root-application-set" title="Permanent link"></a></h2>
+<p>The <a href="root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">Instance Root Application Set</a> is responsible for generating an <strong>Instance Root Application</strong> per MAS instance on <strong>Target Cluster</strong>s. </p>
+<p><img alt="Instance Root Application Set" src="../png/appstructure-instancerootappset.png" /></p>
+<p>It follows the same pattern as the Cluster Root Application Set described <a href="#the-cluster-root-application-set">above</a>. The key differences are:</p>
+<ul>
+<li><code>merge-keys</code> in the instance-level configuation YAML files also contain a MAS instance ID, e.g. <code>dev/cluster1/instance1</code>.</li>
+<li>The generated <strong>Instance Root Applications</strong> source the <a href="root-applications/ibm-mas-instance-root">ibm-mas-instance-root Helm Chart</a>.</li>
+<li>The Git File generators look for a different set of named YAML files at the <strong>instance</strong> level in the <strong>Config Git Repo</strong>:</li>
+</ul>
+<pre><code class="language-yaml">
+spec:
+  ...
+  generators:
+    - merge:
+        mergeKeys:
+          - 'merge-key'
+        generators:
+          - git:
+              files:
+              - path: &quot;{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-mas-instance-base.yaml&quot;
+          - git:
+              files:
+              - path: &quot;{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite.yaml&quot;
+
+</code></pre>
+<p>To continue our example above, our <strong>Git Config Repo</strong> now contains some additional instance-level config files (only showing <code>cluster1</code> this time for brevity):</p>
+<pre><code>├── dev
+│   ├── cluster1
+│   │   ├── ibm-mas-cluster-base.yaml
+|   |   |
+│   │   ├── ibm-operator-catalog.yaml
+|   |   |
+│   |   ├── instance1
+│   |   │   ├── ibm-mas-instance-base.yaml
+|   |   |   |
+|   |   |   |   merge-key: &quot;dev/cluster1/instance1&quot;
+|   |   |   |   account:
+|   |   |   |     id: dev
+|   |   |   |   cluster:
+|   |   |   |     id: cluster1
+|   |   |   |     url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+|   |   |   |   instance:
+|   |   |   |     id: instance1
+|   |   |   |
+│   |   │   ├── ibm-mas-suite.yaml
+|   |   |   |  
+|   |   |   |   merge-key: &quot;dev/cluster1/instance1&quot;
+|   |   |   |   ibm_mas_suite:
+|   |   |   |     mas_channel: &quot;8.11.x&quot;
+...
+</code></pre>
+<p>The <strong>Instance Root Application Set</strong> generators would produce a YAML object:</p>
+<pre><code class="language-yaml">merge-key: &quot;dev/cluster1/instance1&quot;
+account:
+  id: dev
+cluster:
+  id: cluster1
+  url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+instance:
+  id: instance1
+ibm_mas_suite:
+  mas_channel: &quot;8.11.x&quot;
+</code></pre>
+<p>This would be used to render the <strong>Instance Root Application Set</strong> template and generate an <strong>Instance Root Application</strong>:</p>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: instance.cluster1.instance1
+spec:
+  source:
+    path: root-applications/ibm-mas-instance-root
+    helm:
+      values: |-
+        merge-key: dev/cluster1/instance1
+        account:
+          id: dev
+        cluster:
+          id: cluster1
+          url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+        instance:
+          id: instance1
+        ibm_mas_suite:
+          mas_channel: &quot;8.11.x&quot;
+      parameters:
+        - name: source.repo_url
+          value: &quot;https://github.com/...&quot;
+        - name: argo.namespace
+          value: &quot;openshift-gitops&quot;
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: openshift-gitops
+</code></pre>
+<h2 id="the-instance-root-application">The Instance Root Application<a class="headerlink" href="#the-instance-root-application" title="Permanent link"></a></h2>
+<p>The <strong>Instance Root Application</strong> Helm chart contains templates to conditionally render ArgoCD Applications that deploy MAS instances to <strong>Target Clusters</strong> once the configuration for the ArgoCD Application is present.</p>
+<p><img alt="Instance Root Application" src="../png/appstructure-instancerootapp.png" /></p>
+<p>It follows the same pattern as the <strong>Cluster Root Application</strong> described <a href="#the-cluster-root-application">above</a>; specific applications are enabled once their configuration becomes present. For instance, the <a href="root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml">130-ibm-mas-suite-app.yaml</a> template generates an Application that deploys the MAS <code>Suite</code> CR to the target cluster once configuration under the <code>ibm_mas_suite</code> key is present.</p>
+<p>Some special templates are capable of generating multiple applications: <a href="root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml">120-db2-databases-app.yaml</a>, <a href="root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml">130-ibm-mas-suite-configs-app.yaml)</a>, <a href="root-applications/ibm-mas-instance-root/templates/200-ibm-mas-workspaces.yaml">200-ibm-mas-workspaces.yaml</a> and <a href="root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml">130-ibm-mas-suite-configs-app.yaml</a>. These are special cases where there can be more than one instance of the <em>type</em> of resource that these Applications are responsible for managing. </p>
+<p>For example, the MAS instance may require more than one DB2 Database. To accommodate this, we make use of the Helm <code>range</code> control structure to iterate over a YAML list in template for DB2 Database Applications <a href="root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml">120-db2-databases-app.yaml</a>:</p>
+<pre><code class="language-yaml">
+{{- range $i, $value := .Values.ibm_db2u_databases }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: &quot;db2-db.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}&quot;
+...
+{{- end}}
+
+</code></pre>
+<p>This iterates over the list held in the <code>ibm-db2u-databases.yaml</code> configuration file to generate any number of DB2 Database Applications configured as needed.</p>
+<pre><code class="language-yaml">ibm_db2u_databases:
+  - mas_application_id: iot
+    db2_memory_limits: 12Gi
+    ...
+  - mas_application_id: manage
+    db2_memory_limits: 16Gi
+    db2_database_db_config:
+      CHNGPGS_THRESH: '40'
+      ...
+    ...
+</code></pre>
+<div class="admonition info">
+<p class="admonition-title">Why not use ApplicationSets here?</p>
+<p>We encountered some limitations when using ApplicationSets for this purpose. For instance, Applications generated by ApplicationSets do not participate in the <a href="https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/">ArgoCD syncwave</a> with other Applications so we would have no way of ensuring that resources would be configured in the correct order. By using the Helm <code>range</code> control structure we generate "normal" Applications that do not suffer from this limitation. This means, for instance, that we can ensure that DB2 Databases are configured <strong>before</strong> attempting to provide the corresponding JDBC configuration to MAS.</p>
+</div>
               
             </div>
           </div><footer>
@@ -133,7 +544,7 @@
         </span>
     
     
-      <span><a href="../accountrootmanifest/" style="color: #fcfcfc">&laquo; Previous</a></span>
+      <span><a href="../secrets/" style="color: #fcfcfc">&laquo; Previous</a></span>
     
     
       <span><a href="../orchestration/" style="color: #fcfcfc">Next &raquo;</a></span>

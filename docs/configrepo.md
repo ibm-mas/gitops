@@ -1,5 +1,5 @@
 
-Config Repository
+{{ config_repo() }}
 ===============================================================================
 
 The {{ config_repo() }} represents the "source of truth" that (along with the Charts in the {{ source_repo() }} and the secrets in the {{ secrets_vault() }}) provides everything ArgoCD needs to install and manage MAS instances across {{ target_clusters() }}.

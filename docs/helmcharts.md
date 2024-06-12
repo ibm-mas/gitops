@@ -1,4 +1,4 @@
-Helm Charts
+{{ source_repo() }}
 ===============================================================================
 
 The [ibm-mas/gitops](https://github.com/ibm-mas/gitops) repository provides Helm Charts that define all of the Kubernetes resources required to deploy MAS instances using ArgoCD. The Helm Charts are split across three sub directories, depending on their intended target:
@@ -7,9 +7,6 @@ The [ibm-mas/gitops](https://github.com/ibm-mas/gitops) repository provides Helm
 - **{{ gitops_repo_dir_link("cluster-applications") }}**: these charts define Kubernetes resources for installing cluster-wide MAS pre-requisites on {{ target_clusters() }} where MAS is to be installed and managed.
 - **{{ gitops_repo_dir_link("instance-applications") }}**: these charts define Kubernetes resources for installing MAS instances on {{ target_clusters() }}.
 
-
-Application Structure
--------------------------------------------------------------------------------
 
 The following figure shows a tree of ArgoCD applications and Application Sets from the charts under **{{ gitops_repo_dir_link("root-applications") }}**, starting with the **Account Root Application** at the top.
 

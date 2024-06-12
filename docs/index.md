@@ -1,8 +1,6 @@
 IBM Maximo Application Suite - Gitops
 ===============================================================================
 
-Overview
--------------------------------------------------------------------------------
 A GitOps approach to managing Maximo Application Suite.
 
 !!! note

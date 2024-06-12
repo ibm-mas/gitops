@@ -1,12 +1,12 @@
-Generated Applications
+Mapping Config to MAS Deployments
 ===============================================================================
 
-The following demonstrates how [ArgoCD Application Sets](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/) are combined with the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) to generate a tree of ArgoCD Applications that manage MAS instances in **Target Clusters** based on the configuration files in the **Config Repo**.
+The following demonstrates how [ArgoCD Application Sets](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/) are combined with the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) to generate a tree of ArgoCD Applications that manage MAS instances in {{ target_clusters() }} based on the configuration files in the {{ config_repo() }}.
 
 The Account Root Application
 -------------------------------------------------------------------------------
 
-It all begins with the **Account Root Application** . This is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS Gitops Helm Charts and is where several key pieces of global configuration values are provided.
+It begins with the **Account Root Application**. This is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS Gitops Helm Charts and is where several key pieces of global configuration values are provided.
 
 ![Account Root Application](png/appstructure-accountrootapp.png)
 
@@ -49,15 +49,18 @@ spec:
 
 The Cluster Root Application Set
 -------------------------------------------------------------------------------
+The {{ cluster_root_app_set() }} generates a set of **Cluster Root Applications** based on the configuration in the {{ config_repo() }}.
 
-The **Cluster Root Application Set** employs a list of ArgoCD [Git File Generators](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/#git-generator-files) to monitor for named YAML configuration files at the cluster level in the **Config Git Repo**. 
 
 ![Cluster Root Application Set](png/appstructure-clusterrootappset.png)
 
-All cluster-level YAML configuration files contain a `merge-key`. The `merge-key` includes the Account and Cluster ID (e.g. `dev/cluster1`). The ArgoCD [Merge Generator](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Merge/) groups the individual YAML files according to their `merge-key`, resulting in a combined YAML object for each target cluster that we want to manage MAS instances on. The `ibm-mas-cluster-base.yaml` file contains global configuration for the target cluster, and the other YAML configuration files represent one type of cluster-level application that we wish to install on the target cluster (e.g. `ibm-operator-catalog.yaml`, `ibm-dro.yaml`, `ibm-db2u.yaml`, and so on). For the sake of brevity we will only cover one of these (`ibm-operator-catalog.yaml`) here:
+The {{ cluster_root_app_set() }} employs an ArgoCD [Merge Generator](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Merge/) with a list of ArgoCD [Git File Generators](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/#git-generator-files). The Git File Generators monitor for named YAML configuration files at the cluster level in the {{ config_repo() }} and the Merge Generator combines each of these files into a single YAML object per MAS cluster. 
+
+A simplified and abridged snippet showing the Merge and Git File generators from the {{ cluster_root_app_set() }} template is shown below:
+
 
 ```yaml
-spec:
+{% raw %}spec:
   ...
   generators:
     - merge:
@@ -70,16 +73,29 @@ spec:
           - git:
               files:
               - path: "{{ .Values.account.id }}/*/ibm-operator-catalog.yaml"
-          ...
+          ...{% endraw %}
 ```
 
-For example, if our **Git Config Repo** contains the following:
+To illustrate, the following shows an example {{ config_repo() }} that defines  a `dev` account containing configuration for two {{ target_clusters() }} (`cluster1` and `cluster2`). These are the files that the Git File Generators above are looking for.
+```none
+├── dev
+│   ├── cluster1
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+│   └── cluster2
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+```
+
+
+Now let's take a look at the contents of these files:
 
 ```
 ├── dev
 │   ├── cluster1
+|   |   |-------------------------------------------
 │   │   ├── ibm-mas-cluster-base.yaml
-|   |   |
+|   |   |-------------------------------------------
 |   |   |   merge-key: "dev/cluster1"
 |   |   |   account:
 |   |   |     id: dev
@@ -87,31 +103,40 @@ For example, if our **Git Config Repo** contains the following:
 |   |   |     id: cluster1
 |   |   |     url: https://api.cluster1.cakv.p3.openshiftapps.com:443
 |   |   |
+|   |   |-------------------------------------------
 │   │   ├── ibm-operator-catalog.yaml
-|   |   |
+|   |   |-------------------------------------------
 |   |   |   merge-key: "dev/cluster1"
 |   |   |   ibm_operator_catalog:
 |   |   |      mas_catalog_version: v8-240430-amd64
-|   |   |   
+|   |   |
 │   └── cluster2
+|   |   |-------------------------------------------
 │   │   ├── ibm-mas-cluster-base.yaml
-|   |   |   
+|   |   |-------------------------------------------
 |   |   |   merge-key: "dev/cluster2"
 |   |   |   account:
 |   |   |      id: dev
 |   |   |   cluster:
 |   |   |     id: cluster2
 |   |   |     url: https://api.cluster2.jsig.p3.openshiftapps.com:443
-|   |   |   
+|   |   |
+|   |   |-------------------------------------------
 │   │   ├── ibm-operator-catalog.yaml
-|   |   |   
+|   |   |-------------------------------------------
 |   |   |   merge-key: "dev/cluster2"
 |   |   |   ibm_operator_catalog:
 |   |   |   mas_catalog_version: v8-240405-amd64
 ```
 
+All of the files contain a `merge-key` which includes the account ID and the cluster ID (e.g. `dev/cluster1`). The is what the Merge generator uses to group together configuration into per-cluster YAML objects.
 
-The **Cluster Root Application Set**  generators would produce two YAML objects:
+The `ibm-mas-cluster-base.yaml` file contains global configuration for the target cluster, including the `account.id`, and the `cluster.id` and the `cluster.url` which determines the {{ target_cluster() }} that ArgoCD will deploy resources to.
+
+The other YAML configuration files (such as `ibm-operator-catalog.yaml` shown above) represent one type of cluster-level resource that we wish to install on the {{ target_cluster() }}.
+
+
+Based on the config shown above, {{ cluster_root_app_set() }} would generate two YAML objects:
 ```yaml
  merge-key: "dev/cluster1"
  account:
@@ -134,10 +159,12 @@ The **Cluster Root Application Set**  generators would produce two YAML objects:
    mas_catalog_version: v8-240405-amd64
 ```
 
-Each YAML object is used to render the **Cluster Root Application Set** template:
+The generated YAML objects are used to render the template defined in the {{ cluster_root_app_set() }} to generate **Cluster Root Applications** in the {{ management_cluster() }}. [Go Template](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/) expressions are used to inject values from the cluster's YAML object into the template.
+
+ A simplified and abridged snippet of the template is shown below, followed by a breakdown of the purpose of each section:
 
 ```yaml
-  template:
+  {% raw %}template:
     metadata:
       name: "cluster.{{ `{{.cluster.id}}` }}"
       ...
@@ -146,30 +173,62 @@ Each YAML object is used to render the **Cluster Root Application Set** template
         path: root-applications/ibm-mas-cluster-root
         helm:
           values: "{{ `{{ toYaml . }}` }}"
+
+        parameters:
+          - name: "source.repo_url"
+            value: "{{ .Values.source.repo_url }}"
+          - name: "argo.namespace"
+            value: "{{ .Values.argo.namespace }}"
+
+      destination:
+        server: 'https://kubernetes.default.svc'
+        namespace: {{ .Values.argo.namespace }}{% endraw %}
 ```
-[Go Template](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/) expressions are used to inject values from the cluster's YAML object into the template. E.g. `.cluster.id` is either `cluster1` or `cluster2` and `{{ toYaml . }}` renders the cluster's YAML object in its entirety.
+
+
+The **Cluster Root Applications** are named according to their ID:
+```yaml
+template:
+  metadata:
+    {% raw %}name: "cluster.{{ `{{.cluster.id}}` }}"{% endraw %}
+```
+
+**Cluster Root Applications** render the {{ cluster_root_chart() }}:
+```yaml
+      {% raw %}source:
+        path: root-applications/ibm-mas-cluster-root{% endraw %}
+```
+
+
+The entire cluster's YAML object is passed in as Helm values to the {{ cluster_root_chart() }}:
+```yaml
+        {% raw %}helm:
+          values: "{{ `{{ toYaml . }}` }}"{% endraw %}
+```
+
+Additional global configuration parameters (such as details of the {{ source_repo() }} and the namespace where ArgoCD is running) set on the the **Account Root Application** are passed down as additional Helm parameters:
+```yaml
+        {% raw %}arameters:
+          - name: "source.repo_url"
+            value: "{{ .Values.source.repo_url }}"
+          - name: "argo.namespace"
+            value: "{{ .Values.argo.namespace }}"{% endraw %}
+```
+
+
+**Cluster Root Applications** are created in the the ArgoCD namespace in the {{ management_cluster() }}:
+```yaml
+      {%raw %}destination:
+        server: 'https://kubernetes.default.svc'
+        namespace: {{ .Values.argo.namespace }}{% endraw %}
+```
 
 !!! info  "What are the backticks for?"
 
-    Since the **Cluster Root Application Set** is itself a Helm template (rendered by the **Account Root Application**), we need to tell Helm to not attempt to parse the Go Template expressions and treat them as literals instead. This achieved by wrapping the go template expressions in backticks. The expressions in the snippet above will be rendered by Helm as `"cluster.{{.cluster.id}}"` and `"{{ toYaml . }}"`.
+    Since the **Cluster Root Application Set** is itself a Helm template (rendered by the **Account Root Application**), we need to tell Helm to not attempt to parse the Go Template expressions and treat them as literals instead. This achieved by wrapping the go template expressions in backticks. The expressions in the snippet above will be rendered by Helm as `{% raw %}"cluster.{{.cluster.id}}"{% endraw %}` and `{% raw %}"{{ toYaml . }}"{% endraw %}`.
   
-Additional global configuration parameters (such as details for the **Source Git Repo** and the namespace where ArgoCD is running) sourced from the **Account Root Application** are also passed down the Application tree as additional Helm parameters:
-```yaml
-            parameters:
-              - name: "source.repo_url"
-                value: "{{ .Values.source.repo_url }}"
-              - name: "argo.namespace"
-                value: "{{ .Values.argo.namespace }}"
-```
 
-The **Cluster Root Application** Helm Chart defines further ArgoCD Applications and so should be rendered into the cluster and namespace where ArgoCD is running. We specify the following:
-```yaml
-      destination:
-        server: 'https://kubernetes.default.svc'
-        namespace: {{ .Values.argo.namespace }}
-```
-
-Given the configuration in our example, two **Cluster Root Applications** are generated:
+Given the configuration in the example above, two **Cluster Root Applications** are generated:
 
 ```yaml
 kind: Application
@@ -229,19 +288,22 @@ spec:
 The Cluster Root Application
 -------------------------------------------------------------------------------
 
-The **Cluster Root Application** Helm Chart contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to **Target Clusters** once the configuration for the ArgoCD Application is present.
+**Cluster Root Applications** render the {{ cluster_root_chart() }} into the {{ management_cluster() }}. It contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to **Target Clusters** once the configuration for those resources in present in the {{ config_repo() }}
 
 ![Cluster Root Application](png/appstructure-clusterrootapp.png)
 
-Application-specific configuration is held under a unique top-level field, e.g. `ibm_operator_catalog`, `ibm_db2u` and so on. If we look at the [000-ibm-operator-catalog-app template](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml) for example, we can see it is guarded by:
+Application-specific configuration is held under a unique top-level field. For example, the `ibm_operator_catalog` field in our example above holds all configuration for the {{ gitops_repo_dir_link("cluster-applications/000-ibm-operator-catalog", "000-ibm-operator-catalog chart") }}. The {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml", "000-ibm-operator-catalog-app template") }} that renders this chart is guarded by:
 ```yaml
+{% raw %}
 {{- if not (empty .Values.ibm_operator_catalog) }}
+{% endraw %}
 ```
 Following on from the example above, because `dev/cluster1/ibm-operator-catalog.yaml` has been pushed to the **Git Config Repo**, the `ibm_operator_catalog` key will appear in the Helm values passed to the  **Cluster Root Application**s. This will result in an ArgoCD Applications that will render the [ibm-operator-catalog Helm Chart](cluster-applications/000-ibm-operator-catalog) into each **Target Cluster**
 
 Looking again at [000-ibm-operator-catalog-app template](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml):
 
 ```yaml
+{% raw %}
 kind: Application
 metadata:
   name: operator-catalog.{{ .Values.cluster.id }}
@@ -256,10 +318,11 @@ spec:
         - name: HELM_VALUES
           value: |
             mas_catalog_version: "{{ .Values.ibm_operator_catalog.mas_catalog_version  }}"
+{% endraw %}
 ```
 
 
-We can see it will generate an ArgoCD application named `operator-catalog.{{ .Values.cluster.id}}` (e.g. `operator-catalog.cluster1`, `operator-catalog.cluster2`). It will render the [ibm-operator-catalog Helm Chart](cluster-applications/000-ibm-operator-catalog) into the target cluster identified by the `.Values.cluster.url` value from the global cluster configuration in `ibm-mas-cluster-base.yaml`. In this case, we know some of the values will be [inline-path placeholders](https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders) for referencing secrets in the **Secrets Vault**, so we use the AVP plugin source to render the Helm chart.
+We can see it will generate an ArgoCD application named `{% raw %}operator-catalog.{{ .Values.cluster.id}}{% endraw %}` (e.g. `operator-catalog.cluster1`, `operator-catalog.cluster2`). It will render the [ibm-operator-catalog Helm Chart](cluster-applications/000-ibm-operator-catalog) into the target cluster identified by the `.Values.cluster.url` value from the global cluster configuration in `ibm-mas-cluster-base.yaml`. In this case, we know some of the values will be [inline-path placeholders](https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders) for referencing secrets in the **Secrets Vault**, so we use the AVP plugin source to render the Helm chart.
 
 Based on our example configuration, two **Cluster Root Application**s will be generated:
 
@@ -316,6 +379,7 @@ It follows the same pattern as the Cluster Root Application Set described [above
 - The Git File generators look for a different set of named YAML files at the **instance** level in the **Config Git Repo**:
 
 ```yaml
+{% raw %}
 spec:
   ...
   generators:
@@ -329,6 +393,7 @@ spec:
           - git:
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite.yaml"
+{% endraw %}
 ```
 
 
@@ -418,6 +483,7 @@ Some special templates are capable of generating multiple applications: [120-db2
 
 For example, the MAS instance may require more than one DB2 Database. To accommodate this, we make use of the Helm `range` control structure to iterate over a YAML list in template for DB2 Database Applications [120-db2-databases-app.yaml](root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml):
 ```yaml
+{% raw %}
 {{- range $i, $value := .Values.ibm_db2u_databases }}
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -426,6 +492,7 @@ metadata:
   name: "db2-db.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
 ...
 {{- end}}
+{% endraw %}
 ```
 
 This iterates over the list held in the `ibm-db2u-databases.yaml` configuration file to generate any number of DB2 Database Applications configured as needed.

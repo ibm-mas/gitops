@@ -1,7 +1,7 @@
-Secrets
+The {{ secrets_vault() }}
 ===============================================================================
 
-Sensitive values that should not be exposed in the {{ config_repo() }} are stored in a {{ secrets_vault() }} They are fetched at runtime using the [ArgoCD Vault Plugin](https://argocd-vault-plugin.readthedocs.io/en/stable/) from some backend implementation (e.g. [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/)).
+Sensitive values that should not be exposed in the {{ config_repo() }} are stored as secrets in the {{ secrets_vault() }}. Secrets are fetched at runtime using the [ArgoCD Vault Plugin](https://argocd-vault-plugin.readthedocs.io/en/stable/) from some backend implementation (e.g. [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/)).
 
 Secrets are referenced in the YAML configuration files in the {{ config_repo() }} as inline-path placeholders. For example:
 ```yaml

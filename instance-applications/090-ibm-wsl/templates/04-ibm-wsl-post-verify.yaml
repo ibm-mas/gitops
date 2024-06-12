@@ -402,16 +402,9 @@ spec:
               echo "Authorize CP4D Admin and get bearer token"
               CPD_BEARER_TOKEN=$(curl -k -X POST --location "${CPD_ADMIN_URL}/icp4d-api/v1/authorize" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"username\":\"$CPD_ADMIN_USERNAME\",\"password\":\"$CPD_ADMIN_PASSWORD\"}" | jq -r '.token')
 
-              echo "Look for the project with the name ${CPD_WSL_PROJECT_NAME}"
-              WSL_PROJECT_LIST=$(curl -k -X GET --location "${CPD_ADMIN_URL}/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" | jq -r '.resources')
-              
-              WSL_PROJECT_ID=""
-              for p in ${WSL_PROJECT_LIST[@]}; do
-                if [[ $p['entity']['name'] == ${CPD_WSL_PROJECT_NAME} ]]; then
-                  export WSL_PROJECT_ID=$p['metadata']['guid']
-                  break;
-                fi
-              done
+              echo "Check if a project with the name ${CPD_WSL_PROJECT_NAME} exists"
+              curl -k -X GET --location "${CPD_ADMIN_URL}/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" -o projectlist.json
+              WSL_PROJECT_ID=$(cat projectlist.json | jq -r '.resources[] | select(.entity.name=="$CPD_WSL_PROJECT_NAME") | .metadata.guid')
 
               if [[ -z ${WSL_PROJECT_ID} ]]; then 
                 echo "Project ${CPD_WSL_PROJECT_NAME} does not exist in the project list. A new project will be created."
@@ -425,10 +418,12 @@ spec:
                 curl -k -X PUT --location "${CPD_ADMIN_URL}/usermgmt/v1/role/zen_administrator_role" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"role_name\":\"Administrator\",\"description\":\"Administrator role\",\"permissions\":[\"administrator\",\"can_provision\",\"manage_catalog\",\"create_space\",\"create_project\"]}"
 
                 echo "Creating project..."
-                WSL_PROJECT_ID=$(curl -k -X POST --location "${CPD_ADMIN_URL}/transactional/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"name\":\"$CPD_WSL_PROJECT_NAME\",\"description\":\"$CPD_WSL_PROJECT_DESCRIPTION\",\"generator\":\"cp4d-$CPD_ADMIN_USERNAME\",\"public\":false,\"storage\":{ \"type\":\"assetfiles\",\"guid\":\"$CPD_WSL_PROJECT_STORAGE_GUID\"}}")
+                WSL_PROJECT_ID=$(curl -k -X POST --location "${CPD_ADMIN_URL}/transactional/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"name\":\"$CPD_WSL_PROJECT_NAME\",\"description\":\"$CPD_WSL_PROJECT_DESCRIPTION\",\"generator\":\"cp4d-$CPD_ADMIN_USERNAME\",\"public\":false,\"storage\":{ \"type\":\"assetfiles\",\"guid\":\"$CPD_WSL_PROJECT_STORAGE_GUID\"}}" | jq -r '.location | split ("/") | last')
                 
                 if [[ -z WSL_PROJECT_ID ]]; then
                   echo "error creating project. Could not fetch project id."
+                else
+
                 fi
 
               else

@@ -35,6 +35,8 @@ spec:
               value: "{{ .Values.instance_id }}"
             - name: GITHUB_PAT
               value: "{{ .Values.github_pat }}"
+            - name: TARGET_GITHUB_HOST
+              value: "{{ .Values.target_github_host }}"
             - name: TARGET_GITHUB_REPO
               value: "{{ .Values.target_github_repo }}"
             - name: TARGET_GITHUB_ORG
@@ -66,7 +68,7 @@ spec:
                   BODY="MAS Gitops Promotion PR, automatically created from ArgoCD"
 
                   GITHUB_AUTH_HEADER="Authorization:token $GITHUB_PAT"
-                  GITHUB_API=https://$GITHUB_HOST/api/v3/repos/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO/pulls
+                  GITHUB_API=https://$TARGET_GITHUB_HOST/api/v3/repos/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO/pulls
                   PR_FILE=$WORK_DIR/pr_text.json
                   echo "{\"title\":\"$COMMIT_MESSAGE_TITLE\",\"body\":"\"$BODY\"",\"head\":\"$WORKING_BRANCH\",\"base\":\"$TARGET_BRANCH\"}" > $PR_FILE
                   echo "Opening PR against $TARGET_BRANCH via $GITHUB_API"
@@ -81,8 +83,8 @@ spec:
               export TARGET_LOCAL_DIR="/tmp/target_repo"
               mkdir -p $TARGET_LOCAL_DIR
               cd $TARGET_LOCAL_DIR
-              echo "git: Cloning $GITHUB_HOST:$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO branch $TARGET_GIT_BRANCH into $TARGET_LOCAL_DIR working directory"
-              git clone https://git:$GITHUB_PAT@$GITHUB_HOST/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO.git -b $TARGET_GIT_BRANCH || exit 
+              echo "git: Cloning $TARGET_GITHUB_HOST:$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO branch $TARGET_GIT_BRANCH into $TARGET_LOCAL_DIR working directory"
+              git clone https://git:$GITHUB_PAT@$TARGET_GITHUB_HOST/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO.git -b $TARGET_GIT_BRANCH || exit 
 
               export FULL_PATH="$TARGET_LOCAL_DIR/$TARGET_GITHUB_REPO/$TARGET_GITHUB_PATH"
               mkdir -p $FULL_PATH

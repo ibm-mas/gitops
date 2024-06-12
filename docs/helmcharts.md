@@ -3,21 +3,21 @@ Helm Charts
 
 The [ibm-mas/gitops](https://github.com/ibm-mas/gitops) repository provides Helm Charts that define all of the Kubernetes resources required to deploy MAS instances using ArgoCD. The Helm Charts are split across three sub directories, depending on their intended target:
 
-- Helm Charts under `root-applications` contain templates that define other ArgoCD Applications and Application Sets and target the cluster (and namespace) on which ArgoCD is running.
-- Helm Charts under `cluster-applications` contain templates that define Kubernetes resources for installing cluster-wide MAS pre-requisites on **Target Clusters**
-- Helm Charts under `instance-applications` contain templates that define Kubernetes resources for installing one or more MAS instances on **Target Clusters**.
+- **{{ gitops_repo_dir_link("root-applications") }}**: these charts define ArgoCD Application and ApplicationSet templates following the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) and target the {{ management_cluster() }} where ArgoCD is running. The Applications and ApplicationSets render other charts from {{ gitops_repo_dir_link("root-applications") }}, {{ gitops_repo_dir_link("cluster-applications") }} or {{ gitops_repo_dir_link("instance-applications") }}
+- **{{ gitops_repo_dir_link("cluster-applications") }}**: these charts define Kubernetes resources for installing cluster-wide MAS pre-requisites on {{ target_clusters() }} where MAS is to be installed and managed.
+- **{{ gitops_repo_dir_link("instance-applications") }}**: these charts define Kubernetes resources for installing MAS instances on {{ target_clusters() }}.
 
 
 Application Structure
 -------------------------------------------------------------------------------
 
-The following figure shows a tree of ArgoCD applications and Application Sets defined by the Helm Charts under `root-applications`, starting with the **Account Root Application** at the top:
+The following figure shows a tree of ArgoCD applications and Application Sets from the charts under **{{ gitops_repo_dir_link("root-applications") }}**, starting with the **Account Root Application** at the top.
 
 ![Application Structure](png/appstructure.png)
 
-The **Account Root Application** [Helm Chart](root-applications/ibm-mas-account-root) installs the **[Cluster Root Application Set]({{ gitops_repo_file_link("root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml") }})**. This generates a set of **MAS Cluster Root Applications** based on the configuration in the **Config Git Repo*. 
+The {{ account_root_chart() }} installs the {{ cluster_root_app_set() }}. This generates a set of **MAS Cluster Root Applications** based on the configuration in the {{ config_repo() }} 
 
-The **Cluster Root Application** [Helm Chart](root-applications/ibm-mas-cluster-root) contains templates that generate ArgoCD Applications for configuring various dependencies shared by MAS instances on the target cluster, including:
+The {{ cluster_root_chart() }} templates generate ArgoCD Applications for configuring various dependencies shared by MAS instances on {{ target_clusters() }} including:
 
 - [Operator Catalog](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml) ([Helm Chart](cluster-applications/))
 - [Redhat Certificate Manager](root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml) ([Helm Chart](cluster-applications/010-redhat-cert-manager))

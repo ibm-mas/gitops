@@ -207,7 +207,7 @@ spec:
 |   |   |   ibm_operator_catalog:
 |   |   |   mas_catalog_version: v8-240405-amd64
 </code></pre>
-<p>All of the files contain a <code>merge-key</code> which includes the account ID and the cluster ID (e.g. <code>dev/cluster1</code>). The is what the Merge generator uses to group together configuration into per-cluster YAML objects.</p>
+<p>All of the files contain a <code>merge-key</code> which includes the account ID and the cluster ID (e.g. <code>dev/cluster1</code>). This is used by the Merge generator to group together configuration into per-cluster YAML objects.</p>
 <p>The <code>ibm-mas-cluster-base.yaml</code> file contains global configuration for the target cluster, including the <code>account.id</code>, and the <code>cluster.id</code> and the <code>cluster.url</code> which determines the <strong>Target Cluster</strong> that ArgoCD will deploy resources to.</p>
 <p>The other YAML configuration files (such as <code>ibm-operator-catalog.yaml</code> shown above) represent one type of cluster-level resource that we wish to install on the <strong>Target Cluster</strong>.</p>
 <p>Based on the config shown above, <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> would generate two YAML objects:</p>
@@ -230,7 +230,7 @@ spec:
    mas_catalog_version: v8-240405-amd64
 </code></pre>
 <p>The generated YAML objects are used to render the template defined in the <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> to generate <strong>Cluster Root Applications</strong> in the <strong>Management Cluster</strong>. <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/">Go Template</a> expressions are used to inject values from the cluster's YAML object into the template.</p>
-<p>A simplified and abridged snippet of the template is shown below, followed by a breakdown of the purpose of each section:</p>
+<p>A simplified and abridged snippet of the <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> template is shown below, followed by a breakdown of the purpose of each section:</p>
 <pre><code class="language-yaml">  template:
     metadata:
       name: &quot;cluster.{{ `{{.cluster.id}}` }}&quot;
@@ -271,7 +271,7 @@ spec:
           - name: &quot;argo.namespace&quot;
             value: &quot;{{ .Values.argo.namespace }}&quot;
 </code></pre>
-<p><strong>Cluster Root Applications</strong> are created in the the ArgoCD namespace in the <strong>Management Cluster</strong>:</p>
+<p><strong>Cluster Root Applications</strong> are created in the ArgoCD namespace on the <strong>Management Cluster</strong>:</p>
 <pre><code class="language-yaml">      destination:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}
@@ -332,7 +332,7 @@ spec:
     namespace: openshift-gitops
 </code></pre>
 <h2 id="the-cluster-root-application">The Cluster Root Application<a class="headerlink" href="#the-cluster-root-application" title="Permanent link"></a></h2>
-<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> into the <strong>Management Cluster</strong>. It contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to <strong>Target Clusters</strong> once the configuration for those resources in present in the <strong>Config Repository</strong></p>
+<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> into the ArgoCD namespace of the <strong>Management Cluster</strong>:. It contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to <strong>Target Clusters</strong> once the configuration for those resources in present in the <strong>Config Repository</strong></p>
 <p><img alt="Cluster Root Application" src="../png/appstructure-clusterrootapp.png" /></p>
 <p>Application-specific configuration is held under a unique top-level field. For example, the <code>ibm_operator_catalog</code> field in our example above holds all configuration for the <a href="https://github.com/ibm-mas/gitops/tree/demo2/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a>. The <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a> that renders this chart is guarded by:</p>
 <pre><code class="language-yaml">

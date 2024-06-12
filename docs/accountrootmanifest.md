@@ -1,7 +1,7 @@
 Account Root Application Manifest
 ===============================================================================
 
-The **Account Root Application** is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS Gitops code and is where several key pieces of global configuration values are provided.
+The **Account Root Application** is created directly on the {{ management_cluster() }} running ArgoCD. It serves as the "entrypoint" to the MAS Gitops code and is where several key pieces of global configuration values are provided.
 
 ### Template
 
@@ -51,13 +51,13 @@ spec:
 
 ### Parameters
 #### `<source-repo-url>`
-The URL of the Git repository containing the MAS GitOps Helm Charts, e.g. https://github.com/ibm-mas/gitops.
+The URL of the Git repository containing the MAS GitOps Helm Charts, e.g. https://github.com/ibm-mas/gitops, aka the {{ source_repo() }}
 
 #### `<source-repo-revision>`
 The branch of `<source-repo-url>` to source the MAS GitOps Helm Charts from, e.g. `master`.
 
 #### `<config-repo>`
-The Git repository to source MAS cluster/instance configuration from
+The Git repository to source MAS cluster/instance configuration from, aka the {{ config_repo() }}
 
 #### `<config-repo-revision>`
 The revision of `<config-repo>` to source cluster/instance configuration from
@@ -66,7 +66,7 @@ The revision of `<config-repo>` to source cluster/instance configuration from
 The ID of the account this root application manages. This also determines the root folder in `<config-repo>`:`<config-repo-revision` to source cluster/instance configuration from, e.g. `dev`.
 
 #### `<argo-namespace>`
-The namespace on cluster running ArgoCD. E.g. `openshift-gitops`, `argocd-worker`. This determines where Application and ApplicationSet resources will be created. It will also be used to annotate namespaces created by our charts with [argocd.argoproj.io/managed-by](https://argocd-operator.readthedocs.io/en/stable/usage/deploy-to-different-namespaces/).
+The namespace in which ArgoCD is installed on the {{ management_cluster() }}. E.g. `openshift-gitops`, `argocd-worker`. This determines where Application and ApplicationSet resources will be created. It will also be used to annotate namespaces created by our charts with [argocd.argoproj.io/managed-by](https://argocd-operator.readthedocs.io/en/stable/usage/deploy-to-different-namespaces/).
 
 #### `<argo-project-rootapps>`
 The ArgoCD project in which to create root applications (including this Application and the root applications that it generates). The project must be configured to permit creation of `argoproj.io.Application` and `argoproj.io.ApplicationSet` resources in the `<argoapp-namespace>` of the cluster in which ArgoCD is running (i.e. `https://kubernetes.default.svc`).

@@ -15,48 +15,58 @@ The following figure shows a tree of ArgoCD applications and Application Sets fr
 
 ![Application Structure](png/appstructure.png)
 
-The {{ account_root_chart() }} installs the {{ cluster_root_app_set() }}. This generates a set of **MAS Cluster Root Applications** based on the configuration in the {{ config_repo() }} 
 
-The {{ cluster_root_chart() }} templates generate ArgoCD Applications for configuring various dependencies shared by MAS instances on {{ target_clusters() }} including:
+#### {{ account_root_chart() }} 
 
-- [Operator Catalog](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml) ([Helm Chart](cluster-applications/))
-- [Redhat Certificate Manager](root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml) ([Helm Chart](cluster-applications/010-redhat-cert-manager))
-- [DRO](root-applications/ibm-mas-cluster-root/templates/010-ibm-dro-app.yaml) ([Helm Chart](cluster-applications/020-ibm-dro))
-- [Db2u Operator](root-applications/ibm-mas-cluster-root/templates/020-ibm-db2u-app.yaml) ([Helm Chart](cluster-applications/060-ibm-db2u))
-- [CIS Compliance](root-applications/ibm-mas-cluster-root/templates/040-cis-compliance-app.yaml) ([Helm Chart](cluster-applications/040-cis-compliance))
-- [Nvidia GPU Operator](root-applications/ibm-mas-cluster-root/templates/050-nvidia-gpu-operator-app) ([Helm Chart](cluster-applications/050-nvidia-gpu-operator))
+The {{ account_root_chart() }} installs the {{ cluster_root_app_set() }}. This generates a set of **Cluster Root Applications** based on the configuration in the {{ config_repo() }} 
 
 
-The **Cluster Root Application** [Helm Chart](root-applications/ibm-mas-cluster-root) also installs the **[MAS Instance Root Application Set](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml)**. This generates a set of **MAS Instance Root Applications** based on the configuration in the **Config Git Repo**.  
+#### {{ cluster_root_chart() }} 
 
-The **MAS Instance Root Application** [Helm Chart](root-applications/ibm-mas-instance-root) contains templates for generating ArgoCD Applications that install and configure some instance-level dependencies (e.g. SLS, DB2 Databases), MAS Core and various (MAS) applications (e.g. Manage, Monitor, etc) in the appropriate namespace on the target cluster:
- 
-- [CP4D](root-applications/ibm-mas-instance-root/templates/080-ibm-cp4d-app.yaml) ([Helm Chart](instance-applications/080-ibm-cp4d))
-- [SLS (Suite License Service)](root-applications/ibm-mas-instance-root/templates/100-ibm-sls-app.yaml) ([Helm Chart](instance-applications/100-ibm-sls))
-- [MAS Suite](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml) ([Helm Chart](instance-applications/130-ibm-mas-suite))
-- [MAS App Assist Install](root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-assist-install.yaml) ([Helm Chart](instance-applications/500-540-ibm-mas-suite-app-install))
-- [MAS App IoT Install](root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-iot-install.yaml) ([Helm Chart](instance-applications/500-540-ibm-mas-suite-app-install))
-- [MAS App Manage Install](root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-manage-install.yaml) ([Helm Chart](instance-applications/500-540-ibm-mas-suite-app-install))
-- [MAS App VisualInspection Install](root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-visualinspection-install.yaml) ([Helm Chart](instance-applications/500-540-ibm-mas-suite-app-install))
-- [MAS App Health Install](root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-health-install.yaml) ([Helm Chart](instance-applications/500-540-ibm-mas-suite-app-install))
-- [MAS App Monitor Install](root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-monitor-install.yaml) ([Helm Chart](instance-applications/500-540-ibm-mas-suite-app-install))
-- [MAS App Optimizer Install](root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-optimizer-install.yaml) ([Helm Chart](instance-applications/500-540-ibm-mas-suite-app-install))
-- [MAS App Predict Install](root-applications/ibm-mas-instance-root/templates/540-ibm-mas-masapp-predict-install.yaml) ([Helm Chart](instance-applications/500-540-ibm-mas-suite-app-install))
+The {{ cluster_root_chart() }} templates generate ArgoCD Applications for configuring various dependencies shared by MAS instances on {{ target_clusters() }}:
+
+- {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml", "Operator Catalog") }} {{ gitops_repo_dir_link("cluster-applications/000-ibm-operator-catalog", "(Chart)") }}
+- {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml", "Redhat Certificate Manager") }} {{ gitops_repo_dir_link("cluster-applications/010-redhat-cert-manager", "(Chart)") }}
+- {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml", "DRO") }} {{ gitops_repo_dir_link("cluster-applications/020-ibm-dro", "(Chart)") }} 
+- {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/060-ibm-db2u-app.yaml", "Db2u Operator") }} {{ gitops_repo_dir_link("cluster-applications/060-ibm-db2u", "(Chart)") }} 
+- {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/040-cis-compliance-app.yaml", "CIS Compliance") }} {{ gitops_repo_dir_link("cluster-applications/040-cis-compliance", "(Chart)") }} 
+- {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/050-nvidia-gpu-operator-app.yaml", "Nvidia GPU Operator") }} {{ gitops_repo_dir_link("cluster-applications/050-nvidia-gpu-operator", "(Chart)") }} 
+
+The {{ cluster_root_chart() }} also installs the {{ instance_root_app_set() }}. This generates a set of **Instance Root Applications** based on the configuration in the {{  config_repo() }}.  
+
+#### {{ instance_root_chart() }} 
+
+The {{ instance_root_chart() }} contains templates for ArgoCD Applications for installing MAS instances on {{ target_clusters() }}.
+
+- Instance-level MAS dependencies:
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/080-ibm-cp4d-app.yaml", "CP4D") }} {{ gitops_repo_dir_link("instance-applications/080-ibm-cp4d", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/100-ibm-sls-app.yaml", "SLS (Suite License Service)") }} {{ gitops_repo_dir_link("instance-applications/100-ibm-sls", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml", "DB2 Databases") }}[^1] {{ gitops_repo_dir_link("instance-applications/120-ibm-db2u-database", "(Chart)") }}
 
 
-There are some special templates in the **MAS Instance Root Application** [Helm Chart](root-applications/ibm-mas-instance-root) that are capable of generating multiple Applications; necessary when there may be one or more instances of that type of resource, which will vary between MAS instances - for instance DB2 databases, suite configs, and suite/application workspaces:
+  - MAS Core itself, including the suite, suite configurations and core workspaces:
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml", "MAS Core Suite") }} {{ gitops_repo_dir_link("instance-applications/130-ibm-mas-suite", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/200-ibm-mas-workspaces.yaml", "MAS Workspaces") }}[^1] {{ gitops_repo_dir_link("instance-applications/220-ibm-mas-workspace", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml", "Suite Configs") }}[^1] (Charts[^2])
 
-- [DB2 Databases](root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml) ([Helm Chart](instance-applications/120-ibm-db2u-database))
-- [MAS Workspaces](root-applications/ibm-mas-instance-root/templates/200-ibm-mas-workspaces.yaml) ([Helm Chart](instance-applications/220-ibm-mas-workspace))
-- [MAS App Configs](root-applications/ibm-mas-instance-root/templates/510-550-ibm-mas-masapp-configs) ([Helm Chart](instance-applications/510-550-ibm-mas-suite-app-config))
-- [Suite Configs](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml)
-  - This application is responsible for installing various types of suite configuration types (Mongo, BAS, SMTP, etc) at various scopes (system, app, ws, wsapp). The Helm Chart it uses is chosen dynanmically based on the configuration type:
-    - [JDBC Config](instance-applications/130-ibm-jdbc-config)
-    - [Kafka Config](instance-applications/130-ibm-kafka-config)
-    - [BAS Config](instance-applications/130-ibm-mas-bas-config)
-    - [IDP Config](instance-applications/130-ibm-mas-idp-config)
-    - [Mongo Config](instance-applications/130-ibm-mas-mongo-config)
-    - [SLS Config](instance-applications/130-ibm-mas-sls-config)
-    - [SMTP Config](instance-applications/130-ibm-mas-smtp-config)
-    - [COS Config](instance-applications/130-ibm-objectstorage-config)
 
+  - MAS Applications (base installs):
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-assist-install.yaml", "MAS App Assist Install") }} {{ gitops_repo_dir_link("instance-applications/500-540-ibm-mas-suite-app-install", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-iot-install.yaml", "MAS App IoT Install") }} {{ gitops_repo_dir_link("instance-applications/500-540-ibm-mas-suite-app-install", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-manage-install.yaml", "MAS App Manage Install") }} {{ gitops_repo_dir_link("instance-applications/500-540-ibm-mas-suite-app-install", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-visualinspection-install.yaml", "MAS App VisualInspection Install") }} {{ gitops_repo_dir_link("instance-applications/500-540-ibm-mas-suite-app-install", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-health-install.yaml", "MAS App Health Install") }} {{ gitops_repo_dir_link("instance-applications/500-540-ibm-mas-suite-app-install", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-monitor-install.yaml", "MAS App Monitor Install") }} {{ gitops_repo_dir_link("instance-applications/500-540-ibm-mas-suite-app-install", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-optimizer-install.yaml", "MAS App Optimizer Install") }} {{ gitops_repo_dir_link("instance-applications/500-540-ibm-mas-suite-app-install", "(Chart)") }}
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/540-ibm-mas-masapp-predict-install.yaml", "MAS App Predict Install") }} {{ gitops_repo_dir_link("instance-applications/500-540-ibm-mas-suite-app-install", "(Chart)") }}
+
+  - MAS Applications (workspace configurations):
+    - {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/510-550-ibm-mas-masapp-configs.yaml", "MAS App Configs") }}[^1] {{ gitops_repo_dir_link("instance-applications/510-550-ibm-mas-suite-app-config", "(Generic Chart)") }}
+
+
+
+[^1]: These templates are capable of generating multiple Applications; necessary because there may be one or more instances of the **type** of resource they are responsible for managing.
+[^2]:
+    The {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml", "Suite Configs") }} Application is responsible for installing various types of suite configuration types (Mongo, BAS, SMTP, etc) at various scopes (`system`, `app`, `ws`, `wsapp`). The chart is chosen dynamically based on the configuration type: {{ gitops_repo_dir_link("instance-applications/130-ibm-jdbc-config", "JDBC") }}, {{ gitops_repo_dir_link("instance-applications/130-ibm-kafka-config", "Kafka") }}, {{ gitops_repo_dir_link("instance-applications/130-ibm-mas-bas-config", "BAS") }}, {{ gitops_repo_dir_link("instance-applications/130-ibm-mas-idp-config", "IDP") }}, {{ gitops_repo_dir_link("instance-applications/130-ibm-mas-mongo-config", "Mongo") }}, {{ gitops_repo_dir_link("instance-applications/130-ibm-mas-sls-config", "SLS") }}, {{ gitops_repo_dir_link("instance-applications/130-ibm-mas-smtp-config", "SMTP") }}, {{ gitops_repo_dir_link("instance-applications/130-ibm-objectstorage-config", "COS") }}
+
+    

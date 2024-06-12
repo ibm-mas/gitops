@@ -53,10 +53,17 @@ def define_env(env):
     return gitops_repo_dir_link("root-applications/ibm-mas-cluster-root", "Cluster Root Chart")
   env.macro(cluster_root_chart)
 
+  def instance_root_chart():
+    return gitops_repo_dir_link("root-applications/ibm-mas-instance-root", "Instance Root Chart")
+  env.macro(instance_root_chart)
+
 
 
   def cluster_root_app_set():
      return gitops_repo_file_link("root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml", "Cluster Root Application Set")
   env.macro(cluster_root_app_set)
 
+  def instance_root_app_set():
+     return gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml", "Instance Root Application Set")
+  env.macro(instance_root_app_set)
 

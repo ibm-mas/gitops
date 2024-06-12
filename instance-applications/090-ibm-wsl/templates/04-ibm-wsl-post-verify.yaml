@@ -323,12 +323,12 @@ spec:
             - |
 
               set -e
-              echo
+              echo ""
               echo "================================================================================"
               echo "Part B - Waiting for WSL and its dependencies to be complete"
               echo "Wait for WS Status to be Completed"
               echo "================================================================================"
-              echo
+              echo ""
               
               echo "Waiting for wsStatus to be 'Completed'..."
 
@@ -351,7 +351,7 @@ spec:
               done
 
 
-              echo
+              echo ""
               echo "================================================================================"
               echo "Lookup Cloud Pak for Data admin username"
               USERNAME=$(oc get secret ibm-iam-bindinfo-platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -o json | jq -r '.data.admin_username' | base64 -d)
@@ -368,11 +368,11 @@ spec:
               fi
               
               
-              echo
+              echo ""
               echo "Lookup Cloud Pak for Data admin password"
               CPD_ADMIN_PASSWORD=$(oc get secret $SECRET_NAME -n ${CPD_INSTANCE_NAMESPACE} -o json | jq -r ".data.${ADMIN_PASSWORD_PROPERTY}" | base64 -d)
 
-              echo
+              echo ""
               echo "Lookup Cloud Pak for Data admin url"
               URL=$(oc get ZenService lite-cr -o jsonpath="{.status.url}{'\n'}" -n ${CPD_INSTANCE_NAMESPACE})
 
@@ -383,8 +383,7 @@ spec:
 
               CPD_ADMIN_URL="https://${URL}"
 
-              echo
-              echo
+              echo ""
               echo "================================================================================"
               echo "Debug Cloud Pak for Data Admin details"
               echo "================================================================================"
@@ -392,17 +391,19 @@ spec:
               echo "- CP4D Admin Username .................... ${CPD_ADMIN_USERNAME}"
               echo "- CP4D Admin Password .................... ${CPD_ADMIN_PASSWORD:0:2}<snip>"
 
-              echo
+              echo ""
               echo "================================================================================"
               echo "Generate MAS Config for WSL in $MAS_CONFIG_DIR folder"
               echo "================================================================================"
               echo "- CP4D WSL Project Name .................. ${CPD_WSL_PROJECT_NAME}"
-              echo
+              echo ""
 
               echo "Authorize CP4D Admin and get bearer token"
+              echo "================================================================================"
               CPD_BEARER_TOKEN=$(curl -k -X POST --location "${CPD_ADMIN_URL}/icp4d-api/v1/authorize" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"username\":\"$CPD_ADMIN_USERNAME\",\"password\":\"$CPD_ADMIN_PASSWORD\"}" | jq -r '.token')
 
               echo "Check if a project with the name ${CPD_WSL_PROJECT_NAME} exists"
+              echo "================================================================================"
               curl -k -X GET --location "${CPD_ADMIN_URL}/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" -o projectlist.json
               WSL_PROJECT_ID=$(cat projectlist.json | jq -r --arg pn "$CPD_WSL_PROJECT_NAME" '.resources[] | select(.entity.name==$pn) | .metadata.guid')
 
@@ -412,18 +413,13 @@ spec:
                 echo "- Project Name ......................... ${CPD_WSL_PROJECT_NAME}"
                 echo "- Project Description .................. ${CPD_WSL_PROJECT_DESCRIPTION}"
                 echo "- Project Storage Guid ................. ${CPD_WSL_PROJECT_STORAGE_GUID}"
+                echo ""
+                echo "Check that the cpd admin user has permission to create projects"
                 echo "================================================================================"
-                echo
-                echo "Ensure that the cpd admin user has permission to create projects"
                 curl -k -X PUT --location "${CPD_ADMIN_URL}/usermgmt/v1/role/zen_administrator_role" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"role_name\":\"Administrator\",\"description\":\"Administrator role\",\"permissions\":[\"administrator\",\"can_provision\",\"manage_catalog\",\"create_space\",\"create_project\"]}"
 
                 echo "Creating project..."
                 WSL_PROJECT_ID=$(curl -k -X POST --location "${CPD_ADMIN_URL}/transactional/v2/projects" --header "Authorization:Bearer ${CPD_BEARER_TOKEN}" --header "Cache-Control:no-cache" --header "Content-Type:application/json" --data "{\"name\":\"$CPD_WSL_PROJECT_NAME\",\"description\":\"$CPD_WSL_PROJECT_DESCRIPTION\",\"generator\":\"cp4d-$CPD_ADMIN_USERNAME\",\"public\":false,\"storage\":{ \"type\":\"assetfiles\",\"guid\":\"$CPD_WSL_PROJECT_STORAGE_GUID\"}}" | jq -r '.location | split ("/") | last')
-                
-                if [[ -z WSL_PROJECT_ID ]]; then
-                  echo "error creating project. Could not fetch project id."
-                fi
-
               else
                 echo "Project named ${CPD_WSL_PROJECT_NAME} exists"
               fi
@@ -432,6 +428,11 @@ spec:
               echo "Writing WSL Project ID into Secret Manager"
 
               source /mascli/functions/gitops_utils
+              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               export SM_AWS_REGION=${REGION_ID}
               sm_login
 

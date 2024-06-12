@@ -15,7 +15,7 @@ The following figure shows a tree of ArgoCD applications and Application Sets de
 
 ![Application Structure](png/appstructure.png)
 
-The **Account Root Application** [Helm Chart](root-applications/ibm-mas-account-root) installs the **[Cluster Root Application Set](root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml)**. This generates a set of **MAS Cluster Root Applications** based on the configuration in the **Config Git Repo*. 
+The **Account Root Application** [Helm Chart](root-applications/ibm-mas-account-root) installs the **[Cluster Root Application Set]({{ gitops_repo_file_link("root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml") }})**. This generates a set of **MAS Cluster Root Applications** based on the configuration in the **Config Git Repo*. 
 
 The **Cluster Root Application** [Helm Chart](root-applications/ibm-mas-cluster-root) contains templates that generate ArgoCD Applications for configuring various dependencies shared by MAS instances on the target cluster, including:
 

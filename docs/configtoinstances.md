@@ -129,7 +129,7 @@ Now let's take a look at the contents of these files:
 |   |   |   mas_catalog_version: v8-240405-amd64
 ```
 
-All of the files contain a `merge-key` which includes the account ID and the cluster ID (e.g. `dev/cluster1`). The is what the Merge generator uses to group together configuration into per-cluster YAML objects.
+All of the files contain a `merge-key` which includes the account ID and the cluster ID (e.g. `dev/cluster1`). This is used by the Merge generator to group together configuration into per-cluster YAML objects.
 
 The `ibm-mas-cluster-base.yaml` file contains global configuration for the target cluster, including the `account.id`, and the `cluster.id` and the `cluster.url` which determines the {{ target_cluster() }} that ArgoCD will deploy resources to.
 
@@ -161,7 +161,7 @@ Based on the config shown above, {{ cluster_root_app_set() }} would generate two
 
 The generated YAML objects are used to render the template defined in the {{ cluster_root_app_set() }} to generate **Cluster Root Applications** in the {{ management_cluster() }}. [Go Template](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/) expressions are used to inject values from the cluster's YAML object into the template.
 
- A simplified and abridged snippet of the template is shown below, followed by a breakdown of the purpose of each section:
+ A simplified and abridged snippet of the {{ cluster_root_app_set() }} template is shown below, followed by a breakdown of the purpose of each section:
 
 ```yaml
   {% raw %}template:
@@ -216,7 +216,7 @@ Additional global configuration parameters (such as details of the {{ source_rep
 ```
 
 
-**Cluster Root Applications** are created in the the ArgoCD namespace in the {{ management_cluster() }}:
+**Cluster Root Applications** are created in the ArgoCD namespace on the {{ management_cluster() }}:
 ```yaml
       {%raw %}destination:
         server: 'https://kubernetes.default.svc'
@@ -288,7 +288,7 @@ spec:
 The Cluster Root Application
 -------------------------------------------------------------------------------
 
-**Cluster Root Applications** render the {{ cluster_root_chart() }} into the {{ management_cluster() }}. It contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to **Target Clusters** once the configuration for those resources in present in the {{ config_repo() }}
+**Cluster Root Applications** render the {{ cluster_root_chart() }} into the ArgoCD namespace of the {{ management_cluster() }}:. It contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to **Target Clusters** once the configuration for those resources in present in the {{ config_repo() }}
 
 ![Cluster Root Application](png/appstructure-clusterrootapp.png)
 

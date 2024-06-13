@@ -1,14 +1,18 @@
 Mapping Config to MAS Deployments
 ===============================================================================
 
-The following demonstrates how [ArgoCD Application Sets](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/) are combined with the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) to generate a tree of ArgoCD Applications that manage MAS instances in {{ target_clusters() }} based on the configuration files in the {{ config_repo() }}.
+A combination of [ArgoCD Application Sets](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/) and the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) are used by MAS GitOps to generate a tree of ArgoCD Applications that install and manage MAS instances in {{ target_clusters() }} based on the configuration files in the {{ config_repo() }}.
+
+The tree of Application Sets and Applications looks like this:
+
+![Application Structure](drawio/appstructure.drawio)
+
+The following describes *how* this tree is generated.
 
 The Account Root Application
 -------------------------------------------------------------------------------
 
 It begins with the **Account Root Application**. This is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS Gitops Helm Charts and is where several key pieces of global configuration values are provided.
-
-![Account Root Application](png/appstructure-accountrootapp.png)
 
 The manifest for the **Account Root Application** in our example is shown in the snippet below. The account ID, source repo, config (aka "generator") repo are configured here.
 
@@ -50,9 +54,6 @@ spec:
 The Cluster Root Application Set
 -------------------------------------------------------------------------------
 The {{ cluster_root_app_set() }} generates a set of **Cluster Root Applications** based on the configuration in the {{ config_repo() }}.
-
-
-![Cluster Root Application Set](png/appstructure-clusterrootappset.png)
 
 The {{ cluster_root_app_set() }} employs an ArgoCD [Merge Generator](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Merge/) with a list of ArgoCD [Git File Generators](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/#git-generator-files). The Git File Generators monitor for named YAML configuration files at the cluster level in the {{ config_repo() }} and the Merge Generator combines each of these files into a single YAML object per MAS cluster. 
 
@@ -294,8 +295,6 @@ The Cluster Root Application
 
 **Cluster Root Applications** render the {{ cluster_root_chart() }} into the ArgoCD namespace of the {{ management_cluster() }}. The {{ cluster_root_chart() }} contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to **Target Clusters** once the configuration for those resources in present in the {{ config_repo() }}.
 
-![Cluster Root Application](png/appstructure-clusterrootapp.png)
-
 Application-specific configuration is held under a unique top-level field. For example, the `ibm_operator_catalog` field in our example above holds all configuration for the {{ gitops_repo_dir_link("cluster-applications/000-ibm-operator-catalog", "000-ibm-operator-catalog chart") }}. The {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml", "000-ibm-operator-catalog-app template") }} that renders this chart is guarded by:
 ```yaml
 {% raw %}
@@ -478,8 +477,6 @@ The Instance Root Application
 -------------------------------------------------------------------------------
 
 The **Instance Root Application** Helm chart contains templates to conditionally render ArgoCD Applications that deploy MAS instances to **Target Clusters** once the configuration for the ArgoCD Application is present.
-
-![Instance Root Application](png/appstructure-instancerootapp.png)
 
 It follows the same pattern as the **Cluster Root Application** described [above](#the-cluster-root-application); specific applications are enabled once their configuration becomes present. For instance, the [130-ibm-mas-suite-app.yaml](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml) template generates an Application that deploys the MAS `Suite` CR to the target cluster once configuration under the `ibm_mas_suite` key is present.
 

@@ -86,7 +86,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -226,6 +226,14 @@ spec:
               fi
 
               echo
+              echo "Fetching Watson Studio Runtimes Version..."
+              export WS_RUNTIMES_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ws_runtimes.cr_version')
+              if [[ -z "${WS_RUNTIMES_VERSION}" ]]; then
+                echo "Failed to fetch watson studio runtimes version"
+                exit 1
+              fi
+
+              echo
               echo "Fetching Watson Studio Runtimes Channel..."
               export WS_RUNTIMES_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ws_runtimes.sub_channel')
               if [[ -z "${WS_RUNTIMES_CHANNEL}" ]]; then
@@ -234,10 +242,26 @@ spec:
               fi
 
               echo
+              echo "Fetching DataRefinery Version..."
+              export DATAREFINERY_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.datarefinery.cr_version')
+              if [[ -z "${DATAREFINERY_VERSION}" ]]; then
+                echo "Failed to fetch datarefinery version"
+                exit 1
+              fi
+
+              echo
               echo "Fetching DataRefinery Channel..."
               export DATAREFINERY_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.datarefinery.sub_channel')
               if [[ -z "${DATAREFINERY_CHANNEL}" ]]; then
                 echo "Failed to fetch datarefinery channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Opencontent Rabbitmq Channel..."
+              export RABBITMQ_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.opencontent_rabbitmq.sub_channel')
+              if [[ -z "${RABBITMQ_CHANNEL}" ]]; then
+                echo "Failed to fetch opencontent rabbitmq channel"
                 exit 1
               fi
 
@@ -264,8 +288,11 @@ spec:
               SECRET_NAME_WSL_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wsl_channel
               SECRET_NAME_CCS_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ccs_version
               SECRET_NAME_CCS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ccs_channel
+              SECRET_NAME_WS_RUNTIMES_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ws_runtimes_version
               SECRET_NAME_WS_RUNTIMES_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ws_runtimes_channel
+              SECRET_NAME_DATAREFINERY_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/datarefinery_version
               SECRET_NAME_DATAREFINERY_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/datarefinery_channel
+              SECRET_NAME_RABBITMQ_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_rabbitmq_channel
               SECRET_NAME_ELASTICSEARCH_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_elasticsearch_channel
 
               echo
@@ -290,8 +317,11 @@ spec:
               echo "    - SECRET_NAME_WSL_CHANNEL ............................... ${SECRET_NAME_WSL_CHANNEL}"
               echo "    - SECRET_NAME_CCS_VERSION ............................... ${SECRET_NAME_CCS_VERSION}"
               echo "    - SECRET_NAME_CCS_CHANNEL ............................... ${SECRET_NAME_CCS_CHANNEL}"
+              echo "    - SECRET_NAME_WS_RUNTIMES_VERSION ....................... ${SECRET_NAME_WS_RUNTIMES_VERSION}"
               echo "    - SECRET_NAME_WS_RUNTIMES_CHANNEL ....................... ${SECRET_NAME_WS_RUNTIMES_CHANNEL}"
+              echo "    - SECRET_NAME_DATAREFINERY_VERSION ...................... ${SECRET_NAME_DATAREFINERY_VERSION}"
               echo "    - SECRET_NAME_DATAREFINERY_CHANNEL ...................... ${SECRET_NAME_DATAREFINERY_CHANNEL}"
+              echo "    - SECRET_NAME_RABBITMQ_CHANNEL .......................... ${SECRET_NAME_RABBITMQ_CHANNEL}"
               echo "    - SECRET_NAME_ELASTICSEARCH_CHANNEL ..................... ${SECRET_NAME_ELASTICSEARCH_CHANNEL}"
               echo
 
@@ -307,8 +337,11 @@ spec:
               sm_update_secret $SECRET_NAME_WSL_CHANNEL "{\"wsl_channel\": \"$WSL_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_CCS_VERSION "{\"ccs_version\": \"$CCS_VERSION\" }"
               sm_update_secret $SECRET_NAME_CCS_CHANNEL "{\"ccs_channel\": \"$CCS_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_WS_RUNTIMES_VERSION "{\"ws_runtimes_version\": \"$WS_RUNTIMES_VERSION\" }"
               sm_update_secret $SECRET_NAME_WS_RUNTIMES_CHANNEL "{\"ws_runtimes_channel\": \"$WS_RUNTIMES_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_DATAREFINERY_VERSION "{\"datarefinery_version\": \"$DATAREFINERY_VERSION\" }"
               sm_update_secret $SECRET_NAME_DATAREFINERY_CHANNEL "{\"datarefinery_channel\": \"$DATAREFINERY_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_RABBITMQ_CHANNEL "{\"opencontent_rabbitmq_channel\": \"$RABBITMQ_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_ELASTICSEARCH_CHANNEL "{\"opencontent_elasticsearch_channel\": \"$ELASTICSEARCH_CHANNEL\" }"
 
 

@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:9.0.0-pre.gitops
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -54,7 +54,7 @@ spec:
               wait_period=0
               while true; do
                 wait_period=$(($wait_period+60))
-                if [ $wait_period -gt 1200 ];then
+                if [ $wait_period -gt 1200 ]; then
                   echo "ZenService operator is not ready after 20 minutes of waiting. exiting..."
                   exit 1
                 else
@@ -91,7 +91,7 @@ spec:
               wait_period=0
               while true; do
                 wait_period=$(($wait_period+60))
-                if [ $wait_period -gt 1200 ];then
+                if [ $wait_period -gt 1200 ]; then
                   echo "ZenService operator is not ready after 20 minutes of waiting. exiting..."
                   exit 1
                 else
@@ -111,7 +111,7 @@ spec:
               wait_period=0
               while true; do
                 wait_period=$(($wait_period+120))
-                if [ $wait_period -gt 7200 ];then
+                if [ $wait_period -gt 7200 ]; then
                   echo "zenStatus is not complete after 2 hours of waiting. exiting..."
                   exit 1
                 else
@@ -131,7 +131,7 @@ spec:
               wait_period=0
               while true; do
                 wait_period=$(($wait_period+120))
-                if [ $wait_period -gt 7200 ];then
+                if [ $wait_period -gt 7200 ]; then
                   echo "ibmcpd controlPlaneStatus is not complete after 2 hours of waiting. exiting..."
                   exit 1
                 else
@@ -167,12 +167,14 @@ spec:
 
               echo
               echo "Lookup Cloud Pak for Data admin url"
-              CPD_ADMIN_URL=$(oc get ZenService lite-cr -o jsonpath="{.status.url}{'\n'}" -n ${CPD_INSTANCE_NAMESPACE})
+              URL=$(oc get ZenService lite-cr -o jsonpath="{.status.url}{'\n'}" -n ${CPD_INSTANCE_NAMESPACE})
 
-              if [[ -z ${CPD_ADMIN_URL} || -z ${CPD_ADMIN_USERNAME} || -z ${CPD_ADMIN_PASSWORD} ]]; then
+              if [[ -z ${URL} || -z ${CPD_ADMIN_USERNAME} || -z ${CPD_ADMIN_PASSWORD} ]]; then
                 echo "CPD admin username/password/url details are missing, please check your Cloud Pak For Data instance health!"
                 exit 1
               fi
+              
+              CPD_ADMIN_URL="https://${URL}"
 
               echo
               echo

@@ -3,7 +3,7 @@ Mapping Config to MAS Deployments
 
 A combination of [ArgoCD Application Sets](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/) and the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) are used by MAS GitOps to generate a tree of ArgoCD Applications that install and manage MAS instances in {{ target_clusters() }} based on the configuration files in the {{ config_repo() }}.
 
-The tree of Application Sets and Applications looks like this:
+The tree of Applications and Application Sets looks like this:
 
 ![Application Structure](drawio/appstructure.drawio)
 
@@ -137,7 +137,7 @@ The `ibm-mas-cluster-base.yaml` file contains global configuration for the targe
 The other YAML configuration files (such as `ibm-operator-catalog.yaml` shown above) represent one type of cluster-level resource that we wish to install on the {{ target_cluster() }}.
 
 
-Based on the config shown above, {{ cluster_root_app_set() }} would generate two YAML objects:
+Given the config above, {{ cluster_root_app_set() }} would generate two YAML objects:
 ```yaml
  merge-key: "dev/cluster1"
  account:
@@ -233,7 +233,7 @@ Additional global configuration parameters (such as details of the {{ source_rep
 ```
 
 
-Given the configuration in the example above, two **Cluster Root Applications** are generated:
+Given the config above, two **Cluster Root Applications** are generated:
 
 ```yaml
 kind: Application
@@ -293,7 +293,9 @@ spec:
 The Cluster Root Application
 -------------------------------------------------------------------------------
 
-**Cluster Root Applications** render the {{ cluster_root_chart() }} into the ArgoCD namespace of the {{ management_cluster() }}. The {{ cluster_root_chart() }} contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to {{ target_clusters() }} once the configuration for those resources is present in the {{ config_repo() }}.
+**Cluster Root Applications** render the {{ cluster_root_chart() }} into the ArgoCD namespace of the {{ management_cluster() }}. 
+
+The {{ cluster_root_chart() }} contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to {{ target_clusters() }} once the configuration for those resources is present in the {{ config_repo() }}.
 
 Application-specific configuration is held under a unique top-level field. For example, the `ibm_operator_catalog` field in our example above holds all configuration for the {{ gitops_repo_dir_link("cluster-applications/000-ibm-operator-catalog", "000-ibm-operator-catalog chart") }}. The {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml", "000-ibm-operator-catalog-app template") }} that renders this chart is guarded by:
 ```yaml
@@ -400,24 +402,24 @@ spec:
 
 The other Application templates in the {{ cluster_root_chart() }} (e.g. {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml", "010-ibm-redhat-cert-manager-app.yaml") }}, {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml", "020-ibm-dro-app.yaml") }} and so on) all follow this pattern and work in a similar way.
 
-The **Cluster Root Application** chart also includes the [099-instance-appset.yaml template](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml) which generates a new **Instance Root Application Set** for each cluster.
+The {{ cluster_root_chart() }} also includes the [099-instance-appset.yaml template](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml) which generates a new **Instance Root Application Set** for each cluster.
 
 The Instance Root Application Set
 -------------------------------------------------------------------------------
 
-The [Instance Root Application Set](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml) is responsible for generating an **Instance Root Application** per MAS instance on **Target Cluster**s. 
+The {{ instance_root_app_set() }}  generates a set of **Instance Root Applications** based on the configuration in the {{ config_repo() }}. It follows the same pattern as the {{ cluster_root_app_set() }} as described [above](#the-cluster-root-application-set). 
 
-![Instance Root Application Set](png/appstructure-instancerootappset.png)
-
-It follows the same pattern as the Cluster Root Application Set described [above](#the-cluster-root-application-set). The key differences are:
+The key differences are:
 
 - `merge-keys` in the instance-level configuation YAML files also contain a MAS instance ID, e.g. `dev/cluster1/instance1`.
-- The generated **Instance Root Applications** source the [ibm-mas-instance-root Helm Chart](root-applications/ibm-mas-instance-root).
-- The Git File generators look for a different set of named YAML files at the **instance** level in the **Config Git Repo**:
+- The generated **Instance Root Applications** source the {{ gitops_repo_dir_link("root-applications/ibm-mas-instance-root", "ibm-mas-instance-root Chart") }}.
+- The Git File Generators look for a different set of named YAML files at the **instance** level in the {{ config_repo() }}:
+
+
+A simplified and abridged snippet showing the Merge and Git File generators from the {{ instance_root_app_set() }} template is shown below:
 
 ```yaml
-{% raw %}
-spec:
+{% raw %}spec:
   ...
   generators:
     - merge:
@@ -429,23 +431,32 @@ spec:
               - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-mas-instance-base.yaml"
           - git:
               files:
-              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite.yaml"
-{% endraw %}
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite.yaml"{% endraw %}
 ```
 
+Continuing with our example, let's add some additional instance-level config files to the {{ config_repo() }} (only showing `cluster1` this time for brevity). These are the files that the Git File Generators above are looking for.
 
-To continue our example above, our **Git Config Repo** now contains some additional instance-level config files (only showing `cluster1` this time for brevity):
+```
+├── dev
+│   ├── cluster1
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+│   |   ├── instance1
+│   |   │   ├── ibm-mas-instance-base.yaml
+│   |   │   ├── ibm-mas-suite.yaml
+```
+
+Now let's take a look at the contents of the new instance-level files:
 
 ```
 ├── dev
 │   ├── cluster1
 │   │   ├── ibm-mas-cluster-base.yaml
-|   |   |
 │   │   ├── ibm-operator-catalog.yaml
-|   |   |
 │   |   ├── instance1
+|   |   |   |-------------------------------------------
 │   |   │   ├── ibm-mas-instance-base.yaml
-|   |   |   |
+|   |   |   |-------------------------------------------
 |   |   |   |   merge-key: "dev/cluster1/instance1"
 |   |   |   |   account:
 |   |   |   |     id: dev
@@ -454,16 +465,23 @@ To continue our example above, our **Git Config Repo** now contains some additio
 |   |   |   |     url: https://api.cluster1.cakv.p3.openshiftapps.com:443
 |   |   |   |   instance:
 |   |   |   |     id: instance1
-|   |   |   |
-│   |   │   ├── ibm-mas-suite.yaml
 |   |   |   |  
+|   |   |   |-------------------------------------------
+│   |   │   ├── ibm-mas-suite.yaml
+|   |   |   |-------------------------------------------
 |   |   |   |   merge-key: "dev/cluster1/instance1"
 |   |   |   |   ibm_mas_suite:
 |   |   |   |     mas_channel: "8.11.x"
 ...
 ```
 
-The **Instance Root Application Set** generators would produce a YAML object:
+As with the cluster-level config, all files contain the `merge-key`, but this times it also includes the MAS instance ID. This is used by the Merge generator to group together configuration into per-instance YAML objects for each {{ target_cluster() }}.
+
+The `ibm-mas-instance-base.yaml` file contains global configuration for the instance on the {{ target_cluster() }}, including the `account.id`, and the `cluster.id`, the `cluster.url` and the `instance.id`.
+
+The other YAML configuration files (such as `ibm-mas-suite.yaml` shown above) represent one type of instance-level resource that we wish to install on the {{ target_cluster() }}.
+
+Given the config above, the {{instance_root_app_set }} would generate one YAML object:
 ```yaml
 merge-key: "dev/cluster1/instance1"
 account:
@@ -477,7 +495,7 @@ ibm_mas_suite:
   mas_channel: "8.11.x"
 ```
 
-This would be used to render the **Instance Root Application Set** template and generate an **Instance Root Application**:
+Follow the same pattern used in the {{ cluster_root_app_set() }} as described [above](#the-cluster-root-application-set), the  YAML object is used to render tje **Instance Root Application Set** template, generating an **Instance Root Application**:
 ```yaml
 kind: Application
 metadata:
@@ -507,16 +525,44 @@ spec:
     namespace: openshift-gitops
 ```
 
+. 
+
 The Instance Root Application
 -------------------------------------------------------------------------------
 
-The **Instance Root Application** Helm chart contains templates to conditionally render ArgoCD Applications that deploy MAS instances to **Target Clusters** once the configuration for the ArgoCD Application is present.
+**Instance Root Applications** render the {{ instance_root_chart() }} into the ArgoCD namespace of the {{ management_cluster() }}.
 
-It follows the same pattern as the **Cluster Root Application** described [above](#the-cluster-root-application); specific applications are enabled once their configuration becomes present. For instance, the [130-ibm-mas-suite-app.yaml](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml) template generates an Application that deploys the MAS `Suite` CR to the target cluster once configuration under the `ibm_mas_suite` key is present.
+The {{ instance_root_chart() }} contains templates to conditionally render ArgoCD Applications that deploy MAS instances to **Target Clusters** once the configuration for the ArgoCD Application is present in the {{ config_repo() }}.
 
-Some special templates are capable of generating multiple applications: [120-db2-databases-app.yaml](root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml), [130-ibm-mas-suite-configs-app.yaml)](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml), [200-ibm-mas-workspaces.yaml](root-applications/ibm-mas-instance-root/templates/200-ibm-mas-workspaces.yaml) and [130-ibm-mas-suite-configs-app.yaml](root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml). These are special cases where there can be more than one instance of the *type* of resource that these Applications are responsible for managing. 
+It follows the same pattern as the **Cluster Root Application** described [above](#the-cluster-root-application); specific applications are enabled once their configuration is pushed to the {{ config_repo() }}. For instance, the {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml", "130-ibm-mas-suite-app.yaml template") }} generates an Application that deploys the MAS `Suite` CR to the target cluster once configuration under the `ibm_mas_suite` key is present.
 
-For example, the MAS instance may require more than one DB2 Database. To accommodate this, we make use of the Helm `range` control structure to iterate over a YAML list in template for DB2 Database Applications [120-db2-databases-app.yaml](root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml):
+Some special templates are capable of generating multiple applications: 
+
+- {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml", "120-db2-databases-app.yaml") }}
+- {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml", "130-ibm-mas-suite-configs-app.yaml") }}
+- {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/200-ibm-mas-workspaces.yaml", "200-ibm-mas-workspaces.yaml") }}
+- {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/510-550-ibm-mas-masapp-configs", "510-550-ibm-mas-masapp-configs") }}
+
+These are used when there can be more than one instance of the *type* of resource that these Applications are responsible for managing. 
+
+For example, MAS instances may require more than one DB2 Database. To accommodate this, we make use of the Helm `range` control structure to iterate over a list in YAML configuration files in the {{ config_repo()}}.
+
+For instance, the `ibm-db2u-databases.yaml` configuration file contains:
+```yaml
+ibm_db2u_databases:
+  - mas_application_id: iot
+    db2_memory_limits: 12Gi
+    ...
+  - mas_application_id: manage
+    db2_memory_limits: 16Gi
+    db2_database_db_config:
+      CHNGPGS_THRESH: '40'
+      ...
+    ...
+```
+
+The {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml", "120-db2-databases-app.yaml template") }} iterates over this list to generate multiple DB2 Database Applications configured as needed:
+
 ```yaml
 {% raw %}
 {{- range $i, $value := .Values.ibm_db2u_databases }}
@@ -530,19 +576,6 @@ metadata:
 {% endraw %}
 ```
 
-This iterates over the list held in the `ibm-db2u-databases.yaml` configuration file to generate any number of DB2 Database Applications configured as needed.
-```yaml
-ibm_db2u_databases:
-  - mas_application_id: iot
-    db2_memory_limits: 12Gi
-    ...
-  - mas_application_id: manage
-    db2_memory_limits: 16Gi
-    db2_database_db_config:
-      CHNGPGS_THRESH: '40'
-      ...
-    ...
-```
 
 !!! info "Why not use ApplicationSets here?"
  

@@ -11,6 +11,7 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
+  ttlSecondsAfterFinished: 120
   template:
     metadata:
       labels:
@@ -104,6 +105,7 @@ spec:
 
               if [[ $CREATE_TARGET_PR == true ]]; then
                   #Create a new branch if we need a PR
+                  export TARGET_PR_GIT_BRANCH=$TARGET_GIT_BRANCH
                   export TARGET_GIT_BRANCH=auto-$TARGET_GIT_BRANCH
                   git branch $TARGET_GIT_BRANCH
               fi
@@ -155,7 +157,7 @@ spec:
                 done
 
                 if [[ $CREATE_TARGET_PR == true ]]; then
-                    createPR $TARGET_GIT_BRANCH $TARGET_GIT_BRANCH $COMMIT_MESSAGE_TITLE || exit 1
+                    createPR $TARGET_GIT_BRANCH $TARGET_PR_GIT_BRANCH $COMMIT_MESSAGE_TITLE || exit 1
                 fi
               else
                 echo "No changes found so no commit made"

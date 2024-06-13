@@ -257,6 +257,21 @@ spec:
                 exit 1
               fi
 
+              echo
+              echo "Fetching AI Openscale Channel..."
+              export AIOPENSCALE_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.openscale.sub_channel')
+              if [[ -z "${AIOPENSCALE_CHANNEL}" ]]; then
+                echo "Failed to fetch aiopenscale channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching AI Openscale Version..."
+              export AIOPENSCALE_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.openscale.cr_version')
+              if [[ -z "${AIOPENSCALE_VERSION}" ]]; then
+                echo "Failed to fetch aiopenscale version"
+                exit 1
+              fi
 
               export SM_AWS_REGION=${REGION_ID}
               sm_login
@@ -276,6 +291,8 @@ spec:
               SECRET_NAME_DATAREFINERY_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/datarefinery_channel
               SECRET_NAME_RABBITMQ_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_rabbitmq_channel
               SECRET_NAME_ELASTICSEARCH_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_elasticsearch_channel
+              SECRET_NAME_AIOPENSCALE_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/aiopenscale_version
+              SECRET_NAME_AIOPENSCALE_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/aiopenscale_channel
 
               echo
               echo 
@@ -303,6 +320,8 @@ spec:
               echo "    - SECRET_NAME_DATAREFINERY_CHANNEL ...................... ${SECRET_NAME_DATAREFINERY_CHANNEL}"
               echo "    - SECRET_NAME_RABBITMQ_CHANNEL .......................... ${SECRET_NAME_RABBITMQ_CHANNEL}"
               echo "    - SECRET_NAME_ELASTICSEARCH_CHANNEL ..................... ${SECRET_NAME_ELASTICSEARCH_CHANNEL}"
+              echo "    - SECRET_NAME_AIOPENSCALE_VERSION ......................... ${SECRET_NAME_AIOPENSCALE_VERSION}"
+              echo "    - SECRET_NAME_AIOPENSCALE_CHANNEL ......................... ${SECRET_NAME_AIOPENSCALE_CHANNEL}"
               echo
 
 
@@ -321,6 +340,8 @@ spec:
               sm_update_secret $SECRET_NAME_DATAREFINERY_CHANNEL "{\"datarefinery_channel\": \"$DATAREFINERY_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_RABBITMQ_CHANNEL "{\"opencontent_rabbitmq_channel\": \"$RABBITMQ_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_ELASTICSEARCH_CHANNEL "{\"opencontent_elasticsearch_channel\": \"$ELASTICSEARCH_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_AIOPENSCALE_VERSION "{\"aiopenscale_version\": \"$AIOPENSCALE_VERSION\" }"
+              sm_update_secret $SECRET_NAME_AIOPENSCALE_CHANNEL "{\"aiopenscale_channel\": \"$AIOPENSCALE_CHANNEL\" }"
 
 
               echo "Done"

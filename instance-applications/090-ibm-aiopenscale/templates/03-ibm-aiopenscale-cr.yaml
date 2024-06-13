@@ -1,0 +1,24 @@
+---
+apiVersion: wos.cpd.ibm.com/v1
+kind: WOService
+metadata:
+  name: openscale-defaultinstance
+  namespace: "{{ .Values.cpd_instance_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "095"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  imagePullSecret: ibm-entitlement-key
+  scaleConfig: "{{ .Values.cpd_service_scale_config }}"
+  license:
+    accept: true
+    license: Standard
+  type: service
+  fileStorageClass: "{{ .Values.cpd_service_storage_class }}"
+  blockStorageClass: "{{ .Values.cpd_service_block_storage_class }}"
+  version: "{{ .Values.aiopenscale_version }}"
+  ccs_operand_version: "{{ .Values.ccs_version }}"

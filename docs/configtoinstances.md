@@ -293,7 +293,7 @@ spec:
 The Cluster Root Application
 -------------------------------------------------------------------------------
 
-**Cluster Root Applications** render the {{ cluster_root_chart() }} into the ArgoCD namespace of the {{ management_cluster() }}. The {{ cluster_root_chart() }} contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to **Target Clusters** once the configuration for those resources in present in the {{ config_repo() }}.
+**Cluster Root Applications** render the {{ cluster_root_chart() }} into the ArgoCD namespace of the {{ management_cluster() }}. The {{ cluster_root_chart() }} contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to {{ target_clusters() }} once the configuration for those resources is present in the {{ config_repo() }}.
 
 Application-specific configuration is held under a unique top-level field. For example, the `ibm_operator_catalog` field in our example above holds all configuration for the {{ gitops_repo_dir_link("cluster-applications/000-ibm-operator-catalog", "000-ibm-operator-catalog chart") }}. The {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml", "000-ibm-operator-catalog-app template") }} that renders this chart is guarded by:
 ```yaml
@@ -301,9 +301,9 @@ Application-specific configuration is held under a unique top-level field. For e
 {{- if not (empty .Values.ibm_operator_catalog) }}
 {% endraw %}
 ```
-Following on from the example above, because `dev/cluster1/ibm-operator-catalog.yaml` has been pushed to the **Git Config Repo**, the `ibm_operator_catalog` key will appear in the Helm values passed to the  **Cluster Root Application**s. This will result in an ArgoCD Applications that will render the [ibm-operator-catalog Helm Chart](cluster-applications/000-ibm-operator-catalog) into each **Target Cluster**
+Continuing with our example, because `ibm_operator_catalog` is present in the Helm values for both **Cluster Root Applications**, both will render the [000-ibm-operator-catalog-app template](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml) into the respective {{ target_cluster() }}.
 
-Looking again at [000-ibm-operator-catalog-app template](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml):
+A simplified and abridged snippet of the [000-ibm-operator-catalog-app template](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml) is shown below, followed by a breakdown of the purpose of each section:
 
 ```yaml
 {% raw %}
@@ -311,8 +311,6 @@ kind: Application
 metadata:
   name: operator-catalog.{{ .Values.cluster.id }}
 spec:
-  destination:
-    server: {{ .Values.cluster.url }}
   source:
     path: cluster-applications/000-ibm-operator-catalog
     plugin:
@@ -321,13 +319,49 @@ spec:
         - name: HELM_VALUES
           value: |
             mas_catalog_version: "{{ .Values.ibm_operator_catalog.mas_catalog_version  }}"
+  destination:
+    server: {{ .Values.cluster.url }}
 {% endraw %}
 ```
 
+The template generates an **Operator Catalog Application** named according to its type (`operator-catalog`) and includes the cluster ID:
+```yaml
+{% raw %}kind: Application
+metadata:
+  name: operator-catalog.{{ .Values.cluster.id }}{% endraw %}
+```
 
-We can see it will generate an ArgoCD application named `{% raw %}operator-catalog.{{ .Values.cluster.id}}{% endraw %}` (e.g. `operator-catalog.cluster1`, `operator-catalog.cluster2`). It will render the [ibm-operator-catalog Helm Chart](cluster-applications/000-ibm-operator-catalog) into the target cluster identified by the `.Values.cluster.url` value from the global cluster configuration in `ibm-mas-cluster-base.yaml`. In this case, we know some of the values will be [inline-path placeholders](https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders) for referencing secrets in the **Secrets Vault**, so we use the AVP plugin source to render the Helm chart.
+The **Operator Catalog Application** renders the {{ gitops_repo_dir_link("cluster-applications/000-ibm-operator-catalog", "000-ibm-operator-catalog chart") }}:
+```yaml
+{% raw %}spec:
+  source:
+    path: cluster-applications/000-ibm-operator-catalog{% endraw %}
+```
 
-Based on our example configuration, two **Cluster Root Application**s will be generated:
+Values are mapped from those in the **Cluster Root Application** manifest into the form expected by the {{ gitops_repo_dir_link("cluster-applications/000-ibm-operator-catalog", "000-ibm-operator-catalog chart") }}. 
+
+```yaml
+    {% raw %}plugin:
+      name: argocd-vault-plugin-helm
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_catalog_version: "{{ .Values.ibm_operator_catalog.mas_catalog_version  }}"{% endraw %}
+```
+
+
+!!! info
+    Some of these values (not shown here) will be [inline-path placeholders](https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders) for referencing secrets in the **Secrets Vault**, so we pass the values in via the AVP plugin source (rather than the `helm` source):
+
+
+Finally, the resources in the {{ gitops_repo_dir_link("cluster-applications/000-ibm-operator-catalog", "000-ibm-operator-catalog chart") }} should created on the {{ target_cluster() }} in order to install the IBM operator catalog there:
+```yaml
+  {% raw %}destination:
+  server: {{ .Values.cluster.url }}{% endraw %}
+```
+
+
+For our example configuration, two **Operator Catalog Applications** will be generated:
 
 ```yaml
 kind: Application
@@ -364,9 +398,9 @@ spec:
 ```
 
 
-The other Application templates (e.g. [010-ibm-redhat-cert-manager-app.yaml](root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml), [020-ibm-dro-app.yaml](root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml) and so on) all follow this pattern and work in a similar way.
+The other Application templates in the {{ cluster_root_chart() }} (e.g. {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml", "010-ibm-redhat-cert-manager-app.yaml") }}, {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml", "020-ibm-dro-app.yaml") }} and so on) all follow this pattern and work in a similar way.
 
-The **Cluster Root Application** chart also includes the [099-instance-appset.yaml](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml) which generates a new **Instance Root Application Set** for each cluster.
+The **Cluster Root Application** chart also includes the [099-instance-appset.yaml template](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml) which generates a new **Instance Root Application Set** for each cluster.
 
 The Instance Root Application Set
 -------------------------------------------------------------------------------

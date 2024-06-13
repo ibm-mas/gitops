@@ -68,7 +68,7 @@ spec:
 
                   GITHUB_AUTH_HEADER="Authorization:token $GITHUB_PAT"
                   GITHUB_API=https://$TARGET_GITHUB_HOST/api/v3/repos/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO/pulls
-                  PR_FILE=$WORK_DIR/pr_text.json
+                  PR_FILE="/tmp/pr_text.json"
                   echo "{\"title\":\"$COMMIT_MESSAGE_TITLE\",\"body\":"\"$BODY\"",\"head\":\"$WORKING_BRANCH\",\"base\":\"$TARGET_BRANCH\"}" > $PR_FILE
                   echo "Opening PR against $TARGET_BRANCH via $GITHUB_API"
                   PR_URL=$(curl -X POST -s -H "Accept: application/vnd.github+json" -H "$GITHUB_AUTH_HEADER" $GITHUB_API -d @"$PR_FILE" | jq '.url')
@@ -148,7 +148,7 @@ spec:
                 done
 
                 if [[ $CREATE_TARGET_PR == true ]]; then
-                    createPR $TARGET_GIT_BRANCH $TARGET_GIT_BRANCH $COMMIT_MESSAGE_TITLE
+                    createPR $TARGET_GIT_BRANCH $TARGET_GIT_BRANCH $COMMIT_MESSAGE_TITLE || exit 1
                 fi
               else
                 echo "No changes found so no commit made"

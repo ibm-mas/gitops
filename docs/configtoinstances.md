@@ -1,7 +1,7 @@
 Mapping Config to MAS Deployments
 ===============================================================================
 
-A combination of [ArgoCD Application Sets](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/) and the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) are used by MAS GitOps to generate a tree of ArgoCD Applications that install and manage MAS instances in {{ target_clusters() }} based on the configuration files in the {{ config_repo() }}.
+A combination of [ArgoCD Application Sets](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/) and the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern) is used by MAS GitOps to generate a tree of ArgoCD Applications that install and manage MAS instances in {{ target_clusters() }} based on the configuration files in the {{ config_repo() }}.
 
 The tree of Applications and Application Sets looks like this:
 
@@ -48,6 +48,7 @@ spec:
           namespace: "openshift-gitops"
 ```
 
+The  **Account Root Application** establishes the {{ cluster_root_app_set() }}.
 
 
 
@@ -132,12 +133,12 @@ Now let's take a look at the contents of these files:
 
 All of the files contain a `merge-key` which includes the account ID and the cluster ID (e.g. `dev/cluster1`). This is used by the Merge generator to group together configuration into per-cluster YAML objects.
 
-The `ibm-mas-cluster-base.yaml` file contains global configuration for the target cluster, including the `account.id`, and the `cluster.id` and the `cluster.url` which determines the {{ target_cluster() }} that ArgoCD will deploy resources to.
+The `ibm-mas-cluster-base.yaml` file contains global configuration for the cluster, including the `account.id`, and the `cluster.id` and the `cluster.url` which determines the {{ target_cluster() }} that ArgoCD will deploy resources to.
 
 The other YAML configuration files (such as `ibm-operator-catalog.yaml` shown above) represent one type of cluster-level resource that we wish to install on the {{ target_cluster() }}.
 
 
-Given the config above, {{ cluster_root_app_set() }} would generate two YAML objects:
+Given the config above, {{ cluster_root_app_set() }} generates two YAML objects:
 ```yaml
  merge-key: "dev/cluster1"
  account:

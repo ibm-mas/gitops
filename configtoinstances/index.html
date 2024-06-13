@@ -334,21 +334,19 @@ spec:
     namespace: openshift-gitops
 </code></pre>
 <h2 id="the-cluster-root-application">The Cluster Root Application<a class="headerlink" href="#the-cluster-root-application" title="Permanent link"></a></h2>
-<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> into the ArgoCD namespace of the <strong>Management Cluster</strong>. The <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to <strong>Target Clusters</strong> once the configuration for those resources in present in the <strong>Config Repository</strong>.</p>
+<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> into the ArgoCD namespace of the <strong>Management Cluster</strong>. The <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to <strong>Target Clusters</strong> once the configuration for those resources is present in the <strong>Config Repository</strong>.</p>
 <p>Application-specific configuration is held under a unique top-level field. For example, the <code>ibm_operator_catalog</code> field in our example above holds all configuration for the <a href="https://github.com/ibm-mas/gitops/tree/demo2/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a>. The <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a> that renders this chart is guarded by:</p>
 <pre><code class="language-yaml">
 {{- if not (empty .Values.ibm_operator_catalog) }}
 
 </code></pre>
-<p>Following on from the example above, because <code>dev/cluster1/ibm-operator-catalog.yaml</code> has been pushed to the <strong>Git Config Repo</strong>, the <code>ibm_operator_catalog</code> key will appear in the Helm values passed to the  <strong>Cluster Root Application</strong>s. This will result in an ArgoCD Applications that will render the <a href="cluster-applications/000-ibm-operator-catalog">ibm-operator-catalog Helm Chart</a> into each <strong>Target Cluster</strong></p>
-<p>Looking again at <a href="root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a>:</p>
+<p>Continuing with our example, because <code>ibm_operator_catalog</code> is present in the Helm values for both <strong>Cluster Root Applications</strong>, both will render the <a href="root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a> into the respective <strong>Target Cluster</strong>.</p>
+<p>A simplified and abridged snippet of the <a href="root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a> is shown below, followed by a breakdown of the purpose of each section:</p>
 <pre><code class="language-yaml">
 kind: Application
 metadata:
   name: operator-catalog.{{ .Values.cluster.id }}
 spec:
-  destination:
-    server: {{ .Values.cluster.url }}
   source:
     path: cluster-applications/000-ibm-operator-catalog
     plugin:
@@ -357,10 +355,37 @@ spec:
         - name: HELM_VALUES
           value: |
             mas_catalog_version: "{{ .Values.ibm_operator_catalog.mas_catalog_version  }}"
+  destination:
+    server: {{ .Values.cluster.url }}
 
 </code></pre>
-<p>We can see it will generate an ArgoCD application named <code>operator-catalog.{{ .Values.cluster.id}}</code> (e.g. <code>operator-catalog.cluster1</code>, <code>operator-catalog.cluster2</code>). It will render the <a href="cluster-applications/000-ibm-operator-catalog">ibm-operator-catalog Helm Chart</a> into the target cluster identified by the <code>.Values.cluster.url</code> value from the global cluster configuration in <code>ibm-mas-cluster-base.yaml</code>. In this case, we know some of the values will be <a href="https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders">inline-path placeholders</a> for referencing secrets in the <strong>Secrets Vault</strong>, so we use the AVP plugin source to render the Helm chart.</p>
-<p>Based on our example configuration, two <strong>Cluster Root Application</strong>s will be generated:</p>
+<p>The template generates an <strong>Operator Catalog Application</strong> named according to its type (<code>operator-catalog</code>) and includes the cluster ID:</p>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: operator-catalog.{{ .Values.cluster.id }}
+</code></pre>
+<p>The <strong>Operator Catalog Application</strong> renders the <a href="https://github.com/ibm-mas/gitops/tree/demo2/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a>:</p>
+<pre><code class="language-yaml">spec:
+  source:
+    path: cluster-applications/000-ibm-operator-catalog
+</code></pre>
+<p>Values are mapped from those in the <strong>Cluster Root Application</strong> manifest into the form expected by the <a href="https://github.com/ibm-mas/gitops/tree/demo2/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a>. </p>
+<pre><code class="language-yaml">    plugin:
+      name: argocd-vault-plugin-helm
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_catalog_version: "{{ .Values.ibm_operator_catalog.mas_catalog_version  }}"
+</code></pre>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>Some of these values (not shown here) will be <a href="https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders">inline-path placeholders</a> for referencing secrets in the <strong>Secrets Vault</strong>, so we pass the values in via the AVP plugin source (rather than the <code>helm</code> source):</p>
+</div>
+<p>Finally, the resources in the <a href="https://github.com/ibm-mas/gitops/tree/demo2/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a> should created on the <strong>Target Cluster</strong> in order to install the IBM operator catalog there:</p>
+<pre><code class="language-yaml">  destination:
+  server: {{ .Values.cluster.url }}
+</code></pre>
+<p>For our example configuration, two <strong>Operator Catalog Applications</strong> will be generated:</p>
 <pre><code class="language-yaml">kind: Application
 metadata:
   name: operator-catalog.cluster1
@@ -391,8 +416,8 @@ spec:
           value: |
             mas_catalog_version: "v8-240405-amd64"
 </code></pre>
-<p>The other Application templates (e.g. <a href="root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml">010-ibm-redhat-cert-manager-app.yaml</a>, <a href="root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml">020-ibm-dro-app.yaml</a> and so on) all follow this pattern and work in a similar way.</p>
-<p>The <strong>Cluster Root Application</strong> chart also includes the <a href="root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">099-instance-appset.yaml</a> which generates a new <strong>Instance Root Application Set</strong> for each cluster.</p>
+<p>The other Application templates in the <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> (e.g. <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml">010-ibm-redhat-cert-manager-app.yaml</a>, <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml">020-ibm-dro-app.yaml</a> and so on) all follow this pattern and work in a similar way.</p>
+<p>The <strong>Cluster Root Application</strong> chart also includes the <a href="root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">099-instance-appset.yaml template</a> which generates a new <strong>Instance Root Application Set</strong> for each cluster.</p>
 <h2 id="the-instance-root-application-set">The Instance Root Application Set<a class="headerlink" href="#the-instance-root-application-set" title="Permanent link"></a></h2>
 <p>The <a href="root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">Instance Root Application Set</a> is responsible for generating an <strong>Instance Root Application</strong> per MAS instance on <strong>Target Cluster</strong>s. </p>
 <p><img alt="Instance Root Application Set" src="png/appstructure-instancerootappset.png"/></p>

@@ -11,5 +11,5 @@ MAS GitOps employs ArgoCD to deploy MAS instances to {{ target_clusters() }} usi
 
 ArgoCD is installed and configured on some {{ management_cluster() }}. A single **Account Root Application** is registered with ArgoCD. This application monitors the {{ config_repo() }} and dynamically generates a hierarchy of applications that manage MAS deployments on the {{ target_clusters() }}.
 
-![Architecture](png/architecture.png)
+![Architecture](drawio/architecture.drawio)
 

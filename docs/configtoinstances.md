@@ -159,9 +159,13 @@ Based on the config shown above, {{ cluster_root_app_set() }} would generate two
    mas_catalog_version: v8-240405-amd64
 ```
 
-The generated YAML objects are used to render the template defined in the {{ cluster_root_app_set() }} to generate **Cluster Root Applications** in the {{ management_cluster() }}. [Go Template](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/) expressions are used to inject values from the cluster's YAML object into the template.
+The generated YAML objects are used to render the template defined in the {{ cluster_root_app_set() }} to generate **Cluster Root Applications** in the {{ management_cluster() }}.
 
- A simplified and abridged snippet of the {{ cluster_root_app_set() }} template is shown below, followed by a breakdown of the purpose of each section:
+- [Go Template](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/) expressions are used to inject **cluster-specific** configuration from the cluster's YAML object into the template (e.g. `{% raw %}{{.cluster.id}}{% endraw %}`).
+
+- Global configuration that applies to all clusters is passed down from the Helm values used to render the {{ cluster_root_app_set() }} template (e.g. `{% raw %}{{ .Values.source.repo_url }}{% endraw %}`).
+
+A simplified and abridged snippet of the {{ cluster_root_app_set() }} template is shown below, followed by a breakdown of the purpose of each section:
 
 ```yaml
   {% raw %}template:
@@ -184,6 +188,10 @@ The generated YAML objects are used to render the template defined in the {{ clu
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}{% endraw %}
 ```
+
+!!! info  "What are the backticks for?"
+
+    Since the **Cluster Root Application Set** is itself a Helm template (rendered by the **Account Root Application**) we need to tell Helm to not attempt to parse the Go Template expressions, treating them as literals instead. This is achieved by wrapping the Go Template expressions in backticks. The expressions in the snippet above will be rendered by Helm as `{% raw %}"cluster.{{.cluster.id}}"{% endraw %}` and `{% raw %}"{{ toYaml . }}"{% endraw %}`.
 
 
 The **Cluster Root Applications** are named according to their ID:
@@ -223,10 +231,6 @@ Additional global configuration parameters (such as details of the {{ source_rep
         namespace: {{ .Values.argo.namespace }}{% endraw %}
 ```
 
-!!! info  "What are the backticks for?"
-
-    Since the **Cluster Root Application Set** is itself a Helm template (rendered by the **Account Root Application**), we need to tell Helm to not attempt to parse the Go Template expressions and treat them as literals instead. This achieved by wrapping the go template expressions in backticks. The expressions in the snippet above will be rendered by Helm as `{% raw %}"cluster.{{.cluster.id}}"{% endraw %}` and `{% raw %}"{{ toYaml . }}"{% endraw %}`.
-  
 
 Given the configuration in the example above, two **Cluster Root Applications** are generated:
 
@@ -288,7 +292,7 @@ spec:
 The Cluster Root Application
 -------------------------------------------------------------------------------
 
-**Cluster Root Applications** render the {{ cluster_root_chart() }} into the ArgoCD namespace of the {{ management_cluster() }}:. It contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to **Target Clusters** once the configuration for those resources in present in the {{ config_repo() }}
+**Cluster Root Applications** render the {{ cluster_root_chart() }} into the ArgoCD namespace of the {{ management_cluster() }}. The {{ cluster_root_chart() }} contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to **Target Clusters** once the configuration for those resources in present in the {{ config_repo() }}.
 
 ![Cluster Root Application](png/appstructure-clusterrootapp.png)
 

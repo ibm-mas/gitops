@@ -229,7 +229,15 @@ spec:
  ibm_operator_catalog:
    mas_catalog_version: v8-240405-amd64
 </code></pre>
-<p>The generated YAML objects are used to render the template defined in the <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> to generate <strong>Cluster Root Applications</strong> in the <strong>Management Cluster</strong>. <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/">Go Template</a> expressions are used to inject values from the cluster's YAML object into the template.</p>
+<p>The generated YAML objects are used to render the template defined in the <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> to generate <strong>Cluster Root Applications</strong> in the <strong>Management Cluster</strong>.</p>
+<ul>
+<li>
+<p><a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/">Go Template</a> expressions are used to inject <strong>cluster-specific</strong> configuration from the cluster's YAML object into the template (e.g. <code>{{.cluster.id}}</code>).</p>
+</li>
+<li>
+<p>Global configuration that applies to all clusters is passed down from the Helm values used to render the <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> template (e.g. <code>{{ .Values.source.repo_url }}</code>).</p>
+</li>
+</ul>
 <p>A simplified and abridged snippet of the <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> template is shown below, followed by a breakdown of the purpose of each section:</p>
 <pre><code class="language-yaml">  template:
     metadata:
@@ -251,6 +259,10 @@ spec:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}
 </code></pre>
+<div class="admonition info">
+<p class="admonition-title">What are the backticks for?</p>
+<p>Since the <strong>Cluster Root Application Set</strong> is itself a Helm template (rendered by the <strong>Account Root Application</strong>) we need to tell Helm to not attempt to parse the Go Template expressions, treating them as literals instead. This is achieved by wrapping the Go Template expressions in backticks. The expressions in the snippet above will be rendered by Helm as <code>"cluster.{{.cluster.id}}"</code> and <code>"{{ toYaml . }}"</code>.</p>
+</div>
 <p>The <strong>Cluster Root Applications</strong> are named according to their ID:</p>
 <pre><code class="language-yaml">template:
   metadata:
@@ -276,10 +288,6 @@ spec:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}
 </code></pre>
-<div class="admonition info">
-<p class="admonition-title">What are the backticks for?</p>
-<p>Since the <strong>Cluster Root Application Set</strong> is itself a Helm template (rendered by the <strong>Account Root Application</strong>), we need to tell Helm to not attempt to parse the Go Template expressions and treat them as literals instead. This achieved by wrapping the go template expressions in backticks. The expressions in the snippet above will be rendered by Helm as <code>"cluster.{{.cluster.id}}"</code> and <code>"{{ toYaml . }}"</code>.</p>
-</div>
 <p>Given the configuration in the example above, two <strong>Cluster Root Applications</strong> are generated:</p>
 <pre><code class="language-yaml">kind: Application
 metadata:
@@ -332,7 +340,7 @@ spec:
     namespace: openshift-gitops
 </code></pre>
 <h2 id="the-cluster-root-application">The Cluster Root Application<a class="headerlink" href="#the-cluster-root-application" title="Permanent link"></a></h2>
-<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> into the ArgoCD namespace of the <strong>Management Cluster</strong>:. It contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to <strong>Target Clusters</strong> once the configuration for those resources in present in the <strong>Config Repository</strong></p>
+<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> into the ArgoCD namespace of the <strong>Management Cluster</strong>. The <a href="https://github.com/ibm-mas/gitops/tree/demo2/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to <strong>Target Clusters</strong> once the configuration for those resources in present in the <strong>Config Repository</strong>.</p>
 <p><img alt="Cluster Root Application" src="../png/appstructure-clusterrootapp.png" /></p>
 <p>Application-specific configuration is held under a unique top-level field. For example, the <code>ibm_operator_catalog</code> field in our example above holds all configuration for the <a href="https://github.com/ibm-mas/gitops/tree/demo2/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a>. The <a href="https://github.com/ibm-mas/gitops/blob/demo2/root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a> that renders this chart is guarded by:</p>
 <pre><code class="language-yaml">

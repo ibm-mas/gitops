@@ -70,9 +70,16 @@ spec:
                   GITHUB_API=https://$TARGET_GITHUB_HOST/api/v3/repos/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO/pulls
                   PR_FILE="/tmp/pr_text.json"
                   echo "{\"title\":\"$COMMIT_MESSAGE_TITLE\",\"body\":"\"$BODY\"",\"head\":\"$WORKING_BRANCH\",\"base\":\"$TARGET_BRANCH\"}" > $PR_FILE
-                  echo "Opening PR against $TARGET_BRANCH via $GITHUB_API"
+                  cat $PR_FILE
+                  echo "Opening PR against branch $TARGET_BRANCH from branch $WORKING_BRANCH via $GITHUB_API"
                   PR_URL=$(curl -X POST -s -H "Accept: application/vnd.github+json" -H "$GITHUB_AUTH_HEADER" $GITHUB_API -d @"$PR_FILE" | jq '.url')
-                  echo "PR opened against $TARGET_BRANCH here $PR_URL"
+                  if [[ $PR_URL == "null" ]]; then
+                    echo "PR response didn't contain url so call again for debug"
+                    curl -X POST -s -H "Accept: application/vnd.github+json" -H "$GITHUB_AUTH_HEADER" $GITHUB_API -d @"$PR_FILE"
+                    exit 1
+                  else
+                    echo "PR opened against $TARGET_BRANCH here $PR_URL"
+                  fi
               }
 
               git config --global user.name "MAS Automation"

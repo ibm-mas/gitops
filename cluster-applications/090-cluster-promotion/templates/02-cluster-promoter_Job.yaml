@@ -47,6 +47,8 @@ spec:
               value: "{{ .Values.target_git_branch }}"
             - name: CREATE_TARGET_PR
               value: "{{ .Values.create_target_pr }}"
+            - name: TARGET_PR_TITLE
+              value: "{{ .Values.target_pr_title }}"
             - name: CLUSTER_VALUES
               value: "{{ .Values.cluster_values }}"
           volumeMounts:
@@ -63,13 +65,13 @@ spec:
               function createPR {
                   WORKING_BRANCH=$1
                   TARGET_BRANCH=$2
-                  COMMIT_MESSAGE_TITLE=$3
-                  BODY="MAS Gitops Promotion PR, automatically created from ArgoCD"
+                  CLUSTER_CHANGES=$3
+                  BODY="MAS Gitops Promotion PR, automatically created from ArgoCD\n\n Changes made using $CLUSTER_CHANGES"
 
                   GITHUB_AUTH_HEADER="Authorization:token $GITHUB_PAT"
                   GITHUB_API=https://$TARGET_GITHUB_HOST/api/v3/repos/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO/pulls
                   PR_FILE="/tmp/pr_text.json"
-                  echo "{\"title\":\"$COMMIT_MESSAGE_TITLE\",\"body\":"\"$BODY\"",\"head\":\"$WORKING_BRANCH\",\"base\":\"$TARGET_BRANCH\"}" > $PR_FILE
+                  echo "{\"title\":\"$TARGET_PR_TITLE\",\"body\":"\"$BODY\"",\"head\":\"$WORKING_BRANCH\",\"base\":\"$TARGET_BRANCH\"}" > $PR_FILE
                   cat $PR_FILE
                   echo "Opening PR against branch $TARGET_BRANCH from branch $WORKING_BRANCH via $GITHUB_API"
                   PR_URL=$(curl -X POST -s -H "Accept: application/vnd.github+json" -H "$GITHUB_AUTH_HEADER" $GITHUB_API -d @"$PR_FILE" | jq '.url')
@@ -155,7 +157,7 @@ spec:
                 done
 
                 if [[ $CREATE_TARGET_PR == true ]]; then
-                    createPR $TARGET_GIT_BRANCH $TARGET_PR_GIT_BRANCH "$COMMIT_MSG" || exit 1
+                    createPR $TARGET_GIT_BRANCH $TARGET_PR_GIT_BRANCH $CLUSTER_VALUES || exit 1
                 fi
               else
                 echo "No changes found so no commit made"

@@ -304,9 +304,9 @@ Application-specific configuration is held under a unique top-level field. For e
 {{- if not (empty .Values.ibm_operator_catalog) }}
 {% endraw %}
 ```
-Continuing with our example, because `ibm_operator_catalog` is present in the Helm values for both **Cluster Root Applications**, both will render the [000-ibm-operator-catalog-app template](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml) into the respective {{ target_cluster() }}.
+Continuing with our example, because `ibm_operator_catalog` is present in the Helm values for both **Cluster Root Applications**, both will render the {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml", "000-ibm-operator-catalog-app template") }} into the respective {{ target_cluster() }}.
 
-A simplified and abridged snippet of the [000-ibm-operator-catalog-app template](root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml) is shown below, followed by a breakdown of the purpose of each section:
+A simplified and abridged snippet of the {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml", "000-ibm-operator-catalog-app template") }} is shown below, followed by a breakdown of the purpose of each section:
 
 ```yaml
 {% raw %}
@@ -403,7 +403,7 @@ spec:
 
 The other Application templates in the {{ cluster_root_chart() }} (e.g. {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml", "010-ibm-redhat-cert-manager-app.yaml") }}, {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml", "020-ibm-dro-app.yaml") }} and so on) all follow this pattern and work in a similar way.
 
-The {{ cluster_root_chart() }} also includes the [099-instance-appset.yaml template](root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml) which generates a new **Instance Root Application Set** for each cluster.
+The {{ cluster_root_chart() }} also includes the {{ instance_root_app_set() }} template which generates a new **Instance Root Application Set** for each cluster.
 
 The Instance Root Application Set
 -------------------------------------------------------------------------------

@@ -16,6 +16,13 @@
 {{ $ns := printf "mas-%s-core" .Values.instance_id }}
 {{ $mas_instance_id := printf "%s" .Values.instance_id }}
 
+
+{{ $username := printf "%s" .Values.username }}
+{{ $password := printf "%s" .Values.password }}
+{{ $config := printf "%s" .Values.config }}
+{{ $certificates := printf "%s" .Values.certificates }}
+{{ $mas_wipe_mongo_data := printf "%s" .Values.mas_wipe_mongo_data }}
+
 ---
 apiVersion: batch/v1
 kind: Job
@@ -67,19 +74,15 @@ spec:
               value: {{ $mas_instance_id }}
 
             - name: MONGO_USERNAME
-              value: "test"
-
+              value: {{ $username }}
             - name: MONGO_PASSWORD
-              value: "test"
-
+              value: {{ $password }}
             - name: CONFIG
-              value: {{ .Values.config }}
-
+              value: {{ $config }}
             - name: CERTIFICATES
-              value: {{ .Values.certificates }}
-
+              value: {{ $certificates }}
             - name: MAS_WIPE_MONGO_DATA
-              value: "test"
+              value: {{ $mas_wipe_mongo_data }}
 
           volumeMounts: []
           command:
@@ -148,6 +151,7 @@ spec:
               echo "================================================================================"
 
               if [[ "${MAS_WIPE_MONGO_DATA}" == "true" ]]; then
+
                 export ROLE_NAME=wipe_mongo
                 ansible-playbook ibm.mas_devops.run_role
                 rc=$?

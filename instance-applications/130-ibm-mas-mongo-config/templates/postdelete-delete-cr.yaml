@@ -22,11 +22,9 @@ kind: Job
 metadata:
   name: {{ $job_name }}
   namespace: {{ $ns }}
-  #annotations:
-  #  argocd.argoproj.io/hook: PostDelete
-  #  argocd.argoproj.io/hook-delete-policy: HookSucceeded
   annotations:
-    argocd.argoproj.io/sync-wave: "132"
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -44,7 +42,7 @@ spec:
         - name: run
           # TODO: use a dedicated image with a smaller footprint for this sort of thing?
           # Just using cli for now since it has all the deps we need to talk with AWS SM
-          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          image: quay.io/ibmmas/cli:9.4.0-pre.pk-gitops-mascore-2636
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -85,13 +83,6 @@ spec:
                 secretKeyRef:
                   name: mongo-db
                   key: mas_wipe_mongo_data
-
-            - name: MONGO_INFO
-              valueFrom:
-                secretKeyRef:
-                  name: mongo-db
-                  key: mongo_info
-
 
           volumeMounts:
             - name: "mongo-db"
@@ -158,8 +149,7 @@ spec:
               echo "MAS_INSTANCE_ID ....................... ${COLOR_MAGENTA}${MAS_INSTANCE_ID}"
               echo "Mongo username ........................ ${COLOR_MAGENTA}${MONGO_USERNAME}"
               echo "Mongo password ........................ ${COLOR_MAGENTA}${MONGO_PASSWORD:0:6}<snip>"
-              echo "Mongo configx .......................... ${COLOR_MAGENTA}${CONFIG}"
-              echo "Mongo Info ............................ ${COLOR_MAGENTA}${MONGO_INFO}"
+              echo "Mongo config .......................... ${COLOR_MAGENTA}${CONFIG}"
               echo "Mongo certificates .................... ${COLOR_MAGENTA}${CERTIFICATES}"
               echo "MAS_WIPE_MONGO_DATA ................... ${COLOR_MAGENTA}${MAS_WIPE_MONGO_DATA}"
               echo ""
@@ -174,7 +164,7 @@ spec:
                 [ $rc -ne 0 ] && exit $rc
               fi
 
-              #delete_oc_resource "${CR_KIND}.${CR_API_VERSION}/${CR_NAME}" "${CR_NAMESPACE}"
+              delete_oc_resource "${CR_KIND}.${CR_API_VERSION}/${CR_NAME}" "${CR_NAMESPACE}"
 
 
       restartPolicy: Never

@@ -92,13 +92,20 @@ spec:
                   name: mongo-db
                   key: mongo_info
 
-          volumeMounts: []
+
+          volumeMounts:
+            - name: "mongo-db"
+              mountPath: /etc/mas/secrets/mongo_db
+
           command:
             - /bin/sh
             - -c
             - |
 
               set -e
+
+              CONFIG=/etc/mas/secrets/mongo_db/config.yaml
+              CERTIFICATES=/etc/mas/secrets/mongo_db/certificates.yaml
 
               function delete_oc_resource(){
                 RESOURCE=$1
@@ -165,11 +172,10 @@ spec:
               if [[ "${MAS_WIPE_MONGO_DATA}" == "true" ]]; then
 
                 export ROLE_NAME=wipe_mongo
-                echo "I am in "
-                #ansible-playbook ibm.mas_devops.run_role
-                #rc=$?
-                #echo "Role wipe_mongo completes with rc=${rc}"
-                #[ $rc -ne 0 ] && exit $rc
+                ansible-playbook ibm.mas_devops.run_role
+                rc=$?
+                echo "Role wipe_mongo completes with rc=${rc}"
+                [ $rc -ne 0 ] && exit $rc
               fi
 
               #delete_oc_resource "${CR_KIND}.${CR_API_VERSION}/${CR_NAME}" "${CR_NAMESPACE}"
@@ -177,6 +183,12 @@ spec:
 
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}
-      volumes: []
+
+      volumes:
+        - name: "mongo-db"
+          secret:
+            secretName: "mongo-db"
+            defaultMode: 420
+            optional: false
   backoffLimit: 4
 {{- end }}

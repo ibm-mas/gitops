@@ -1,0 +1,59 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cluster-verify-{{ .Values.cluster_id }}-{{ .Values | toYaml | adler32sum }}
+  namespace: mas-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "202"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: "cluster-verify-job"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: cluster-verify
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: REGION_ID
+              value: "{{ .Values.region_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: VERIFY_CLUSTER
+              value: "True"
+            - name: VERIFY_CATALOGSOURCES
+              value: "True"
+            - name: VERIFY_SUBSCRIPTIONS
+              value: "True"
+            - name: VERIFY_WORKLOADS
+              value: "True"
+            - name: VERIFY_INGRESS
+              value: "False"
+
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+
+              echo
+              echo "================================================================================"
+              echo "/opt/app-root/src/run-role.sh ocp_verify"
+              echo "================================================================================"
+
+              /opt/app-root/src/run-role.sh ocp_verify || exit $?
+
+      restartPolicy: Never
+      serviceAccountName: aws-docdb-user-job
+  backoffLimit: 4

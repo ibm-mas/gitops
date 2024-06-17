@@ -6,6 +6,6 @@ Known Limitations
 
 **MAS GitOps only supports AWS Secrets Manager at present.** Support for other backends will be added in future releases.
 
-Any modifications made via the MAS admin UI or REST API that result in modifications to existing K8S resources will be undone by ArgoCD. We plan to provide the option in MAS to disable these UI/REST APIs when being managed by Gitops.
+Any modifications made via the MAS admin UI or REST API that result in modifications to existing K8S resources will be undone by ArgoCD. We plan to provide the option in MAS to disable these UI/REST APIs when being managed by GitOps.
 
 MAS GitOps only supports the definition of `system` scope for all MAS configuration types (other than `JDBC` which supports all scopes: `system`, `ws`, `app` and `wsapp`).

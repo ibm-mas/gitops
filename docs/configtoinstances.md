@@ -12,7 +12,7 @@ The following describes *how* this tree is generated.
 The Account Root Application
 -------------------------------------------------------------------------------
 
-It begins with the **Account Root Application**. This is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS Gitops Helm Charts and is where several key pieces of global configuration values are provided.
+It begins with the **Account Root Application**. This is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS GitOps Helm Charts and is where several key pieces of global configuration values are provided.
 
 The manifest for the **Account Root Application** in our example is shown in the snippet below. The account ID, source repo, config (aka "generator") repo are configured here.
 
@@ -412,7 +412,7 @@ The {{ instance_root_app_set() }}  generates a set of **Instance Root Applicatio
 
 The key differences are:
 
-- `merge-keys` in the instance-level configuation YAML files also contain a MAS instance ID, e.g. `dev/cluster1/instance1`.
+- `merge-keys` in the instance-level configuration YAML files also contain a MAS instance ID, e.g. `dev/cluster1/instance1`.
 - The generated **Instance Root Applications** source the {{ gitops_repo_dir_link("root-applications/ibm-mas-instance-root", "ibm-mas-instance-root Chart") }}.
 - The Git File Generators look for a different set of named YAML files at the **instance** level in the {{ config_repo() }}:
 

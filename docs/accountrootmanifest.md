@@ -1,7 +1,7 @@
 Account Root Application Manifest
 ===============================================================================
 
-The **Account Root Application** is created directly on the {{ management_cluster() }} running ArgoCD. It serves as the "entrypoint" to the MAS Gitops code and is where several key pieces of global configuration values are provided.
+The **Account Root Application** is created directly on the {{ management_cluster() }} running ArgoCD. It serves as the "entrypoint" to the MAS GitOps code and is where several key pieces of global configuration values are provided.
 
 ### Template
 

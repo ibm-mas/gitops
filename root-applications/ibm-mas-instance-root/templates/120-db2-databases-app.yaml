@@ -1,0 +1,69 @@
+{{- /*
+When inside the range loop below, make sure you prefix any references to chart values NOT under .Values.ibm_db2u_databases with $.
+For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
+*/}}
+
+{{- range $i, $value := .Values.ibm_db2u_databases }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: "db2-db.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
+  namespace: {{ $.Values.argo.namespace }}
+  labels:
+    environment: '{{ $.Values.account.id }}'
+    region: '{{ $.Values.region.id }}'
+    cluster: '{{ $.Values.cluster.id }}'
+    instance: '{{ $.Values.instance.id }}'
+    appId: '{{ $value.mas_application_id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "120"
+    {{- if and $.Values.notifications $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ $.Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ $.Values.argo.projects.apps }}"
+  destination:
+    server: {{ $.Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: "{{ $.Values.source.repo_url }}"
+    path: instance-applications/120-ibm-db2u-database
+    targetRevision: "{{ $.Values.source.revision }}"
+    plugin:
+      name: {{ $.Values.avp.name }} 
+      env:
+        - name: {{ $.Values.avp.values_varname }}
+          value: |
+            account_id: "{{ $.Values.account.id }}"
+            region_id: "{{ $.Values.region.id }}"
+            cluster_id: "{{ $.Values.cluster.id }}"
+            instance_id: "{{ $.Values.instance.id }}"
+            sm_aws_access_key_id: "{{ $.Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ $.Values.sm.aws_secret_access_key }}"
+            {{- if $.Values.custom_labels }}
+            custom_labels: {{ $.Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+            {{ $value | toYaml | nindent 12 }}
+        - name: ARGOCD_APP_NAME
+          value: "db2dbapp-{{ $value.mas_application_id }}"
+        {{- if not (empty $.Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ $.Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: 'db2u.databases.ibm.com'
+      kind: Db2uCluster
+      jsonPointers:
+      - /spec/environment/database/ssl/secretName
+{{- end }}

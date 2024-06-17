@@ -1,0 +1,339 @@
+{{- if not (empty .Values.cpd_product_version) }}
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: presync-cpd-olm-sa
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "001"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: presync-cpd-olm-role-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "001"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - packages.operators.coreos.com
+      - packages.operators.coreos.com/v1
+    resources:
+      - packagemanifests
+  - verbs:
+      - get
+    apiGroups:
+      - ''
+    resources:
+      - configmaps
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: presync-cpd-olm-rb-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "002"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: presync-cpd-olm-sa
+    namespace: mas-{{ .Values.instance_id }}-syncres
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: presync-cpd-olm-role-{{ .Values.instance_id }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Generate the job name by suffixing with a hash of all chart values
+  # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes
+  # Any change to cluster config will trigger a rerun of the job.
+  # The job is idempotent and quick so no real harm in running it when we don't actually need to.
+  name: "presync-cpd-olm-job-{{ .Values | toYaml | adler32sum }}"
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "003"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+
+              set -e
+
+              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
+              source /mascli/functions/gitops_utils
+
+              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              echo 
+              echo "================================================================================"
+              echo "Storing CP4D Dependencies' Channel and Version info in AWS Secret Manager"
+              echo "================================================================================"
+
+              
+              echo 
+              echo "Fetching channel for namespace scope from PackageManifest"
+              echo "================================================================================"
+
+              export NAMESPACE_SCOPE_CHANNEL=$((oc get PackageManifest ibm-namespace-scope-operator -o json) | jq -r '[.status.channels | .[].name] | last')
+              if [[ -z "${NAMESPACE_SCOPE_CHANNEL}" ]]; then
+                echo "Failed to fetch namespace scope channel"
+                exit 1
+              fi
+
+              echo 
+              echo "Fetching values from olm-utils-cm config map"
+              echo "================================================================================"
+              echo "Fetching IBM Licensing Channel..."
+              export LICENSING_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.["ibm-licensing"].sub_channel')
+              if [[ -z "${LICENSING_CHANNEL}" ]]; then
+                echo "Failed to fetch ibm licensing channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching IBM Licensing Version..."
+              export LICENSING_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.["ibm-licensing"].csv_version')
+              if [[ -z "${LICENSING_VERSION}" ]]; then
+                echo "Failed to fetch ibm licensing version"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching CPFS Channel..."
+              export CPFS_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.cpfs.sub_channel')
+              if [[ -z "${CPFS_CHANNEL}" ]]; then
+                echo "Failed to fetch cpfs channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching CPD Platform Channel..."
+              export CPD_PLATFORM_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.cpd_platform.sub_channel')
+              if [[ -z "${CPD_PLATFORM_CHANNEL}" ]]; then
+                echo "Failed to fetch cpd platform channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Watson Studio Version..."
+              export WSL_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ws.cr_version')
+              if [[ -z "${WSL_VERSION}" ]]; then
+                echo "Failed to fetch watson studio version"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Watson Studio Channel..."
+              export WSL_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ws.sub_channel')
+              if [[ -z "${WSL_CHANNEL}" ]]; then
+                echo "Failed to fetch watson studio channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching CCS Version..."
+              export CCS_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ccs.cr_version')
+              if [[ -z "${CCS_VERSION}" ]]; then
+                echo "Failed to fetch ccs version"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching CCS Channel..."
+              export CCS_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ccs.sub_channel')
+              if [[ -z "${CCS_CHANNEL}" ]]; then
+                echo "Failed to fetch ccs channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Watson Studio Runtimes Version..."
+              export WS_RUNTIMES_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ws_runtimes.cr_version')
+              if [[ -z "${WS_RUNTIMES_VERSION}" ]]; then
+                echo "Failed to fetch watson studio runtimes version"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Watson Studio Runtimes Channel..."
+              export WS_RUNTIMES_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ws_runtimes.sub_channel')
+              if [[ -z "${WS_RUNTIMES_CHANNEL}" ]]; then
+                echo "Failed to fetch watson studio runtimes channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching DataRefinery Version..."
+              export DATAREFINERY_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.datarefinery.cr_version')
+              if [[ -z "${DATAREFINERY_VERSION}" ]]; then
+                echo "Failed to fetch datarefinery version"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching DataRefinery Channel..."
+              export DATAREFINERY_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.datarefinery.sub_channel')
+              if [[ -z "${DATAREFINERY_CHANNEL}" ]]; then
+                echo "Failed to fetch datarefinery channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Opencontent Rabbitmq Channel..."
+              export RABBITMQ_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.opencontent_rabbitmq.sub_channel')
+              if [[ -z "${RABBITMQ_CHANNEL}" ]]; then
+                echo "Failed to fetch opencontent rabbitmq channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Opencontent Elasticsearch Channel..."
+              export ELASTICSEARCH_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.opencontent_elasticsearch.sub_channel')
+              if [[ -z "${ELASTICSEARCH_CHANNEL}" ]]; then
+                echo "Failed to fetch opencontent elasticsearch channel"
+                exit 1
+              fi
+
+
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+              SECRET_NAME_NAMESPACE_SCOPE_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/namespace_scope_channel
+              SECRET_NAME_LICENSING_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/licensing_channel
+              SECRET_NAME_LICENSING_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/licensing_version
+              SECRET_NAME_CPFS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpfs_channel
+              SECRET_NAME_CPD_PLATFORM_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpd_platform_channel
+              SECRET_NAME_WSL_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wsl_version
+              SECRET_NAME_WSL_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wsl_channel
+              SECRET_NAME_CCS_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ccs_version
+              SECRET_NAME_CCS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ccs_channel
+              SECRET_NAME_WS_RUNTIMES_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ws_runtimes_version
+              SECRET_NAME_WS_RUNTIMES_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ws_runtimes_channel
+              SECRET_NAME_DATAREFINERY_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/datarefinery_version
+              SECRET_NAME_DATAREFINERY_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/datarefinery_channel
+              SECRET_NAME_RABBITMQ_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_rabbitmq_channel
+              SECRET_NAME_ELASTICSEARCH_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_elasticsearch_channel
+
+              echo
+              echo 
+              echo "Updating secrets in Secret Manager"
+              echo "================================================================================"
+
+              echo
+              echo "Debug:"
+              echo "    - ACCOUNT_ID ............................................ ${ACCOUNT_ID}"
+              echo "    - REGION_ID ............................................. ${REGION_ID}"
+              echo "    - CLUSTER_ID ............................................ ${CLUSTER_ID}"
+              echo "    - INSTANCE_ID ........................................... ${INSTANCE_ID}"
+              echo "    - SECRET_NAME_NAMESPACE_SCOPE_CHANNEL ................... ${SECRET_NAME_NAMESPACE_SCOPE_CHANNEL}"
+              echo "    - SECRET_NAME_LICENSING_CHANNEL ......................... ${SECRET_NAME_LICENSING_CHANNEL}"
+              echo "    - SECRET_NAME_LICENSING_VERSION ......................... ${SECRET_NAME_LICENSING_VERSION}"
+              echo "    - SECRET_NAME_CPFS_CHANNEL .............................. ${SECRET_NAME_CPFS_CHANNEL}"
+              echo "    - SECRET_NAME_CPD_PLATFORM_CHANNEL ...................... ${SECRET_NAME_CPD_PLATFORM_CHANNEL}"
+              echo "    - SECRET_NAME_WSL_VERSION ............................... ${SECRET_NAME_WSL_VERSION}"
+              echo "    - SECRET_NAME_WSL_CHANNEL ............................... ${SECRET_NAME_WSL_CHANNEL}"
+              echo "    - SECRET_NAME_CCS_VERSION ............................... ${SECRET_NAME_CCS_VERSION}"
+              echo "    - SECRET_NAME_CCS_CHANNEL ............................... ${SECRET_NAME_CCS_CHANNEL}"
+              echo "    - SECRET_NAME_WS_RUNTIMES_VERSION ....................... ${SECRET_NAME_WS_RUNTIMES_VERSION}"
+              echo "    - SECRET_NAME_WS_RUNTIMES_CHANNEL ....................... ${SECRET_NAME_WS_RUNTIMES_CHANNEL}"
+              echo "    - SECRET_NAME_DATAREFINERY_VERSION ...................... ${SECRET_NAME_DATAREFINERY_VERSION}"
+              echo "    - SECRET_NAME_DATAREFINERY_CHANNEL ...................... ${SECRET_NAME_DATAREFINERY_CHANNEL}"
+              echo "    - SECRET_NAME_RABBITMQ_CHANNEL .......................... ${SECRET_NAME_RABBITMQ_CHANNEL}"
+              echo "    - SECRET_NAME_ELASTICSEARCH_CHANNEL ..................... ${SECRET_NAME_ELASTICSEARCH_CHANNEL}"
+              echo
+
+
+              sm_update_secret $SECRET_NAME_NAMESPACE_SCOPE_CHANNEL "{\"namespace_scope_channel\": \"$NAMESPACE_SCOPE_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_LICENSING_CHANNEL "{\"licensing_channel\": \"$LICENSING_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_LICENSING_VERSION "{\"licensing_version\": \"$LICENSING_VERSION\" }"
+              sm_update_secret $SECRET_NAME_CPFS_CHANNEL "{\"cpfs_channel\": \"$CPFS_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_CPD_PLATFORM_CHANNEL "{\"cpd_platform_channel\": \"$CPD_PLATFORM_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_WSL_VERSION "{\"wsl_version\": \"$WSL_VERSION\" }"
+              sm_update_secret $SECRET_NAME_WSL_CHANNEL "{\"wsl_channel\": \"$WSL_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_CCS_VERSION "{\"ccs_version\": \"$CCS_VERSION\" }"
+              sm_update_secret $SECRET_NAME_CCS_CHANNEL "{\"ccs_channel\": \"$CCS_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_WS_RUNTIMES_VERSION "{\"ws_runtimes_version\": \"$WS_RUNTIMES_VERSION\" }"
+              sm_update_secret $SECRET_NAME_WS_RUNTIMES_CHANNEL "{\"ws_runtimes_channel\": \"$WS_RUNTIMES_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_DATAREFINERY_VERSION "{\"datarefinery_version\": \"$DATAREFINERY_VERSION\" }"
+              sm_update_secret $SECRET_NAME_DATAREFINERY_CHANNEL "{\"datarefinery_channel\": \"$DATAREFINERY_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_RABBITMQ_CHANNEL "{\"opencontent_rabbitmq_channel\": \"$RABBITMQ_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_ELASTICSEARCH_CHANNEL "{\"opencontent_elasticsearch_channel\": \"$ELASTICSEARCH_CHANNEL\" }"
+
+
+              echo "Done"
+
+
+      restartPolicy: Never
+      serviceAccountName: presync-cpd-olm-sa
+      volumes:
+        - name: aws
+          secret:
+            secretName: aws
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+
+{{- end }}

@@ -1,0 +1,23 @@
+---
+apiVersion: cpd.ibm.com/v1
+kind: Ibmcpd
+metadata:
+  name: "{{ .Values.cpd_platform_cr_name }}"
+  namespace: "{{ .Values.cpd_instance_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "087"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  imagePullSecret: ibm_entitlement_key
+  version: "{{ .Values.cpd_product_version }}"
+  license:
+    accept: true
+    license: Standard
+  servicesNamespace: {{ .Values.cpd_operators_namespace }}
+  iamIntegration: {{ .Values.cpd_iam_integration }}
+  fileStorageClass: "{{ .Values.cpd_primary_storage_class }}"
+  blockStorageClass: "{{ .Values.cpd_metadata_storage_class }}"

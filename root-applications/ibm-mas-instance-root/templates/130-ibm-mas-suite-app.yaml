@@ -1,0 +1,134 @@
+{{- if not (empty .Values.ibm_mas_suite) }}
+
+{{ $app_name := printf "suite.%s.%s" .Values.cluster.id .Values.instance.id }}
+{{ $app_dest_ns := printf "mas-%s-core" .Values.instance.id }}
+
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ $app_name }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+    argocd.argoproj.io/sync-options: PruneLast=true
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $app_dest_ns }}
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/130-ibm-mas-suite
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            instance_id: "{{ .Values.instance.id }}"
+            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
+            sm_aws_region: "{{ .Values.region.id }}"
+            mas_workspace_id: "{{ .Values.ibm_mas_suite.mas_workspace_id }}"
+            mas_domain: "{{ .Values.ibm_mas_suite.mas_domain }}"
+            mas_config_dir: "{{ .Values.ibm_mas_suite.mas_config_dir }}"
+            mas_channel: "{{ .Values.ibm_mas_suite.mas_channel }}"
+            ibm_entitlement_key: "{{ .Values.ibm_mas_suite.ibm_entitlement_key }}"
+            domain: "{{ .Values.ibm_mas_suite.domain }}"
+            cert_manager_namespace: "{{ .Values.ibm_mas_suite.cert_manager_namespace }}"
+            mas_manual_cert_mgmt: "{{.Values.ibm_mas_suite.mas_manual_cert_mgmt }}"
+            dns_provider: "{{ .Values.ibm_mas_suite.dns_provider }}"
+            icr_cp: "{{ .Values.ibm_mas_suite.icr_cp }}"
+            icr_cp_open: "{{ .Values.ibm_mas_suite.icr_cp_open }}"
+
+            {{- if .Values.ibm_mas_suite.mas_annotations }}
+            mas_annotations: {{ .Values.ibm_mas_suite.mas_annotations | toYaml | nindent 14 }}
+            {{- end }}
+
+            {{- if .Values.ibm_mas_suite.mas_labels }}
+            mas_labels: {{ .Values.ibm_mas_suite.mas_labels | toYaml | nindent 14 }}
+            {{- end }}
+
+            {{- if .Values.ibm_mas_suite.mas_image_tags }}
+            mas_image_tags: {{ .Values.ibm_mas_suite.mas_image_tags | toYaml | nindent 14 }}
+            {{- end }}
+
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+
+            {{- if and (eq .Values.ibm_mas_suite.dns_provider "cis") (eq .Values.ibm_mas_suite.mas_manual_cert_mgmt "False") }}
+            cis_apikey: "{{ .Values.ibm_mas_suite.cis_apikey }}"
+            ocp_cluster_domain: "{{ .Values.ibm_mas_suite.ocp_cluster_domain }}"
+            cis_email: "{{ .Values.ibm_mas_suite.cis_email }}"
+            cis_crn: "{{ .Values.ibm_mas_suite.cis_crn }}"
+            cis_subdomain: "{{ .Values.ibm_mas_suite.cis_subdomain }}"
+            cis_mas_domain: "{{ .Values.ibm_mas_suite.cis_mas_domain }}"
+            cis_enhanced_security: "{{ .Values.ibm_mas_suite.cis_enhanced_security }}"
+            cis_waf: "{{ .Values.ibm_mas_suite.cis_waf }}"
+            cis_proxy: "{{ .Values.ibm_mas_suite.cis_proxy }}"
+            cis_service_name: "{{ .Values.ibm_mas_suite.cis_service_name }}"
+            update_dns_entries: "{{ .Values.ibm_mas_suite.update_dns_entries }}"
+            delete_wildcards: "{{ .Values.ibm_mas_suite.delete_wildcards }}"
+            override_edge_certs: "{{ .Values.ibm_mas_suite.override_edge_certs }}"
+            {{- end }}
+
+            {{- if eq .Values.ibm_mas_suite.mas_manual_cert_mgmt "True" }}
+
+            {{- if .Values.ibm_mas_suite.ca_cert }}
+            ca_cert: |
+              {{ .Values.ibm_mas_suite.ca_cert }}
+            {{- end }}
+            {{- if .Values.ibm_mas_suite.tls_cert }}
+            tls_cert: |
+              {{ .Values.ibm_mas_suite.tls_cert }}
+            {{- end }}
+            {{- if .Values.ibm_mas_suite.tls_key }}
+            tls_key: |
+              {{ .Values.ibm_mas_suite.tls_key }}
+            {{- end }}
+
+            {{- end }}
+        - name: ARGOCD_APP_NAME
+          value: suiteapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    managedNamespaceMetadata:
+      labels:
+        argocd.argoproj.io/instance: {{ $app_name }}
+        argocd.argoproj.io/managed-by: "{{ .Values.argo.namespace }}"
+      annotations:
+        argocd.argoproj.io/tracking-id: >-
+            {{ $app_name }}:/Namespace:{{ $app_dest_ns }}/{{ $app_dest_ns }}
+  ignoreDifferences:
+    - group: 'cert-manager.io'
+      kind: ClusterIssuer
+      jsonPointers:
+      - /spec/acme/preferredChain
+      - /spec/duration
+{{- end }}

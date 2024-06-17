@@ -1,0 +1,146 @@
+{{- if and (eq .Values.dns_provider "cis") (eq .Values.mas_manual_cert_mgmt "True") }}
+{{- if not (empty .Values.manual_certs) }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ibm-suite-certs-{{ .Values.manual_certs | toYaml | adler32sum }}
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "00"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  ttlSecondsAfterFinished: 120
+  template:
+    metadata:
+      labels:
+        app: "sync-job"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: suite-certs-role-run
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+
+          env:
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+
+            # dns
+            - name: DNS_PROVIDER
+              value: "{{ .Values.dns_provider }}"
+            - name: MAS_MANUAL_CERT_MGMT
+              value: "{{ .Values.mas_manual_cert_mgmt }}"
+
+            - name: MAS_WORKSPACE_ID
+              value: "{{ .Values.mas_workspace_id }}"
+            - name: MAS_CONFIG_DIR
+              value: "{{ .Values.mas_config_dir }}"
+            - name: CIS_CRN
+              value: "{{ .Values.cis_crn }}"
+            - name: CIS_SUBDOMAIN
+              value: "{{ .Values.cis_subdomain }}"
+            - name: CIS_PROXY
+              value: "{{ .Values.cis_proxy }}"
+
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+
+          volumeMounts:
+            - name: "ibm-suite-certs"
+              mountPath: /etc/mas/creds/suite_certs
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              export MAS_CONFIG_DIR=${MAS_CONFIG_DIR:-"/tmp/suite_certs/configs"}
+
+              export CIS_APIKEY=$(cat /etc/mas/creds/suite_certs/cis_apikey)
+              MAS_MANUAL_CERTS_YAML=/etc/mas/creds/suite_certs/manual_certs.yaml
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "DNS Provider ........................ ${COLOR_MAGENTA}${DNS_PROVIDER}"
+              echo "Manual Cert Mgmt Flag ............... ${COLOR_MAGENTA}${MAS_MANUAL_CERT_MGMT}"
+              echo "MAS Instance Id ..................... ${COLOR_MAGENTA}${MAS_INSTANCE_ID}"
+              echo "MAS Workspace ID .................... ${COLOR_MAGENTA}${MAS_WORKSPACE_ID}"
+              echo "MAS CONFIG DIR ...................... ${COLOR_MAGENTA}${MAS_CONFIG_DIR}"
+              echo "CIS CRN ............................. ${COLOR_MAGENTA}${CIS_CRN}"
+              echo "IBM CLOUD APIKEY .................... ${COLOR_MAGENTA}${CIS_APIKEY:0:4}<snip>"
+              echo "CIS subdomain ....................... ${COLOR_MAGENTA}${CIS_SUBDOMAIN}"
+              echo "CIS proxy ........................... ${COLOR_MAGENTA}${CIS_PROXY}"
+
+              echo "MAS Manual Certs YAML location ...... ${COLOR_MAGENTA}${MAS_MANUAL_CERTS_YAML}"
+
+              echo ""
+              echo "================================================================================"
+
+              #create files as suite_cert role requires in MAS_CONFIG_DIR folder
+              appList=(
+                "core"
+                "assist" 
+                "iot"
+                "manage"
+                "monitor"
+                "optimizer"  
+                "predict"
+                "visualinspection"
+              )
+
+              if [[ -n "$MAS_MANUAL_CERTS_YAML" ]] && [[ -s "$MAS_MANUAL_CERTS_YAML" ]]; then
+
+                for app in ${appList[@]}; do
+
+                  echo "Copying certs for $app into ${MAS_CONFIG_DIR}/certs/$app/ "
+                  mkdir -p ${MAS_CONFIG_DIR}/certs/$app
+
+                  tls_crt_filter_query=.manual_certs.${app}_tls_crt
+                  tls_key_filter_query=.manual_certs.${app}_tls_key
+                  ca_crt_filter_query=.manual_certs.${app}_ca_crt
+
+                  /usr/bin/yq eval "$tls_crt_filter_query" ${MAS_MANUAL_CERTS_YAML} | base64 --decode > $MAS_CONFIG_DIR/certs/$app/tls.crt
+                  /usr/bin/yq eval "$tls_key_filter_query" ${MAS_MANUAL_CERTS_YAML} | base64 --decode > $MAS_CONFIG_DIR/certs/$app/tls.key
+                  /usr/bin/yq eval "$ca_crt_filter_query"  ${MAS_MANUAL_CERTS_YAML} | base64 --decode > $MAS_CONFIG_DIR/certs/$app/ca.crt
+
+                  echo "Done"
+                done  
+              fi
+              # Ref - https://github.com/ibm-mas/ansible-devops/blob/master/ibm/mas_devops/roles/suite_certs/README.md
+              # Set GITOPS flag so that suite_certs roles doesn't create the certificate resources but does do the dns management
+              export GITOPS=True
+              export ROLE_NAME=suite_certs
+              ansible-playbook ibm.mas_devops.run_role
+              rc=$?
+              echo "Role suite_certs completes with rc=${rc}"
+              [ $rc -ne 0 ] && exit $rc
+
+              exit 0
+
+      restartPolicy: Never
+
+      serviceAccountName: ibm-suite-certs-job
+      volumes:
+        - name: "ibm-suite-certs"
+          secret:
+            secretName: "ibm-suite-certs"
+            defaultMode: 420
+            optional: false
+
+  backoffLimit: 4
+
+{{- end }}
+{{- end }}

@@ -1,0 +1,70 @@
+{{- /*
+When inside the range loop below, make sure you prefix any references to chart values NOT under .Values.ibm_mas_suite_configs with $.
+For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
+*/}}
+
+{{- range $i, $value := .Values.ibm_mas_suite_configs }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: "{{ $value.mas_config_name }}.{{ $.Values.cluster.id  }}"
+  namespace: {{ $.Values.argo.namespace }}
+  labels:
+    environment: '{{ $.Values.account.id }}'
+    region: '{{ $.Values.region.id }}'
+    cluster: '{{ $.Values.cluster.id }}'
+    instance: '{{ $.Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    {{- if and $.Values.notifications $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ $.Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ $.Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+    - post-delete-finalizer.argocd.argoproj.io	
+    - post-delete-finalizer.argocd.argoproj.io/cleanup
+  labels:
+    environment: '{{ $.Values.account.id }}'
+    region: '{{ $.Values.region.id }}'
+    cluster: '{{ $.Values.cluster.id }}'
+    instance: '{{ $.Values.instance.id }}'
+spec:
+  project: "{{ $.Values.argo.projects.apps }}"
+  destination:
+    server: {{ $.Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: "{{ $.Values.source.repo_url }}"
+    path: instance-applications/130-{{ $value.mas_config_chart }}
+    targetRevision: "{{ $.Values.source.revision }}"
+    plugin:
+      name: {{ $.Values.avp.name }} 
+      env:
+        - name: {{ $.Values.avp.values_varname }}
+          value: |
+            account_id: "{{ $.Values.account.id }}"
+            region_id: "{{ $.Values.region.id }}"
+            cluster_id: "{{ $.Values.cluster.id }}"
+            instance_id: "{{ $.Values.instance.id }}"
+            sm_aws_access_key_id: "{{ $.Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ $.Values.sm.aws_secret_access_key }}"
+            {{- if $.Values.custom_labels }}
+            custom_labels: {{ $.Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+            {{ $value | toYaml | nindent 12 }}
+        - name: ARGOCD_APP_NAME
+          value: {{ $value.mas_config_name }}
+        {{- if not (empty $.Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ $.Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+{{- end }}

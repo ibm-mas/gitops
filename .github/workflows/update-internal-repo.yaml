@@ -1,0 +1,53 @@
+name: Update Internal GHE Repo
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - '**'
+
+env:
+  GITHUB_BRANCH: ${{ github.ref_name }}
+  REMOTE_REPO: automation-paas-cd-pipeline/mas-gitops
+
+jobs:
+  update-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout local repo
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Checkout remote repo
+        id: checkout_remote
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          github-server-url: https://github.ibm.com
+          repository: ${{ env.REMOTE_REPO }}
+          ref: ${{ env.GITHUB_BRANCH }}
+          token:  ${{ secrets.ACTIONS_GITHUB_TOKEN }}
+          path: target
+
+      - name: Copy over files
+        if: ${{ steps.checkout_remote.outcome == 'success' }}
+        run: $GITHUB_WORKSPACE/source/build/bin/copy-gitops.sh -s $GITHUB_WORKSPACE/source -t $GITHUB_WORKSPACE/target
+
+      - name: Commit changes to remote repo 
+        if: ${{ steps.checkout_remote.outcome == 'success' }}
+        run: |
+          cd $GITHUB_WORKSPACE/target
+          git config user.name "GitHub Actions Bot"
+          git config user.email "<>"
+
+          echo "git: Adding all files in $$GITHUB_WORKSPACE/target directory"
+          export FILES_ADDED=$(git add -v . | wc -l | xargs)
+          echo "git: Added ${FILES_ADDED} files"
+          if [ "$FILES_ADDED" != "0" ]; then
+            echo "git: Committing files"
+            git commit -m "Synch commit between ibm-mas/gitops and $REMOTE_REPO"
+          fi
+
+          echo "Push changes to ${{ env.GITHUB_BRANCH }} branch of https://github.ibm.com/${{ env.REMOTE_REPO }}"
+          git push origin ${{ env.GITHUB_BRANCH }}

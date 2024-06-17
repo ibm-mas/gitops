@@ -1,0 +1,31 @@
+---
+apiVersion: config.mas.ibm.com/v1
+kind: BasCfg
+metadata:
+  name: "{{ .Values.mas_config_name }}"
+  namespace: mas-{{ .Values.instance_id }}-core
+  labels:
+    mas.ibm.com/configScope: system
+    mas.ibm.com/instanceId: "{{ .Values.instance_id }}"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "134"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  displayName: DRO {{ .Values.instance_id }}
+  config:
+    url: "{{ .Values.dro_endpoint_url }}"
+    contact:
+      email: "{{ .Values.dro_contact.email }}"
+      firstName: "{{ .Values.dro_contact.first_name }}"
+      lastName: "{{ .Values.dro_contact.last_name }}"
+    credentials:
+      secretName: "{{ .Values.mas_config_name }}-credentials"
+{{- if .Values.mas_segment_key }}
+    segmentKey: {{ .Values.mas_segment_key }}
+{{- end }}
+  certificates:
+    - alias: ca
+{{ .Values.dro_ca | toYaml | indent 6 }}

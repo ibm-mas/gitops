@@ -1,0 +1,111 @@
+
+{{ $job_name := "postdelete-delete-profilebundles-job" }}
+
+# NOTE: depends on resources created in the cis-compliance chart (psotdelete-ProfileBundles-resources)
+# The values below must align with the values in that file
+{{ $role_name := "postdelete-delete-profilebundles-r" }}
+{{ $sa_name :=   "postdelete-delete-profilebundles-sa" }}
+{{ $rb_name :=   "postdelete-delete-profilebundles-rb" }}
+{{ $np_name :=   "postdelete-delete-profilebundles-np" }}
+{{ $job_label := "postdelete-delete-profilebundles-job" }}
+{{ $ns :=        "openshift-compliance" }}
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CR_NAMESPACE
+              value: {{ $ns }}
+
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              function delete_oc_resource(){
+                RESOURCE=$1
+                NAMESPACE=$2
+                echo
+                echo "------------------------------------------------------------------"
+                echo "Check if resource $RESOURCE is present in namespace $NAMESPACE "
+
+                # don't want a non-zero rc from oc delete to cause the job to fail
+                # so, temporarily set +e
+                set +e
+                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                set -e
+                if [[ -z "${RESOURCE_NAME}" ]]; then
+                  echo "$RESOURCE not found, skipping"
+                  return 0
+                fi
+
+                echo "oc delete resource $RESOURCE in namespace $NAMESPACE "
+
+                # don't want a non-zero rc from oc delete to cause the job to fail (since we then want to try patching out the finalizers)
+                # so, temporarily set +e
+                set +e
+                oc delete $RESOURCE -n $NAMESPACE --timeout=300s --wait=true
+                return_code=$?
+                set -e
+
+                echo "Verify that resource $RESOURCE is now absent in namespace $NAMESPACE "
+                # don't want a non-zero rc from oc delete to cause the job to fail
+                # so, temporarily set +e
+                set +e
+                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                set -e
+                if [[ -n "${RESOURCE_NAME}" ]]; then
+                  echo "$RESOURCE still present, failing job"
+                  exit 1
+                fi
+
+                echo "... verified"
+                return 0
+                
+              }
+
+              
+              delete_oc_resource "profilebundle.compliance.openshift.io/ocp4" "${CR_NAMESPACE}"
+              delete_oc_resource "profilebundle.compliance.openshift.io/rhcos4" "${CR_NAMESPACE}"
+
+
+      restartPolicy: Never
+      serviceAccountName: {{ $sa_name }}
+      volumes: []
+  backoffLimit: 4
+  

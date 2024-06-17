@@ -1,0 +1,512 @@
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: "aws-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "127"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+type: Opaque
+
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "postsync-sa-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "127"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "db2-database-postsync-sa-rb-{{ .Values.db2_instance_name }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "128"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: "postsync-sa-{{ .Values.db2_instance_name }}"
+    namespace: "{{ .Values.db2_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Suffix the Job name with a hash of all chart values
+  # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes in the DB2 config
+  name: "postsync-setup-db2-{{ .Values.db2_instance_name }}-{{ .Values | toYaml | adler32sum }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "129"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id }}
+            - name: MAS_INSTANCE_ID
+              value: {{ .Values.instance_id }}
+            - name: MAS_APP_ID
+              value: {{ .Values.mas_application_id}}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+            - name: DB2_DBNAME
+              value: "{{ .Values.db2_dbname }}"
+            - name: DB2_TLS_VERSION
+              value: "{{ .Values.db2_tls_version }}"
+
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+            - name: db2u-certificate
+              mountPath: /etc/mas/creds/db2u-certificate
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              source /mascli/functions/gitops_utils
+
+              function wait_for_resource {
+                RES_TYPE="$1"
+                RES_NAME="$2"
+                RES_NS="$3"
+                RETRIES=${4:-10}
+                RETRY_DELAY_SECONDS=${5:-30}
+
+                for (( c=1; c<="${RETRIES}"; c++ )); do
+
+                  echo "... attempt ${c} of ${RETRIES}"
+
+                  rc=0
+                  oc get "${RES_TYPE}/${RES_NAME}" -n "${RES_NAMESPACE}" || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+                    return 0
+                  fi
+
+                  if [[ "${c}" -lt "${RETRIES}" ]]; then
+                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                    sleep $RETRY_DELAY_SECONDS
+                  fi
+                done
+
+                echo "...... failed, no attempts remain"
+                return 1
+              }
+
+              # DB2 operator does not automatically apply dbConfig parameters set on the Db2uCluster CR
+              # Instead, a script /db2u/scripts/apply-db2cfg-settings.sh must be executed on one of the db2u pods
+              # However, this does not always seem to work and no indication is given in the output of the script whether it worked or not.
+              # One approach is to check the current configuration parameters (db2 get db cfg for ${DB2_DBNAME}) one by one and verify that their value aligns with that set in the CR.
+              # However, this is not straightforward since DB2 implicitly reformats certain param values (e.g. APPLHEAPSZ: '8192 AUTOMATIC' is reformatted to AUTOMATIC(8192)).
+              # Until we can come up with a better way of doing this (or the Db2u operator is fixed), we will take the approach used in ansible-devops,
+              # whereby the value of single parameter (CHNGPGS_THRESH) is checked against a known value (40) to see if the script executed successfully (and retry if not)
+              # See https://github.com/ibm-mas/ansible-devops/blob/b9f3ef5b7999640b0a31d0aba518ba85ef8b704f/ibm/mas_devops/roles/suite_db2_setup_for_manage/tasks/apply-db2-config-settings.yml#L39
+              function db2apply {
+                RETRIES=${1:-5}
+                RETRY_DELAY_SECONDS=${2:-30}
+
+                for (( c=1; c<="${RETRIES}"; c++ )); do
+                  echo ""
+                  echo "... attempt ${c} of ${RETRIES}"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
+                  # no useful info in return code of this script
+
+                  rc=0
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc 'db2 get db cfg for '${DB2_DBNAME}' | grep "(CHNGPGS_THRESH) = 40"' db2inst1 || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+                    return 0
+                  fi
+
+                  if [[ "${c}" -lt "${RETRIES}" ]]; then
+                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                    sleep $RETRY_DELAY_SECONDS
+                  fi
+                done
+
+                echo "...... failed, no attempts remain"
+                return 1
+              }
+
+              export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/${DB2_INSTANCE_NAME}/config
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "ACCOUNT_ID .......................... ${ACCOUNT_ID}"
+              echo "REGION_ID ........................... ${REGION_ID}"
+              echo "CLUSTER_ID .......................... ${CLUSTER_ID}"
+              echo "MAS_INSTANCE_ID ..................... ${MAS_INSTANCE_ID}"
+              echo "MAS_APP_ID .......................... ${MAS_APP_ID}"
+              echo "AVP_TYPE ............................ ${AVP_TYPE}"
+              echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
+              echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
+              echo "DB2_DBNAME .......................... ${DB2_DBNAME}"
+
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              export SM_AWS_REGION=${REGION_ID}
+             
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "pod" "c-${DB2_INSTANCE_NAME}-db2u-0" "${DB2_NAMESPACE}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to report Ready=True before continuing (timeout 300s)"
+              echo "================================================================================"
+              oc wait --for=condition=Ready pod/c-${DB2_INSTANCE_NAME}-db2u-0 --timeout 300s -n ${DB2_NAMESPACE}
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for service c-${DB2_INSTANCE_NAME}-db2u-engn-svc to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
+
+              if [[ "$MAS_APP_ID" == "manage" ]]; then
+                echo ""
+                echo "================================================================================"
+                echo "Invoke Suite DB2 setup for Manage"
+                echo "================================================================================"
+                # Copy and run a script on the db2u pod to perform Manage-specific setup tasks
+
+                # Path to the generated script, on both this pod and on the db2u pod
+                SETUPDB_SH_PATH="/tmp/setupdb.sh"
+
+                echo ""
+                echo "Create ${SETUPDB_SH_PATH}"
+                echo "--------------------------------------------------------------------------------"
+
+                # Generate a script to copy and run on the db2u pod
+                cat > ${SETUPDB_SH_PATH} << EOF
+                  #!/bin/bash
+
+                  TBSP_SQL="/tmp/.tbsp.sql"
+
+                  if [ -f \$TBSP_SQL ]; then
+                      rm \$TBSP_SQL
+                  fi
+
+                  if ! db2gcf -s | grep Available >/dev/null; then
+
+                      db2_kill
+                      ipclean -a
+                      db2start
+
+                      if ! db2gcf -s | grep Available >/dev/null; then
+                          echo "Instance is not up. Please check."
+                          exit 1
+                      fi
+
+                  fi
+
+                  db2 connect to ${DB2_DBNAME}
+                  if [ \$? != 0 ]; then
+                    echo "Failed to connect to database!"
+                    exit 1
+                  fi
+
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.bufferpools
+                  where BPNAME='MAXBUFPOOL')
+                  then 'CREATE BUFFERPOOL MAXBUFPOOL SIZE 8192 AUTOMATIC PAGESIZE 32 K;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >\$TBSP_SQL
+                  maxd_bpf=\$?
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.bufferpools
+                  where BPNAME='MAXBUFPOOLINDX')
+                  then 'CREATE BUFFERPOOL MAXBUFPOOLINDX SIZE 8192 AUTOMATIC PAGESIZE 32 K;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >>\$TBSP_SQL
+                  maxi_bpf=\$?
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.bufferpools
+                  where BPNAME='MAXTEMPBP')
+                  then 'CREATE BUFFERPOOL MAXTEMPBP SIZE 8192 AUTOMATIC PAGESIZE 32 K;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >>\$TBSP_SQL
+                  maxtmp_bpf=\$?
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.tablespaces
+                  where TBSPACE='MAXDATA')
+                  then 'CREATE TABLESPACE MAXDATA PAGESIZE 32 K MANAGED BY AUTOMATIC STORAGE BUFFERPOOL MAXBUFPOOL;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >>\$TBSP_SQL
+                  maxd_tbsp=\$?
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.tablespaces
+                  where TBSPACE='MAXINDEX')
+                  then 'CREATE TABLESPACE MAXINDEX PAGESIZE 32 K MANAGED BY AUTOMATIC STORAGE BUFFERPOOL MAXBUFPOOLINDX;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >>\$TBSP_SQL
+                  maxi_tbsp=\$?
+                  db2 -x "select case when NOT exists(
+                  select 1
+                  from syscat.tablespaces
+                  where TBSPACE='MAXTEMP')
+                  then 'CREATE TEMPORARY TABLESPACE MAXTEMP PAGESIZE 32 K MANAGED BY AUTOMATIC STORAGE BUFFERPOOL MAXTEMPBP;'
+                  else '--'
+                  end
+                  from sysibm.sysdummy1"  >>\$TBSP_SQL
+                  maxtmp_tbsp=\$?
+
+                  if [[ "\$maxd_bpf" -eq  "0" && "\$maxi_bpf" -eq  "0" && "\$maxtmp_bpf" -eq "0"  && "\$maxd_tbsp" -eq  "0" && "\$maxi_tbsp" -eq "0" && "\$maxtmp_tbsp" -eq "0" && -f "\$TBSP_SQL" ]]; then
+                      db2 -tvf \$TBSP_SQL
+                      rm \$TBSP_SQL
+                  else
+                      echo "Error detected."
+                      exit 1
+                  fi               
+              EOF
+                # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
+
+                chmod +x ${SETUPDB_SH_PATH}
+
+                echo ""
+                echo "Copy ${SETUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc cp ${SETUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${SETUPDB_SH_PATH} -c db2u || exit $?
+
+                echo ""
+                echo "Executing ${SETUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1 || exit $?
+
+                echo ""
+                echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1 || exit $?
+
+                echo ""
+                echo "Creating /mnt/bludata0/db2/archive_log in c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/bludata0/db2/archive_log/" db2inst1 || exit $?
+
+                echo ""
+                echo "Creating /mnt/backup/staging in c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1 || exit $?
+
+                echo ""
+                echo "================================================================================"
+                echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "================================================================================"
+                db2apply || exit $?
+                  
+              fi # [[ "$MAS_APP_ID" == "manage" ]]
+
+
+              echo ""
+              echo "================================================================================"
+              echo "Invoke Suite DB2 Backup"
+              echo "================================================================================"
+              # Some parameters like LOGARCHMETH1 being set can cause a backup to be needed as it moves
+              # to archival logging. 
+              # Copy and run a script on the db2u pod to perform that backup now if we are in that state.
+
+              # Path to the generated script, on both this pod and on the db2u pod
+              BACKUPDB_SH_PATH="/tmp/backupdb.sh"
+
+              echo ""
+              echo "Create ${BACKUPDB_SH_PATH}"
+              echo "--------------------------------------------------------------------------------"
+
+              # Generate a script to copy and run on the db2u pod
+              cat > ${BACKUPDB_SH_PATH} << EOF
+                #!/bin/bash
+
+                # Check that connect returns SQL1116N which means BACKUP PENDING state
+                if db2 connect to ${DB2_DBNAME} | grep SQL1116N >/dev/null; then
+                  echo "backupdb.sh: Database connect returning SQL1116N, do backup now"
+                else
+                  echo "backupdb.sh: Database connect not returning SQL1116N, nothing to do, exit now"
+                  exit 0
+                fi
+
+                echo "backupdb.sh: Creating backup folder /mnt/backup"
+                mkdir -p /mnt/backup
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2 force applications"
+                db2 force application all
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: Turn off comms manager"
+                db2set -null DB2COMM
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: Deactivate database"
+                db2 deactivate database ${DB2_DBNAME}
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2stop"
+                db2stop force
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2start in admin mode"
+                db2start admin mode restricted access
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                # dbstart does not always start straight away, wait 20 seconds
+                sleep 20
+
+                echo "backupdb.sh: db2 backup db ${DB2_DBNAME} on all dbpartitionnums"
+                db2 backup db ${DB2_DBNAME} on all dbpartitionnums to /mnt/backup
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2stop"
+                db2stop force
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2set comms manager"
+                db2set DB2COMM=TCPIP,SSL
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+
+                echo "backupdb.sh: db2start"
+                db2start
+                rc=\$?
+                [ \$rc -ne 0 ] && exit \$rc
+              EOF
+              # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
+
+              chmod +x ${BACKUPDB_SH_PATH} || exit $?
+
+              echo ""
+              echo "Copy ${BACKUPDB_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc cp ${BACKUPDB_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${BACKUPDB_SH_PATH} -c db2u || exit $?
+
+              echo ""
+              echo "Executing ${BACKUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUPDB_SH_PATH} | tee /tmp/backupdb.log" db2inst1 || exit $?
+
+              echo ""
+              echo "================================================================================"
+              echo "Setting ${DB2_CONFIG_SECRET} secret"
+              echo "================================================================================"
+
+
+              echo ""
+              echo "Fetch CA cert from db2u-certicate-${DB2_INSTANCE_NAME} secret in ${DB2_NAMESPACE}"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_CA_PEM=$(cat /etc/mas/creds/db2u-certificate/ca.crt | base64 -w0)
+              if [[ -z "${DB2_CA_PEM}" ]]; then
+                echo "Failed to fetch db2 ca pem"
+                exit 1
+              fi
+
+              echo ""
+              echo "Fetch ssl-server target port of c-${DB2_INSTANCE_NAME}-db2u-engn-svc service in ${DB2_NAMESPACE}"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_TLS_SERVICEPORT=$(oc get svc c-${DB2_INSTANCE_NAME}-db2u-engn-svc -n ${DB2_NAMESPACE} -o=jsonpath="{.spec.ports[?(@.name=='ssl-server')].targetPort}")
+              if [[ -z "${DB2_TLS_SERVICEPORT}" ]]; then
+                echo "Failed to fetch db2 tls service port"
+                exit 1
+              fi
+
+              echo ""
+              echo "Construsting JDBC_CONNECTION_URL"
+              echo "--------------------------------------------------------------------------------"
+              export JDBC_CONNECTION_URL="jdbc:db2://c-${DB2_INSTANCE_NAME}-db2u-engn-svc.${DB2_NAMESPACE}.svc:${DB2_TLS_SERVICEPORT}/${DB2_DBNAME}:sslConnection=true;sslVersion=${DB2_TLS_VERSION};"
+
+              echo ""
+              echo "Updating Secrets Manager"
+              echo "--------------------------------------------------------------------------------"
+              sm_login
+              sm_update_secret ${DB2_CONFIG_SECRET} "{ \"jdbc_connection_url\": \"${JDBC_CONNECTION_URL}\", \"jdbc_instance_name\": \"${DB2_INSTANCE_NAME}\", \"ca_b64\": \"${DB2_CA_PEM}\", \"db2_dbname\": \"${DB2_DBNAME}\", \"db2_namespace\": \"${DB2_NAMESPACE}\" }" || exit $?
+
+
+      restartPolicy: Never
+
+      serviceAccountName: "postsync-sa-{{ .Values.db2_instance_name }}"
+      volumes:
+        - name: aws
+          secret:
+            secretName: "aws-{{ .Values.db2_instance_name }}"
+            defaultMode: 420
+            optional: false
+        - name: db2u-certificate
+          secret:
+            secretName: "db2u-certificate-{{ .Values.db2_instance_name }}"
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4

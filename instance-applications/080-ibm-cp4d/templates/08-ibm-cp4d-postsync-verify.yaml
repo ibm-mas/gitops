@@ -1,0 +1,190 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "cpd-postsync-verify-job"
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "089"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ .Values.cpd_operators_namespace }}
+            - name: CPD_SCALE_CONFIG
+              value: {{ .Values.cpd_scale_config }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "Wait for ZenService Cr and patch it if needed"
+              echo "================================================================================"
+              echo
+              
+              echo
+              echo "Wait for ibm-zen-operator to be ready"
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+60))
+                if [ $wait_period -gt 1200 ]; then
+                  echo "ZenService operator is not ready after 20 minutes of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 60
+                fi
+
+                ZEN_OPERATOR_LOOKUP=$(oc get deployment ibm-zen-operator -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+                if [[ ! -z $ZEN_OPERATOR_LOOKUP ]]; then
+                  echo "ZenService Operator has started"
+                  break
+                fi
+              done
+
+              echo "Patching ZenService lite-cr if not already patched"
+              while true; do
+                ZS_LOOKUP=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec}')
+                if [[ ! -z $ZS_LOOKUP ]]; then
+                  echo "ZenService spec has been fetched"
+                  IS_PATCHED=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.ZenCoreMetaDb}')
+                  if [[ -z $IS_PATCHED ]]; then
+                    echo "patching zenservice"
+                    oc patch --type='merge' ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"scaleConfig\":\"$CPD_SCALE_CONFIG\",\"ZenCoreMetaDb\":{ \"name\":\"zen-metastoredb\",\"kind\":\"StatefulSet\",\"container\":\"zen-metastoredb\",\"replicas\":\"3\",\"resources\":{ \"limits\":{ \"cpu\":\"2\",\"memory\":\"4Gi\"},\"requests\":{ \"cpu\":\"200m\",\"memory\":\"1024Mi\"}}}}}"
+                    echo "scaling zen operator down and up to force reconcile when the pod is restarted"
+                    oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+                    oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
+                  fi
+                  break
+                fi
+              done
+
+              echo
+              echo "Waiting for ibm-zen-operator to be ready again..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+60))
+                if [ $wait_period -gt 1200 ]; then
+                  echo "ZenService operator is not ready after 20 minutes of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 60
+                fi
+
+                ZEN_OPERATOR_LOOKUP=$(oc get deployment ibm-zen-operator -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+                if [[ ! -z $ZEN_OPERATOR_LOOKUP ]]; then
+                  echo "ZenService Operator is ready again"
+                  break
+                fi
+              done
+
+              echo
+              echo "Waiting for zenStatus to be 'Completed'..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+120))
+                if [ $wait_period -gt 7200 ]; then
+                  echo "zenStatus is not complete after 2 hours of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 120
+                fi
+
+                ZENSERVICE_LOOKUP=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.zenStatus}')
+                if [[ ! -z ${ZENSERVICE_LOOKUP} && ${ZENSERVICE_LOOKUP} == *"Completed"* ]]; then
+                  echo "ZenService is complete"
+                  break
+                fi
+              done
+
+              echo
+              echo "Waiting for controlPlaneStatus to complete..."
+
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+120))
+                if [ $wait_period -gt 7200 ]; then
+                  echo "ibmcpd controlPlaneStatus is not complete after 2 hours of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 120
+                fi
+
+                IBMCPD_LOOKUP=$(oc get Ibmcpd ibmcpd-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.controlPlaneStatus}')
+                if [[ ! -z ${IBMCPD_LOOKUP} && ${IBMCPD_LOOKUP} == *"Completed"* ]]; then
+                  echo "ibmcpd controlPlaneStatus is complete"
+                  break
+                fi
+              done
+
+              echo
+              echo "Lookup Cloud Pak for Data admin username"
+              USERNAME=$(oc get secret ibm-iam-bindinfo-platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -o json | jq -r '.data.admin_username' | base64 -d)
+
+              if [[ -z ${USERNAME} ]]; then
+                export CPD_ADMIN_USERNAME="admin"
+                export SECRET_NAME="admin-user-details"
+                export ADMIN_PASSWORD_PROPERTY="initial_admin_password"
+
+              else
+                export CPD_ADMIN_USERNAME="cpadmin"
+                export SECRET_NAME="ibm-iam-bindinfo-platform-auth-idp-credentials"
+                export ADMIN_PASSWORD_PROPERTY="admin_password"
+              fi
+              
+              
+              echo
+              echo "Lookup Cloud Pak for Data admin password"
+              CPD_ADMIN_PASSWORD=$(oc get secret $SECRET_NAME -n ${CPD_INSTANCE_NAMESPACE} -o json | jq -r ".data.${ADMIN_PASSWORD_PROPERTY}" | base64 -d)
+
+              echo
+              echo "Lookup Cloud Pak for Data admin url"
+              URL=$(oc get ZenService lite-cr -o jsonpath="{.status.url}{'\n'}" -n ${CPD_INSTANCE_NAMESPACE})
+
+              if [[ -z ${URL} || -z ${CPD_ADMIN_USERNAME} || -z ${CPD_ADMIN_PASSWORD} ]]; then
+                echo "CPD admin username/password/url details are missing, please check your Cloud Pak For Data instance health!"
+                exit 1
+              fi
+              
+              CPD_ADMIN_URL="https://${URL}"
+
+              echo
+              echo
+              echo "================================================================================"
+              echo "Debug Cloud Pak for Data details"
+              echo "================================================================================"
+              echo "- CP4D Dashboard ......................... ${CPD_ADMIN_URL}"
+              echo "- CP4D Admin Username .................... ${CPD_ADMIN_USERNAME}"
+              echo "- CP4D Admin Password .................... ${CPD_ADMIN_PASSWORD:0:2}<snip>"
+
+      restartPolicy: Never
+      serviceAccountName: presync-cpd-prereq-sa
+  backoffLimit: 4

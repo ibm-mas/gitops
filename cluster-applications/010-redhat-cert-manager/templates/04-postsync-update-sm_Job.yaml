@@ -1,0 +1,242 @@
+
+
+{{- /*
+TODO:
+  The secrets being created in AWS SM by this Job are nothing to do with cert-manager
+  There *has* to be a better way of getting these bits of info into the ibm-db2u and ibm-db2u-database charts
+*/}}
+
+{{- if .Values.run_sync_hooks }}
+
+{{ $ns := "cert-manager-operator"}}
+{{ $aws_secret := "aws"}}
+{{ $role_name  :=  "postsync-rhcm-update-sm-r" }}
+{{ $sa_name    :=  "postsync-rhcm-update-sm-sa" }}
+{{ $rb_name    :=  "postsync-rhcm-update-sm-rb" }}
+
+
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "013"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+type: Opaque
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "013"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "013"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - packages.operators.coreos.com
+    resources:
+      - packagemanifests
+  - verbs:
+      - get
+    apiGroups:
+      - config.openshift.io
+    resources:
+      - ingresses
+
+
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "014"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $role_name }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Generate the job name by suffixing with a hash of all chart values
+  # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes
+  # Any change to cluster config will trigger a rerun of the job.
+  # The job is idempotent and quick so no real harm in running it when we don't actually need to.
+  name: "postsync-rhcm-update-sm-job-{{ .Values | toYaml | adler32sum }}"
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "015"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id }}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+
+              set -e
+
+              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
+              source /mascli/functions/gitops_utils
+
+              function wait_for_cluster_resource {
+                RES_TYPE="$1"
+                RES_NAME="$2"
+                RETRIES=${3:-10}
+                RETRY_DELAY_SECONDS=${4:-30}
+
+                for (( c=1; c<="${RETRIES}"; c++ )); do
+
+                  echo "... attempt ${c} of ${RETRIES}"
+
+                  rc=0
+                  oc get "${RES_TYPE}/${RES_NAME}" -n "${RES_NAMESPACE}" || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+                    return 0
+                  fi
+
+                  if [[ "${c}" -lt "${RETRIES}" ]]; then
+                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                    sleep $RETRY_DELAY_SECONDS
+                  fi
+                done
+
+                echo "...... failed, no attempts remain"
+                return 1
+              }
+
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for PackageManifest db2u-operator to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_cluster_resource "PackageManifest" "db2u-operator"
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for ingress.config.openshift.io cluster to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_cluster_resource "ingress.config.openshift.io" "cluster"
+
+
+              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              echo "Fetching defaultChannel from db2u-operator PackageManifest"
+              export DB2_DEFAULT_CHANNEL=$(oc get PackageManifest db2u-operator -o=jsonpath="{.status.defaultChannel}")
+              if [[ -z "${DB2_DEFAULT_CHANNEL}" ]]; then
+                echo "Failed to fetch defaultChannel"
+                exit 1
+              fi
+
+              echo "Fetching domain from ingress.config.openshift.io cluster"
+              export CLUSTER_DOMAIN=$(oc get ingress.config.openshift.io cluster -o=jsonpath='{.spec.domain}')
+              if [[ -z "${CLUSTER_DOMAIN}" ]]; then
+                echo "Failed to fetch domain"
+                exit 1
+              fi
+
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+
+              # Used by the Subscription resource in the ibm-db2u chart (https://github.com/ibm-mas/gitops/blob/5fdeaacb9180756d52da3708f68cfcc1949c4c98/applications/060-ibm-db2u/templates/03-db2_Subscription.yaml#L10)
+              SECRET_NAME_DB2_DEFAULT_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/db2_default_channel
+              sm_update_secret $SECRET_NAME_DB2_DEFAULT_CHANNEL "{\"db2_default_channel\": \"$DB2_DEFAULT_CHANNEL\" }"
+
+              # Used by resources in the ibm-db2u-database chart (https://github.com/ibm-mas/gitops/tree/5fdeaacb9180756d52da3708f68cfcc1949c4c98/applications/120-ibm-db2u-database)
+              SECRET_NAME_CLUSTER_DOMAIN=${ACCOUNT_ID}/${CLUSTER_ID}/cluster_domain
+              sm_update_secret $SECRET_NAME_CLUSTER_DOMAIN "{\"cluster_domain\": \"$CLUSTER_DOMAIN\" }"
+
+
+
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: {{ $sa_name }}
+      volumes:
+        - name: aws
+          secret:
+            secretName: {{ $aws_secret }}
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+{{- end }}

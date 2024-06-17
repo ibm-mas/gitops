@@ -1,3 +1,4 @@
-MAS Core Platform
+MAS Application Install
 ===============================================================================
-Installs the Application on `Suite`.
+Generic chart for installing a MAS Application.
+Certain templates are enabled only for specific MAS editions (`mas_edition`) and/or applications (`mas_app_id`).

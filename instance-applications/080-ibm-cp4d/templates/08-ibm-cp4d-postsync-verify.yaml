@@ -126,26 +126,6 @@ spec:
               done
 
               echo
-              echo "Waiting for controlPlaneStatus to complete..."
-
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+120))
-                if [ $wait_period -gt 7200 ]; then
-                  echo "ibmcpd controlPlaneStatus is not complete after 2 hours of waiting. exiting..."
-                  exit 1
-                else
-                  sleep 120
-                fi
-
-                IBMCPD_LOOKUP=$(oc get Ibmcpd ibmcpd-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.controlPlaneStatus}')
-                if [[ ! -z ${IBMCPD_LOOKUP} && ${IBMCPD_LOOKUP} == *"Completed"* ]]; then
-                  echo "ibmcpd controlPlaneStatus is complete"
-                  break
-                fi
-              done
-
-              echo
               echo "Lookup Cloud Pak for Data admin username"
               USERNAME=$(oc get secret ibm-iam-bindinfo-platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -o json | jq -r '.data.admin_username' | base64 -d)
 

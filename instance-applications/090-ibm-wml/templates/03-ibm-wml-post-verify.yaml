@@ -1,4 +1,103 @@
 ---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: wml-precheck-sa
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "091"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: wml-precheck-role-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "091"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - patch
+      - update
+    apiGroups:
+      - ''
+      - zen.cpd.ibm.com
+      - cpd.ibm.com
+      - operator.ibm.com
+      - apiextensions.k8s.io
+      - ccs.cpd.ibm.com
+      - elasticsearch.opencontent.ibm.com
+    resources:
+      - ibmcpds
+      - zenservices
+      - secrets
+      - commonservices
+      - ccs
+      - elasticsearchclusters
+  - verbs:
+      - get
+      - list
+      - scale
+      - patch
+    apiGroups:
+      - apps
+    resources:
+      - deployments
+      - deployments/scale
+  - verbs:
+      - delete
+      - list
+    apiGroups:
+      - batch
+      - apps
+    resources:
+      - jobs
+      - statefulsets
+  - verbs:
+      - get
+    apiGroups:
+      - wml.cpd.ibm.com
+    resources:
+      - wmlbases
+  - verbs:
+      - get
+    apiGroups:
+      - apps
+    resources:
+      - statefulsets
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: wml-precheck-rb-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "092"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: wml-precheck-sa
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: wml-precheck-role-{{ .Values.instance_id }}
+
+
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -44,238 +143,238 @@ spec:
             - |
 
               set -e
-              echo
-              echo "================================================================================"
-              echo "Waiting for WML and its dependencies to be complete"
-              echo "Wait for CCS Cr to be ready and patch if needed"
-              echo "================================================================================"
-              echo
+              echo "Testing without post verify...."
+              # echo "================================================================================"
+              # echo "Waiting for WML and its dependencies to be complete"
+              # echo "Wait for CCS Cr to be ready and patch if needed"
+              # echo "================================================================================"
+              # echo
               
-              echo
-              echo "Waiting for ccs-cr to be ready..."
+              # echo
+              # echo "Waiting for ccs-cr to be ready..."
 
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+60))
-                if [ $wait_period -gt 1800 ]; then
-                  echo "ccs-cr is not ready after 30 minutes of waiting. exiting..."
-                  exit 1
-                else
-                  sleep 60
-                fi
+              # wait_period=0
+              # while true; do
+              #   wait_period=$(($wait_period+60))
+              #   if [ $wait_period -gt 1800 ]; then
+              #     echo "ccs-cr is not ready after 30 minutes of waiting. exiting..."
+              #     exit 1
+              #   else
+              #     sleep 60
+              #   fi
 
-                CCS_CR_LOOKUP=$(oc get CCS ccs-cr -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
-                if [[ ! -z $CCS_CR_LOOKUP ]]; then
-                  echo "CCS Cr is available"
-                  break
-                fi
-              done
+              #   CCS_CR_LOOKUP=$(oc get CCS ccs-cr -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
+              #   if [[ ! -z $CCS_CR_LOOKUP ]]; then
+              #     echo "CCS Cr is available"
+              #     break
+              #   fi
+              # done
 
-              echo "Patching CCS ccs-cr if not already patched"
-              CCS_COUCHDB_RES=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.couchdb_resources}')
-              CCS_BLOCKSTORAGE=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.blockStorageClass}')
-              CCS_IMAGEPULLSECRET=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.imagePullSecret}')
+              # echo "Patching CCS ccs-cr if not already patched"
+              # CCS_COUCHDB_RES=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.couchdb_resources}')
+              # CCS_BLOCKSTORAGE=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.blockStorageClass}')
+              # CCS_IMAGEPULLSECRET=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.imagePullSecret}')
 
-              if [[ -z $CCS_COUCHDB_RES || -z $CCS_BLOCKSTORAGE || -z $CCS_IMAGEPULLSECRET ]]; then
-                echo "CCS CR needs to be patched"
-                echo "patching CCS Cr..."
-                oc patch --type='merge' CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\",\"blockStorageClass\":\"$CPD_SERVICE_BLOCK_STORAGE_CLASS\",\"fileStorageClass\":\"$CPD_SERVICE_STORAGE_CLASS\",\"couchdb_resources\":{ \"limits\":{ \"cpu\":\"16\",\"memory\":\"16Gi\"},\"requests\":{ \"cpu\":\"3\",\"memory\":\"256Mi\"},\"couchdb_search_resources\":{ \"limits\":{ \"cpu\":\"4\",\"memory\":\"6Gi\"},\"requests\":{ \"cpu\":\"250m\",\"memory\":\"256Mi\"}}}}}"
-                echo "scaling CCS operator down and up to force reconcile when the pod is restarted"
-                oc scale deployment ibm-cpd-ccs-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
-                oc scale deployment ibm-cpd-ccs-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
-              fi
+              # if [[ -z $CCS_COUCHDB_RES || -z $CCS_BLOCKSTORAGE || -z $CCS_IMAGEPULLSECRET ]]; then
+              #   echo "CCS CR needs to be patched"
+              #   echo "patching CCS Cr..."
+              #   oc patch --type='merge' CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\",\"blockStorageClass\":\"$CPD_SERVICE_BLOCK_STORAGE_CLASS\",\"fileStorageClass\":\"$CPD_SERVICE_STORAGE_CLASS\",\"couchdb_resources\":{ \"limits\":{ \"cpu\":\"16\",\"memory\":\"16Gi\"},\"requests\":{ \"cpu\":\"3\",\"memory\":\"256Mi\"},\"couchdb_search_resources\":{ \"limits\":{ \"cpu\":\"4\",\"memory\":\"6Gi\"},\"requests\":{ \"cpu\":\"250m\",\"memory\":\"256Mi\"}}}}}"
+              #   echo "scaling CCS operator down and up to force reconcile when the pod is restarted"
+              #   oc scale deployment ibm-cpd-ccs-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+              #   oc scale deployment ibm-cpd-ccs-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
+              # fi
 
-              echo
-              echo "Waiting for ibm-cpd-ccs-operator to be ready again..."
+              # echo
+              # echo "Waiting for ibm-cpd-ccs-operator to be ready again..."
 
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+60))
-                if [ $wait_period -gt 1200 ]; then
-                  echo "CCS operator is not ready after 20 minutes of waiting. exiting..."
-                  exit 1
-                else
-                  sleep 60
-                fi
+              # wait_period=0
+              # while true; do
+              #   wait_period=$(($wait_period+60))
+              #   if [ $wait_period -gt 1200 ]; then
+              #     echo "CCS operator is not ready after 20 minutes of waiting. exiting..."
+              #     exit 1
+              #   else
+              #     sleep 60
+              #   fi
 
-                CCS_OPERATOR_LOOKUP=$(oc get deployment ibm-cpd-ccs-operator -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
-                if [[ ! -z $CCS_OPERATOR_LOOKUP ]]; then
-                  echo "CCS Operator is ready again"
-                  break
-                fi
-              done
+              #   CCS_OPERATOR_LOOKUP=$(oc get deployment ibm-cpd-ccs-operator -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+              #   if [[ ! -z $CCS_OPERATOR_LOOKUP ]]; then
+              #     echo "CCS Operator is ready again"
+              #     break
+              #   fi
+              # done
 
-              echo
-              echo "================================================================================"
-              echo "Wait for Elastic Search to be ready and patch if needed before checking ccsStatus"
-              echo "================================================================================"
-              echo
+              # echo
+              # echo "================================================================================"
+              # echo "Wait for Elastic Search to be ready and patch if needed before checking ccsStatus"
+              # echo "================================================================================"
+              # echo
 
-              echo
-              echo "Waiting for elasticsearch-master to be ready..."
+              # echo
+              # echo "Waiting for elasticsearch-master to be ready..."
 
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+60))
-                if [ $wait_period -gt 1800 ]; then
-                  echo "elasticsearch-master is not ready after 30 minutes of waiting. Exiting..."
-                  exit 1
-                else
-                  sleep 60
-                fi
+              # wait_period=0
+              # while true; do
+              #   wait_period=$(($wait_period+60))
+              #   if [ $wait_period -gt 1800 ]; then
+              #     echo "elasticsearch-master is not ready after 30 minutes of waiting. Exiting..."
+              #     exit 1
+              #   else
+              #     sleep 60
+              #   fi
 
-                ELASTICSEARCH_CR_LOOKUP=$(oc get ElasticsearchCluster elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
-                if [[ ! -z $ELASTICSEARCH_CR_LOOKUP ]]; then
-                  echo "Elasticsearch Cr is available"
-                  break
-                fi
-              done
+              #   ELASTICSEARCH_CR_LOOKUP=$(oc get ElasticsearchCluster elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
+              #   if [[ ! -z $ELASTICSEARCH_CR_LOOKUP ]]; then
+              #     echo "Elasticsearch Cr is available"
+              #     break
+              #   fi
+              # done
 
-              echo "Patching ElasticsearchCluster elasticsearch-master if not already patched"
+              # echo "Patching ElasticsearchCluster elasticsearch-master if not already patched"
              
-              ELASTICSEARCH_IMAGEPULLSECRET=$(oc get ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.imagePullSecret}')
+              # ELASTICSEARCH_IMAGEPULLSECRET=$(oc get ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.imagePullSecret}')
 
-              if [[ -z $ELASTICSEARCH_IMAGEPULLSECRET ]]; then
-                echo "elasticsearch-master needs to be patched"
-                echo "patching elasticsearch-master and forcing reconcile..."
-                oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
-                oc delete Job elasticsearch-master-ibm-elasticsearch-create-snapshot-repo-job -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
-                oc delete StatefulSet -n ${CPD_INSTANCE_NAMESPACE} --selector="app.kubernetes.io/instance=elasticsearch-master" --ignore-not-found
-                oc patch --type='merge' ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\"}}"
-                oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
-              fi
+              # if [[ -z $ELASTICSEARCH_IMAGEPULLSECRET ]]; then
+              #   echo "elasticsearch-master needs to be patched"
+              #   echo "patching elasticsearch-master and forcing reconcile..."
+              #   oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+              #   oc delete Job elasticsearch-master-ibm-elasticsearch-create-snapshot-repo-job -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
+              #   oc delete StatefulSet -n ${CPD_INSTANCE_NAMESPACE} --selector="app.kubernetes.io/instance=elasticsearch-master" --ignore-not-found
+              #   oc patch --type='merge' ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\"}}"
+              #   oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
+              # fi
 
-              echo
-              echo "Waiting for ibm-elasticsearch-operator to be ready again..."
+              # echo
+              # echo "Waiting for ibm-elasticsearch-operator to be ready again..."
 
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+60))
-                if [ $wait_period -gt 1200 ]; then
-                  echo "Elasticsearch operator is not ready after 20 minutes of waiting. exiting..."
-                  exit 1
-                else
-                  sleep 60
-                fi
+              # wait_period=0
+              # while true; do
+              #   wait_period=$(($wait_period+60))
+              #   if [ $wait_period -gt 1200 ]; then
+              #     echo "Elasticsearch operator is not ready after 20 minutes of waiting. exiting..."
+              #     exit 1
+              #   else
+              #     sleep 60
+              #   fi
 
-                ELASTICSEARCH_OPERATOR_LOOKUP=$(oc get deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
-                if [[ ! -z $ELASTICSEARCH_OPERATOR_LOOKUP ]]; then
-                  echo "Elasticsearch Operator is ready again"
-                  break
-                fi
-              done
+              #   ELASTICSEARCH_OPERATOR_LOOKUP=$(oc get deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+              #   if [[ ! -z $ELASTICSEARCH_OPERATOR_LOOKUP ]]; then
+              #     echo "Elasticsearch Operator is ready again"
+              #     break
+              #   fi
+              # done
 
-              echo
-              echo "================================================================================"
-              echo "Back to CCS"
-              echo "================================================================================"
-              echo
-              echo "Waiting for ccsStatus to be 'Completed'..."
+              # echo
+              # echo "================================================================================"
+              # echo "Back to CCS"
+              # echo "================================================================================"
+              # echo
+              # echo "Waiting for ccsStatus to be 'Completed'..."
 
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+300))
-                if [ $wait_period -gt 15000 ]; then
-                  echo "ccsStatus is not complete after 4 hours and 10 minutes of waiting. Exiting..."
-                  exit 1
-                else
-                  sleep 300
-                fi
+              # wait_period=0
+              # while true; do
+              #   wait_period=$(($wait_period+300))
+              #   if [ $wait_period -gt 15000 ]; then
+              #     echo "ccsStatus is not complete after 4 hours and 10 minutes of waiting. Exiting..."
+              #     exit 1
+              #   else
+              #     sleep 300
+              #   fi
 
-                CCSSTATUS_LOOKUP=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.ccsStatus}')
-                if [[ ! -z ${CCSSTATUS_LOOKUP} && ${CCSSTATUS_LOOKUP} == *"Completed"* ]]; then
-                  echo "CCS is complete"
-                  break
-                fi
-              done
-
-
-              echo
-              echo "================================================================================"
-              echo "Wait for wmlbase custom resource to be created"
-              echo "================================================================================"
-              echo
-
-              echo "Wait for the WmLBase custom resource to appear..."
-
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+5))
-                if [ $wait_period -gt 600 ];then
-                  echo "WmLBase.v1beta1.wml.cpd.ibm.com CR is not defined after 10 minutes of waiting. Exiting..."
-                  exit 1
-                else
-                  sleep 5
-                fi
-
-                WMLBASE_LOOKUP=$(oc get WmlBase.v1beta1.wml.cpd.ibm.com wml-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found)
-                if [[ ! -z ${WMLBASE_LOOKUP} ]]; then
-                  echo "WmLBase.v1beta1.wml.cpd.ibm.com is available"
-                  break
-                fi
-              done
+              #   CCSSTATUS_LOOKUP=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.ccsStatus}')
+              #   if [[ ! -z ${CCSSTATUS_LOOKUP} && ${CCSSTATUS_LOOKUP} == *"Completed"* ]]; then
+              #     echo "CCS is complete"
+              #     break
+              #   fi
+              # done
 
 
-              echo "Wait for the wml-cpd-etcd statefulset to appear..."
+              # echo
+              # echo "================================================================================"
+              # echo "Wait for wmlbase custom resource to be created"
+              # echo "================================================================================"
+              # echo
 
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+5))
-                if [ $wait_period -gt 60 ];then
-                  echo "wml-cpd-etcd StatefulSet is not defined after 1 minute of waiting. Exiting..."
-                  exit 1
-                else
-                  sleep 5
-                fi
+              # echo "Wait for the WmLBase custom resource to appear..."
 
-                WML_ETCD_LOOKUP=$(oc get StatefulSet wml-cpd-etcd -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found)
-                if [[ ! -z ${WML_ETCD_LOOKUP} ]]; then
-                  echo "wml-cpd-etcd StatefulSet is available"
-                  break
-                fi
-              done
+              # wait_period=0
+              # while true; do
+              #   wait_period=$(($wait_period+5))
+              #   if [ $wait_period -gt 600 ];then
+              #     echo "WmLBase.v1beta1.wml.cpd.ibm.com CR is not defined after 10 minutes of waiting. Exiting..."
+              #     exit 1
+              #   else
+              #     sleep 5
+              #   fi
+
+              #   WMLBASE_LOOKUP=$(oc get WmlBase.v1beta1.wml.cpd.ibm.com wml-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found)
+              #   if [[ ! -z ${WMLBASE_LOOKUP} ]]; then
+              #     echo "WmLBase.v1beta1.wml.cpd.ibm.com is available"
+              #     break
+              #   fi
+              # done
 
 
-              echo
-              echo "Waiting for Watson Machine Learning operator (ibm-cpd-wml-operator) to be ready..."
+              # echo "Wait for the wml-cpd-etcd statefulset to appear..."
 
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+60))
-                if [ $wait_period -gt 1200 ];then
-                  echo "Watson Machine Learning operator (ibm-cpd-wml-operator) is not ready after 20 minutes of waiting. exiting..."
-                  exit 1
-                else
-                  sleep 60
-                fi
+              # wait_period=0
+              # while true; do
+              #   wait_period=$(($wait_period+5))
+              #   if [ $wait_period -gt 60 ];then
+              #     echo "wml-cpd-etcd StatefulSet is not defined after 1 minute of waiting. Exiting..."
+              #     exit 1
+              #   else
+              #     sleep 5
+              #   fi
 
-                WML_OPERATOR_LOOKUP=$(oc get deployment.v1.apps ibm-cpd-wml-operator -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
-                if [[ ! -z $WML_OPERATOR_LOOKUP ]]; then
-                  echo "Watson Machine Learning Operator (ibm-cpd-wml-operator) is ready"
-                  break
-                fi
-              done
+              #   WML_ETCD_LOOKUP=$(oc get StatefulSet wml-cpd-etcd -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found)
+              #   if [[ ! -z ${WML_ETCD_LOOKUP} ]]; then
+              #     echo "wml-cpd-etcd StatefulSet is available"
+              #     break
+              #   fi
+              # done
+
+
+              # echo
+              # echo "Waiting for Watson Machine Learning operator (ibm-cpd-wml-operator) to be ready..."
+
+              # wait_period=0
+              # while true; do
+              #   wait_period=$(($wait_period+60))
+              #   if [ $wait_period -gt 1200 ];then
+              #     echo "Watson Machine Learning operator (ibm-cpd-wml-operator) is not ready after 20 minutes of waiting. exiting..."
+              #     exit 1
+              #   else
+              #     sleep 60
+              #   fi
+
+              #   WML_OPERATOR_LOOKUP=$(oc get deployment.v1.apps ibm-cpd-wml-operator -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+              #   if [[ ! -z $WML_OPERATOR_LOOKUP ]]; then
+              #     echo "Watson Machine Learning Operator (ibm-cpd-wml-operator) is ready"
+              #     break
+              #   fi
+              # done
 
               
-              echo "Waiting for wmlStatus to be 'Completed'..."
+              # echo "Waiting for wmlStatus to be 'Completed'..."
 
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+300))
-                if [ $wait_period -gt 9000 ];then
-                  echo "wmlStatus is not complete after 2 hours and 30 minutes of waiting."
-                  echo "Watson Machine Learning install failed (wmlStatus). Exiting..."
-                  exit 1
-                else
-                  sleep 300
-                fi
+              # wait_period=0
+              # while true; do
+              #   wait_period=$(($wait_period+300))
+              #   if [ $wait_period -gt 9000 ];then
+              #     echo "wmlStatus is not complete after 2 hours and 30 minutes of waiting."
+              #     echo "Watson Machine Learning install failed (wmlStatus). Exiting..."
+              #     exit 1
+              #   else
+              #     sleep 300
+              #   fi
 
-                WMLSTATUS_LOOKUP=$(oc get WmlBase.v1beta1.wml.cpd.ibm.com wml-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.wmlStatus}')
-                if [[ ! -z ${WMLSTATUS_LOOKUP} && ${WMLSTATUS_LOOKUP} == *"Completed"* ]]; then
-                  echo "Watson Machine Learning is complete"
-                  break
-                fi
-              done
+              #   WMLSTATUS_LOOKUP=$(oc get WmlBase.v1beta1.wml.cpd.ibm.com wml-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.wmlStatus}')
+              #   if [[ ! -z ${WMLSTATUS_LOOKUP} && ${WMLSTATUS_LOOKUP} == *"Completed"* ]]; then
+              #     echo "Watson Machine Learning is complete"
+              #     break
+              #   fi
+              # done
 
 
       restartPolicy: Never

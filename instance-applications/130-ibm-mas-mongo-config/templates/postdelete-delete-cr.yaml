@@ -63,27 +63,40 @@ spec:
             - name: CR_KIND
               value: {{ $cr_kind }}
 
-            - name: MAS_INSTANCE_ID
+            - name: INSTANCE_ID
               value: {{ $mas_instance_id }}
 
             - name: MONGO_USERNAME
-              value: {{ .Values.username }}
-            - name: MONGO_PASSWORD
-              value: {{ .Values.password }}
-            - name: CONFIG
-              value: {{ .Values.config }}
-            - name: CERTIFICATES
-              value: {{ .Values.certificates }}
-            - name: MAS_WIPE_MONGO_DATA
-              value: {{ .Values.mas_wipe_mongo_data }}
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-db
+                  key: mongo_username
 
-          volumeMounts: []
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-db
+                  key: mongo_password
+
+            - name: MAS_WIPE_MONGO_DATA
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-db
+                  key: mas_wipe_mongo_data
+
+          volumeMounts:
+            - name: "mongo-db"
+              mountPath: /etc/mas/secrets/mongo_db
+
           command:
             - /bin/sh
             - -c
             - |
 
               set -e
+
+              export CONFIG=$(cat /etc/mas/secrets/mongo_db/config.yaml | yq -r '.' )
+              export CERTIFICATES=$(cat /etc/mas/secrets/mongo_db/certificates.yaml | yq -r '.' )
 
               function delete_oc_resource(){
                 RESOURCE=$1
@@ -128,13 +141,13 @@ spec:
               }
 
               echo -e "Silently wipe Mongo data"
-              #oc exec -it -n ${CR_NAMESPACE} $(oc get pods -n ${CR_NAMESPACE} -l app=${MAS_INSTANCE_ID}-coreapi -o=jsonpath='{.items[0].metadata.name}') python3 /opt/ibm/coreapi/wipeData.py silent-wipe-data
 
+              
               echo ""
               echo "================================================================================"
               echo "Settings - wipe_mongo"
               echo "================================================================================"
-              echo "MAS_INSTANCE_ID ....................... ${COLOR_MAGENTA}${MAS_INSTANCE_ID}"
+              echo "INSTANCE_ID ........................... ${COLOR_MAGENTA}${INSTANCE_ID}"
               echo "Mongo username ........................ ${COLOR_MAGENTA}${MONGO_USERNAME}"
               echo "Mongo password ........................ ${COLOR_MAGENTA}${MONGO_PASSWORD:0:6}<snip>"
               echo "Mongo config .......................... ${COLOR_MAGENTA}${CONFIG}"
@@ -143,7 +156,8 @@ spec:
               echo ""
               echo "================================================================================"
 
-              if [ "$MAS_WIPE_MONGO_DATA" == "true" ]; then
+              if [[ "${MAS_WIPE_MONGO_DATA}" == "true" ]]; then
+
                 export ROLE_NAME=wipe_mongo
                 ansible-playbook ibm.mas_devops.run_role
                 rc=$?
@@ -156,6 +170,12 @@ spec:
 
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}
-      volumes: []
+
+      volumes:
+        - name: "mongo-db"
+          secret:
+            secretName: "mongo-db"
+            defaultMode: 420
+            optional: false
   backoffLimit: 4
 {{- end }}

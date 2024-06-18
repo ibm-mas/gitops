@@ -1,4 +1,37 @@
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-verify-job
+  namespace: mas-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "01"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cluster-verify-rolebinding-{{ .Values.cluster_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "02"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+subjects:
+  - kind: ServiceAccount
+    name: cluster-verify-job
+    namespace: mas-syncres
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -55,5 +88,5 @@ spec:
               /opt/app-root/src/run-role.sh ocp_verify || exit $?
 
       restartPolicy: Never
-      serviceAccountName: aws-docdb-user-job
+      serviceAccountName: cluster-verify-job
   backoffLimit: 4

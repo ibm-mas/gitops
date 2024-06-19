@@ -35,6 +35,7 @@ rules:
       - packagemanifests
   - verbs:
       - get
+      - create
     apiGroups:
       - ''
     resources:
@@ -178,6 +179,22 @@ spec:
               fi
 
               echo
+              echo "Fetching Watson Machine Learning Version..."
+              export WML_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.wml.cr_version')
+              if [[ -z "${WML_VERSION}" ]]; then
+                echo "Failed to fetch watson machine learning version"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Watson Machine Learning Channel..."
+              export WML_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.wml.sub_channel')
+              if [[ -z "${WML_CHANNEL}" ]]; then
+                echo "Failed to fetch watson machine learning channel"
+                exit 1
+              fi
+      
+              echo
               echo "Fetching Watson Studio Version..."
               export WSL_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.ws.cr_version')
               if [[ -z "${WSL_VERSION}" ]]; then
@@ -281,6 +298,8 @@ spec:
               SECRET_NAME_LICENSING_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/licensing_version
               SECRET_NAME_CPFS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpfs_channel
               SECRET_NAME_CPD_PLATFORM_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/cpd_platform_channel
+              SECRET_NAME_WML_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wml_version
+              SECRET_NAME_WML_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wml_channel
               SECRET_NAME_WSL_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wsl_version
               SECRET_NAME_WSL_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wsl_channel
               SECRET_NAME_CCS_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/ccs_version
@@ -310,6 +329,8 @@ spec:
               echo "    - SECRET_NAME_LICENSING_VERSION ......................... ${SECRET_NAME_LICENSING_VERSION}"
               echo "    - SECRET_NAME_CPFS_CHANNEL .............................. ${SECRET_NAME_CPFS_CHANNEL}"
               echo "    - SECRET_NAME_CPD_PLATFORM_CHANNEL ...................... ${SECRET_NAME_CPD_PLATFORM_CHANNEL}"
+              echo "    - SECRET_NAME_WML_VERSION ............................... ${SECRET_NAME_WML_VERSION}"
+              echo "    - SECRET_NAME_WML_CHANNEL ............................... ${SECRET_NAME_WML_CHANNEL}"
               echo "    - SECRET_NAME_WSL_VERSION ............................... ${SECRET_NAME_WSL_VERSION}"
               echo "    - SECRET_NAME_WSL_CHANNEL ............................... ${SECRET_NAME_WSL_CHANNEL}"
               echo "    - SECRET_NAME_CCS_VERSION ............................... ${SECRET_NAME_CCS_VERSION}"
@@ -330,6 +351,8 @@ spec:
               sm_update_secret $SECRET_NAME_LICENSING_VERSION "{\"licensing_version\": \"$LICENSING_VERSION\" }"
               sm_update_secret $SECRET_NAME_CPFS_CHANNEL "{\"cpfs_channel\": \"$CPFS_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_CPD_PLATFORM_CHANNEL "{\"cpd_platform_channel\": \"$CPD_PLATFORM_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_WML_VERSION "{\"wml_version\": \"$WML_VERSION\" }"
+              sm_update_secret $SECRET_NAME_WML_CHANNEL "{\"wml_channel\": \"$WML_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_WSL_VERSION "{\"wsl_version\": \"$WSL_VERSION\" }"
               sm_update_secret $SECRET_NAME_WSL_CHANNEL "{\"wsl_channel\": \"$WSL_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_CCS_VERSION "{\"ccs_version\": \"$CCS_VERSION\" }"

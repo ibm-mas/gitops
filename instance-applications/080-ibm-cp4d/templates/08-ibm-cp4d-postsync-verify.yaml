@@ -2,10 +2,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "cpd-postsync-verify-job"
+  name: "cpd-postsync-verify-job-{{ .Values | toYaml | adler32sum }}"
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "089"
+    argocd.argoproj.io/sync-wave: "087"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -121,26 +121,6 @@ spec:
                 ZENSERVICE_LOOKUP=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.zenStatus}')
                 if [[ ! -z ${ZENSERVICE_LOOKUP} && ${ZENSERVICE_LOOKUP} == *"Completed"* ]]; then
                   echo "ZenService is complete"
-                  break
-                fi
-              done
-
-              echo
-              echo "Waiting for controlPlaneStatus to complete..."
-
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+120))
-                if [ $wait_period -gt 7200 ]; then
-                  echo "ibmcpd controlPlaneStatus is not complete after 2 hours of waiting. exiting..."
-                  exit 1
-                else
-                  sleep 120
-                fi
-
-                IBMCPD_LOOKUP=$(oc get Ibmcpd ibmcpd-cr -n ${CPD_INSTANCE_NAMESPACE} -o jsonpath='{.status.controlPlaneStatus}')
-                if [[ ! -z ${IBMCPD_LOOKUP} && ${IBMCPD_LOOKUP} == *"Completed"* ]]; then
-                  echo "ibmcpd controlPlaneStatus is complete"
                   break
                 fi
               done

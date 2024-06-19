@@ -1,3 +1,4 @@
-IBM Cloud Pak for Data (CP4D)
+IBM Watson Machine Learning (WML)
 ===============================================================================
-Deploys and configures CP4D needed for `MAS Assist` and `MAS Predict`. Deploys the CP4D platform operator and its dependencies.
+Deploys and configures the CP4D Service, Watson Machine Learning (WML) needed for `MAS Predict`. Deploys WML operator and its dependencies.
+

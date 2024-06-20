@@ -27,7 +27,6 @@ The following figure shows a tree of ArgoCD applications and Application Sets ge
 |IBM Operator Catalog | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml", "000-ibm-operator-catalog-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/000-ibm-operator-catalog", "000-ibm-operator-catalog") }} |
 |Redhat Certificate Manager | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml", "010-ibm-redhat-cert-manager-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/010-redhat-cert-manager", "010-redhat-cert-manager") }} |
 |Data Reporter Operator (DRO) | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml", "020-ibm-dro-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/020-ibm-dro", "020-ibm-dro") }} |
-|Db2u Operator | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/060-ibm-db2u-app.yaml", "060-ibm-db2u-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/060-ibm-db2u", "060-ibm-db2u") }} |
 |CIS Compliance | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/040-cis-compliance-app.yaml", "040-cis-compliance-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/040-cis-compliance", "040-cis-compliance") }} |
 |Nvidia GPU Operator | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/050-nvidia-gpu-operator-app.yaml", "050-nvidia-gpu-operator-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/050-nvidia-gpu-operator", "050-nvidia-gpu-operator") }} |
 
@@ -41,6 +40,7 @@ The {{ cluster_root_chart() }} also installs the {{ instance_root_app_set() }}. 
 
 | Application | Template | Helm Chart |
 |-|-|-|
+|Db2u Operator | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/060-ibm-db2u-app.yaml", "060-ibm-db2u-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/060-ibm-db2u", "060-ibm-db2u") }} |
 |Cloudpak 4 Data (CP4D) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/080-ibm-cp4d-app.yaml", "080-ibm-cp4d-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/080-ibm-cp4d", "080-ibm-cp4d") }} |
 |Suite License Service (SLS) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/100-ibm-sls-app.yaml", "100-ibm-sls-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/100-ibm-sls", "100-ibm-sls") }}
 |DB2 Databases | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml", "120-db2-databases-app.yaml") }}[^1] | {{ gitops_repo_dir_link("instance-applications/120-ibm-db2u-database", "120-ibm-db2u-database") }} |

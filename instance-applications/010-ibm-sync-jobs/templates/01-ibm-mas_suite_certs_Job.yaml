@@ -4,7 +4,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ibm-suite-certs-{{ .Values.manual_certs | toYaml | adler32sum }}
+  name: "ibm-suite-certs-{{ .Values | toYaml | adler32sum }}"
   namespace: mas-{{ .Values.instance_id }}-syncres
   annotations:
     argocd.argoproj.io/sync-wave: "00"
@@ -13,7 +13,6 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  ttlSecondsAfterFinished: 120
   template:
     metadata:
       labels:
@@ -68,8 +67,7 @@ spec:
               export MAS_CONFIG_DIR=${MAS_CONFIG_DIR:-"/tmp/suite_certs/configs"}
 
               export CIS_APIKEY=$(cat /etc/mas/creds/suite_certs/cis_apikey)
-              MANUAL_CERTS=$(cat /etc/mas/creds/suite_certs/manual_certs)
-              MAS_MANUAL_CERTS_YAML=/etc/mas/creds/suite_certs/manual_certs
+              MAS_MANUAL_CERTS_YAML=/etc/mas/creds/suite_certs/manual_certs.yaml
 
               echo ""
               echo "================================================================================"

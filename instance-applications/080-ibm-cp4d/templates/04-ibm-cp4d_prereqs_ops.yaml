@@ -70,7 +70,7 @@ spec:
 apiVersion: operator.ibm.com/v1alpha1
 kind: IBMLicensing
 metadata:
-  name: instance
+  name: instance-{{ .Values.instance_id }}
   annotations:
     argocd.argoproj.io/sync-wave: "085"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
@@ -93,7 +93,7 @@ spec:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: common-service-maps
+  name: common-service-maps-{{ .Values.instance_id }}
   namespace: kube-public
   labels:
     operator.ibm.com/managedByCsOperator: 'true'
@@ -135,7 +135,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "patch-common-service-job"
+  name: "patch-common-service-job-{{ .Values | toYaml | adler32sum }}"
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "085"
@@ -188,5 +188,5 @@ spec:
               done
 
       restartPolicy: Never
-      serviceAccountName: presync-cpd-prereq-sa
+      serviceAccountName: cpd-sa
   backoffLimit: 4

@@ -1,0 +1,56 @@
+{{- if not (empty .Values.ibm_db2u) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: db2u.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "060"
+    healthCheckTimeout: "1800"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/060-ibm-db2u
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            argo_namespace: "{{ .Values.argo.namespace }}"
+            db2_namespace: "{{ .Values.ibm_db2u.db2_namespace }}"
+            ibm_entitlement_key: "{{ .Values.ibm_db2u.ibm_entitlement_key }}"
+            db2_channel: "{{ .Values.ibm_db2u.db2_channel }}"
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+        - name: ARGOCD_APP_NAME
+          value: db2uapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+{{- end }}

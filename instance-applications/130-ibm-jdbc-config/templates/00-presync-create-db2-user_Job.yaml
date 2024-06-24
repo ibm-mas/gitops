@@ -1,5 +1,15 @@
 {{- if eq .Values.jdbc_type "incluster-db2" }}
 
+
+{{ $ns := printf "mas-%s-core" .Values.instance_id }}
+{{ $prefix := printf "pre-jdbc-usr-%s" .Values.mas_config_name }}
+{{ $secret := printf "%s-creds" $prefix }}
+{{ $sa := printf "%s-sa" $prefix }}
+{{ $crole := printf "%s-crole" $prefix }}
+{{ $crb := printf "%s-crb" $prefix }}
+{{ $np := printf "%s-np" $prefix }}
+{{ $job := printf "%s-job" $prefix }}
+
 ---
 
 # We need to embed the supplied JDBC creds in a K8S secret so we can safely access them from
@@ -11,8 +21,8 @@ apiVersion: v1
 kind: Secret
 type: Opaque
 metadata:
-  name: "presync-creds-jdbccfg-{{ .Values.mas_config_name }}"
-  namespace: "mas-{{ .Values.instance_id }}-core"
+  name: {{ $secret }}
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
@@ -25,13 +35,11 @@ stringData:
   password: "{{ .Values.jdbc_instance_password }}"
 
 ---
-# Service account that is authorized to read k8s secrets (needed by the job)
-# TODO: Currently bound with cluster-admin; probably want to lock this down more
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
-  namespace: "mas-{{ .Values.instance_id }}-core"
+  name: {{ $sa }}
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
@@ -40,11 +48,54 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 
+
+
+---
+# Needed for "oc get crd db2uclusters.db2u.databases.ibm.com" command
+# and for accessing resources in the db2u namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $crole }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+- apiGroups: 
+    - apiextensions.k8s.io
+  resources: 
+    - customresourcedefinitions
+  verbs: 
+    - get
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - list
+    - get
+- apiGroups:
+    - ""
+  resources: 
+    - pods/exec
+  verbs: 
+    - create
+- apiGroups:
+    - apps
+  resources: 
+    - statefulsets
+  verbs: 
+    - get
+
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: "presync-jdbccfg-sa-rb-{{ .Values.mas_config_name }}"
+  name: {{ $crb }}
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
@@ -54,12 +105,13 @@ metadata:
 {{- end }}
 subjects:
   - kind: ServiceAccount
-    name: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
-    namespace: "mas-{{ .Values.instance_id }}-core"
+    name: {{ $sa }}
+    namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-admin
+  name: {{ $crole }}
+
 
 
 ---
@@ -69,8 +121,8 @@ roleRef:
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: "presync-jdbccfg-np-{{ .Values.mas_config_name }}"
-  namespace: "mas-{{ .Values.instance_id }}-core"
+  name: {{ $np }}
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
@@ -81,7 +133,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: "presync-jdbc-crt-user-{{ .Values.mas_config_name }}"
+      app: {{ $job }}
   egress:
     - {}
   policyTypes:
@@ -92,8 +144,8 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "presync-jdbc-crt-user-{{ .Values.mas_config_name }}"
-  namespace: "mas-{{ .Values.instance_id }}-core"
+  name: {{ $job }}
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
@@ -105,7 +157,7 @@ spec:
   template:
     metadata:
       labels:
-        app: "presync-jdbc-crt-user-{{ .Values.mas_config_name }}"
+        app: {{ $job }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
@@ -291,11 +343,11 @@ spec:
 
       # TODO: is this the correct SA to use here?
       # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
-      serviceAccountName: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
+      serviceAccountName: {{ $sa }}
       volumes:
         - name: db2-credentials
           secret:
-            secretName: "presync-creds-jdbccfg-{{ .Values.mas_config_name }}"
+            secretName: {{ $secret }}
             defaultMode: 420
             optional: false
   backoffLimit: 4

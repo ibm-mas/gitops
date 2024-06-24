@@ -73,6 +73,8 @@ spec:
               value: "True"
             - name: VERIFY_INGRESS
               value: "False"
+            - name: MAS_CATALOG_VERSION
+              value: "{{ .Values.mas_catalog_version }}"
 
           command:
             - /bin/bash
@@ -86,6 +88,38 @@ spec:
               echo "================================================================================"
 
               /opt/app-root/src/run-role.sh ocp_verify || exit $?
+              
+              echo "================================================================================"
+              echo "Checking App verification records"
+              echo "================================================================================"
+
+              for configmap in $(oc get configmap -A -l type=mas-app-verification-record -o jsonpath='{.items[*].metadata.name}'); do
+                MAS_APP=$(oc get configmap -A $configmap -o jsonpath='{.data.mas_app}')
+                echo "Checking verification record for App $MAS_APP"
+                retries=600 # 5 hours retry
+                interval=30
+                index=0
+
+                while true; do
+                  FOUND_CATALOG_VERION=$(oc get configmap -A $configmap -o jsonpath='{.data.mas_catalog_version}')
+                  if [[ $FOUND_CATALOG_VERION == $MAS_CATALOG_VERSION ]]; then
+                    echo "Found ConfigMap $configmap with correct MAS_CATALOG_VERSION: $MAS_CATALOG_VERSION"
+                  else
+                    echo "Found ConfigMap $configmap with incorrect MAS_CATALOG_VERSION of $FOUND_CATALOG_VERION, expecting $MAS_CATALOG_VERSION"
+                    SUCCESS=false
+                  fi
+
+                  if [[ $SUCCESS == "false" ]]; then
+                    if [[ ${index} -eq ${retries} ]]; then
+                      echo "App Verification record check failed even after $retries retries, exit with error"
+                      exit 1
+                    fi
+                    echo "Verification not completed yet, will retry check...
+                    sleep $interval
+                    ((index++))
+                  fi
+                done
+              done
 
       restartPolicy: Never
       serviceAccountName: cluster-verify-job

@@ -77,7 +77,7 @@ spec:
               value: "{{ .Values.mas_catalog_version }}"
 
           command:
-            - /bin/sh
+            - /bin/bash
             - -c
             - |
               set -e
@@ -119,6 +119,10 @@ spec:
                           SUCCESS=false
                       fi
 
+                      if [[ $SUCCESS == "true" ]]; then
+                          break
+                      fi
+
                       if [[ $SUCCESS == "false" ]]; then
                           if [[ ${index} -eq ${retries} ]]; then
                               echo "App Verification record check failed even after $retries retries, exit with error"
@@ -127,10 +131,6 @@ spec:
                           echo "Verification not completed yet, will retry check..."
                           sleep $interval
                           ((index++))
-                      fi
-
-                      if [[ $SUCCESS == "true" ]]; then
-                          break
                       fi
                   done
               done

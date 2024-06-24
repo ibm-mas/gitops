@@ -93,33 +93,45 @@ spec:
               echo "Checking App verification records"
               echo "================================================================================"
 
-              for configmap in $(oc get configmap -A -l type=mas-app-verification-record -o jsonpath='{.items[*].metadata.name}'); do
-                MAS_APP=$(oc get configmap -A $configmap -o jsonpath='{.data.mas_app}')
-                echo "Checking verification record for App $MAS_APP"
-                retries=600 # 5 hours retry
-                interval=30
-                index=0
+              for configmap_namepsace in $(oc get configmap -A -l type=mas-app-verification-record -o jsonpath='{range .items[*]}{@.metadata.name}{":"}{@.metadata.namespace}'); do
+                  echo $configmap_namepsace
+                  ARR=(${configmap_namepsace//:/ })
+                  MAS_APP_CM=${ARR[0]}
+                  MAS_APP_NAMESPACE=${ARR[1]}
+                  echo "Found verification record $MAS_APP_CM in namespace $MAS_APP_NAMESPACE"
+                  MAS_APP=$(oc get configmap -n $MAS_APP_NAMESPACE $MAS_APP_CM -o jsonpath='{.data.mas_app}')
+                  echo "Checking verification record for App $MAS_APP"
+                  retries=600 # 5 hours retry
+                  interval=30
+                  index=0
 
-                while true; do
-                  FOUND_CATALOG_VERION=$(oc get configmap -A $configmap -o jsonpath='{.data.mas_catalog_version}')
-                  if [[ $FOUND_CATALOG_VERION == $MAS_CATALOG_VERSION ]]; then
-                    echo "Found ConfigMap $configmap with correct MAS_CATALOG_VERSION: $MAS_CATALOG_VERSION"
-                  else
-                    echo "Found ConfigMap $configmap with incorrect MAS_CATALOG_VERSION of $FOUND_CATALOG_VERION, expecting $MAS_CATALOG_VERSION"
-                    SUCCESS=false
-                  fi
+                  while true; do
+                      FOUND_CATALOG_VERION=$(oc get configmap -n $MAS_APP_NAMESPACE $MAS_APP_CM -o jsonpath='{.data.mas_catalog_version}')
+                      if [[ $FOUND_CATALOG_VERION == $MAS_CATALOG_VERSION ]]; then
+                          echo "Found ConfigMap $MAS_APP_CM with correct MAS_CATALOG_VERSION: $MAS_CATALOG_VERSION"
+                          SUCCESS=true
+                      else
+                          echo "Found ConfigMap $MAS_APP_CM with incorrect MAS_CATALOG_VERSION of $FOUND_CATALOG_VERION, expecting $MAS_CATALOG_VERSION"
+                          SUCCESS=false
+                      fi
 
-                  if [[ $SUCCESS == "false" ]]; then
-                    if [[ ${index} -eq ${retries} ]]; then
-                      echo "App Verification record check failed even after $retries retries, exit with error"
-                      exit 1
-                    fi
-                    echo "Verification not completed yet, will retry check...
-                    sleep $interval
-                    ((index++))
-                  fi
-                done
+                      if [[ $SUCCESS == "false" ]]; then
+                          if [[ ${index} -eq ${retries} ]]; then
+                              echo "App Verification record check failed even after $retries retries, exit with error"
+                              exit 1
+                          fi
+                          echo "Verification not completed yet, will retry check..."
+                          sleep $interval
+                          ((index++))
+                      fi
+
+                      if [[ $SUCCESS == "true" ]]; then
+                          break
+                      fi
+                  done
               done
+
+              echo "Finished checking App verification records"
 
       restartPolicy: Never
       serviceAccountName: cluster-verify-job

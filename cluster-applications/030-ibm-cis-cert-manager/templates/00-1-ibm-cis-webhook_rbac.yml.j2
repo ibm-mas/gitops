@@ -160,4 +160,23 @@ subjects:
     name: "{{ $cert_manager_service_account }}"
     namespace: "{{ $cert_manager_namespace }}"
 
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "031"
+  labels:
+    app: "cert-manager-webhook-ibm-cis"
+  name: 'system:openshift:scc:anyuid'
+  namespace: "{{ $cert_manager_namespace }}"
+subjects:
+  - kind: ServiceAccount
+    name: cert-manager-webhook-ibm-cis
+    namespace: "{{ $cert_manager_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: 'system:openshift:scc:anyuid'
+
 {{- end }}

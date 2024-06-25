@@ -1,0 +1,87 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "cpd-patch-zenservices-{{ .Values | toYaml | adler32sum }}"
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "087"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ .Values.cpd_operators_namespace }}
+            - name: CPD_SCALE_CONFIG
+              value: {{ .Values.cpd_scale_config }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "Wait for ZenService Cr and patch it if needed"
+              echo "================================================================================"
+              echo
+              
+              echo
+              echo "Wait for ibm-zen-operator to be ready"
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+60))
+                if [ $wait_period -gt 1200 ]; then
+                  echo "ZenService operator is not ready after 20 minutes of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 60
+                fi
+                ZEN_OPERATOR_LOOKUP=$(oc get deployment ibm-zen-operator -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+                if [[ ! -z $ZEN_OPERATOR_LOOKUP ]]; then
+                  echo "ZenService Operator has started"
+                  break
+                fi
+              done
+              echo "Patching ZenService lite-cr if not already patched"
+              while true; do
+                ZS_LOOKUP=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec}')
+                if [[ ! -z $ZS_LOOKUP ]]; then
+                  echo "ZenService spec has been fetched"
+                  IS_PATCHED=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.ZenCoreMetaDb}')
+                  if [[ -z $IS_PATCHED ]]; then
+                    echo "patching zenservice..."
+                    oc patch --type='merge' ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"scaleConfig\":\"$CPD_SCALE_CONFIG\",\"ZenCoreMetaDb\":{ \"name\":\"zen-metastoredb\",\"kind\":\"StatefulSet\",\"container\":\"zen-metastoredb\",\"replicas\":\"3\",\"resources\":{ \"limits\":{ \"cpu\":\"2\",\"memory\":\"4Gi\"},\"requests\":{ \"cpu\":\"200m\",\"memory\":\"1024Mi\"}}}}}"
+                    echo "scaling zen operator down and up to force reconcile when the pod is restarted"
+                    oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+                    oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
+                  fi
+                  break
+                fi
+              done
+
+      restartPolicy: Never
+      serviceAccountName: cpd-sa
+  backoffLimit: 4

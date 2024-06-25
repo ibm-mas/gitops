@@ -1,0 +1,145 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-verify-job
+  namespace: mas-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "01"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cluster-verify-rolebinding-{{ .Values.cluster_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "02"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+subjects:
+  - kind: ServiceAccount
+    name: cluster-verify-job
+    namespace: mas-syncres
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cluster-verify-{{ .Values.cluster_id }}-{{ .Values | toYaml | adler32sum }}
+  namespace: mas-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "202"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: "cluster-verify-job"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: cluster-verify
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: REGION_ID
+              value: "{{ .Values.region_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: VERIFY_CLUSTER
+              value: "True"
+            - name: VERIFY_CATALOGSOURCES
+              value: "True"
+            - name: VERIFY_SUBSCRIPTIONS
+              value: "True"
+            - name: VERIFY_WORKLOADS
+              value: "True"
+            - name: VERIFY_INGRESS
+              value: "False"
+            - name: MAS_CATALOG_VERSION
+              value: "{{ .Values.mas_catalog_version }}"
+
+          command:
+            - /bin/bash
+            - -c
+            - |
+
+              set -e
+
+              echo
+              echo "================================================================================"
+              echo "/opt/app-root/src/run-role.sh ocp_verify"
+              echo "================================================================================"
+
+              /opt/app-root/src/run-role.sh ocp_verify || exit $?
+              
+              echo "================================================================================"
+              echo "Checking App verification records"
+              echo "================================================================================"
+
+              for configmap_namepsace in $(oc get configmap -A -l type=mas-app-verification-record -o jsonpath='{range .items[*]}{@.metadata.name}{":"}{@.metadata.namespace}'); do
+                  echo $configmap_namepsace
+                  if [[ $configmap_namepsace == ":" ]]; then
+                    echo "No configmaps found, exiting"
+                    exit 0
+                  fi
+                  ARR=(${configmap_namepsace//:/ })
+                  MAS_APP_CM=${ARR[0]}
+                  MAS_APP_NAMESPACE=${ARR[1]}
+                  echo "Found verification record $MAS_APP_CM in namespace $MAS_APP_NAMESPACE"
+                  MAS_APP=$(oc get configmap -n $MAS_APP_NAMESPACE $MAS_APP_CM -o jsonpath='{.data.mas_app}')
+                  echo "Checking verification record for App $MAS_APP"
+                  retries=600 # 5 hours retry
+                  interval=30
+                  index=0
+
+                  while true; do
+                      FOUND_CATALOG_VERION=$(oc get configmap -n $MAS_APP_NAMESPACE $MAS_APP_CM -o jsonpath='{.data.mas_catalog_version}')
+                      if [[ $FOUND_CATALOG_VERION == $MAS_CATALOG_VERSION ]]; then
+                          echo "Found ConfigMap $MAS_APP_CM with correct MAS_CATALOG_VERSION: $MAS_CATALOG_VERSION"
+                          SUCCESS=true
+                      else
+                          echo "Found ConfigMap $MAS_APP_CM with incorrect MAS_CATALOG_VERSION of $FOUND_CATALOG_VERION, expecting $MAS_CATALOG_VERSION"
+                          SUCCESS=false
+                      fi
+
+                      if [[ $SUCCESS == "true" ]]; then
+                          break
+                      fi
+
+                      if [[ $SUCCESS == "false" ]]; then
+                          if [[ ${index} -eq ${retries} ]]; then
+                              echo "App Verification record check failed even after $retries retries, exit with error"
+                              exit 1
+                          fi
+                          set +e
+                          echo "Verification not completed yet, will retry check..."
+                          sleep $interval
+                          ((index++))
+                          set -e
+                      fi
+                  done
+              done
+
+              echo "Finished checking App verification records"
+
+      restartPolicy: Never
+      serviceAccountName: cluster-verify-job
+  backoffLimit: 4

@@ -43,6 +43,7 @@ The current set of YAML configuration files recognised by MAS GitOps at each lev
 ├── <ACCOUNT_ID>
 │   └── <CLUSTER_ID>
 │       ├── <INSTANCE_ID>
+│       │   ├── ibm-db2u.yaml
 │       │   ├── ibm-db2u-databases.yaml
 │       │   ├── ibm-mas-instance-base.yaml
 │       │   ├── ibm-mas-masapp-assist-install.yaml
@@ -58,7 +59,6 @@ The current set of YAML configuration files recognised by MAS GitOps at each lev
 │       │   ├── ibm-sls.yaml
 │       │   ├── ibm-cp4d.yaml
 │       │   └── ibm-wsl.yaml
-│       ├── ibm-db2u.yaml
 │       ├── ibm-dro.yaml
 │       ├── ibm-mas-cluster-base.yaml
 │       ├── ibm-operator-catalog.yaml

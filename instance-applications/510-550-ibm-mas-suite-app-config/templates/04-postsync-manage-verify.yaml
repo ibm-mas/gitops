@@ -1,13 +1,14 @@
 {{- if eq .Values.mas_app_id "manage" }}
 
 
-{{ $ns              :=  .Values.mas_app_namespace }}
-{{ $np_name         :=  "postsync-verify-manage-np" }}
-{{ $role_name       :=  "postsync-verify-manage-role" }}
-{{ $sa_name         :=  "postsync-verify-manage-sa" }}
-{{ $rb_name         :=  "postsync-verify-manage-rb" }}
-{{ $tests_cm_name   :=  "postsync-verify-tests-manage-cm" }}
-{{ $job_name        :=  "postsync-verify-manage-job" }}
+{{ $ns               :=  .Values.mas_app_namespace }}
+{{ $np_name          :=  "postsync-verify-manage-np" }}
+{{ $role_name        :=  "postsync-verify-manage-role" }}
+{{ $sa_name          :=  "postsync-verify-manage-sa" }}
+{{ $rb_name          :=  "postsync-verify-manage-rb" }}
+{{ $tests_cm_name    :=  "postsync-verify-tests-manage-cm" }}
+{{ $record_cm_name   :=  "postsync-verify-tests-manage-record-cm" }}
+{{ $job_name         :=  "postsync-verify-manage-job" }}
 
 
 
@@ -269,5 +270,24 @@ spec:
             optional: false
   backoffLimit: 4
 
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ $record_cm_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "105"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    type: mas-app-verification-record
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+immutable: false
+data:
+  mas_app: "manage"
+  mas_catalog_version: "{{ .Values.mas_catalog_version }}"
 
 {{- end }}

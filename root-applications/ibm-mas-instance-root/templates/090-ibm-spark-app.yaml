@@ -1,10 +1,10 @@
-{{- if not (empty .Values.ibm_wsl) }}
+{{- if not (empty .Values.ibm_spark) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: wsl.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: spark.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -21,40 +21,36 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/090-ibm-wsl
+    path: instance-applications/090-ibm-spark
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            account_id: "{{ .Values.account.id }}"
-            region_id: "{{ .Values.region.id }}"
-            cluster_id: "{{ .Values.cluster.id }}"
-            instance_id: "{{ .Values.instance.id }}"
-            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
-            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
-            cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
+            ccs_version: "{{ .Values.ibm_spark.ccs_version }}"
             cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
-            cpd_service_storage_class: "{{ .Values.ibm_wsl.cpd_service_storage_class }}"
-            cpd_service_block_storage_class: "{{ .Values.ibm_wsl.cpd_service_block_storage_class }}"
-            cpd_service_scale_config: "{{ .Values.ibm_wsl.cpd_service_scale_config }}"
-            wsl_version: "{{ .Values.ibm_wsl.wsl_version }}"
-            wsl_channel: "{{ .Values.ibm_wsl.wsl_channel }}"
-            ccs_version: "{{ .Values.ibm_wsl.ccs_version }}"
-            datarefinery_version: "{{ .Values.ibm_wsl.datarefinery_version }}"
-            ws_runtimes_version: "{{ .Values.ibm_wsl.ws_runtimes_version }}"
+            cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
+            cpd_service_block_storage_class: "{{ .Values.ibm_spark.cpd_service_block_storage_class }}"
+            cpd_service_scale_config: "{{ .Values.ibm_spark.cpd_service_scale_config }}"
+            cpd_service_storage_class: "{{ .Values.ibm_spark.cpd_service_storage_class }}"
+            spark_channel: "{{ .Values.ibm_spark.spark_channel }}"
+            spark_version: "{{ .Values.ibm_spark.spark_version }}"                                                            
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
         - name: ARGOCD_APP_NAME
-          value: cpdwslapp
+          value: cpdsparkapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}
@@ -65,4 +61,5 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
+      - RespectIgnoreDifferences=true
 {{- end }}

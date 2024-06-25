@@ -1,0 +1,148 @@
+{{- if eq .Values.jdbc_type "incluster-db2" }}
+
+---
+
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
+  namespace: "mas-{{ .Values.instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "presync-jdbccfg-sa-rb-{{ .Values.mas_config_name }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
+    namespace: "mas-{{ .Values.instance_id }}-core"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+
+
+---
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "presync-jdbc-crt-user-{{ .Values.mas_config_name }}"
+  namespace: "mas-{{ .Values.instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: "presync-jdbc-crt-user-{{ .Values.mas_config_name }}"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.jdbc_instance_name }}"
+          volumeMounts:
+            - name: db2-credentials
+              mountPath: /etc/mas/creds/db2-credentials
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              source /mascli/functions/gitops_utils
+
+              export DB2_CREDENTIALS_SECRET_PATH="/etc/mas/creds/db2-credentials"
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
+              echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
+              echo "DB2_CREDENTIALS_SECRET_PATH ......... ${DB2_CREDENTIALS_SECRET_PATH}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Reading LDAP credentials from ${DB2_CREDENTIALS_SECRET_PATH}"
+              echo "================================================================================"
+              export DB2_LDAP_USERNAME=$(cat /etc/mas/creds/db2-credentials/username)
+              export DB2_LDAP_PASSWORD=$(cat /etc/mas/creds/db2-credentials/password)
+
+              echo ""
+              echo "================================================================================"
+              echo "Creating user ${DB2_LDAP_USERNAME}"
+              echo "================================================================================"
+
+              echo ""
+              echo "Looking up name of DB2 LDAP pod"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_LDAP_POD_NAME=$(oc get pods -o custom-columns=POD:.metadata.name -l app=${DB2_INSTANCE_NAME},role=ldap -n ${DB2_NAMESPACE}  --no-headers)
+              if [[ -z "${DB2_LDAP_POD_NAME}" ]]; then
+                echo "Failed to look up DB2 LDAP pod name"
+                exit 0
+              fi
+              echo "DB2_LDAP_POD_NAME .......................... ${DB2_LDAP_POD_NAME}"
+
+
+              echo ""
+              echo "Executing removeLdapUser.py script in ${DB2_LDAP_POD_NAME} pod"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -it -n ${DB2_NAMESPACE} ${DB2_LDAP_POD_NAME} -- /opt/ibm/ldap_scripts/removeLdapUser.py -u ${DB2_LDAP_USERNAME}
+              echo "..... rc $?"
+
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: "presync-sa-jdbccfg-{{ .Values.mas_config_name }}"
+      volumes:
+        - name: db2-credentials
+          secret:
+            secretName: "presync-creds-jdbccfg-{{ .Values.mas_config_name }}"
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+
+{{- end }}

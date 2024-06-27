@@ -14,37 +14,40 @@ metadata:
 spec:
   destination:
     namespace: <argoapp-namespace>
-    server: 'https://kubernetes.default.svc'
-  project: "<argo-project-rootapps>"
+    server: https://kubernetes.default.svc
+  project: <argo-project-rootapps>
   source:
     path: root-applications/ibm-mas-account-root
     repoURL: <source-repo-url>
-    targetRevision: "<source-repo-revision>"
+    targetRevision: <source-repo-revision>
     helm:
       values: |
           account:
-            id: "<account-id>
+            id: <account-id>
 
           generator:
-            repo_url: "<config-repo>"
-            revision: "<config-repo-revision>"
+            repo_url: <config-repo>
+            revision: <config-repo-revision>
 
           source:
-            repo_url: "<source-repo-url>"
-            revision: "<source-repo-revision>"
+            repo_url: <source-repo-url>
+            revision: <source-repo-revision>
           
           argo:
-            namespace: "<argo-namespace>"
+            namespace: <argo-namespace>
             projects:
-              rootapps: "<argo-project-rootapps>
-              apps: "<argo-project-apps>"
+              rootapps: <argo-project-rootapps>
+              apps: <argo-project-apps>
 
           avp:
-            name: "<avp-name>"
-            secret: "<avp-secret>"
-            values_varname: "<val-values-varname>"
+            name: <avp-name>
+            secret: <avp-secret>
+            values_varname: <val-values-varname>
     
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=false
 ```

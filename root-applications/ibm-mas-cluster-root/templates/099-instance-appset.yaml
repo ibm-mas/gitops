@@ -134,6 +134,8 @@ spec:
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-spark.yaml"
+  syncPolicy:
+    applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
   template:
     metadata:
       name: "instance.{{ .Values.cluster.id }}.{{ `{{.instance.id}}` }}"
@@ -188,12 +190,14 @@ spec:
                 value: "{{ .Values.avp.secret }}"
               - name: avp.values_varname
                 value: "{{ .Values.avp.values_varname }}"
+              - name: auto_delete
+                values: "{{ .Values.auto_delete }}"
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
-          prune: true
+          prune: {{ .Values.auto_delete }}
           selfHeal: true
         syncOptions:
           - CreateNamespace=false

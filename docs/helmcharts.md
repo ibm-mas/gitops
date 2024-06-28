@@ -45,6 +45,8 @@ The {{ cluster_root_chart() }} also installs the {{ instance_root_app_set() }}. 
 |Suite License Service (SLS) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/100-ibm-sls-app.yaml", "100-ibm-sls-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/100-ibm-sls", "100-ibm-sls") }}
 |DB2 Databases | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml", "120-db2-databases-app.yaml") }}[^1] | {{ gitops_repo_dir_link("instance-applications/120-ibm-db2u-database", "120-ibm-db2u-database") }} |
 |Watson Studio Local (WSL) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/090-ibm-wsl-app.yaml", "090-ibm-wsl-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/090-ibm-wsl", "090-ibm-wsl") }} |
+|Watson Machine Learning (WML) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/090-ibm-wml-app.yaml", "090-ibm-wml-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/090-ibm-wml", "090-ibm-wml") }} |
+|Analytics Engine powered by Apache Spark (Spark) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/090-ibm-spark-app.yaml", "090-ibm-spark-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/090-ibm-spark", "090-ibm-spark") }} |
 
 
 ##### MAS Core Platform

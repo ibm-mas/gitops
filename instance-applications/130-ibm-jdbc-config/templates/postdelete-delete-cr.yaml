@@ -15,6 +15,8 @@
 {{ $job_label := "postdelete-delete-cr-job" }}
 {{ $ns := printf "mas-%s-core" .Values.instance_id }}
 
+{{ $jdbc_instance_username := .Values.jdbc_instance_username }}
+{{ $ns := printf "mas-%s-core" .Values.instance_id }}
 
 ---
 apiVersion: batch/v1
@@ -24,7 +26,6 @@ metadata:
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PostDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -61,12 +62,101 @@ spec:
             - name: CR_KIND
               value: {{ $cr_kind }}
 
+{{- if eq .Values.jdbc_type "incluster-db2" }}
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.jdbc_instance_name }}"
+            - name: JDBC_INSTANCE_USERNAME
+              value: {{ $jdbc_instance_username }}
+
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+
+            - name: SM_AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_default_region
+            - name: SM_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_access_key_id
+            - name: SM_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_secret_access_key
+{{- end }}
+
           volumeMounts: []
           command:
             - /bin/sh
             - -c
             - |
 
+{{- if eq .Values.jdbc_type "incluster-db2" }}
+
+              source /mascli/functions/gitops_utils
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
+              echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Removing user ${JDBC_INSTANCE_USERNAME}"
+              echo "================================================================================"
+
+              echo ""
+              echo "Looking up name of DB2 LDAP pod"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_LDAP_POD_NAME=$(oc get pods -o custom-columns=POD:.metadata.name -l app=${DB2_INSTANCE_NAME},role=ldap -n ${DB2_NAMESPACE}  --no-headers)
+              if [[ -z "${DB2_LDAP_POD_NAME}" ]]; then
+                echo "Failed to look up DB2 LDAP pod name"
+              else 
+                echo "DB2_LDAP_POD_NAME .......................... ${DB2_LDAP_POD_NAME}"
+
+                echo ""
+                echo "Executing removeLdapUser.py script in ${DB2_LDAP_POD_NAME} pod"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -it -n ${DB2_NAMESPACE} ${DB2_LDAP_POD_NAME} -- /opt/ibm/ldap_scripts/removeLdapUser.py -u ${JDBC_INSTANCE_USERNAME}
+                echo "..... rc $?"
+              fi
+              
+
+              echo 
+              echo "================================================================================"
+              echo "Deleting Instance JDBC config Secrets"
+              echo "================================================================================"
+
+              SECRETS_KEY_SEPERATOR="/"
+              SECRET_NAME_JDBC_CONFIG=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}${DB2_INSTANCE_NAME}${SECRETS_KEY_SEPERATOR}config
+
+              echo "Params:"
+              echo "    - ACCOUNT_ID                 ................... ${ACCOUNT_ID}"
+              echo "    - CLUSTER_ID                 ................... ${CLUSTER_ID}"
+              echo "    - MAS_INSTANCE_ID            ................... ${MAS_INSTANCE_ID}"
+              echo "    - SECRET_NAME_JDBC_CONFIG    ................... ${SECRET_NAME_JDBC_CONFIG}"
+              echo "    - SM_AWS_REGION              ................... ${SM_AWS_REGION}"
+              echo "    - SM_AWS_ACCESS_KEY_ID       ................... ${SM_AWS_ACCESS_KEY_ID:0:2}<snip>"
+              echo "    - SM_AWS_SECRET_ACCESS_KEY   ................... ${SM_AWS_SECRET_ACCESS_KEY:0:2}<snip>"
+              echo
+
+              sm_login
+              sm_delete_secret "${SECRET_NAME_JDBC_CONFIG}" 
+              echo "..... rc $?"
+
+{{- end }}
+              
               set -e
 
               function delete_oc_resource(){

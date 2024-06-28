@@ -50,8 +50,6 @@ The {{ cluster_root_chart() }} also installs the {{ instance_root_app_set() }}. 
 |Analytics Engine powered by Apache Spark (Spark) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/090-ibm-spark-app.yaml", "090-ibm-spark-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/090-ibm-spark", "090-ibm-spark") }} |
 
 
-
-
 ##### MAS Core Platform
 
 This includes the suite, suite configurations and core workspaces

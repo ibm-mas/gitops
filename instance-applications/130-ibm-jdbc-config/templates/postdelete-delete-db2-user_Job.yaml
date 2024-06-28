@@ -1,0 +1,347 @@
+{{- if and ( eq .Values.jdbc_type "incluster-db2" ) ( .Values.use_postdelete_hooks ) }}
+
+
+{{ $ns := printf "mas-%s-core" .Values.instance_id }}
+{{ $prefix := printf "post-jdbc-usr-%s" .Values.mas_config_name }}
+{{ $secret := printf "%s-creds" $prefix }}
+{{ $sa := printf "%s-sa" $prefix }}
+{{ $crole := printf "%s-crole" $prefix }}
+{{ $crb := printf "%s-crb" $prefix }}
+{{ $np := printf "%s-np" $prefix }}
+{{ $job := printf "%s-job" $prefix }}
+
+---
+
+# We need to embed the supplied JDBC username in a K8S secret so we can safely access them from
+# the Job without exposing them via the ArgoCD resources
+# NOTE: do not want to use the actual usersupplied jdbc creds secret as I'd have to annotate that
+# to be a presync hook which will cause ArgoCD to delete it and could cause problems; safer just to create a dedicated secret for the presync hook.
+# (alternatively could look up the secret via SM in the Job script but it's better this way as we use the actual credentials set in the chart values)
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: {{ $secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  username: "{{ .Values.jdbc_instance_username }}"
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+
+---
+# Needed for "oc get crd db2uclusters.db2u.databases.ibm.com" command
+# and for accessing resources in the db2u namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $crole }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+- apiGroups: 
+    - apiextensions.k8s.io
+  resources: 
+    - customresourcedefinitions
+  verbs: 
+    - get
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - list
+    - get
+- apiGroups:
+    - ""
+  resources: 
+    - pods/exec
+  verbs: 
+    - create
+- apiGroups:
+    - apps
+  resources: 
+    - statefulsets
+  verbs: 
+    - get
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $crb }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $crole }}
+
+
+
+---
+
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.jdbc_instance_name }}"
+            - name: DB2_DBNAME
+              value: "{{ .Values.db2_dbname }}"
+
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+              
+            - name: SM_AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_default_region
+            - name: SM_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_access_key_id
+            - name: SM_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_secret_access_key
+          volumeMounts:
+            - name: db2-credentials
+              mountPath: /etc/mas/creds/db2-credentials
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+
+              echo 
+              echo "================================================================================"
+              echo "Deleting Instance JDBC config Secrets"
+              echo "================================================================================"
+
+              SECRETS_KEY_SEPERATOR="/"
+              SECRET_NAME_JDBC_CONFIG=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}${DB2_INSTANCE_NAME}${SECRETS_KEY_SEPERATOR}config
+
+              echo "Params:"
+              echo "    - ACCOUNT_ID                 ................... ${ACCOUNT_ID}"
+              echo "    - CLUSTER_ID                 ................... ${CLUSTER_ID}"
+              echo "    - MAS_INSTANCE_ID            ................... ${MAS_INSTANCE_ID}"
+              echo "    - SECRET_NAME_JDBC_CONFIG    ................... ${SECRET_NAME_JDBC_CONFIG}"
+              echo "    - SM_AWS_REGION              ................... ${SM_AWS_REGION}"
+              echo "    - SM_AWS_ACCESS_KEY_ID       ................... ${SM_AWS_ACCESS_KEY_ID:0:2}<snip>"
+              echo "    - SM_AWS_SECRET_ACCESS_KEY   ................... ${SM_AWS_SECRET_ACCESS_KEY:0:2}<snip>"
+              echo
+
+              sm_login
+              sm_delete_secret "${SECRET_NAME_JDBC_CONFIG}" 
+              echo "..... rc $?"
+
+
+              set -e
+
+              source /mascli/functions/gitops_utils
+
+              export DB2_CREDENTIALS_SECRET_PATH="/etc/mas/creds/db2-credentials"
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
+              echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
+              echo "DB2_DBNAME .......................... ${DB2_DBNAME}"
+              echo "DB2_CREDENTIALS_SECRET_PATH ......... ${DB2_CREDENTIALS_SECRET_PATH}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Checking DB2 CRD db2uclusters.db2u.databases.ibm.com is ready (retries every ~10 seconds for ~5 minutes)"
+              echo "================================================================================"
+
+              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True STARTS  
+              wait_period=0
+              while true; do
+                export DB2_CRD_NAMES_ACCEPTED_STATUS=$(oc get crd db2uclusters.db2u.databases.ibm.com -o=jsonpath="{.status.conditions[?(@.type=='NamesAccepted')].status}")
+                echo "DB2_CRD_NAMES_ACCEPTED_STATUS .... ${DB2_CRD_NAMES_ACCEPTED_STATUS}"
+                if [[ "$DB2_CRD_NAMES_ACCEPTED_STATUS" == "True" ]]; then
+                  break
+                fi
+
+                wait_period=$(($wait_period+10))
+                if [ $wait_period -gt 300 ];then
+                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready with in 300 sec, exiting"
+                  exit 1
+                else
+                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready, trying again in 10 seconds"
+                  sleep 10
+                fi
+              done  
+              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True DONE
+
+              echo ""
+              echo "================================================================================"
+              echo "Reading LDAP username from ${DB2_CREDENTIALS_SECRET_PATH}"
+              echo "================================================================================"
+              export DB2_LDAP_USERNAME=$(cat /etc/mas/creds/db2-credentials/username)
+
+              echo ""
+              echo "================================================================================"
+              echo "Checking if ${DB2_LDAP_USERNAME} user exists already"
+              echo "================================================================================"
+              
+              echo ""
+              echo "Looking up name of DB2 db2u pod"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_DB2U_POD_NAME=$(oc get pods -o custom-columns=POD:.metadata.name -l app=${DB2_INSTANCE_NAME},role=db -n ${DB2_NAMESPACE}  --no-headers)
+              if [[ -z "${DB2_DB2U_POD_NAME}" ]]; then
+                echo "Failed to look up DB2 db2u pod name, Skipping removeLdapUser script."
+                exit 0
+              fi
+              echo "DB2_DB2U_POD_NAME .......................... ${DB2_DB2U_POD_NAME}"
+
+
+              echo ""
+              echo "Executing command on DB2 db2u pod; su -lc \"id ${DB2_LDAP_USERNAME}\""
+              echo "--------------------------------------------------------------------------------"
+              # Using the || syntax to avoid surfacing a non 0 rc and exitting the job (without having to disable set -e)
+              DB2_USER_FOUND=true
+              oc exec -it -n ${DB2_NAMESPACE} ${DB2_DB2U_POD_NAME} -- su -lc "id ${DB2_LDAP_USERNAME}" || DB2_USER_FOUND=false
+              if [[ "${DB2_USER_FOUND}" == "false" ]]; then
+                echo "DB2 user does not exist, Skipping removeLdapUser script."
+                exit 0
+              fi
+              echo "DB2 user exists"
+
+              echo ""
+              echo "================================================================================"
+              echo "Removing user ${DB2_LDAP_USERNAME}"
+              echo "================================================================================"
+
+              echo ""
+              echo "Looking up name of DB2 LDAP pod"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_LDAP_POD_NAME=$(oc get pods -o custom-columns=POD:.metadata.name -l app=${DB2_INSTANCE_NAME},role=ldap -n ${DB2_NAMESPACE}  --no-headers)
+              if [[ -z "${DB2_LDAP_POD_NAME}" ]]; then
+                echo "Failed to look up DB2 LDAP pod name, Skipping removeLdapUser script."
+                exit 0
+              fi
+              echo "DB2_LDAP_POD_NAME .......................... ${DB2_LDAP_POD_NAME}"
+
+
+              echo ""
+              echo "Executing removeLdapUser.py script in ${DB2_LDAP_POD_NAME} pod"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -it -n ${DB2_NAMESPACE} ${DB2_LDAP_POD_NAME} -- /opt/ibm/ldap_scripts/removeLdapUser.py -u ${DB2_LDAP_USERNAME}
+              echo "..... rc $?"
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: {{ $sa }}
+      volumes:
+        - name: db2-credentials
+          secret:
+            secretName: {{ $secret }}
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+
+{{- end }}

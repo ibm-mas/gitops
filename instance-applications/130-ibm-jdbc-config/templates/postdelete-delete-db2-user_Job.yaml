@@ -185,24 +185,14 @@ spec:
             - name: MAS_INSTANCE_ID
               value: "{{ .Values.instance_id }}"
               
-            - name: SM_AWS_REGION
-              valueFrom:
-                secretKeyRef:
-                  name: aws
-                  key: aws_default_region
-            - name: SM_AWS_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: aws
-                  key: aws_access_key_id
-            - name: SM_AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: aws
-                  key: aws_secret_access_key
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
           volumeMounts:
             - name: db2-credentials
               mountPath: /etc/mas/creds/db2-credentials
+            - name: aws
+              mountPath: /etc/mas/creds/aws
           command:
             - /bin/sh
             - -c
@@ -217,6 +207,13 @@ spec:
               SECRETS_KEY_SEPERATOR="/"
               SECRET_NAME_JDBC_CONFIG=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}${DB2_INSTANCE_NAME}${SECRETS_KEY_SEPERATOR}config
 
+              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+
               echo "Params:"
               echo "    - ACCOUNT_ID                 ................... ${ACCOUNT_ID}"
               echo "    - CLUSTER_ID                 ................... ${CLUSTER_ID}"
@@ -227,6 +224,7 @@ spec:
               echo "    - SM_AWS_SECRET_ACCESS_KEY   ................... ${SM_AWS_SECRET_ACCESS_KEY:0:2}<snip>"
               echo
 
+              export SM_AWS_REGION=${REGION_ID}
               sm_login
               sm_delete_secret "${SECRET_NAME_JDBC_CONFIG}" 
               echo "..... rc $?"
@@ -337,6 +335,11 @@ spec:
         - name: db2-credentials
           secret:
             secretName: {{ $secret }}
+            defaultMode: 420
+            optional: false
+        - name: aws
+          secret:
+            secretName: aws
             defaultMode: 420
             optional: false
   backoffLimit: 4

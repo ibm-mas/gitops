@@ -306,6 +306,31 @@ spec:
                 exit 1
               fi
 
+              echo
+              echo "Fetching SPSS Version..."
+              export SPSS_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.spss.cr_version')
+              if [[ -z "${SPSS_VERSION}" ]]; then
+                echo "Failed to fetch SPSS version"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching SPSS Channel..."
+              export SPSS_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.spss.sub_channel')
+              if [[ -z "${SPSS_CHANNEL}" ]]; then
+                echo "Failed to fetch SPSS channel"
+                exit 1
+              fi
+
+              echo
+              echo "Fetching Canvasbase Channel..."
+              export CANVASBASE_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq -r '.data.release_components_meta' | yq -r '.canvasbase.sub_channel')
+              if [[ -z "${CANVASBASE_CHANNEL}" ]]; then
+                echo "Failed to fetch Canvasbase channel"
+                exit 1
+              fi
+
+
               export SM_AWS_REGION=${REGION_ID}
               sm_login
 
@@ -330,6 +355,9 @@ spec:
               SECRET_NAME_ELASTICSEARCH_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_elasticsearch_channel
               SECRET_NAME_AIOPENSCALE_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/aiopenscale_version
               SECRET_NAME_AIOPENSCALE_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/aiopenscale_channel
+              SECRET_NAME_SPSS_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/spss_version
+              SECRET_NAME_SPSS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/spss_channel
+              SECRET_NAME_CANVASBASE_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/canvasbase_channel
 
               echo
               echo 
@@ -361,8 +389,12 @@ spec:
               echo "    - SECRET_NAME_DATAREFINERY_CHANNEL ...................... ${SECRET_NAME_DATAREFINERY_CHANNEL}"
               echo "    - SECRET_NAME_RABBITMQ_CHANNEL .......................... ${SECRET_NAME_RABBITMQ_CHANNEL}"
               echo "    - SECRET_NAME_ELASTICSEARCH_CHANNEL ..................... ${SECRET_NAME_ELASTICSEARCH_CHANNEL}"
-              echo "    - SECRET_NAME_AIOPENSCALE_VERSION ......................... ${SECRET_NAME_AIOPENSCALE_VERSION}"
-              echo "    - SECRET_NAME_AIOPENSCALE_CHANNEL ......................... ${SECRET_NAME_AIOPENSCALE_CHANNEL}"
+              echo "    - SECRET_NAME_AIOPENSCALE_VERSION ....................... ${SECRET_NAME_AIOPENSCALE_VERSION}"
+              echo "    - SECRET_NAME_AIOPENSCALE_CHANNEL ....................... ${SECRET_NAME_AIOPENSCALE_CHANNEL}"
+              echo "    - SECRET_NAME_SPSS_VERSION .............................. ${SECRET_NAME_SPSS_VERSION}"
+              echo "    - SECRET_NAME_SPSS_CHANNEL .............................. ${SECRET_NAME_SPSS_CHANNEL}"
+              echo "    - SECRET_NAME_CANVASBASE_CHANNEL ........................ ${SECRET_NAME_CANVASBASE_CHANNEL}"
+
               echo
 
 
@@ -372,7 +404,7 @@ spec:
               sm_update_secret $SECRET_NAME_CPFS_CHANNEL "{\"cpfs_channel\": \"$CPFS_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_CPD_PLATFORM_CHANNEL "{\"cpd_platform_channel\": \"$CPD_PLATFORM_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_WML_VERSION "{\"wml_version\": \"$WML_VERSION\" }"
-              sm_update_secret $SECRET_NAME_WML_CHANNEL "{\"wml_channel\": \"$WML_CHANNEL\" }"              
+              sm_update_secret $SECRET_NAME_WML_CHANNEL "{\"wml_channel\": \"$WML_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_SPARK_VERSION "{\"spark_version\": \"$SPARK_VERSION\" }"
               sm_update_secret $SECRET_NAME_SPARK_CHANNEL "{\"spark_channel\": \"$SPARK_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_WSL_VERSION "{\"wsl_version\": \"$WSL_VERSION\" }"
@@ -387,7 +419,9 @@ spec:
               sm_update_secret $SECRET_NAME_ELASTICSEARCH_CHANNEL "{\"opencontent_elasticsearch_channel\": \"$ELASTICSEARCH_CHANNEL\" }"
               sm_update_secret $SECRET_NAME_AIOPENSCALE_VERSION "{\"aiopenscale_version\": \"$AIOPENSCALE_VERSION\" }"
               sm_update_secret $SECRET_NAME_AIOPENSCALE_CHANNEL "{\"aiopenscale_channel\": \"$AIOPENSCALE_CHANNEL\" }"
-
+              sm_update_secret $SECRET_NAME_SPSS_VERSION "{\"spss_version\": \"$SPSS_VERSION\" }"
+              sm_update_secret $SECRET_NAME_SPSS_CHANNEL "{\"spss_channel\": \"$SPSS_CHANNEL\" }"
+              sm_update_secret $SECRET_NAME_CANVASBASE_CHANNEL "{\"canvasbase_channel\": \"$CANVASBASE_CHANNEL\" }"
 
               echo "Done"
 

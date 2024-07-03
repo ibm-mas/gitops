@@ -1,0 +1,27 @@
+
+---
+apiVersion: spssmodeler.cpd.ibm.com/v1
+kind: Spss
+metadata:
+  name: "spss-sample"
+  namespace: "{{ .Values.cpd_instance_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "092"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  imagePullSecret: ibm-entitlement-key
+  ignoreForMaintenance: false
+  license:
+    accept: true
+    license: Standard
+  scaleConfig: "{{ .Values.cpd_service_scale_config }}"
+  fileStorageClass: "{{ .Values.cpd_service_storage_class }}"
+  blockStorageClass: "{{ .Values.cpd_service_block_storage_class }}"
+  version: "{{ .Values.spss_version }}"
+  ccs_operand_version: "{{ .Values.ccs_version }}"
+  datarefinery_operand_version: "{{ .Values.datarefinery_version }}"
+  wsrt_operand_version: "{{ .Values.ws_runtimes_version }}"

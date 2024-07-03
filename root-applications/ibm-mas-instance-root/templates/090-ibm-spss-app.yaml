@@ -1,18 +1,18 @@
-{{- if not (empty .Values.ibm_operator_catalog) }}
+{{- if not (empty .Values.ibm_spss) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: operator-catalog.{{ .Values.cluster.id }}
+  name: spss.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "000"
-    healthCheckTimeout: "1800"
+    argocd.argoproj.io/sync-wave: "090"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
@@ -21,31 +21,40 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   ignoreDifferences:
-  - group: '*'
-    kind: ServiceAccount
-    jsonPointers:
-    - /imagePullSecrets
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: cluster-applications/000-ibm-operator-catalog
+    path: instance-applications/090-ibm-spss
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
-      name: {{ .Values.avp.name }}
+      name: {{ .Values.avp.name }} 
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            ibm_entitlement_key: "{{ .Values.ibm_operator_catalog.ibm_entitlement_key }}"
-            mas_catalog_version: "{{ .Values.ibm_operator_catalog.mas_catalog_version  }}"
-            mas_catalog_image: "{{ .Values.ibm_operator_catalog.mas_catalog_image }}"
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            instance_id: "{{ .Values.instance.id }}"
+            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
+            cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
+            cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+            cpd_service_storage_class: "{{ .Values.ibm_spss.cpd_service_storage_class }}"
+            cpd_service_block_storage_class: "{{ .Values.ibm_spss.cpd_service_block_storage_class }}"
+            cpd_service_scale_config: "{{ .Values.ibm_spss.cpd_service_scale_config }}"
+            spss_version: "{{ .Values.ibm_spss.spss_version }}"
+            spss_channel: "{{ .Values.ibm_spss.spss_channel }}"
+            ccs_version: "{{ .Values.ibm_spss.ccs_version }}"
+            canvasbase_channel: "{{ .Values.ibm_spss.canvasbase_channel }}"
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
+
         - name: ARGOCD_APP_NAME
-          value: operatorcatalogapp
+          value: cpdspssapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}
@@ -56,5 +65,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
-      - RespectIgnoreDifferences=true
 {{- end }}

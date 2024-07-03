@@ -1,140 +1,11 @@
 {{- if and ( eq .Values.jdbc_type "incluster-db2" ) ( .Values.use_postdelete_hooks ) }}
 
 
-{{ $ns := printf "mas-%s-core" .Values.instance_id }}
+{{ $ns := printf "mas-%s-syncres" .Values.instance_id }}
 {{ $prefix := printf "post-jdbc-usr-%s" .Values.mas_config_name }}
 {{ $secret := printf "%s-creds" $prefix }}
-{{ $sa := printf "%s-sa" $prefix }}
-{{ $crole := printf "%s-crole" $prefix }}
-{{ $crb := printf "%s-crb" $prefix }}
 {{ $np := printf "%s-np" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
-
----
-
-# We need to embed the supplied JDBC username in a K8S secret so we can safely access it from
-# the Job without exposing it via the ArgoCD resources
-apiVersion: v1
-kind: Secret
-type: Opaque
-metadata:
-  name: {{ $secret }}
-  namespace: {{ $ns }}
-  annotations:
-    argocd.argoproj.io/hook: PostDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-stringData:
-  username: "{{ .Values.jdbc_instance_username }}"
-
----
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: {{ $sa }}
-  namespace: {{ $ns }}
-  annotations:
-    argocd.argoproj.io/hook: PostDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-
-
-
----
-# Needed for "oc get crd db2uclusters.db2u.databases.ibm.com" command
-# and for accessing resources in the db2u namespace
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: {{ $crole }}
-  annotations:
-    argocd.argoproj.io/hook: PostDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-- apiGroups: 
-    - apiextensions.k8s.io
-  resources: 
-    - customresourcedefinitions
-  verbs: 
-    - get
-- apiGroups:
-    - ""
-  resources:
-    - pods
-  verbs:
-    - list
-    - get
-- apiGroups:
-    - ""
-  resources: 
-    - pods/exec
-  verbs: 
-    - create
-- apiGroups:
-    - apps
-  resources: 
-    - statefulsets
-  verbs: 
-    - get
-
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $crb }}
-  annotations:
-    argocd.argoproj.io/hook: PostDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: {{ $sa }}
-    namespace: {{ $ns }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ $crole }}
-
-
-
----
-
-# Permit outbound communication by the Job pods
-# (Needed to communicate with the K8S HTTP API and AWS SM)
-kind: NetworkPolicy
-apiVersion: networking.k8s.io/v1
-metadata:
-  name: {{ $np }}
-  namespace: {{ $ns }}
-  annotations:
-    argocd.argoproj.io/hook: PostDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  podSelector:
-    matchLabels:
-      app: {{ $job }}
-  egress:
-    - {}
-  policyTypes:
-    - Egress
-
 
 ---
 apiVersion: batch/v1
@@ -152,15 +23,13 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ $job }}
+        app: sync-job
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
       containers:
         - name: run
-          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
-          # Just using cli for now since it has all the deps we need to talk with AWS SM
           image: quay.io/ibmmas/cli:10.1.0-pre.gitops
           imagePullPolicy: IfNotPresent
           resources:
@@ -188,11 +57,25 @@ spec:
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
+            - name: SM_AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_default_region
+            - name: SM_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_access_key_id
+            - name: SM_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_secret_access_key
+
           volumeMounts:
             - name: db2-credentials
               mountPath: /etc/mas/creds/db2-credentials
-            - name: aws
-              mountPath: /etc/mas/creds/aws
           command:
             - /bin/sh
             - -c
@@ -207,13 +90,6 @@ spec:
               SECRETS_KEY_SEPERATOR="/"
               SECRET_NAME_JDBC_CONFIG=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}${DB2_INSTANCE_NAME}${SECRETS_KEY_SEPERATOR}config
 
-              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
-              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
-              # mount the secret on the jobs filesystem, and read them in here
-              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-
-
               echo "Params:"
               echo "    - ACCOUNT_ID                 ................... ${ACCOUNT_ID}"
               echo "    - CLUSTER_ID                 ................... ${CLUSTER_ID}"
@@ -224,7 +100,6 @@ spec:
               echo "    - SM_AWS_SECRET_ACCESS_KEY   ................... ${SM_AWS_SECRET_ACCESS_KEY:0:2}<snip>"
               echo
 
-              export SM_AWS_REGION=${REGION_ID}
               sm_login
               sm_delete_secret "${SECRET_NAME_JDBC_CONFIG}" 
               echo "..... rc $?"
@@ -330,16 +205,11 @@ spec:
 
       # TODO: is this the correct SA to use here?
       # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
-      serviceAccountName: {{ $sa }}
+      serviceAccountName: aws-db2-user-job
       volumes:
         - name: db2-credentials
           secret:
             secretName: {{ $secret }}
-            defaultMode: 420
-            optional: false
-        - name: aws
-          secret:
-            secretName: aws
             defaultMode: 420
             optional: false
   backoffLimit: 4

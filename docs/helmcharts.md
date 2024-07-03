@@ -48,8 +48,9 @@ The {{ cluster_root_chart() }} also installs the {{ instance_root_app_set() }}. 
 |Watson Machine Learning (WML) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/090-ibm-wml-app.yaml", "090-ibm-wml-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/090-ibm-wml", "090-ibm-wml") }} |
 |Watson OpenScale (AI OpenScale) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/090-ibm-aiopenscale-app.yaml", "090-ibm-aiopenscale-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/090-ibm-aiopenscale", "090-ibm-aiopenscale") }} |
 |Analytics Engine powered by Apache Spark (Spark) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/090-ibm-spark-app.yaml", "090-ibm-spark-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/090-ibm-spark", "090-ibm-spark") }} |
+|SPSS Modeler | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/090-ibm-spss-app.yaml", "090-ibm-spss-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/090-ibm-spss", "090-ibm-spss") }} |
 
-
+gitops/root-applications/ibm-mas-instance-root/templates/090-ibm-spss-app.yaml
 ##### MAS Core Platform
 
 This includes the suite, suite configurations and core workspaces

@@ -62,6 +62,8 @@ spec:
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/cluster-promotion.yaml"
+  syncPolicy:
+    applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
   template:
     metadata:
       name: "cluster.{{ `{{.cluster.id}}` }}"
@@ -104,12 +106,14 @@ spec:
                 value: "{{ .Values.avp.secret }}"
               - name: avp.values_varname
                 value: "{{ .Values.avp.values_varname }}"
+              - name: auto_delete
+                value: "{{ .Values.auto_delete }}"
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
-          prune: true
+          prune: {{ .Values.auto_delete }}
           selfHeal: true
         syncOptions:
           - CreateNamespace=false

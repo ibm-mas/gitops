@@ -61,6 +61,7 @@ The current set of YAML configuration files recognised by MAS GitOps at each lev
 │       │   ├── ibm-mas-workspaces.yaml
 │       │   ├── ibm-sls.yaml
 │       │   ├── ibm-spss.yaml
+│       │   └── ibm-wml.yaml
 │       │   └── ibm-wsl.yaml
 │       ├── ibm-dro.yaml
 │       ├── ibm-mas-cluster-base.yaml

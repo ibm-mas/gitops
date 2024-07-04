@@ -312,20 +312,18 @@ spec:
                 fi
               done
 
-
               echo ""
               echo "================================================================================"
-              echo "Wait for c-${DB2_INSTANCE_NAME}-db2u Statefulset to report ready (retries every ~10 seconds for max ~5 minutes)"
+              echo "Wait for c-${DB2_INSTANCE_NAME}-db2u Db2uEngine to report ready (retries every ~10 seconds for max ~5 minutes)"
               echo "================================================================================"
               wait_period=0
               while true; do
 
-                export READY_REPLICAS=$(oc get statefulset c-${DB2_INSTANCE_NAME}-db2u -n ${DB2_NAMESPACE} -o=jsonpath="{.status.readyReplicas}")
-                export REPLICAS=$(oc get statefulset c-${DB2_INSTANCE_NAME}-db2u -n ${DB2_NAMESPACE} -o=jsonpath="{.status.replicas}")
-                echo "${READY_REPLICAS}/${REPLICAS} replicas are ready"
+                export DB2U_ENGINE_STATE=$(oc get Db2uEngine c-${DB2_INSTANCE_NAME}-db2u -n ${DB2_NAMESPACE} -ojsonpath='{.status.state}')
 
-                if [[ ${READY_REPLICAS} -ge 1 && ${REPLICAS} -ge 1 && ${READY_REPLICAS} -eq ${REPLICAS} ]]; then
-                  echo "Statefulset c-${DB2_INSTANCE_NAME}-db2u is ready"
+                echo "... Db2uEngine state: ${DB2U_ENGINE_STATE}"
+                if [[ ${DB2U_ENGINE_STATE} == "Ready" ]]; then
+                  echo "Db2uEngine c-${DB2_INSTANCE_NAME}-db2u is ready"
                   break
                 fi
 
@@ -338,6 +336,7 @@ spec:
                   sleep 10
                 fi
               done
+
 
       restartPolicy: Never
 

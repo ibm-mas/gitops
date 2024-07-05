@@ -94,12 +94,13 @@ spec:
               OUTPUT_FILE=${MAS_CONFIG_DIR}/docdb-${MAS_INSTANCE_ID}-instance-credentials.yml
               export USER_ACTION="add"
 
-              DOCDB_HOST_COUNT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | /usr/bin/yq '.config.hosts'  | length)
-              for ((i=0; i<$DOCDB_HOST_COUNT; i++)); do
+              DOCDB_HOST_COUNT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | /usr/bin/yq '.config.hosts  | length')
+              while [ ${DOCDB_HOST_COUNT} -gt 0 ]; do
+                DOCDB_HOST_COUNT=$((DOCDB_HOST_COUNT-1))
                 # Grab hosts/ports from docdb master info
-                export DOCDB_HOST=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | /usr/bin/yq '.config.hosts[i].host')
-                export DOCDB_PORT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | /usr/bin/yq '.config.hosts[i].port')
-                export DOCDB_HOSTS="$DOCDB_HOSTS$DOCDB_HOST:$DOCDB_PORT,"
+                DOCDB_HOST=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | /usr/bin/yq ".config.hosts[$DOCDB_HOST_COUNT].host")
+                DOCDB_PORT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | /usr/bin/yq ".config.hosts[$DOCDB_HOST_COUNT].port")
+                DOCDB_HOSTS="$DOCDB_HOSTS$DOCDB_HOST:$DOCDB_PORT,"
               done
               # remove trailing comma
               export DOCDB_HOSTS=${DOCDB_HOSTS%,}
@@ -148,7 +149,7 @@ spec:
               echo "    - DOCDB_INSTANCE_PASSWORD    ................... ${DOCDB_INSTANCE_PASSWORD:0:2}<snip>"
               echo "    - DOCDB_MASTER_INFO_ESCAPED  ................... ${DOCDB_MASTER_INFO_ESCAPED}"
               echo
-              
+
 
               source /mascli/functions/gitops_utils
               sm_login

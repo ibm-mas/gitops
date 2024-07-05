@@ -1,0 +1,129 @@
+---
+apiVersion: db2u.databases.ibm.com/v1
+kind: Db2uInstance
+metadata:
+  name: "{{ .Values.db2_instance_name | lower }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "122"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true  
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  nodes: {{ .Values.db2_num_pods }}
+  account:
+    securityConfig:
+      privilegedSysctlInit: true
+    imagePullSecrets:
+      - ibm-registry
+{{- if .Values.db2_addons_audit_config }}
+  addOns:
+    audit:
+{{ .Values.db2_addons_audit_config | toYaml | indent 6 }}
+{{- end }}
+  version: "{{ .Values.db2_version }}"
+  environment:
+    dbType: db2wh
+    databases:
+      - name: "{{ .Values.db2_dbname }}"
+
+{{- if .Values.db2_database_db_config }}
+        dbConfig:
+{{ .Values.db2_database_db_config | toYaml | indent 10 }}
+{{- end }}
+
+        settings:
+          dftTableOrg: "{{ .Values.db2_table_org }}"
+    ssl:
+      secretName: "db2u-certificate-{{ .Values.db2_instance_name }}"
+      certLabel: "CN=db2u"
+    instance:
+
+{{- if .Values.db2_instance_registry }}
+      registry:
+{{ .Values.db2_instance_registry | toYaml | indent 8 }}
+{{- end }}
+
+{{- if .Values.db2_instance_dbm_config }}
+      dbmConfig:
+{{ .Values.db2_instance_dbm_config | toYaml | indent 8 }}
+{{- end }}
+    partitionConfig:
+      total: {{ .Values.db2_mln_count }}
+  license:
+    accept: true
+  podTemplate:
+    db2u:
+      resource:
+        db2u:
+          requests:
+            cpu: "{{ .Values.db2_cpu_requests }}"
+            memory: "{{ .Values.db2_memory_requests }}"
+          limits:
+            cpu: "{{ .Values.db2_cpu_limits }}"
+            memory: "{{ .Values.db2_memory_limits }}"
+  storage:
+    - name: meta
+      type: create
+      spec:
+        storageClassName: "{{ .Values.db2_meta_storage_class }}"
+        accessModes:
+          - "{{ .Values.db2_meta_storage_accessmode }}"
+        resources:
+          requests:
+            storage: "{{ .Values.db2_meta_storage_size }}"
+{{- if .Values.db2_backup_storage_class }}
+    - name: backup
+      type: create
+      spec:
+        accessModes:
+        - "{{ .Values.db2_backup_storage_accessmode }}"
+        resources:
+          requests:
+            storage: "{{ .Values.db2_backup_storage_size }}"
+        storageClassName: "{{ .Values.db2_backup_storage_class }}"
+{{- end }}
+    - name: data
+      type: template
+      spec:
+        storageClassName: "{{ .Values.db2_data_storage_class }}"
+        accessModes:
+          - "{{ .Values.db2_data_storage_accessmode }}"
+        resources:
+          requests:
+            storage: "{{ .Values.db2_data_storage_size }}"
+{{- if .Values.db2_temp_storage_class }}
+    - name: tempts
+      type: template
+      spec:
+        accessModes:
+          - "{{ .Values.db2_temp_storage_accessmode }}"
+        resources:
+          requests:
+            storage: "{{ .Values.db2_temp_storage_size }}"
+        storageClassName: "{{ .Values.db2_temp_storage_class }}"
+{{- end }}
+{{- if .Values.db2_logs_storage_class }}
+    - name: activelogs
+      type: template
+      spec:
+        accessModes:
+          - "{{ .Values.db2_logs_storage_accessmode }}"
+        resources:
+          requests:
+            storage: "{{ .Values.db2_logs_storage_size }}"
+        storageClassName: "{{ .Values.db2_logs_storage_class }}"
+{{- end }}
+{{- if .Values.db2_audit_logs_storage_class }}
+    - name: auditlogs
+      type: template
+      spec:
+        accessModes:
+          - "{{ .Values.db2_audit_logs_storage_accessmode }}"
+        resources:
+          requests:
+            storage: "{{ .Values.db2_audit_logs_storage_size }}"
+        storageClassName: "{{ .Values.db2_audit_logs_storage_class }}"
+{{- end }}

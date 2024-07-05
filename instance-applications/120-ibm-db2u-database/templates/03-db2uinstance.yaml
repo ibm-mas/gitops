@@ -13,6 +13,24 @@ metadata:
 {{- end }}
 spec:
   nodes: {{ .Values.db2_num_pods }}
+{{- if and (.Values.db2_affinity_key) (.Values.db2_affinity_value) }}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: "{{ .Values.db2_affinity_key }}"
+            operator: In
+            values:
+            - "{{ .Values.db2_affinity_value }}"
+{{- end }}
+{{- if and (.Values.db2_tolerate_key) (.Values.db2_tolerate_value) (.Values.db2_tolerate_effect) }}
+  tolerations:
+  - effect: "{{ .Values.db2_tolerate_effect }}"
+    key: "{{ .Values.db2_tolerate_key }}"
+    operator: Equal
+    value: "{{ .Values.db2_tolerate_value }}"
+{{- end }}
   account:
     securityConfig:
       privilegedSysctlInit: true

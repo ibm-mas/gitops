@@ -63,7 +63,7 @@ spec:
             - name: CR_KIND
               value: {{ $cr_kind }}
 
-            - name: INSTANCE_ID
+            - name: MAS_INSTANCE_ID
               value: {{ $mas_instance_id }}
 
             - name: MONGO_USERNAME
@@ -147,7 +147,7 @@ spec:
               echo "================================================================================"
               echo "Settings - wipe_mongo"
               echo "================================================================================"
-              echo "INSTANCE_ID ........................... ${COLOR_MAGENTA}${INSTANCE_ID}"
+              echo "MAS Instance ID ....................... ${COLOR_MAGENTA}${MAS_INSTANCE_ID}"
               echo "Mongo username ........................ ${COLOR_MAGENTA}${MONGO_USERNAME}"
               echo "Mongo password ........................ ${COLOR_MAGENTA}${MONGO_PASSWORD:0:6}<snip>"
               echo "Mongo config .......................... ${COLOR_MAGENTA}${CONFIG}"
@@ -158,10 +158,12 @@ spec:
 
               if [[ "${MAS_WIPE_MONGO_DATA}" == "true" ]]; then
 
-                export ROLE_NAME=wipe_mongo
+                export ROLE_NAME=mongodb
+                export MONGODB_ACTION=destroy-data
+                export MONGODB_PROVIDER=aws
                 ansible-playbook ibm.mas_devops.run_role
                 rc=$?
-                echo "Role wipe_mongo completes with rc=${rc}"
+                echo "Role mongodb with action destroy-data completes with rc=${rc}"
                 [ $rc -ne 0 ] && exit $rc
               fi
 

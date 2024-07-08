@@ -8,6 +8,21 @@
 {{ $job := printf "%s-job" $prefix }}
 
 ---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: {{ $secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  username: "{{ .Values.jdbc_instance_username }}"
 apiVersion: batch/v1
 kind: Job
 metadata:

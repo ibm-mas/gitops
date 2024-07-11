@@ -1,0 +1,202 @@
+{{- if and ( eq .Values.jdbc_type "incluster-db2" ) ( .Values.use_postdelete_hooks ) }}
+
+
+{{ $ns := printf "mas-%s-syncres" .Values.instance_id }}
+{{ $prefix := printf "post-jdbc-usr-%s" .Values.mas_config_name }}
+{{ $secret := printf "%s-creds" $prefix }}
+{{ $np := printf "%s-np" $prefix }}
+{{ $job := printf "%s-job" $prefix }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: sync-job
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:10.2.0-pre.gitops
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.jdbc_instance_name }}"
+            - name: DB2_DBNAME
+              value: "{{ .Values.db2_dbname }}"
+              
+            - name: DB2_LDAP_USERNAME
+              value: "{{ .Values.jdbc_instance_username }}"
+
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+              
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+            - name: SM_AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_default_region
+            - name: SM_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_access_key_id
+            - name: SM_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_secret_access_key
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              source /mascli/functions/gitops_utils
+             
+              echo 
+              echo "================================================================================"
+              echo "Deleting Instance JDBC config Secrets"
+              echo "================================================================================"
+
+              SECRETS_KEY_SEPERATOR="/"
+              SECRET_NAME_JDBC_CONFIG=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}${DB2_INSTANCE_NAME}${SECRETS_KEY_SEPERATOR}config
+
+              echo "Params:"
+              echo "    - ACCOUNT_ID                 ................... ${ACCOUNT_ID}"
+              echo "    - CLUSTER_ID                 ................... ${CLUSTER_ID}"
+              echo "    - MAS_INSTANCE_ID            ................... ${MAS_INSTANCE_ID}"
+              echo "    - SECRET_NAME_JDBC_CONFIG    ................... ${SECRET_NAME_JDBC_CONFIG}"
+              echo "    - SM_AWS_REGION              ................... ${SM_AWS_REGION}"
+              echo "    - SM_AWS_ACCESS_KEY_ID       ................... ${SM_AWS_ACCESS_KEY_ID:0:2}<snip>"
+              echo "    - SM_AWS_SECRET_ACCESS_KEY   ................... ${SM_AWS_SECRET_ACCESS_KEY:0:2}<snip>"
+              echo
+
+              sm_login
+              sm_delete_secret "${SECRET_NAME_JDBC_CONFIG}" 
+              echo "..... rc $?"
+
+
+              set -e
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
+              echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
+              echo "DB2_DBNAME .......................... ${DB2_DBNAME}"
+              echo "DB2_LDAP_USERNAME ................... ${DB2_LDAP_USERNAME}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Checking DB2 CRD db2uclusters.db2u.databases.ibm.com is ready (retries every ~10 seconds for ~5 minutes)"
+              echo "================================================================================"
+
+              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True STARTS  
+              wait_period=0
+              while true; do
+                export DB2_CRD_NAMES_ACCEPTED_STATUS=$(oc get crd db2uclusters.db2u.databases.ibm.com -o=jsonpath="{.status.conditions[?(@.type=='NamesAccepted')].status}")
+                echo "DB2_CRD_NAMES_ACCEPTED_STATUS .... ${DB2_CRD_NAMES_ACCEPTED_STATUS}"
+                if [[ "$DB2_CRD_NAMES_ACCEPTED_STATUS" == "True" ]]; then
+                  break
+                fi
+
+                wait_period=$(($wait_period+10))
+                if [ $wait_period -gt 300 ];then
+                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready with in 300 sec, exiting"
+                  exit 1
+                else
+                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready, trying again in 10 seconds"
+                  sleep 10
+                fi
+              done  
+              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True DONE
+
+
+              echo ""
+              echo "================================================================================"
+              echo "Checking if ${DB2_LDAP_USERNAME} user exists already"
+              echo "================================================================================"
+              
+              echo ""
+              echo "Looking up name of DB2 db2u pod"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_DB2U_POD_NAME=$(oc get pods -o custom-columns=POD:.metadata.name -l app=${DB2_INSTANCE_NAME},role=db -n ${DB2_NAMESPACE}  --no-headers)
+              if [[ -z "${DB2_DB2U_POD_NAME}" ]]; then
+                echo "Failed to look up DB2 db2u pod name, Skipping removeLdapUser script."
+                exit 0
+              fi
+              echo "DB2_DB2U_POD_NAME .......................... ${DB2_DB2U_POD_NAME}"
+
+
+              echo ""
+              echo "Executing command on DB2 db2u pod; su -lc \"id ${DB2_LDAP_USERNAME}\""
+              echo "--------------------------------------------------------------------------------"
+              # Using the || syntax to avoid surfacing a non 0 rc and exitting the job (without having to disable set -e)
+              DB2_USER_FOUND=true
+              oc exec -it -n ${DB2_NAMESPACE} ${DB2_DB2U_POD_NAME} -- su -lc "id ${DB2_LDAP_USERNAME}" || DB2_USER_FOUND=false
+              if [[ "${DB2_USER_FOUND}" == "false" ]]; then
+                echo "DB2 user does not exist, Skipping removeLdapUser script."
+                exit 0
+              fi
+              echo "DB2 user exists"
+
+              echo ""
+              echo "================================================================================"
+              echo "Removing user ${DB2_LDAP_USERNAME}"
+              echo "================================================================================"
+
+              echo ""
+              echo "Looking up name of DB2 LDAP pod"
+              echo "--------------------------------------------------------------------------------"
+              export DB2_LDAP_POD_NAME=$(oc get pods -o custom-columns=POD:.metadata.name -l app=${DB2_INSTANCE_NAME},role=ldap -n ${DB2_NAMESPACE}  --no-headers)
+              if [[ -z "${DB2_LDAP_POD_NAME}" ]]; then
+                echo "Failed to look up DB2 LDAP pod name, Skipping removeLdapUser script."
+                exit 0
+              fi
+              echo "DB2_LDAP_POD_NAME .......................... ${DB2_LDAP_POD_NAME}"
+
+
+              echo ""
+              echo "Executing removeLdapUser.py script in ${DB2_LDAP_POD_NAME} pod"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -it -n ${DB2_NAMESPACE} ${DB2_LDAP_POD_NAME} -- /opt/ibm/ldap_scripts/removeLdapUser.py -u ${DB2_LDAP_USERNAME}
+              echo "..... rc $?"
+
+      restartPolicy: Never
+
+      serviceAccountName: aws-db2-user-job
+  backoffLimit: 4
+
+{{- end }}

@@ -85,9 +85,9 @@ rules:
   verbs: 
     - create
 - apiGroups:
-    - apps
+    - db2u.databases.ibm.com
   resources: 
-    - statefulsets
+    - db2uengines
   verbs: 
     - get
 
@@ -148,7 +148,7 @@ metadata:
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -312,20 +312,18 @@ spec:
                 fi
               done
 
-
               echo ""
               echo "================================================================================"
-              echo "Wait for c-${DB2_INSTANCE_NAME}-db2u Statefulset to report ready (retries every ~10 seconds for max ~5 minutes)"
+              echo "Wait for c-${DB2_INSTANCE_NAME}-db2u Db2uEngine to report ready (retries every ~10 seconds for max ~5 minutes)"
               echo "================================================================================"
               wait_period=0
               while true; do
 
-                export READY_REPLICAS=$(oc get statefulset c-${DB2_INSTANCE_NAME}-db2u -n ${DB2_NAMESPACE} -o=jsonpath="{.status.readyReplicas}")
-                export REPLICAS=$(oc get statefulset c-${DB2_INSTANCE_NAME}-db2u -n ${DB2_NAMESPACE} -o=jsonpath="{.status.replicas}")
-                echo "${READY_REPLICAS}/${REPLICAS} replicas are ready"
+                export DB2U_ENGINE_STATE=$(oc get Db2uEngine c-${DB2_INSTANCE_NAME}-db2u -n ${DB2_NAMESPACE} -ojsonpath='{.status.state}')
 
-                if [[ ${READY_REPLICAS} -ge 1 && ${REPLICAS} -ge 1 && ${READY_REPLICAS} -eq ${REPLICAS} ]]; then
-                  echo "Statefulset c-${DB2_INSTANCE_NAME}-db2u is ready"
+                echo "... Db2uEngine state: ${DB2U_ENGINE_STATE}"
+                if [[ ${DB2U_ENGINE_STATE} == "Ready" ]]; then
+                  echo "Db2uEngine c-${DB2_INSTANCE_NAME}-db2u is ready"
                   break
                 fi
 
@@ -339,10 +337,9 @@ spec:
                 fi
               done
 
+
       restartPolicy: Never
 
-      # TODO: is this the correct SA to use here?
-      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
       serviceAccountName: {{ $sa }}
       volumes:
         - name: db2-credentials

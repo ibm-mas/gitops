@@ -1,10 +1,10 @@
 #!/bin/bash
 
-echo "build/bin/helm-lint.sh -p <chart_path>"
-echo ""
-echo "Example usage: "
-echo "  build/bin/helm-lint.sh -p ../../instance-applications/000-ibm-sync-resources"
-echo ""
+# echo "build/bin/helm-lint.sh -p <chart_path>"
+# echo ""
+# echo "Example usage: "
+# echo "  build/bin/helm-lint.sh -p ../../instance-applications/000-ibm-sync-resources"
+# echo ""
 
 # Process command line arguments
 while [[ $# -gt 0 ]]

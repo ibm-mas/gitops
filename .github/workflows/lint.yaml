@@ -1,4 +1,4 @@
-name: Lint Helm Templates
+name: Lint and Check Helm Templates
 
 on:
   pull_request:
@@ -17,19 +17,19 @@ jobs:
 
       - name: Check that instance level Helm charts are valid
         run: |
-          for DIR in $(find $GITHUB_WORKSPACE/instance-applications/* -type d); do
+          for DIR in $(find $GITHUB_WORKSPACE/instance-applications -type d -maxdepth 1 -mindepth 1 ); do
             $GITHUB_WORKSPACE/build/bin/helm-lint.sh -p $DIR || exit 1
           done
 
       - name: Check that cluster level Helm charts are valid
         run: |
-          for DIR in $(find $GITHUB_WORKSPACE/cluster-applications/* -type d); do
+          for DIR in $(find $GITHUB_WORKSPACE/cluster-applications -type d -maxdepth 1 -mindepth 1 ); do
             $GITHUB_WORKSPACE/build/bin/helm-lint.sh -p $DIR || exit 1
           done
 
       - name: Check that root level Helm charts are valid
         run: |
-          for DIR in $(find $GITHUB_WORKSPACE/root-applications/* -type d); do
+          for DIR in $(find $GITHUB_WORKSPACE/root-applications -type d -maxdepth 1 -mindepth 1 ); do
             $GITHUB_WORKSPACE/build/bin/helm-lint.sh -p $DIR || exit 1
           done
   
@@ -42,18 +42,18 @@ jobs:
 
       - name: Check that instance level Helm charts don't contain unexpected kinds
         run: |
-          for DIR in $(find $GITHUB_WORKSPACE/instance-applications/* -type d); do
+          for DIR in $(find $GITHUB_WORKSPACE/instance-applications -type d -maxdepth 1 -mindepth 1 ); do
             $GITHUB_WORKSPACE/build/bin/kind-check.sh -p $DIR || exit 1
           done
 
       - name: Check that cluster level Helm charts don't contain unexpected kinds
         run: |
-          for DIR in $(find $GITHUB_WORKSPACE/cluster-applications/* -type d); do
+          for DIR in $(find $GITHUB_WORKSPACE/cluster-applications -type d -maxdepth 1 -mindepth 1 ); do
             $GITHUB_WORKSPACE/build/bin/kind-check.sh -p $DIR || exit 1
           done
 
       - name: Check that root level Helm charts don't contain unexpected kinds
         run: |
-          for DIR in $(find $GITHUB_WORKSPACE/root-applications/* -type d); do
+          for DIR in $(find $GITHUB_WORKSPACE/root-applications -type d -maxdepth 1 -mindepth 1 ); do
             $GITHUB_WORKSPACE/build/bin/kind-check.sh -p $DIR || exit 1
           done

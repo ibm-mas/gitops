@@ -5,7 +5,7 @@ on:
     branches: [ "poc", "main" ]
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -31,4 +31,29 @@ jobs:
         run: |
           for DIR in $(find $GITHUB_WORKSPACE/root-applications/* -type d); do
             $GITHUB_WORKSPACE/build/bin/helm-lint.sh -p $DIR || exit 1
+          done
+  
+  kind-check:
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check that instance level Helm charts don't contain unexpected kinds
+        run: |
+          for DIR in $(find $GITHUB_WORKSPACE/instance-applications/* -type d); do
+            $GITHUB_WORKSPACE/build/bin/kind-check.sh -p $DIR || exit 1
+          done
+
+      - name: Check that cluster level Helm charts don't contain unexpected kinds
+        run: |
+          for DIR in $(find $GITHUB_WORKSPACE/cluster-applications/* -type d); do
+            $GITHUB_WORKSPACE/build/bin/kind-check.sh -p $DIR || exit 1
+          done
+
+      - name: Check that root level Helm charts don't contain unexpected kinds
+        run: |
+          for DIR in $(find $GITHUB_WORKSPACE/root-applications/* -type d); do
+            $GITHUB_WORKSPACE/build/bin/kind-check.sh -p $DIR || exit 1
           done

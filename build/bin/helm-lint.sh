@@ -27,20 +27,6 @@ done
 
 : ${CHART_PATH?"Need to set -p|--chart_path argument for chart path"}
 
-# Check if the Helm chart has any namespaces defined
-function check_namespace() {
-  echo "- Searching for templates using kind: Namespace"
-  echo " "
-
-  # Check if there are any namespaces defined in the Helm chart
-  if grep --recursive -e "kind: Namespace" $1; then
-    echo "- Error: Found namespaces in Helm chart."
-    exit 1
-  else
-    echo "- Success: No namespaces found in Helm chart."
-  fi
-}
-
 # Check if the chart_path exists
 if [ ! -d "$CHART_PATH" ]; then
     echo "Error: Chart path $CHART_PATH does not exist."
@@ -54,7 +40,3 @@ helm lint "$CHART_PATH" || exit 1
 echo "--------"
 echo "Templating chart $CHART_PATH using Helm template"
 helm template "$CHART_PATH" || exit 1
-
-echo "--------"
-echo "Checking chart doesn't contain unexpected kinds"
-check_namespace "$CHART_PATH" || exit 1

@@ -1,0 +1,34 @@
+name: Lint Helm Templates
+
+on:
+  pull_request:
+    branches: [ "poc", "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Install Helm3
+        uses: azure/setup-helm@v4.2.0
+
+      - name: Check that instance level Helm charts are valid
+        run: |
+          for DIR in $(find $GITHUB_WORKSPACE/instance-applications -type d); do
+            $GITHUB_WORKSPACE/build/bin/helm-lint.sh -p $DIR || exit 1
+          done
+
+      - name: Check that cluster level Helm charts are valid
+        run: |
+          for DIR in $(find $GITHUB_WORKSPACE/cluster-applications -type d); do
+            $GITHUB_WORKSPACE/build/bin/helm-lint.sh -p $DIR || exit 1
+          done
+
+      - name: Check that root level Helm charts are valid
+        run: |
+          for DIR in $(find $GITHUB_WORKSPACE/root-applications -type d); do
+            $GITHUB_WORKSPACE/build/bin/helm-lint.sh -p $DIR || exit 1
+          done

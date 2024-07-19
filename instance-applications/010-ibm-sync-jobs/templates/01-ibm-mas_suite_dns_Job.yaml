@@ -1,9 +1,9 @@
-{{- if and (eq .Values.dns_provider "cis") (eq .Values.mas_manual_cert_mgmt "False") }}
+{{- if and (eq .Values.dns_provider "cis") (not .Values.mas_manual_cert_mgmt) }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ibm-suite-dns
+  name: "ibm-suite-dns-v1-{{ .Values | toYaml | adler32sum }}"
   namespace: mas-{{ .Values.instance_id }}-syncres
   annotations:
     argocd.argoproj.io/sync-wave: "00"
@@ -12,7 +12,6 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  ttlSecondsAfterFinished: 120
   template:
     metadata:
       labels:
@@ -23,7 +22,7 @@ spec:
     spec:
       containers:
         - name: suite-dns-role-run
-          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          image: quay.io/ibmmas/cli:latest
           imagePullPolicy: IfNotPresent
 
           env:
@@ -133,39 +132,18 @@ spec:
               export MAS_DOMAIN=$CIS_MAS_DOMAIN
               mkdir -p ${MAS_CONFIG_DIR}
 
-              sm_login
-              export SECRETS_KEY_SEPERATOR="/"
-              export SECRET_NAME=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}suite_dns_role
-              export SUITE_DNS_ROLE_SECRET_FILE=$MAS_CONFIG_DIR/suite-dns-role-secret.json
-              sm_get_secret_file $SECRET_NAME $SUITE_DNS_ROLE_SECRET_FILE
-              
-              SUITE_DNS_ROLE_COMPLETION_STATUS=$(jq -r .completion_status $SUITE_DNS_ROLE_SECRET_FILE)
-              SUITE_DNS_ROLE_COMPLETION_ON=$(jq -r .completion_on $SUITE_DNS_ROLE_SECRET_FILE)
-
-              echo "SUITE_DNS_ROLE_COMPLETION_STATUS=${SUITE_DNS_ROLE_COMPLETION_STATUS}"
-              echo "SUITE_DNS_ROLE_COMPLETION_ON=${SUITE_DNS_ROLE_COMPLETION_ON}"
-
-              if [ "$SUITE_DNS_ROLE_COMPLETION_STATUS" != "success" ]; then
-                # Ref - https://github.com/ibm-mas/ansible-devops/blob/master/ibm/mas_devops/roles/suite_dns/README.md
-                export ROLE_NAME=suite_dns
-                ansible-playbook ibm.mas_devops.run_role
-                rc=$?
-                echo "suite_dns rc=${rc}"
-                [ $rc -ne 0 ] && exit $rc
-
-                COMPLETION_ON=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-                echo "COMPLETION_ON=${COMPLETION_ON}"
-                export SECRET_VALUE="{\"completion_status\":\"success\",\"completion_on\":\"$COMPLETION_ON\"}"
-
-                echo ""
-                echo "Updating Secrets Manager"
-                echo "--------------------------------------------------------------------------------"
-                sm_update_secret $SECRET_NAME $SECRET_VALUE
-
-                exit 0
+              if [[ "${MAS_MANUAL_CERT_MGMT}" == 'true' ]]; then
+                export MAS_MANUAL_CERT_MGMT=True
+              else
+                export MAS_MANUAL_CERT_MGMT=False
               fi
+              # Ref - https://github.com/ibm-mas/ansible-devops/blob/master/ibm/mas_devops/roles/suite_dns/README.md
+              export ROLE_NAME=suite_dns
+              ansible-playbook ibm.mas_devops.run_role
+              rc=$?
+              echo "suite_dns rc=${rc}"
+              [ $rc -ne 0 ] && exit $rc
               exit 0
-
 
       restartPolicy: Never
 

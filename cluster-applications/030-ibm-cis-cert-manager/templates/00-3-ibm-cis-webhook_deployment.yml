@@ -1,0 +1,73 @@
+{{- if eq .Values.dns_provider "cis" }}
+
+{{ $cis_apiservice_group_name     :=   "acme.cis.ibm.com" }}
+{{ $cis_webhook_image_repository  :=   "quay.io/ibmmas/cert-manager-webhook-ibm-cis" }}
+{{ $cis_webhook_image_tag         :=   "1.0.0" }}
+{{ $cis_webhook_image_pullpolicy  :=   "Always" }}
+{{ $cis_webhook_service_type      :=   "ClusterIP" }}
+{{ $cis_webhook_service_port      :=   "443" }}
+{{ $cis_webhook_log_level         :=   "1" }}
+{{ $cert_manager_namespace        :=   "cert-manager" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "035"
+  name: "cert-manager-webhook-ibm-cis"
+  namespace: "{{ $cert_manager_namespace }}"
+  labels:
+    app: "cert-manager-webhook-ibm-cis"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "cert-manager-webhook-ibm-cis"
+  template:
+    metadata:
+      labels:
+        app: "cert-manager-webhook-ibm-cis"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: "cert-manager-webhook-ibm-cis"
+      containers:
+        - name: webhook
+          image: "{{ $cis_webhook_image_repository }}:{{ $cis_webhook_image_tag }}"
+          imagePullPolicy: {{ $cis_webhook_image_pullpolicy }}
+          args:
+            - --tls-cert-file=/tls/tls.crt
+            - --tls-private-key-file=/tls/tls.key
+            - --v={{ $cis_webhook_log_level }}
+          env:
+            - name: GROUP_NAME
+              value: "{{ $cis_apiservice_group_name }}"
+          ports:
+            - name: https
+              containerPort: 443
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+          volumeMounts:
+            - name: certs
+              mountPath: /tls
+              readOnly: true
+          resources:
+      volumes:
+        - name: certs
+          secret:
+            secretName: "cert-manager-webhook-ibm-cis-serving-cert"
+
+{{- end }}

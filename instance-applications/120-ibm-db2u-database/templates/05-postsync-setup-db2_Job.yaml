@@ -29,11 +29,50 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 
+
 ---
-kind: ClusterRoleBinding
+kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
+  name: "db2-database-postsync-sa-role-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "127"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - get
+    - list
+    - watch
+    - update
+    - patch
+- apiGroups:
+    - ""
+  resources:
+    - pods/exec
+  verbs: 
+    - create
+- apiGroups:
+    - ""
+  resources: 
+    - services
+  verbs: 
+    - "get"
+
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
   name: "db2-database-postsync-sa-rb-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "128"
 {{- if .Values.custom_labels }}
@@ -45,9 +84,9 @@ subjects:
     name: "postsync-sa-{{ .Values.db2_instance_name }}"
     namespace: "{{ .Values.db2_namespace }}"
 roleRef:
+  kind: Role
+  name: "db2-database-postsync-sa-role-{{ .Values.db2_instance_name }}"
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
 
 
 ---
@@ -56,7 +95,7 @@ kind: Job
 metadata:
   # Suffix the Job name with a hash of all chart values
   # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes in the DB2 config
-  name: "postsync-setup-db2-{{ .Values.db2_instance_name }}-{{ .Values | toYaml | adler32sum }}"
+  name: "postsync-setup-db2-{{ .Values.db2_instance_name }}-v1-{{ .Values | toYaml | adler32sum }}"
   namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "129"
@@ -74,7 +113,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          image: quay.io/ibmmas/cli:latest
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -345,11 +384,6 @@ spec:
                 echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1 || exit $?
-
-                echo ""
-                echo "Creating /mnt/bludata0/db2/archive_log in c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/bludata0/db2/archive_log/" db2inst1 || exit $?
 
                 echo ""
                 echo "Creating /mnt/backup/staging in c-${DB2_INSTANCE_NAME}-db2u-0"

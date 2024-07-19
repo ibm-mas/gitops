@@ -70,7 +70,7 @@ spec:
 apiVersion: operator.ibm.com/v1alpha1
 kind: IBMLicensing
 metadata:
-  name: instance
+  name: instance-{{ .Values.instance_id }}
   annotations:
     argocd.argoproj.io/sync-wave: "085"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
@@ -135,7 +135,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "patch-common-service-job"
+  name: "patch-common-service-job-v1-{{ .Values | toYaml | adler32sum }}"
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "085"
@@ -153,7 +153,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          image: quay.io/ibmmas/cli:latest
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -188,5 +188,5 @@ spec:
               done
 
       restartPolicy: Never
-      serviceAccountName: presync-cpd-prereq-sa
+      serviceAccountName: cpd-sa
   backoffLimit: 4

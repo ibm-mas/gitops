@@ -14,7 +14,7 @@
 {{ $np_name :=   "postdelete-delete-cr-np" }}
 {{ $job_label := "postdelete-delete-cr-job" }}
 {{ $ns := printf "mas-%s-core" .Values.instance_id }}
-
+{{ $mas_instance_id := printf "%s" .Values.instance_id }}
 
 ---
 apiVersion: batch/v1
@@ -42,7 +42,7 @@ spec:
         - name: run
           # TODO: use a dedicated image with a smaller footprint for this sort of thing?
           # Just using cli for now since it has all the deps we need to talk with AWS SM
-          image: quay.io/ibmmas/cli:9.4.0-pre.gitops
+          image: quay.io/ibmmas/cli:latest
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -63,13 +63,40 @@ spec:
             - name: CR_KIND
               value: {{ $cr_kind }}
 
-          volumeMounts: []
+            - name: MAS_INSTANCE_ID
+              value: {{ $mas_instance_id }}
+
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-db
+                  key: mongo_username
+
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-db
+                  key: mongo_password
+
+            - name: MAS_WIPE_MONGO_DATA
+              valueFrom:
+                secretKeyRef:
+                  name: mongo-db
+                  key: mas_wipe_mongo_data
+
+          volumeMounts:
+            - name: "mongo-db"
+              mountPath: /etc/mas/secrets/mongo_db
+
           command:
             - /bin/sh
             - -c
             - |
 
               set -e
+
+              export CONFIG=$(cat /etc/mas/secrets/mongo_db/config.yaml | yq '.' )
+              export CERTIFICATES=$(cat /etc/mas/secrets/mongo_db/certificates.yaml | yq '.' )
 
               function delete_oc_resource(){
                 RESOURCE=$1
@@ -113,12 +140,44 @@ spec:
                 
               }
 
+              echo -e "Silently wipe Mongo data"
+
               
+              echo ""
+              echo "================================================================================"
+              echo "Settings - wipe_mongo"
+              echo "================================================================================"
+              echo "MAS Instance ID ....................... ${COLOR_MAGENTA}${MAS_INSTANCE_ID}"
+              echo "Mongo username ........................ ${COLOR_MAGENTA}${MONGO_USERNAME}"
+              echo "Mongo password ........................ ${COLOR_MAGENTA}${MONGO_PASSWORD:0:6}<snip>"
+              echo "Mongo config .......................... ${COLOR_MAGENTA}${CONFIG}"
+              echo "Mongo certificates .................... ${COLOR_MAGENTA}${CERTIFICATES}"
+              echo "MAS_WIPE_MONGO_DATA ................... ${COLOR_MAGENTA}${MAS_WIPE_MONGO_DATA}"
+              echo ""
+              echo "================================================================================"
+
+              if [[ "${MAS_WIPE_MONGO_DATA}" == "true" ]]; then
+
+                export ROLE_NAME=mongodb
+                export MONGODB_ACTION=destroy-data
+                export MONGODB_PROVIDER=aws
+                ansible-playbook ibm.mas_devops.run_role
+                rc=$?
+                echo "Role mongodb with action destroy-data completes with rc=${rc}"
+                [ $rc -ne 0 ] && exit $rc
+              fi
+
               delete_oc_resource "${CR_KIND}.${CR_API_VERSION}/${CR_NAME}" "${CR_NAMESPACE}"
 
 
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}
-      volumes: []
+
+      volumes:
+        - name: "mongo-db"
+          secret:
+            secretName: "mongo-db"
+            defaultMode: 420
+            optional: false
   backoffLimit: 4
 {{- end }}

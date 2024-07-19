@@ -54,8 +54,9 @@ spec:
             {{- end }}
             {{- end }}
 
-
-            mas_manual_cert_mgmt: "{{ .Values.ibm_mas_suite.mas_manual_cert_mgmt }}"
+            {{- if not (empty .Values.ibm_mas_suite) }}
+            
+            mas_manual_cert_mgmt: {{ .Values.ibm_mas_suite.mas_manual_cert_mgmt  }}
             dns_provider: "{{ .Values.ibm_mas_suite.dns_provider }}"
             mas_workspace_id: "{{ .Values.ibm_mas_suite.mas_workspace_id }}"
             mas_config_dir: "{{ .Values.ibm_mas_suite.mas_config_dir }}"
@@ -75,9 +76,10 @@ spec:
             delete_wildcards: "{{ .Values.ibm_mas_suite.delete_wildcards }}"
             override_edge_certs: "{{ .Values.ibm_mas_suite.override_edge_certs }}"
 
-
             {{- if .Values.ibm_mas_suite.manual_certs }}
             manual_certs: {{ .Values.ibm_mas_suite.manual_certs | toYaml | nindent 14 }}
+            {{- end }}
+
             {{- end }}
 
 
@@ -94,7 +96,7 @@ spec:
         {{- end }}
   syncPolicy:
     automated:
-      prune: true
+      prune: {{ .Values.auto_delete }}
       selfHeal: true
     syncOptions:
       - CreateNamespace=false

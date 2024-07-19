@@ -1,0 +1,30 @@
+{{- if eq .Values.dns_provider "cis" }}
+
+{{ $cert_manager_namespace  :=    "cert-manager" }}
+{{ $ocp_ingress             :=    printf "cis-proxy-route.%s" .Values.ocp_cluster_domain }}
+
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "038"
+  name: cis-proxy-route
+  namespace: "{{ $cert_manager_namespace }}"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  host: "{{ $ocp_ingress }}"
+  to:
+    kind: Service
+    name: cert-manager-webhook-ibm-cis
+    weight: 100
+  port:
+    targetPort: https
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+{{- end }}

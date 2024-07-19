@@ -1,0 +1,179 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cluster-promoter-{{ .Values.cluster_id }}-v1-{{ .Values | toYaml | adler32sum }}
+  namespace: mas-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "205"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: "cluster-promoter-job"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: cluster-promoter
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: REGION_ID
+              value: "{{ .Values.region_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: GITHUB_PAT
+              value: "{{ .Values.github_pat }}"
+            - name: TARGET_GITHUB_HOST
+              value: "{{ .Values.target_github_host }}"
+            - name: TARGET_GITHUB_REPO
+              value: "{{ .Values.target_github_repo }}"
+            - name: TARGET_GITHUB_ORG
+              value: "{{ .Values.target_github_org }}"
+            - name: TARGET_GITHUB_PATH
+              value: "{{ .Values.target_github_path }}"
+            - name: TARGET_GIT_BRANCH
+              value: "{{ .Values.target_git_branch }}"
+            - name: CREATE_TARGET_PR
+              value: "{{ .Values.create_target_pr }}"
+            - name: TARGET_PR_TITLE
+              value: "{{ .Values.target_pr_title }}"
+            - name: CLUSTER_VALUES
+              value: {{ .Values.cluster_values | toJson | squote }}
+          volumeMounts:
+            - name: python
+              mountPath: /tmp/python
+
+          command:
+            - /bin/bash
+            - -c
+            - |
+
+              pip install -r /tmp/python/requirements.txt
+              
+              set -e
+
+              function createPR {
+                  WORKING_BRANCH=$1
+                  TARGET_BRANCH=$2
+                  BODY="## MAS Gitops Promotion PR\n\n Automatically created from ArgoCD\n\nChanges made in **$ACCOUNT_ID/$REGION_ID/$CLUSTER_ID** triggered this promotion."
+
+                  GITHUB_AUTH_HEADER="Authorization:token $GITHUB_PAT"
+                  GITHUB_API=https://$TARGET_GITHUB_HOST/api/v3/repos/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO/pulls
+                  PR_FILE="/tmp/pr_text.json"
+                  echo "{\"title\":\"$TARGET_PR_TITLE\",\"body\":"\"$BODY\"",\"head\":\"$WORKING_BRANCH\",\"base\":\"$TARGET_BRANCH\"}" > $PR_FILE
+                  cat $PR_FILE
+                  echo "Opening PR against branch $TARGET_BRANCH from branch $WORKING_BRANCH via $GITHUB_API"
+                  PR_URL=$(curl -X POST -s -H "Accept: application/vnd.github+json" -H "$GITHUB_AUTH_HEADER" $GITHUB_API -d @"$PR_FILE" | jq '.url')
+                  if [[ $PR_URL == "null" ]]; then
+                    echo "PR response didn't contain url so call again for debug"
+                    curl -X POST -s -H "Accept: application/vnd.github+json" -H "$GITHUB_AUTH_HEADER" $GITHUB_API -d @"$PR_FILE"
+                    exit 1
+                  else
+                    echo "PR opened against $TARGET_BRANCH here $PR_URL"
+                  fi
+              }
+
+              git config --global user.name "MAS Automation"
+              git config --global user.email "you@example.com"
+              git config --global user.password $GITHUB_PAT
+
+              export TARGET_LOCAL_DIR="/tmp/target_repo"
+              mkdir -p $TARGET_LOCAL_DIR
+              cd $TARGET_LOCAL_DIR
+              echo "git: Cloning $TARGET_GITHUB_HOST:$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO branch $TARGET_GIT_BRANCH into $TARGET_LOCAL_DIR working directory"
+              git clone https://git:$GITHUB_PAT@$TARGET_GITHUB_HOST/$TARGET_GITHUB_ORG/$TARGET_GITHUB_REPO.git -b $TARGET_GIT_BRANCH || exit 
+
+              export FULL_PATH="$TARGET_LOCAL_DIR/$TARGET_GITHUB_REPO/$TARGET_GITHUB_PATH"
+              mkdir -p $FULL_PATH
+
+              echo "Full path to update is $FULL_PATH"
+              echo "Updating to values $CLUSTER_VALUES"
+
+              python3 /tmp/python/yaml_updater.py --path "$FULL_PATH" --values "$CLUSTER_VALUES"
+
+              cd $FULL_PATH
+
+              if [[ $CREATE_TARGET_PR == true ]]; then
+                  #Create a new branch if we need a PR
+                  export TARGET_PR_GIT_BRANCH=$TARGET_GIT_BRANCH
+                  export TARGET_GIT_BRANCH=auto-clusterpromotion-$TARGET_GIT_BRANCH
+                  git branch $TARGET_GIT_BRANCH
+                  git checkout $TARGET_GIT_BRANCH
+              fi
+              echo "git: Adding all files in $TARGET_LOCAL_DIR working directory"
+              FILES_ADDED_OUTPUT="$(git add -v .)"
+              return_code=$?
+              if [ $return_code -ne 0 ]; then
+                echo "git: Add files failed with error: $return_code"
+                exit $return_code
+              fi
+              export FILES_ADDED=$(echo "$FILES_ADDED_OUTPUT" | awk NF | wc -l | xargs)
+              echo "git: Added ${FILES_ADDED} files"
+
+              export COMMIT_MSG="Cluster-promoter for $CLUSTER_ID"
+              if [ "$FILES_ADDED" != "0" ]; then
+                echo "git: Committing files using message $COMMIT_MSG"
+                git commit -m "$COMMIT_MSG" || exit 1
+                retries=5
+                interval=30
+                index=0
+                while true; do
+                  # This section might fail if remote branch doesn't exist
+                  set +e
+                  echo "git: fetch origin $TARGET_GIT_BRANCH"
+                  git fetch origin $TARGET_GIT_BRANCH
+
+                  echo "git: pull origin --rebase"
+                  git pull origin --rebase
+
+                  echo "git: pull origin $TARGET_GIT_BRANCH --rebase"
+                  git pull origin $TARGET_GIT_BRANCH --rebase
+                  set -e
+
+                  echo "git: Pushing changes to branch $TARGET_GIT_BRANCH"
+                  git push -u origin $TARGET_GIT_BRANCH
+                  return_code=$?
+                  if [ $return_code -eq 0 ]; then
+                    echo "git: Pushing changes to branch $TARGET_GIT_BRANCH success"
+                    sleep 10
+                    break
+                  fi
+                
+                  if [[ ${index} -eq ${retries} ]]; then
+                    echo "git: Pushing changes to branch $TARGET_GIT_BRANCH failed even after $retries retries, exit with error"
+                    exit 1
+                  fi
+                  echo "git: Pushing changes to branch $TARGET_GIT_BRANCH failed, retry after $interval sec ..."      
+                  sleep $interval
+                  ((index++))
+                done
+
+                if [[ $CREATE_TARGET_PR == true ]]; then
+                    createPR $TARGET_GIT_BRANCH $TARGET_PR_GIT_BRANCH || exit 1
+                fi
+              else
+                echo "No changes found so no commit made"
+              fi
+
+      restartPolicy: Never
+      volumes:
+        - name: python
+          configMap:
+            name: cluster-promoter-{{ .Values.cluster_id }}-cm
+            items:
+              - key: requirements.txt
+                path: requirements.txt
+              - key: yaml_updater.py
+                path: yaml_updater.py
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4

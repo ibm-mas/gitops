@@ -52,7 +52,7 @@ spec:
             ibm_entitlement_key: "{{ .Values.ibm_mas_suite.ibm_entitlement_key }}"
             domain: "{{ .Values.ibm_mas_suite.domain }}"
             cert_manager_namespace: "{{ .Values.ibm_mas_suite.cert_manager_namespace }}"
-            mas_manual_cert_mgmt: "{{.Values.ibm_mas_suite.mas_manual_cert_mgmt }}"
+            mas_manual_cert_mgmt: {{.Values.ibm_mas_suite.mas_manual_cert_mgmt  }}
             dns_provider: "{{ .Values.ibm_mas_suite.dns_provider }}"
             icr_cp: "{{ .Values.ibm_mas_suite.icr_cp }}"
             icr_cp_open: "{{ .Values.ibm_mas_suite.icr_cp_open }}"
@@ -69,11 +69,15 @@ spec:
             mas_image_tags: {{ .Values.ibm_mas_suite.mas_image_tags | toYaml | nindent 14 }}
             {{- end }}
 
+            {{- if .Values.ibm_mas_suite.mas_pod_templates }}
+            mas_pod_templates: {{ .Values.ibm_mas_suite.mas_pod_templates | toYaml | nindent 14 }}
+            {{- end }}
+
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
 
-            {{- if and (eq .Values.ibm_mas_suite.dns_provider "cis") (eq .Values.ibm_mas_suite.mas_manual_cert_mgmt "False") }}
+            {{- if and (eq .Values.ibm_mas_suite.dns_provider "cis") (not (.Values.ibm_mas_suite.mas_manual_cert_mgmt )) }}
             cis_apikey: "{{ .Values.ibm_mas_suite.cis_apikey }}"
             ocp_cluster_domain: "{{ .Values.ibm_mas_suite.ocp_cluster_domain }}"
             cis_email: "{{ .Values.ibm_mas_suite.cis_email }}"
@@ -89,7 +93,7 @@ spec:
             override_edge_certs: "{{ .Values.ibm_mas_suite.override_edge_certs }}"
             {{- end }}
 
-            {{- if eq .Values.ibm_mas_suite.mas_manual_cert_mgmt "True" }}
+            {{- if .Values.ibm_mas_suite.mas_manual_cert_mgmt }}
 
             {{- if .Values.ibm_mas_suite.ca_cert }}
             ca_cert: |
@@ -113,18 +117,14 @@ spec:
         {{- end }}
   syncPolicy:
     automated:
-      prune: true
+      prune: {{ .Values.auto_delete }}
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - RespectIgnoreDifferences=true
     managedNamespaceMetadata:
       labels:
-        argocd.argoproj.io/instance: {{ $app_name }}
-        argocd.argoproj.io/managed-by: "{{ .Values.argo.namespace }}"
-      annotations:
-        argocd.argoproj.io/tracking-id: >-
-            {{ $app_name }}:/Namespace:{{ $app_dest_ns }}/{{ $app_dest_ns }}
+        app.kubernetes.io/instance: {{ $app_name }}
   ignoreDifferences:
     - group: 'cert-manager.io'
       kind: ClusterIssuer

@@ -21,7 +21,11 @@ metadata:
 spec:
   domain: "{{ .Values.domain }}"
   certManagerNamespace: {{ .Values.cert_manager_namespace | default "cert-manager" }}
-{{- if eq .Values.mas_manual_cert_mgmt "False" }}
+{{- if not (empty .Values.mas_pod_templates) }}
+  podTemplates:
+{{ .Values.mas_pod_templates | toYaml | indent 4 }}
+{{- end }}
+{{- if not .Values.mas_manual_cert_mgmt }}
 {{- if or (eq .Values.dns_provider "akamai") (eq .Values.dns_provider "cis") }}
   certificateIssuer:
     duration: 8760h0m0s

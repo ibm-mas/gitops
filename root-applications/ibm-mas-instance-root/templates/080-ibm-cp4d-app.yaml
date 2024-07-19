@@ -25,6 +25,14 @@ spec:
     kind: IBMLicensing
     jsonPointers:
     - /spec/version
+  # Ignore changes to this Role as the cp4d operator updates it but it is needed to for install
+  - group: 'rbac.authorization.k8s.io'
+    kind: Role
+    name: nss-runtime-managed-role-from-{{ .Values.ibm_cp4d.cpd_operators_namespace }}
+    namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+    jsonPointers:
+    - /rules
+    - /metadata
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
@@ -57,6 +65,25 @@ spec:
             cpd_iam_integration: "{{ .Values.ibm_cp4d.cpd_iam_integration }}"
             cpd_primary_storage_class: "{{ .Values.ibm_cp4d.cpd_primary_storage_class }}"
             cpd_metadata_storage_class: "{{ .Values.ibm_cp4d.cpd_metadata_storage_class }}"
+            {{- if not (empty .Values.ibm_wsl) }}
+            wsl_channel: "{{ .Values.ibm_wsl.wsl_channel }}"
+            {{- end }}
+            {{- if not (empty .Values.ibm_wml) }}
+            wml_channel: "{{ .Values.ibm_wml.wml_channel }}"
+            {{- end }}
+            {{- if not (empty .Values.ibm_spark) }}
+            spark_channel: "{{ .Values.ibm_spark.spark_channel }}"
+            {{- end }}
+            {{- if not (empty .Values.ibm_spss) }}
+            spss_channel: "{{ .Values.ibm_spss.spss_channel }}"
+            {{- end }}
+            {{- if not (empty .Values.ibm_cp4d_services_base) }}
+            ccs_channel: "{{ .Values.ibm_cp4d_services_base.ccs_channel }}"
+            datarefinery_channel: "{{ .Values.ibm_cp4d_services_base.datarefinery_channel }}"
+            ws_runtimes_channel: "{{ .Values.ibm_cp4d_services_base.ws_runtimes_channel }}"
+            opencontent_rabbitmq_channel: "{{ .Values.ibm_cp4d_services_base.opencontent_rabbitmq_channel }}"
+            opencontent_elasticsearch_channel: "{{ .Values.ibm_cp4d_services_base.opencontent_elasticsearch_channel }}"
+            {{- end }}
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
@@ -68,7 +95,7 @@ spec:
         {{- end }}
   syncPolicy:
     automated:
-      prune: true
+      prune: {{ .Values.auto_delete }}
       selfHeal: true
     syncOptions:
       - CreateNamespace=false

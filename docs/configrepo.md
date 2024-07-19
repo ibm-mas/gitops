@@ -43,10 +43,14 @@ The current set of YAML configuration files recognised by MAS GitOps at each lev
 ├── <ACCOUNT_ID>
 │   └── <CLUSTER_ID>
 │       ├── <INSTANCE_ID>
+│       │   ├── ibm-cp4d-services-base.yaml
+│       │   ├── ibm-cp4d.yaml
+│       │   ├── ibm-db2u.yaml
 │       │   ├── ibm-db2u-databases.yaml
 │       │   ├── ibm-mas-instance-base.yaml
 │       │   ├── ibm-mas-masapp-assist-install.yaml
 │       │   ├── ibm-mas-masapp-configs.yaml
+│       │   ├── ibm-mas-masapp-predict-install.yaml
 │       │   ├── ibm-mas-masapp-iot-install.yaml
 │       │   ├── ibm-mas-masapp-manage-install.yaml
 │       │   ├── ibm-mas-masapp-monitor-install.yaml
@@ -56,16 +60,15 @@ The current set of YAML configuration files recognised by MAS GitOps at each lev
 │       │   ├── ibm-mas-suite.yaml
 │       │   ├── ibm-mas-workspaces.yaml
 │       │   ├── ibm-sls.yaml
-│       │   ├── ibm-cp4d.yaml
+│       │   ├── ibm-spss.yaml
+│       │   └── ibm-wml.yaml
 │       │   └── ibm-wsl.yaml
-│       ├── ibm-db2u.yaml
 │       ├── ibm-dro.yaml
 │       ├── ibm-mas-cluster-base.yaml
 │       ├── ibm-operator-catalog.yaml
 │       ├── nvidia-gpu-operator.yaml
 │       └── redhat-cert-manager.yaml
 ```
-
 !!! info
     See {{ gitops_repo_dir_link("example-config") }} for examples of each of these YAML files for a single account, cluster and MAS instance.
 

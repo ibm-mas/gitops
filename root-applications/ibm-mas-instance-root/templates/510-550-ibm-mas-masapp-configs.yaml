@@ -54,6 +54,7 @@ spec:
         - name: {{ $.Values.avp.values_varname }}
           value: |
             instance_id: "{{ $.Values.instance.id }}"
+            mas_catalog_version: "{{ $.Values.mas_catalog_version }}"
             mas_app_id: "{{ $value.mas_app_id }}"
             mas_workspace_id: "{{ $value.mas_workspace_id }}"
             mas_app_namespace: "{{ $value.mas_app_namespace }}"
@@ -61,8 +62,8 @@ spec:
             mas_app_ws_kind: "{{ $value.mas_app_ws_kind }}"
             mas_appws_spec: {{ $value.mas_appws_spec | toYaml | nindent 14 }}
 
-            mas_manual_cert_mgmt: "{{ $value.mas_manual_cert_mgmt }}"
-            {{- if eq $value.mas_manual_cert_mgmt true }}
+            mas_manual_cert_mgmt: {{ $value.mas_manual_cert_mgmt   }}
+            {{- if $value.mas_manual_cert_mgmt  }}
             public_tls_secret_name: "{{ $value.public_tls_secret_name }}"
             ca_cert: |
               {{ $value.ca_cert }}
@@ -76,6 +77,10 @@ spec:
             mas_app_server_bundles_combined_add_server_config: {{ $value.mas_app_server_bundles_combined_add_server_config | toYaml | nindent 14 }}
 
             customization_archive_secret_names: {{ $value.customization_archive_secret_names | toYaml | nindent 14 }}
+
+            manage_logging_secret_name: {{ $value.manage_logging_secret_name }}
+
+            manage_attachments_secret_name: {{ $value.manage_attachments_secret_name }}
 
             {{- end }}
 
@@ -91,7 +96,7 @@ spec:
         {{- end }}
   syncPolicy:
     automated:
-      prune: true
+      prune: {{ $.Values.auto_delete }}
       selfHeal: true
     syncOptions:
       - CreateNamespace=false

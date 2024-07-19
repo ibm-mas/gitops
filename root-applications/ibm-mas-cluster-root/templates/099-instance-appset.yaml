@@ -33,6 +33,11 @@ spec:
               repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-db2u.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
               - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite.yaml"
           - git:
               repoURL: "{{ .Values.generator.repo_url }}"
@@ -108,7 +113,34 @@ spec:
               repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-cp4d-services-base.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
               - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-wsl.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-wml.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-aiopenscale.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-spark.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-spss.yaml"
+  syncPolicy:
+    applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
   template:
     metadata:
       name: "instance.{{ .Values.cluster.id }}.{{ `{{.instance.id}}` }}"
@@ -151,6 +183,8 @@ spec:
               - name: "notifications.slack_channel_id"
                 value: "{{ .Values.notifications.slack_channel_id }}"
                 {{- end }}
+              - name: "mas_catalog_version"
+                value: "{{ .Values.ibm_operator_catalog.mas_catalog_version }}"
               - name: argo.projects.rootapps
                 value: "{{ .Values.argo.projects.rootapps }}"
               - name: argo.projects.apps
@@ -161,12 +195,14 @@ spec:
                 value: "{{ .Values.avp.secret }}"
               - name: avp.values_varname
                 value: "{{ .Values.avp.values_varname }}"
+              - name: auto_delete
+                value: "{{ .Values.auto_delete }}"
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
-          prune: true
+          prune: {{ .Values.auto_delete }}
           selfHeal: true
         syncOptions:
           - CreateNamespace=false

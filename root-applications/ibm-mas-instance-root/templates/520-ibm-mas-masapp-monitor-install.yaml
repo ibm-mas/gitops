@@ -24,7 +24,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: default
+    namespace: "{{ .Values.ibm_suite_app_monitor_install.mas_app_namespace }}"
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: instance-applications/500-540-ibm-mas-suite-app-install
@@ -70,6 +70,11 @@ spec:
       prune: {{ .Values.auto_delete }}
       selfHeal: true
     syncOptions:
-      - CreateNamespace=false
+      - CreateNamespace=true
       - RespectIgnoreDifferences=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
 {{- end }}

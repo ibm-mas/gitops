@@ -26,7 +26,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: default
+    namespace: mas-{{ .Values.instance.id }}-syncres
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: instance-applications/000-ibm-sync-resources
@@ -99,5 +99,10 @@ spec:
       prune: {{ .Values.auto_delete }}
       selfHeal: true
     syncOptions:
-      - CreateNamespace=false
+      - CreateNamespace=true
       - RespectIgnoreDifferences=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}

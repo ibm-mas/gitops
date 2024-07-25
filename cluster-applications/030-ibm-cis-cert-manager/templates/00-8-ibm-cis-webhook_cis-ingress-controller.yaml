@@ -1,0 +1,24 @@
+{{- if and (eq .Values.dns_provider "cis") (.Values.ingress) }}
+---
+apiVersion: operator.openshift.io/v1
+kind: IngressController
+metadata:
+  name: public
+  namespace: openshift-ingress-operator
+spec:
+  domain: "{{ .Values.ocp_public_cluster_domain }}"
+  routeSelector:
+    matchLabels:
+      type: external
+  tuningOptions: {}
+  unsupportedConfigOverrides: null
+  httpErrorCodePages:
+    name: ''
+  replicas: 3
+  httpEmptyRequestsPolicy: Respond
+  endpointPublishingStrategy:
+    loadBalancer:
+      dnsManagementPolicy: Managed
+      scope: Internal
+    type: LoadBalancerService
+{{- end }}

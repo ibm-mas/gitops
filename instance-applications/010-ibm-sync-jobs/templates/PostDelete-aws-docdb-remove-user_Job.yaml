@@ -81,15 +81,23 @@ spec:
               export MAS_CONFIG_DIR="/tmp/${MAS_INSTANCE_ID}/aws_documentdb_user"
               export USER_ACTION="remove"
 
-              # Grab one of the hosts/ports out of docdb master info
-              export DOCDB_HOST=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | yq '.config.hosts[0].host')
-              export DOCDB_PORT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | yq '.config.hosts[0].port')
+              DOCDB_HOST_COUNT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | yq '.config.hosts  | length')
+              while [ ${DOCDB_HOST_COUNT} -gt 0 ]; do
+                DOCDB_HOST_COUNT=$((DOCDB_HOST_COUNT-1))
+                # Grab hosts/ports from docdb master info
+                DOCDB_HOST=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | yq ".config.hosts[$DOCDB_HOST_COUNT].host")
+                DOCDB_PORT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | yq ".config.hosts[$DOCDB_HOST_COUNT].port")
+                DOCDB_HOSTS="$DOCDB_HOSTS$DOCDB_HOST:$DOCDB_PORT,"
+              done
+              # remove trailing comma
+              export DOCDB_HOSTS=${DOCDB_HOSTS%,}
 
               echo "Params:"
               echo "    - MAS_INSTANCE_ID         ................... ${MAS_INSTANCE_ID}"
               echo "    - MAS_CONFIG_DIR          ................... ${MAS_CONFIG_DIR}"
               echo "    - DOCDB_HOST              ................... ${DOCDB_HOST}"
               echo "    - DOCDB_PORT              ................... ${DOCDB_PORT}"
+              echo "    - DOCDB_HOSTS             ................... ${DOCDB_HOSTS}"
               echo "    - DOCDB_MASTER_USERNAME   ................... ${DOCDB_MASTER_USERNAME:0:2}<snip>"
               echo "    - DOCDB_MASTER_PASSWORD   ................... ${DOCDB_MASTER_PASSWORD:0:2}<snip>"
               echo "    - DOCDB_INSTANCE_PASSWORD ................... ${DOCDB_INSTANCE_PASSWORD:0:2}<snip>"

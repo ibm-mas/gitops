@@ -68,18 +68,60 @@ spec:
                   name: aws
                   key: aws_secret_access_key
 
+            - name: MAS_WIPE_MONGO_DATA
+              value: "{{ .Values.mas_wipe_mongo_data }}"
+
           command:
             - /bin/sh
             - -c
             - |
+
+
+              if [[ "${MAS_WIPE_MONGO_DATA}" == "true" ]]; then
+                echo
+                echo "================================================================================"
+                echo "Wiping data from Mongo for MAS instance ${MAS_INSTANCE_ID}"
+                echo "================================================================================"
+
+                export ROLE_NAME=mongodb
+                export MONGODB_ACTION=destroy-data
+                export MONGODB_PROVIDER=aws
+
+                # Map DOCDB_MASTER_INFO YAML into structure expected by destroy-data role
+                # Just need to remove the top-level key
+                export CONFIG=$(echo "${DOCDB_MASTER_INFO}" | yq '.config')
+
+                # We seem to permit the "info" attribute of the mongo secret in AWS (DOCDB_MASTER_INFO here) provide certificates either as "certificates" (at the top level), or "config.certificate".
+                # There is existing code elsewhere to cope with both alternatives;
+                # e.g. https://github.com/ibm-mas/cli/blob/03a9499e6bb433d28ed3f928f92fd0b8ce7f4e73/image/cli/mascli/templates/gitops/appset-configs/cluster/instance/configs/ibm-mas-mongo-config.yaml.j2#L32
+                # So this script will also have to allow either to be used
+                export CERTIFICATES=$(echo "${DOCDB_MASTER_INFO}" | yq '.certificates // .config.certificate')
+
+                export MONGO_USERNAME="${DOCDB_MASTER_USERNAME}"
+                export MONGO_PASSWORD="${DOCDB_INSTANCE_PASSWORD}"
+
+                echo "Params:"
+                echo "    - MAS_INSTANCE_ID         ................... ${MAS_INSTANCE_ID}"
+                echo "    - ROLE_NAME               ................... ${ROLE_NAME}"
+                echo "    - MONGODB_ACTION          ................... ${MONGODB_ACTION}"
+                echo "    - MONGODB_PROVIDER        ................... ${MONGODB_PROVIDER}"
+                echo "    - MONGO_USERNAME          ................... ${MONGO_USERNAME:0:2}<snip>"
+                echo "    - MONGO_PASSWORD          ................... ${MONGO_PASSWORD:0:2}<snip>"
+                echo "    - CONFIG                  ................... ${CONFIG}"
+                echo "    - CERTIFICATES            ................... ${CERTIFICATES}"
+
+                ansible-playbook ibm.mas_devops.run_role
+                rc=$?
+                echo "Role mongodb with action destroy-data completed with rc=${rc}"
+                [ $rc -ne 0 ] && exit $rc
+              fi
+
 
               echo
               echo "================================================================================"
               echo "/opt/app-root/src/run-role.sh aws_documentdb_user"
               echo "================================================================================"
 
-              export MAS_CONFIG_DIR="/tmp/${MAS_INSTANCE_ID}/aws_documentdb_user"
-              export USER_ACTION="remove"
 
               DOCDB_HOST_COUNT=$(echo "${DOCDB_MASTER_INFO}" | sed 's/\\n/\n/g' | sed 's/\\"//g' | yq '.config.hosts  | length')
               while [ ${DOCDB_HOST_COUNT} -gt 0 ]; do
@@ -103,6 +145,10 @@ spec:
               echo "    - DOCDB_INSTANCE_PASSWORD ................... ${DOCDB_INSTANCE_PASSWORD:0:2}<snip>"
               echo "    - USER_ACTION             ................... ${USER_ACTION}"
               echo
+
+
+              export MAS_CONFIG_DIR="/tmp/${MAS_INSTANCE_ID}/aws_documentdb_user"
+              export USER_ACTION="remove"
 
               mkdir -p ${MAS_CONFIG_DIR}
               /opt/app-root/src/run-role.sh aws_documentdb_user || exit $?

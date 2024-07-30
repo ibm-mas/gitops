@@ -100,13 +100,13 @@ spec:
 
                 # Map DOCDB_MASTER_INFO YAML into structure expected by destroy-data role
                 # Just need to remove the top-level key
-                export CONFIG=$(echo "${DOCDB_MASTER_INFO}" | yq '.config')
+                export CONFIG=$(echo "${DOCDB_MASTER_INFO}" | yq '.config' --output-format=json)
 
                 # We seem to permit the "info" attribute of the mongo secret in AWS (DOCDB_MASTER_INFO here) provide certificates either as "certificates" (at the top level), or "config.certificate".
                 # There is existing code elsewhere to cope with both alternatives;
                 # e.g. https://github.com/ibm-mas/cli/blob/03a9499e6bb433d28ed3f928f92fd0b8ce7f4e73/image/cli/mascli/templates/gitops/appset-configs/cluster/instance/configs/ibm-mas-mongo-config.yaml.j2#L32
                 # So this script will also have to allow either to be used
-                export CERTIFICATES=$(echo "${DOCDB_MASTER_INFO}" | yq '.certificates // .config.certificate')
+                export CERTIFICATES=$(echo "${DOCDB_MASTER_INFO}" | yq '.certificates // .config.certificate' --output-format=json)
 
                 export MONGO_USERNAME="${DOCDB_INSTANCE_USERNAME}"
                 export MONGO_PASSWORD="${DOCDB_INSTANCE_PASSWORD}"

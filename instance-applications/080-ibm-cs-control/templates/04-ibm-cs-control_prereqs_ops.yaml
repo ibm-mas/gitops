@@ -1,0 +1,63 @@
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: ibm-licensing-operator-app
+  namespace: "{{ .Values.cpd_cs_control_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+  labels:
+    operators.coreos.com/ibm-licensing-operator-app.{{ .Values.cpd_cs_control_namespace }}: ''
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  channel: "{{ .Values.cpd_ibm_licensing_channel }}"
+  installPlanApproval: Automatic
+  name: ibm-licensing-operator-app
+  source: ibm-operator-catalog
+  sourceNamespace: openshift-marketplace
+
+---
+apiVersion: operator.ibm.com/v1alpha1
+kind: IBMLicensing
+metadata:
+  name: instance-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "085"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  datasource: datacollector
+  httpsEnable: true
+  license:
+    accept: true
+  resources: {}
+  usageContainer:
+    resources: {}
+  version: "{{ .Values.cpd_ibm_licensing_version }}"
+  
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: common-service-maps-{{ .Values.instance_id }}
+  namespace: kube-public
+  labels:
+    operator.ibm.com/managedByCsOperator: 'true'
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+data:
+  common-service-maps.yaml: |
+    controlNamespace: {{ .Values.cpd_cs_control_namespace }}
+    namespaceMapping:
+    - map-to-common-service-namespace: {{ .Values.cpd_instance_namespace }}
+      requested-from-namespace:
+      - {{ .Values.cpd_instance_namespace }}
+      - {{ .Values.cpd_operators_namespace }}

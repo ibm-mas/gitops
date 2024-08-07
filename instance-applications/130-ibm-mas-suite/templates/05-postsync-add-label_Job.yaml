@@ -43,6 +43,31 @@ rules:
       - "route.openshift.io"
     resources:
       - routes
+  - verbs:
+      - get
+      - list
+      - patch
+      - scale
+    apiGroups:
+      - ''
+      - apps
+      - zen.cpd.ibm.com
+      - operator.ibm.com
+    resources:
+      - deployments
+      - zenservices
+      - secrets
+      - commonservices
+      - deployments/scale
+  - verbs:
+      - get
+      - patch
+      - create
+      - update
+    apiGroups:
+      - ''
+    resources:
+      - serviceaccounts
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -63,7 +88,7 @@ subjects:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-admin
+  name: sync-mas-route-prereq-role-{{ .Values.instance_id }}
 
 ---
 apiVersion: batch/v1
@@ -112,6 +137,8 @@ spec:
               echo
 
               echo "Wait for Suite Routes to be ready"
+              echo "oc get Suite -n $SUITE_NAMESPACE -o NAME"
+              `oc get Suite -n $SUITE_NAMESPACE -o NAME`
               wait_period=0
               while true; do
                 wait_period=$(($wait_period+60))
@@ -119,11 +146,11 @@ spec:
                   echo "Suite Routes is not ready after 20 minutes of waiting. exiting..."
                   exit 1
                 else
-                  sleep 60
                   echo "sleep for 1 minute"
+                  sleep 60
                 fi
 
-                echo "oc get Suite -n $SUITE_NAMESPACE -o NAME"
+
                 SUITE_NAME=$(oc get Suite -n $SUITE_NAMESPACE -o NAME)
                 echo "SUITE_NAME == ${SUITE_NAME}"
 

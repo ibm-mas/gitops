@@ -34,6 +34,9 @@ spec:
             - name: MAS_INSTANCE_ID
               value: "{{ .Values.instance_id }}"
 
+            - name: SECRETS_KEY_SEPERATOR
+              value: "/"
+
             # dns
             - name: DNS_PROVIDER
               value: "{{ .Values.dns_provider }}"
@@ -50,6 +53,8 @@ spec:
               value: "{{ .Values.cis_subdomain }}"
             - name: CIS_PROXY
               value: "{{ .Values.cis_proxy }}"
+            - name: SM_AWS_REGION
+              value: "{{ .Values.sm_aws_region }}"
 
             # Hard-coded for now:
             - name: AVP_TYPE
@@ -64,11 +69,20 @@ spec:
             - |
 
               set -e
+
+
               export MAS_CONFIG_DIR=${MAS_CONFIG_DIR:-"/tmp/suite_certs/configs"}
 
               export CIS_APIKEY=$(cat /etc/mas/creds/suite_certs/cis_apikey)
               MAS_MANUAL_CERTS_YAML=/etc/mas/creds/suite_certs/manual_certs.yaml
-
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/suite_dns/sm_aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/suite_dns/sm_aws_secret_access_key)
+              source /mascli/functions/gitops_utils
+              sm_login
+              #if DNS name is set in AWS SM path account/cluster/public-elb#dns, set that name to OCP_INGRESS
+              export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"
+              sm_get_secret_file ${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}public-elb#dns ${PUBLIC_ELB_DNS_NAME_FILE}
+              export OCP_INGRESS=$(jq -r .name $PUBLIC_ELB_DNS_NAME_FILE)
               echo ""
               echo "================================================================================"
               echo "Settings"
@@ -82,7 +96,7 @@ spec:
               echo "IBM CLOUD APIKEY .................... ${COLOR_MAGENTA}${CIS_APIKEY:0:4}<snip>"
               echo "CIS subdomain ....................... ${COLOR_MAGENTA}${CIS_SUBDOMAIN}"
               echo "CIS proxy ........................... ${COLOR_MAGENTA}${CIS_PROXY}"
-
+              echo "OCP_INGRESS  ........................ ${COLOR_MAGENTA}${OCP_INGRESS}"
               echo "MAS Manual Certs YAML location ...... ${COLOR_MAGENTA}${MAS_MANUAL_CERTS_YAML}"
 
               echo ""

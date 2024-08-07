@@ -1,10 +1,10 @@
 {{- if not (empty .Values.ibm_cp4d) }}
 ---
-# IBM CP4D
+# IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cp4d.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: cp4doperator.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -25,21 +25,13 @@ spec:
     kind: IBMLicensing
     jsonPointers:
     - /spec/version
-  # Ignore changes to this Role as the cp4d operator updates it but it is needed to for install
-  - group: 'rbac.authorization.k8s.io'
-    kind: Role
-    name: nss-runtime-managed-role-from-{{ .Values.ibm_cp4d.cpd_operators_namespace }}
-    namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
-    jsonPointers:
-    - /rules
-    - /metadata
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: {{ .Values.ibm_cp4d.cpd_instance_namespace }}
+    namespace: {{ .Values.ibm_cp4d.cpd_operators_namespace }}
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/080-ibm-cp4d
+    path: instance-applications/080-ibm-cp4d-operators
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
@@ -88,7 +80,7 @@ spec:
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
         - name: ARGOCD_APP_NAME
-          value: cp4dapp
+          value: cp4doperatorapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}

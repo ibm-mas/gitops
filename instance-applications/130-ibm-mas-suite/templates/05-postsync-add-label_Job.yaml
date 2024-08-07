@@ -130,7 +130,9 @@ spec:
                 fi
               done
 
-              export ROUTELIST=$(oc get routes -n $SUITE_NAMESPACE -o go-template --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')
+              oc get routes -n ${SUITE_NAMESPACE}
+
+              export ROUTELIST=$(oc get routes -n ${SUITE_NAMESPACE} -o go-template --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')
               echo "Add label to routes ${ROUTELIST}"
 
               for ROUTE in $ROUTELIST do
@@ -138,6 +140,7 @@ spec:
                 oc patch route/${ROUTE} -p '{"metadata":{"labels":{"type":"external"}}}'
               done
 
+              sleep 9000
       restartPolicy: Never
       serviceAccountName: "mas-route-sa"
   backoffLimit: 4

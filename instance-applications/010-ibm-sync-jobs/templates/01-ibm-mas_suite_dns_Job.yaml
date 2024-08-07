@@ -33,6 +33,9 @@ spec:
             - name: MAS_INSTANCE_ID
               value: "{{ .Values.instance_id }}"
 
+            - name: SECRETS_KEY_SEPERATOR
+              value: "/"
+
             # dns
             - name: DNS_PROVIDER
               value: "{{ .Values.dns_provider }}"
@@ -91,11 +94,17 @@ spec:
               set -e
 
               source /mascli/functions/gitops_utils
+              sm_login
 
               export CIS_APIKEY=$(cat /etc/mas/creds/suite_dns/cis_apikey)
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/suite_dns/sm_aws_access_key_id)
               export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/suite_dns/sm_aws_secret_access_key)
 
+
+              #if DNS name is set in AWS SM path account/cluster/public-elb#dns, set that name to OCP_INGRESS
+              export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"
+              sm_get_secret_file ${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}/public-elb#dns ${PUBLIC_ELB_DNS_NAME_FILE}
+              export OCP_INGRESS=$(jq -r .name $PUBLIC_ELB_DNS_NAME_FILE)
 
               echo ""
               echo "================================================================================"
@@ -123,6 +132,7 @@ spec:
               echo "DELETE_WILDCARDS Flag ............... ${COLOR_MAGENTA}${DELETE_WILDCARDS}"
               echo "OVERRIDE_EDGE_CERTS Flag ............ ${COLOR_MAGENTA}${OVERRIDE_EDGE_CERTS}"
 
+              echo "OCP_INGRESS  ........................ ${COLOR_MAGENTA}${OCP_INGRESS}"
               echo "SM_AWS_REGION ....................... ${COLOR_MAGENTA}${SM_AWS_REGION}"
               echo "SM_AWS_ACCESS_KEY_ID ................ ${COLOR_MAGENTA}${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
               echo "SM_AWS_SECRET_ACCESS_KEY ............ ${COLOR_MAGENTA}${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"

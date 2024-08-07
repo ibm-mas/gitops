@@ -1,16 +1,41 @@
 {{- if .Values.ingress }}
 
 {{ $ns               :=  .Values.mas_app_namespace }}
+
+{{ $job_label :=  "mas-app-route-patch" }}
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: mas-app-route-np
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
 ---
 # Service account that is authorized to read k8s secrets (needed by the job)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: mas-route-sa-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
+  name: mas-app-route-sa
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "100"
-    argocd.argoproj.io/hook: PostSync
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -18,43 +43,11 @@ metadata:
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: sync-mas-route-prereq-role-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "100"
-    argocd.argoproj.io/hook: PostSync
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-  - verbs:
-      - get
-      - patch
-      - create
-      - update
-    apiGroups:
-      - ""
-    resources:
-      - secrets
-  - verbs:
-      - get
-      - patch
-      - create
-      - update
-    apiGroups:
-      - "route.openshift.io"
-    resources:
-      - routes
----
-apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: sync-mas-route-prereq-rb-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
+  name: mas-route-prereq-rb-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
   annotations:
     argocd.argoproj.io/sync-wave: "101"
-    argocd.argoproj.io/hook: PostSync
 
 {{- if .Values.custom_labels }}
   labels:
@@ -62,7 +55,7 @@ metadata:
 {{- end }}
 subjects:
   - kind: ServiceAccount
-    name: mas-route-sa-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
+    name: mas-app-route-sa
     namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -73,20 +66,20 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "mas-route-patch-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}-v1-{{ .Values | toYaml | adler32sum }}"
+  name: "mas-app-route-patch-v1-{{ .Values | toYaml | adler32sum }}"
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "102"
-    argocd.argoproj.io/hook: PostSync
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
   template:
-{{- if .Values.custom_labels }}
     metadata:
       labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
@@ -164,7 +157,7 @@ spec:
               fi
 
       restartPolicy: Never
-      serviceAccountName: "mas-route-sa-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}"
+      serviceAccountName: "mas-app-route-sa"
   backoffLimit: 4
 
 {{- end }}

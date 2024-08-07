@@ -40,55 +40,9 @@ metadata:
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: mas-route-prereq-role-{{ .Values.instance_id }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "140"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-  - verbs:
-      - get
-      - patch
-      - create
-      - update
-    apiGroups:
-      - ""
-    resources:
-      - secrets
-  - verbs:
-      - get
-      - patch
-      - create
-      - update
-    apiGroups:
-      - "route.openshift.io"
-    resources:
-      - routes
-  - verbs:
-      - get
-      - list
-      - patch
-      - update
-    apiGroups:
-      - ''
-      - suites.core.mas.ibm.com
-      - assistworkspaces.apps.mas.ibm.com
-      - healthextworkspaces.apps.mas.ibm.com
-      - healthworkspaces.apps.mas.ibm.com
-      - iotworkspaces.iot.ibm.com
-      - manageworkspaces.apps.mas.ibm.com
-      - visualinspectionappworkspaces.apps.mas.ibm.com
-    resources:
-      - customresourcedefinitions
----
-apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: sync-mas-route-prereq-rb-{{ .Values.instance_id }}
+  name: mas-route-prereq-rb-{{ .Values.instance_id }}
   annotations:
     argocd.argoproj.io/sync-wave: "141"
 
@@ -103,7 +57,7 @@ subjects:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: mas-route-prereq-role-{{ .Values.instance_id }}
+  name: cluster-admin
 
 ---
 apiVersion: batch/v1
@@ -153,8 +107,6 @@ spec:
               echo
 
               echo "Wait for Suite Routes to be ready"
-              echo "oc get Suite -n $SUITE_NAMESPACE -o NAME"
-              `oc get Suite -n $SUITE_NAMESPACE -o NAME`
               wait_period=0
               while true; do
                 wait_period=$(($wait_period+60))
@@ -162,7 +114,6 @@ spec:
                   echo "Suite Routes is not ready after 20 minutes of waiting. exiting..."
                   exit 1
                 else
-                  echo "sleep for 1 minute"
                   sleep 60
                 fi
 

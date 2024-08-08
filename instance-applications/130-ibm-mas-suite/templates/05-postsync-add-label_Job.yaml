@@ -38,6 +38,70 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mas-route-prereq-role-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "140"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - patch
+      - create
+      - update
+    apiGroups:
+      - "route.openshift.io"
+    resources:
+      - routes
+  - verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    apiGroups:
+      - core.mas.ibm.com
+    resources:
+      - suites
+  - verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    apiGroups:
+      - apps.mas.ibm.com
+    resources:
+      - assistworkspaces
+      - healthextworkspaces
+      - healthworkspaces
+      - manageworkspaces
+      - visualinspectionappworkspaces
+      - workspaces
+  - verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    apiGroups:
+      - iot.ibm.com
+    resources:
+      - iotworkspaces
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -57,7 +121,7 @@ subjects:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-admin
+  name: mas-route-prereq-role-{{ .Values.instance_id }}
 
 ---
 apiVersion: batch/v1
@@ -134,7 +198,7 @@ spec:
               echo "Add label to routes updated ${routes}"
 
               for route in $routes; do
-                echo "Adding label to route $route"
+                echo "Adding label to route - ${route}"
                 oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}'
               done
       restartPolicy: Never

@@ -1,0 +1,175 @@
+{{- if .Values.ingress }}
+
+{{ $job_label :=  "mas-route-patch" }}
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: mas-route-np
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "140"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mas-route-sa
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "140"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mas-route-prereq-role-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "140"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - patch
+    apiGroups:
+      - "route.openshift.io"
+    resources:
+      - routes
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - core.mas.ibm.com
+    resources:
+      - suites
+
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mas-route-prereq-rb-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "141"
+
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: mas-route-sa
+    namespace: mas-{{ .Values.instance_id }}-core
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mas-route-prereq-role-{{ .Values.instance_id }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "mas-route-patch-v1-{{ .Values | toYaml | adler32sum }}"
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "142"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: SUITE_NAMESPACE
+              value: mas-{{ .Values.instance_id }}-core
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "Wait for Suite Routes to be ready and add label type=external to routes"
+              echo "================================================================================"
+              echo
+
+              echo "Wait for Suite Routes to be ready"
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+60))
+                if [ $wait_period -gt 3600 ]; then
+                  echo "Suite Routes is not ready after 20 minutes of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 60
+                fi
+
+
+                SUITE_NAME=$(oc get Suite -n $SUITE_NAMESPACE -o NAME)
+                echo "SUITE_NAME == ${SUITE_NAME}"
+
+                export ROUTES_READY=$(oc get ${SUITE_NAME} -n ${SUITE_NAMESPACE} -o=jsonpath="{.status.conditions[?(@.type=='RoutesReady')].status}")
+                echo "ROUTES_READY == ${ROUTES_READY}"
+
+                if [[ "${ROUTES_READY}" == "True" ]]; then
+                  echo "Suite Routes are now in ready status"
+                  break
+                fi
+              done
+
+              export routes=$(oc get routes -n ${SUITE_NAMESPACE} -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+              echo "Add label to routes updated ${routes}"
+
+              for route in $routes; do
+                echo "Adding label to route - ${route}"
+                oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}'
+              done
+      restartPolicy: Never
+      serviceAccountName: "mas-route-sa"
+  backoffLimit: 4
+
+{{- end }}
+

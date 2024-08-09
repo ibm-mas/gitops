@@ -1,0 +1,203 @@
+{{- if .Values.ingress }}
+
+{{ $ns        :=  .Values.mas_app_namespace }}
+{{ $job_label :=  "mas-app-route-patch" }}
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: mas-app-route-np
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mas-app-route-sa
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mas-app-route-prereq-role-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - patch
+    apiGroups:
+      - "route.openshift.io"
+    resources:
+      - routes
+
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - apps.mas.ibm.com
+    resources:
+      - assistworkspaces
+      - healthextworkspaces
+      - healthworkspaces
+      - manageworkspaces
+      - visualinspectionappworkspaces
+      - workspaces
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - iot.ibm.com
+    resources:
+      - iotworkspaces
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mas-app-route-prereq-rb-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "101"
+
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: mas-app-route-sa
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mas-app-route-prereq-role-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "mas-app-route-patch-v1-{{ .Values | toYaml | adler32sum }}"
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "102"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: MAS_APP_NAMESPACE
+              value: {{ .Values.mas_app_namespace }}
+            - name: MAS_APP_ID
+              value: {{ .Values.mas_app_id }}
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "Wait for App workspaces to be ready and add label type=external to routes"
+              echo "================================================================================"
+              echo
+
+              declare -A mas_app_workspace_name
+              mas_app_workspace_name['iot']="IoTWorkspace"
+              mas_app_workspace_name['manage']="ManageWorkspace"
+              mas_app_workspace_name['monitor']="MonitorWorkspace"
+              mas_app_workspace_name['assist']="AssistWorkspace"
+              mas_app_workspace_name['optimizer']="OptimizerWorkspace"
+              mas_app_workspace_name['predict']="PredictWorkspace"
+              mas_app_workspace_name['visualinspection']="VisualInspectionAppWorkspace"
+
+              if [[ -n "${mas_app_workspace_name[$MAS_APP_ID]}" ]]; then
+
+                echo "Wait for App Workspaces to be ready"
+                wait_period=0
+                while true; do
+                  wait_period=$(($wait_period+60))
+                  if [ $wait_period -gt 21600 ]; then
+                    echo "App workspaces is not ready after 6 hours of waiting. exiting..."
+                    exit 1
+                  else
+                    sleep 60
+                  fi
+
+                  MAS_APP_WORKSPACE_NAME=${mas_app_workspace_name[$MAS_APP_ID]}
+                  MAS_APP_NAME=$(oc get $MAS_APP_WORKSPACE_NAME -n $MAS_APP_NAMESPACE -o NAME)
+                  echo "MAS_APP_NAME == ${MAS_APP_NAME}"
+
+                  export MAS_APP_READY=$(oc get ${MAS_APP_NAME} -n ${MAS_APP_NAMESPACE} -o=jsonpath="{.status.conditions[?(@.type=='Ready')].status}")
+                  echo "MAS_APP_READY == ${MAS_APP_READY}"
+
+                  if [[ "${MAS_APP_READY}" == "True" ]]; then
+                    echo "${MAS_APP_NAME} is in ready status"
+                    break
+                  fi
+                done
+
+                export routes=$(oc get routes -n ${MAS_APP_NAMESPACE} -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+                echo "Add label to routes ${routes}"
+
+                for route in $routes; do
+                  echo "Adding label to route - ${route}"
+                  oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}'
+                done
+              fi
+
+      restartPolicy: Never
+      serviceAccountName: "mas-app-route-sa"
+  backoffLimit: 4
+
+{{- end }}

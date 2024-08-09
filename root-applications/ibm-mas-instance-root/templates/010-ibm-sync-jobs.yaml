@@ -86,11 +86,11 @@ spec:
 
             {{- end }}
 
-
-
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
+
+            mas_wipe_mongo_data: {{ .Values.mas_wipe_mongo_data }}
 
         - name: ARGOCD_APP_NAME
           value: syncres
@@ -100,7 +100,9 @@ spec:
         {{- end }}
   syncPolicy:
     automated:
-      prune: {{ .Values.auto_delete }}
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
       selfHeal: true
     syncOptions:
       - CreateNamespace=false

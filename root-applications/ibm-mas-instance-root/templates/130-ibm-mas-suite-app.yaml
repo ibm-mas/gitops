@@ -56,6 +56,7 @@ spec:
             dns_provider: "{{ .Values.ibm_mas_suite.dns_provider }}"
             icr_cp: "{{ .Values.ibm_mas_suite.icr_cp }}"
             icr_cp_open: "{{ .Values.ibm_mas_suite.icr_cp_open }}"
+            ingress: "{{ .Values.ibm_mas_suite.ingress }}"
 
             {{- if .Values.ibm_mas_suite.mas_annotations }}
             mas_annotations: {{ .Values.ibm_mas_suite.mas_annotations | toYaml | nindent 14 }}
@@ -117,14 +118,18 @@ spec:
         {{- end }}
   syncPolicy:
     automated:
-      prune: {{ .Values.auto_delete }}
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - RespectIgnoreDifferences=true
     managedNamespaceMetadata:
       labels:
-        app.kubernetes.io/instance: {{ $app_name }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
   ignoreDifferences:
     - group: 'cert-manager.io'
       kind: ClusterIssuer

@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+
+<html class="writer-html5" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://pages.github.com/ibm-mas/gitops/main/configtoinstances/" rel="canonical"/>
+<link href="../img/favicon.ico" rel="shortcut icon"/>
+<title>Mapping Config to MAS Deployments - MAS GitOps</title>
+<link href="../css/theme.css" rel="stylesheet"/>
+<link href="../css/theme_extra.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" rel="stylesheet"/>
+<link href="../extra.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/gh/fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" rel="stylesheet"/>
+<link href="../css/version-select.css" rel="stylesheet"/>
+<script>
+        // Current page data
+        var mkdocs_page_name = "Mapping Config to MAS Deployments";
+        var mkdocs_page_input_path = "configtoinstances.md";
+        var mkdocs_page_url = "/ibm-mas/gitops/main/configtoinstances/";
+      </script>
+<!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+<script>hljs.highlightAll();</script>
+</head>
+<body class="wy-body-for-nav" role="document">
+<div class="wy-grid-for-nav">
+<nav class="wy-nav-side stickynav" data-toggle="wy-nav-shift">
+<div class="wy-side-scroll">
+<div class="wy-side-nav-search">
+<a class="icon icon-home" href=".."> MAS GitOps
+        </a>
+</div>
+<div aria-label="Navigation menu" class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+</li>
+</ul>
+<p class="caption"><span class="caption-text">Architecture</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../architecture/">Overview</a>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../helmcharts/">The Source Repository</a>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../configrepo/">The Config Repository</a>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../secrets/">The Secrets Vault</a>
+</li>
+</ul>
+<p class="caption"><span class="caption-text">Details</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal current" href="#">Mapping Config to MAS Deployments</a>
+<ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="#the-account-root-application">The Account Root Application</a>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#the-cluster-root-application-set">The Cluster Root Application Set</a>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#the-cluster-root-application">The Cluster Root Application</a>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#the-instance-root-application-set">The Instance Root Application Set</a>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#the-instance-root-application">The Instance Root Application</a>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../orchestration/">Deployment Orchestration</a>
+</li>
+</ul>
+<p class="caption"><span class="caption-text">Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../accountrootmanifest/">Account Root Application Manifest</a>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../limitations/">Known Limitations</a>
+</li>
+</ul>
+</div>
+</div>
+</nav>
+<section class="wy-nav-content-wrap" data-toggle="wy-nav-shift">
+<nav aria-label="Mobile navigation menu" class="wy-nav-top" role="navigation">
+<i class="fa fa-bars" data-toggle="wy-nav-top"></i>
+<a href="..">MAS GitOps</a>
+</nav>
+<div class="wy-nav-content">
+<div class="rst-content"><div aria-label="breadcrumbs navigation" role="navigation">
+<ul class="wy-breadcrumbs">
+<li><a aria-label="Docs" class="icon icon-home" href=".."></a></li>
+<li class="breadcrumb-item">Details</li>
+<li class="breadcrumb-item active">Mapping Config to MAS Deployments</li>
+<li class="wy-breadcrumbs-aside">
+<a class="icon icon-github" href="https://github.com/ibm-mas/gitops/blob/main/docs/configtoinstances.md"> Edit on GitHub</a>
+</li>
+</ul>
+<hr/>
+</div>
+<div class="document" itemscope="itemscope" itemtype="http://schema.org/Article" role="main">
+<div class="section" itemprop="articleBody">
+<h1 id="mapping-config-to-mas-deployments">Mapping Config to MAS Deployments<a class="headerlink" href="#mapping-config-to-mas-deployments" title="Permanent link"></a></h1>
+<p>A combination of <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/">ArgoCD Application Sets</a> and the <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern">App of Apps pattern</a> is used by MAS GitOps to generate a tree of ArgoCD Applications that install and manage MAS instances in <strong>Target Clusters</strong> based on the configuration files in the <strong>Config Repository</strong>.</p>
+<p>The tree of Applications and Application Sets looks like this:</p>
+<p><div class="mxgraph" data-mxgraph='{"highlight":"#0000ff","nav":true,"resize":true,"toolbar":"zoom layers tags lightbox","edit":"_blank","xml":"&lt;mxfile host=\"Electron\" modified=\"2024-08-07T21:17:04.423Z\" agent=\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/24.6.4 Chrome/124.0.6367.207 Electron/30.0.6 Safari/537.36\" version=\"24.6.4\" etag=\"08vjqMRO2S39ZF--8Acr\" type=\"device\"&gt;  &lt;diagram id=\"ml8bYYsEtUAZJTW_Lftc\" name=\"Page-1\"&gt;    &lt;mxGraphModel dx=\"2464\" dy=\"1648\" grid=\"1\" gridSize=\"10\" guides=\"0\" tooltips=\"1\" connect=\"1\" arrows=\"1\" fold=\"1\" page=\"0\" pageScale=\"1\" pageWidth=\"827\" pageHeight=\"1169\" background=\"#ffffff\" math=\"0\" shadow=\"0\"&gt;      &lt;root&gt;        &lt;mxCell id=\"0\"/&gt;        &lt;mxCell id=\"1\" parent=\"0\"/&gt;        &lt;mxCell id=\"151\" value=\"\" style=\"rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;strokeWidth=1;fontSize=20;fillColor=#9C9C9C;fillStyle=cross-hatch;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"-370\" y=\"750\" width=\"2430\" height=\"340\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"160\" value=\"\" style=\"rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;strokeWidth=1;fontSize=20;fillColor=#9C9C9C;fillStyle=cross-hatch;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"-10\" y=\"140\" width=\"1690\" height=\"140\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"146\" value=\"\" style=\"rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;strokeWidth=1;fontSize=20;fillColor=#9C9C9C;fillStyle=cross-hatch;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"-10\" y=\"410\" width=\"1690\" height=\"180\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"117\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"2\" target=\"3\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"2\" value=\"Account Root\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#000000;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"631.6616821289062\" y=\"50\" width=\"190\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"116\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"3\" target=\"107\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"3\" value=\"Cluster Root Appset\" style=\"shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#008a00;fontColor=#ffffff;strokeColor=#000000;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"631.6616821289062\" y=\"180\" width=\"190\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"134\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"5\" target=\"125\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"1345\" y=\"610\"/&gt;              &lt;mxPoint x=\"801\" y=\"610\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"5\" value=\"Instance Root Appset\" style=\"shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#008a00;fontColor=#ffffff;strokeColor=#000000;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"1250\" y=\"500\" width=\"190\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"11\" value=\"Operator Catalog\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"145\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"13\" value=\"Cert Manager\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"315\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"14\" value=\"DRO\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"485\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"15\" value=\"CIS Compliance\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"655\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"16\" value=\"NFD\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"825\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"17\" value=\"DB2U\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"1530\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"26\" value=\"MAS Suite\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"510\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"34\" value=\"SLS\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"170\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"50\" value=\"CP4D\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"118\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"107\" target=\"11\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"726\" y=\"440\"/&gt;              &lt;mxPoint x=\"215\" y=\"440\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"119\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"107\" target=\"13\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"726\" y=\"440\"/&gt;              &lt;mxPoint x=\"385\" y=\"440\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"120\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"107\" target=\"14\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"726\" y=\"440\"/&gt;              &lt;mxPoint x=\"555\" y=\"440\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"121\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"107\" target=\"15\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"122\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"107\" target=\"16\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"726\" y=\"440\"/&gt;              &lt;mxPoint x=\"895\" y=\"440\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"124\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"107\" target=\"5\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"726\" y=\"440\"/&gt;              &lt;mxPoint x=\"1345\" y=\"440\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"107\" value=\"&amp;lt;span style=&amp;quot;color: rgb(255, 255, 255); font-family: Helvetica; font-size: 20px; font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; letter-spacing: normal; orphans: 2; text-indent: 0px; text-transform: none; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial; float: none; display: inline !important;&amp;quot;&amp;gt;Cluster Roots&amp;lt;/span&amp;gt;\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"632.004248046875\" y=\"299\" width=\"190\" height=\"80\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"136\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"34\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"801\" y=\"780\"/&gt;              &lt;mxPoint x=\"240\" y=\"780\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"137\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"129\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"801\" y=\"780\"/&gt;              &lt;mxPoint x=\"410\" y=\"780\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"138\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"26\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"801\" y=\"780\"/&gt;              &lt;mxPoint x=\"580\" y=\"780\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"139\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"130\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"801\" y=\"780\"/&gt;              &lt;mxPoint x=\"750\" y=\"780\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"140\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"131\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"801\" y=\"780\"/&gt;              &lt;mxPoint x=\"920\" y=\"780\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"141\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"132\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"801\" y=\"780\"/&gt;              &lt;mxPoint x=\"1090\" y=\"780\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"142\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"133\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"801\" y=\"780\"/&gt;              &lt;mxPoint x=\"1260\" y=\"780\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"145\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=3;fontSize=20;orthogonal=1;\" parent=\"1\" source=\"125\" target=\"143\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"801\" y=\"780\"/&gt;              &lt;mxPoint x=\"1430\" y=\"780\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-185\" style=\"edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0;exitDx=100;exitDy=80;exitPerimeter=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeWidth=3;curved=0;\" edge=\"1\" parent=\"1\" source=\"125\" target=\"WCPXIc9LmJP7Mr7B8AD5-183\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"806\" y=\"780\"/&gt;              &lt;mxPoint x=\"160\" y=\"780\"/&gt;              &lt;mxPoint x=\"160\" y=\"960\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-186\" style=\"edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0;exitDx=100;exitDy=80;exitPerimeter=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeWidth=3;curved=0;\" edge=\"1\" parent=\"1\" source=\"125\" target=\"WCPXIc9LmJP7Mr7B8AD5-184\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"806\" y=\"780\"/&gt;              &lt;mxPoint x=\"160\" y=\"780\"/&gt;              &lt;mxPoint x=\"160\" y=\"1040\"/&gt;            &lt;/Array&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"125\" value=\"Instance Roots\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"706\" y=\"660\" width=\"190\" height=\"80\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"129\" value=\"DB2 Databases\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#d80073;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;strokeWidth=2;fontStyle=1;fontSize=20;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"340\" y=\"840\" width=\"140\" height=\"80\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"130\" value=\"MAS Suite Config\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#d80073;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"680\" y=\"840\" width=\"140\" height=\"80\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"131\" value=\"MAS Suite Workspaces\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#d80073;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"850\" y=\"840\" width=\"140\" height=\"80\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"132\" value=\"MAS App Installs\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#d80073;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"1020\" y=\"840\" width=\"140\" height=\"80\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"133\" value=\"MAS App Configs\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#d80073;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"1190\" y=\"840\" width=\"140\" height=\"80\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"143\" value=\"WSL\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"1360\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"152\" value=\"\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;endArrow=none;\" parent=\"1\" source=\"125\" target=\"151\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"801\" y=\"780\"/&gt;            &lt;/Array&gt;            &lt;mxPoint x=\"801.0476190476188\" y=\"740\" as=\"sourcePoint\"/&gt;            &lt;mxPoint x=\"70\" y=\"850\" as=\"targetPoint\"/&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"162\" value=\"&amp;lt;font style=&amp;quot;font-size: 20px;&amp;quot;&amp;gt;ibm-mas-account-root&amp;lt;/font&amp;gt;\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#009999;strokeColor=#000000;fontSize=36;fontColor=#ffffff;strokeWidth=1;fontStyle=1;spacingLeft=42;align=left;spacing=0;verticalAlign=middle;spacingTop=-11;fillStyle=solid;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"-10\" y=\"90\" width=\"270\" height=\"50\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"163\" value=\"\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=https://helm.sh/img/helm.svg;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry y=\"100\" width=\"25.99\" height=\"30\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"148\" value=\"&amp;lt;font style=&amp;quot;font-size: 20px;&amp;quot;&amp;gt;ibm-mas-cluster-root&amp;lt;/font&amp;gt;\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#009999;strokeColor=#000000;fontSize=36;fontColor=#ffffff;strokeWidth=1;fontStyle=1;spacingLeft=42;align=left;spacing=0;verticalAlign=middle;spacingTop=-11;fillStyle=solid;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"-10\" y=\"360\" width=\"270\" height=\"50\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"149\" value=\"\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=https://helm.sh/img/helm.svg;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry y=\"370\" width=\"25.99\" height=\"30\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"158\" value=\"&amp;lt;font style=&amp;quot;font-size: 20px;&amp;quot;&amp;gt;ibm-mas-instance-root&amp;lt;/font&amp;gt;\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#009999;strokeColor=#000000;fontSize=36;fontColor=#ffffff;strokeWidth=1;fontStyle=1;spacingLeft=42;align=left;spacing=0;verticalAlign=middle;spacingTop=-11;fillStyle=solid;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"-10\" y=\"700\" width=\"270\" height=\"50\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"159\" value=\"\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=https://helm.sh/img/helm.svg;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry y=\"710\" width=\"25.99\" height=\"30\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"165\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=3;fontSize=20;orthogonal=1;\" parent=\"1\" source=\"125\" target=\"17\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"800\" y=\"780\"/&gt;              &lt;mxPoint x=\"1610\" y=\"780\"/&gt;            &lt;/Array&gt;            &lt;mxPoint x=\"811\" y=\"750\" as=\"sourcePoint\"/&gt;            &lt;mxPoint x=\"1440\" y=\"860\" as=\"targetPoint\"/&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"166\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"50\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"800\" y=\"780\"/&gt;              &lt;mxPoint x=\"70\" y=\"780\"/&gt;            &lt;/Array&gt;            &lt;mxPoint x=\"811\" y=\"750\" as=\"sourcePoint\"/&gt;            &lt;mxPoint x=\"590\" y=\"860\" as=\"targetPoint\"/&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"170\" value=\"WML\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"1690\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"171\" value=\"AI OpenScale\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"1850\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"174\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=3;fontSize=20;orthogonal=1;\" parent=\"1\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"800\" y=\"780\"/&gt;              &lt;mxPoint x=\"1610\" y=\"780\"/&gt;            &lt;/Array&gt;            &lt;mxPoint x=\"800\" y=\"740\" as=\"sourcePoint\"/&gt;            &lt;mxPoint x=\"1610\" y=\"850\" as=\"targetPoint\"/&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"175\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=3;fontSize=20;orthogonal=1;\" parent=\"1\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"800\" y=\"740\"/&gt;              &lt;mxPoint x=\"800\" y=\"780\"/&gt;              &lt;mxPoint x=\"1760\" y=\"780\"/&gt;            &lt;/Array&gt;            &lt;mxPoint x=\"800\" y=\"760\" as=\"sourcePoint\"/&gt;            &lt;mxPoint x=\"1760\" y=\"850\" as=\"targetPoint\"/&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"176\" style=\"edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=1;entryDx=0;entryDy=0;\" parent=\"1\" source=\"170\" target=\"170\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"177\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=3;fontSize=20;orthogonal=1;\" parent=\"1\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"800\" y=\"780\"/&gt;              &lt;mxPoint x=\"1920\" y=\"780\"/&gt;            &lt;/Array&gt;            &lt;mxPoint x=\"800\" y=\"740\" as=\"sourcePoint\"/&gt;            &lt;mxPoint x=\"1920\" y=\"850\" as=\"targetPoint\"/&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"178\" value=\"Spark\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"-150\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"179\" value=\"SPSS Modeler\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;          &lt;mxGeometry x=\"-310\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"180\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"800\" y=\"740\"/&gt;              &lt;mxPoint x=\"800\" y=\"780\"/&gt;              &lt;mxPoint x=\"-240\" y=\"780\"/&gt;            &lt;/Array&gt;            &lt;mxPoint x=\"800\" y=\"740\" as=\"sourcePoint\"/&gt;            &lt;mxPoint x=\"-240\" y=\"850\" as=\"targetPoint\"/&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"181\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" edge=\"1\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"800\" y=\"740\"/&gt;              &lt;mxPoint x=\"800\" y=\"780\"/&gt;              &lt;mxPoint x=\"-80\" y=\"780\"/&gt;            &lt;/Array&gt;            &lt;mxPoint x=\"800\" y=\"750\" as=\"sourcePoint\"/&gt;            &lt;mxPoint x=\"-80\" y=\"850\" as=\"targetPoint\"/&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-181\" value=\"NVIDIA GPU\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" vertex=\"1\" parent=\"1\"&gt;          &lt;mxGeometry x=\"990\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-182\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;entryX=0.5;entryY=0;entryDx=0;entryDy=0;\" edge=\"1\" parent=\"1\" target=\"WCPXIc9LmJP7Mr7B8AD5-181\"&gt;          &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;            &lt;Array as=\"points\"&gt;              &lt;mxPoint x=\"730\" y=\"389\"/&gt;              &lt;mxPoint x=\"730\" y=\"440\"/&gt;              &lt;mxPoint x=\"1060\" y=\"440\"/&gt;            &lt;/Array&gt;            &lt;mxPoint x=\"736\" y=\"389\" as=\"sourcePoint\"/&gt;            &lt;mxPoint x=\"905\" y=\"510\" as=\"targetPoint\"/&gt;          &lt;/mxGeometry&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-183\" value=\"CP4D Operators\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" vertex=\"1\" parent=\"1\"&gt;          &lt;mxGeometry y=\"930\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;        &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-184\" value=\"CP4D CS Control\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" vertex=\"1\" parent=\"1\"&gt;          &lt;mxGeometry y=\"1010\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;        &lt;/mxCell&gt;      &lt;/root&gt;    &lt;/mxGraphModel&gt;  &lt;/diagram&gt;&lt;/mxfile&gt;"}' style="max-width:100%;border:1px solid transparent;"></div></p>
+<p>The following describes <em>how</em> this tree is generated.</p>
+<h2 id="the-account-root-application">The Account Root Application<a class="headerlink" href="#the-account-root-application" title="Permanent link"></a></h2>
+<p>It begins with the <strong>Account Root Application</strong>. This is created directly on the cluster running ArgoCD. It serves as the "entrypoint" to the MAS GitOps Helm Charts and is where several key pieces of global configuration values are provided.</p>
+<p>The manifest for the <strong>Account Root Application</strong> in our example is shown in the snippet below. The account ID, source repo, config (aka "generator") repo are configured here.</p>
+<pre><code class="language-yaml">apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root.dev
+  namespace: openshift-gitops
+spec:
+  destination:
+    namespace: openshift-gitops
+    server: 'https://kubernetes.default.svc'
+  project: "mas"
+  source:
+    path: root-applications/ibm-mas-account-root
+    repoURL: https://github.com/ibm-mas/gitops
+    targetRevision: master
+    helm:
+      values: |
+        account:
+          id: dev
+
+        source:
+          repo_url: "https://github.com/ibm-mas/gitops"
+          revision: "mas"
+
+        generator:
+          repo_url: "https://github.com/me/my-config-repo"
+          revision: "main"
+
+        argo:
+          namespace: "openshift-gitops"
+</code></pre>
+<p>The  <strong>Account Root Application</strong> establishes the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a>.</p>
+<h2 id="the-cluster-root-application-set">The Cluster Root Application Set<a class="headerlink" href="#the-cluster-root-application-set" title="Permanent link"></a></h2>
+<p>The <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> generates a set of <strong>Cluster Root Applications</strong> based on the configuration in the <strong>Config Repository</strong>.</p>
+<p>The <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> employs an ArgoCD <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Merge/">Merge Generator</a> with a list of ArgoCD <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/#git-generator-files">Git File Generators</a>. The Git File Generators monitor for named YAML configuration files at the cluster level in the <strong>Config Repository</strong> and the Merge Generator combines each of these files into a single YAML object per MAS cluster. </p>
+<p>A simplified and abridged snippet showing the Merge and Git File generators from the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> template is shown below:</p>
+<pre><code class="language-yaml">spec:
+  ...
+  generators:
+    - merge:
+        mergeKeys:
+          - 'merge-key'
+        generators:
+          - git:
+              files:
+              - path: "{{ .Values.account.id }}/*/ibm-mas-cluster-base.yaml"
+          - git:
+              files:
+              - path: "{{ .Values.account.id }}/*/ibm-operator-catalog.yaml"
+          ...
+</code></pre>
+<p>To illustrate, the following shows an example <strong>Config Repository</strong> that defines  a <code>dev</code> account containing configuration for two <strong>Target Clusters</strong> (<code>cluster1</code> and <code>cluster2</code>). These are the files that the Git File Generators above are looking for.</p>
+<pre><code class="language-none">├── dev
+│   ├── cluster1
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+│   └── cluster2
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+</code></pre>
+<p>Now let's take a look at the contents of these files:</p>
+<pre><code>├── dev
+│   ├── cluster1
+|   |   |-------------------------------------------
+│   │   ├── ibm-mas-cluster-base.yaml
+|   |   |-------------------------------------------
+|   |   |   merge-key: "dev/cluster1"
+|   |   |   account:
+|   |   |     id: dev
+|   |   |   cluster:
+|   |   |     id: cluster1
+|   |   |     url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+|   |   |
+|   |   |-------------------------------------------
+│   │   ├── ibm-operator-catalog.yaml
+|   |   |-------------------------------------------
+|   |   |   merge-key: "dev/cluster1"
+|   |   |   ibm_operator_catalog:
+|   |   |      mas_catalog_version: v8-240430-amd64
+|   |   |
+│   └── cluster2
+|   |   |-------------------------------------------
+│   │   ├── ibm-mas-cluster-base.yaml
+|   |   |-------------------------------------------
+|   |   |   merge-key: "dev/cluster2"
+|   |   |   account:
+|   |   |      id: dev
+|   |   |   cluster:
+|   |   |     id: cluster2
+|   |   |     url: https://api.cluster2.jsig.p3.openshiftapps.com:443
+|   |   |
+|   |   |-------------------------------------------
+│   │   ├── ibm-operator-catalog.yaml
+|   |   |-------------------------------------------
+|   |   |   merge-key: "dev/cluster2"
+|   |   |   ibm_operator_catalog:
+|   |   |   mas_catalog_version: v8-240405-amd64
+</code></pre>
+<p>All of the files contain a <code>merge-key</code> which includes the account ID and the cluster ID (e.g. <code>dev/cluster1</code>). This is used by the Merge generator to group together configuration into per-cluster YAML objects.</p>
+<p>The <code>ibm-mas-cluster-base.yaml</code> file contains global configuration for the cluster, including the <code>account.id</code>, and the <code>cluster.id</code> and the <code>cluster.url</code> which determines the <strong>Target Cluster</strong> that ArgoCD will deploy resources to.</p>
+<p>The other YAML configuration files (such as <code>ibm-operator-catalog.yaml</code> shown above) represent one type of cluster-level resource that we wish to install on the <strong>Target Cluster</strong>.</p>
+<p>Given the config above, <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> generates two YAML objects:</p>
+<pre><code class="language-yaml"> merge-key: "dev/cluster1"
+ account:
+   id: dev
+ cluster:
+   id: cluster1
+   url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+ ibm_operator_catalog:
+   mas_catalog_version: v8-240430-amd64
+</code></pre>
+<pre><code class="language-yaml"> merge-key: "dev/cluster2"
+ account:
+   id: dev
+ cluster:
+   id: cluster2
+   url: https://api.cluster2.jsig.p3.openshiftapps.com:443
+ ibm_operator_catalog:
+   mas_catalog_version: v8-240405-amd64
+</code></pre>
+<p>The generated YAML objects are used to render the template defined in the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> to generate <strong>Cluster Root Applications</strong> in the <strong>Management Cluster</strong>.</p>
+<ul>
+<li>
+<p><a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/">Go Template</a> expressions are used to inject <strong>cluster-specific</strong> configuration from the cluster's YAML object into the template (e.g. <code>{{.cluster.id}}</code>).</p>
+</li>
+<li>
+<p>Global configuration that applies to all clusters is passed down from the Helm values used to render the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> template (e.g. <code>{{ .Values.source.repo_url }}</code>).</p>
+</li>
+</ul>
+<p>A simplified and abridged snippet of the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> template is shown below, followed by a breakdown of the purpose of each section:</p>
+<pre><code class="language-yaml">  template:
+    metadata:
+      name: "cluster.{{ `{{.cluster.id}}` }}"
+      ...
+    spec:
+      source:
+        path: root-applications/ibm-mas-cluster-root
+        helm:
+          values: "{{ `{{ toYaml . }}` }}"
+
+        parameters:
+          - name: "source.repo_url"
+            value: "{{ .Values.source.repo_url }}"
+          - name: "argo.namespace"
+            value: "{{ .Values.argo.namespace }}"
+
+      destination:
+        server: 'https://kubernetes.default.svc'
+        namespace: {{ .Values.argo.namespace }}
+</code></pre>
+<div class="admonition info">
+<p class="admonition-title">What are the backticks for?</p>
+<p>Since the <strong>Cluster Root Application Set</strong> is itself a Helm template (rendered by the <strong>Account Root Application</strong>) we need to tell Helm to not attempt to parse the Go Template expressions, treating them as literals instead. This is achieved by wrapping the Go Template expressions in backticks. The expressions in the snippet above will be rendered by Helm as <code>"cluster.{{.cluster.id}}"</code> and <code>"{{ toYaml . }}"</code>.</p>
+</div>
+<p>The <strong>Cluster Root Applications</strong> are named according to their ID:</p>
+<pre><code class="language-yaml">template:
+  metadata:
+    name: "cluster.{{ `{{.cluster.id}}` }}"
+</code></pre>
+<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a>:</p>
+<pre><code class="language-yaml">      source:
+        path: root-applications/ibm-mas-cluster-root
+</code></pre>
+<p>The entire cluster's YAML object is passed in as Helm values to the <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a>:</p>
+<pre><code class="language-yaml">        helm:
+          values: "{{ `{{ toYaml . }}` }}"
+</code></pre>
+<p>Additional global configuration parameters (such as details of the <strong>Source Repository</strong> and the namespace where ArgoCD is running) set on the the <strong>Account Root Application</strong> are passed down as additional Helm parameters:</p>
+<pre><code class="language-yaml">        arameters:
+          - name: "source.repo_url"
+            value: "{{ .Values.source.repo_url }}"
+          - name: "argo.namespace"
+            value: "{{ .Values.argo.namespace }}"
+</code></pre>
+<p><strong>Cluster Root Applications</strong> are created in the ArgoCD namespace on the <strong>Management Cluster</strong>:</p>
+<pre><code class="language-yaml">      destination:
+        server: 'https://kubernetes.default.svc'
+        namespace: {{ .Values.argo.namespace }}
+</code></pre>
+<p>Given the config above, two <strong>Cluster Root Applications</strong> are generated:</p>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: cluster.cluster1
+spec:
+  source:
+    path: root-applications/ibm-mas-cluster-root
+    helm:
+      values: |-
+        merge-key: dev/cluster1`
+        account:
+          id: dev
+        cluster:
+          id: cluster1
+          url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+        ibm_operator_catalog:
+          mas_catalog_version: v8-240430-amd64
+      parameters:
+        - name: source.repo_url
+          value: "https://github.com/..."
+        - name: argo.namespace
+          value: "openshift-gitops"
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: openshift-gitops
+</code></pre>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: cluster.cluster2
+spec:
+  source:
+    path: root-applications/ibm-mas-cluster-root
+    helm:
+      values: |-
+        merge-key: dev/cluster2`
+        account:
+          id: dev
+        cluster:
+          id: cluster2
+          url: https://api.cluster2.jsig.p3.openshiftapps.com:443
+        ibm_operator_catalog:
+          mas_catalog_version: v8-240405-amd64
+      parameters:
+        - name: source.repo_url
+        - value: "https://github.com/..."
+        - name: argo.namespace
+          value: "openshift-gitops"
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: openshift-gitops
+</code></pre>
+<h2 id="the-cluster-root-application">The Cluster Root Application<a class="headerlink" href="#the-cluster-root-application" title="Permanent link"></a></h2>
+<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> into the ArgoCD namespace of the <strong>Management Cluster</strong>. </p>
+<p>The <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> contains templates to conditionally render ArgoCD Applications that deploy cluster-wide resources to <strong>Target Clusters</strong> once the configuration for those resources is present in the <strong>Config Repository</strong>.</p>
+<p>Application-specific configuration is held under a unique top-level field. For example, the <code>ibm_operator_catalog</code> field in our example above holds all configuration for the <a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a>. The <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a> that renders this chart is guarded by:</p>
+<pre><code class="language-yaml">
+{{- if not (empty .Values.ibm_operator_catalog) }}
+
+</code></pre>
+<p>Continuing with our example, because <code>ibm_operator_catalog</code> is present in the Helm values for both <strong>Cluster Root Applications</strong>, both will render the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a> into the respective <strong>Target Cluster</strong>.</p>
+<p>A simplified and abridged snippet of the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app template</a> is shown below, followed by a breakdown of the purpose of each section:</p>
+<pre><code class="language-yaml">
+kind: Application
+metadata:
+  name: operator-catalog.{{ .Values.cluster.id }}
+spec:
+  source:
+    path: cluster-applications/000-ibm-operator-catalog
+    plugin:
+      name: argocd-vault-plugin-helm
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_catalog_version: "{{ .Values.ibm_operator_catalog.mas_catalog_version  }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+
+</code></pre>
+<p>The template generates an <strong>Operator Catalog Application</strong> named according to its type (<code>operator-catalog</code>) and includes the cluster ID:</p>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: operator-catalog.{{ .Values.cluster.id }}
+</code></pre>
+<p>The <strong>Operator Catalog Application</strong> renders the <a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a>:</p>
+<pre><code class="language-yaml">spec:
+  source:
+    path: cluster-applications/000-ibm-operator-catalog
+</code></pre>
+<p>Values are mapped from those in the <strong>Cluster Root Application</strong> manifest into the form expected by the <a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a>. </p>
+<pre><code class="language-yaml">    plugin:
+      name: argocd-vault-plugin-helm
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_catalog_version: "{{ .Values.ibm_operator_catalog.mas_catalog_version  }}"
+</code></pre>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>Some of these values (not shown here) will be <a href="https://argocd-vault-plugin.readthedocs.io/en/stable/howitworks/#inline-path-placeholders">inline-path placeholders</a> for referencing secrets in the <strong>Secrets Vault</strong>, so we pass the values in via the AVP plugin source (rather than the <code>helm</code> source):</p>
+</div>
+<p>Finally, the resources in the <a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog chart</a> should created on the <strong>Target Cluster</strong> in order to install the IBM operator catalog there:</p>
+<pre><code class="language-yaml">  destination:
+  server: {{ .Values.cluster.url }}
+</code></pre>
+<p>For our example configuration, two <strong>Operator Catalog Applications</strong> will be generated:</p>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: operator-catalog.cluster1
+spec:
+  destination:
+    server: https://api.cluster1.cakv.p3.openshiftapps.com:443
+  source:
+    path: cluster-applications/000-ibm-operator-catalog
+    plugin:
+      name: argocd-vault-plugin-helm
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_catalog_version: "v8-240430-amd64"
+</code></pre>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: operator-catalog.cluster2
+spec:
+  destination:
+    server: https://api.cluster2.jsig.p3.openshiftapps.com:443
+  source:
+    path: cluster-applications/000-ibm-operator-catalog
+    plugin:
+      name: argocd-vault-plugin-helm
+      env:
+        - name: HELM_VALUES
+          value: |
+            mas_catalog_version: "v8-240405-amd64"
+</code></pre>
+<p>The other Application templates in the <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> (e.g. <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml">010-ibm-redhat-cert-manager-app.yaml</a>, <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml">020-ibm-dro-app.yaml</a> and so on) all follow this pattern and work in a similar way.</p>
+<p>The <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> also includes the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">Instance Root Application Set</a> template which generates a new <strong>Instance Root Application Set</strong> for each cluster.</p>
+<h2 id="the-instance-root-application-set">The Instance Root Application Set<a class="headerlink" href="#the-instance-root-application-set" title="Permanent link"></a></h2>
+<p>The <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">Instance Root Application Set</a>  generates a set of <strong>Instance Root Applications</strong> based on the configuration in the <strong>Config Repository</strong>. It follows the same pattern as the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> as described <a href="#the-cluster-root-application-set">above</a>. </p>
+<p>The key differences are:</p>
+<ul>
+<li><code>merge-keys</code> in the instance-level configuration YAML files also contain a MAS instance ID, e.g. <code>dev/cluster1/instance1</code>.</li>
+<li>The generated <strong>Instance Root Applications</strong> source the <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-instance-root">ibm-mas-instance-root Chart</a>.</li>
+<li>The Git File Generators look for a different set of named YAML files at the <strong>instance</strong> level in the <strong>Config Repository</strong>:</li>
+</ul>
+<p>A simplified and abridged snippet showing the Merge and Git File generators from the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">Instance Root Application Set</a> template is shown below:</p>
+<pre><code class="language-yaml">spec:
+  ...
+  generators:
+    - merge:
+        mergeKeys:
+          - 'merge-key'
+        generators:
+          - git:
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-mas-instance-base.yaml"
+          - git:
+              files:
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-mas-suite.yaml"
+</code></pre>
+<p>Continuing with our example, let's add some additional instance-level config files to the <strong>Config Repository</strong> (only showing <code>cluster1</code> this time for brevity). These are the files that the Git File Generators above are looking for.</p>
+<pre><code>├── dev
+│   ├── cluster1
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+│   |   ├── instance1
+│   |   │   ├── ibm-mas-instance-base.yaml
+│   |   │   ├── ibm-mas-suite.yaml
+</code></pre>
+<p>Now let's take a look at the contents of the new instance-level files:</p>
+<pre><code>├── dev
+│   ├── cluster1
+│   │   ├── ibm-mas-cluster-base.yaml
+│   │   ├── ibm-operator-catalog.yaml
+│   |   ├── instance1
+|   |   |   |-------------------------------------------
+│   |   │   ├── ibm-mas-instance-base.yaml
+|   |   |   |-------------------------------------------
+|   |   |   |   merge-key: "dev/cluster1/instance1"
+|   |   |   |   account:
+|   |   |   |     id: dev
+|   |   |   |   cluster:
+|   |   |   |     id: cluster1
+|   |   |   |     url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+|   |   |   |   instance:
+|   |   |   |     id: instance1
+|   |   |   |  
+|   |   |   |-------------------------------------------
+│   |   │   ├── ibm-mas-suite.yaml
+|   |   |   |-------------------------------------------
+|   |   |   |   merge-key: "dev/cluster1/instance1"
+|   |   |   |   ibm_mas_suite:
+|   |   |   |     mas_channel: "8.11.x"
+...
+</code></pre>
+<p>As with the cluster-level config, all files contain the <code>merge-key</code>, but this times it also includes the MAS instance ID. This is used by the Merge generator to group together configuration into per-instance YAML objects for each <strong>Target Cluster</strong>.</p>
+<p>The <code>ibm-mas-instance-base.yaml</code> file contains global configuration for the instance on the <strong>Target Cluster</strong>, including the <code>account.id</code>, and the <code>cluster.id</code>, the <code>cluster.url</code> and the <code>instance.id</code>.</p>
+<p>The other YAML configuration files (such as <code>ibm-mas-suite.yaml</code> shown above) represent one type of instance-level resource that we wish to install on the <strong>Target Cluster</strong>.</p>
+<p>Given the config above, the <function define_env.\<locals="">.instance_root_app_set at 0x7f5b07593910&gt; would generate one YAML object:</function></p>
+<pre><code class="language-yaml">merge-key: "dev/cluster1/instance1"
+account:
+  id: dev
+cluster:
+  id: cluster1
+  url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+instance:
+  id: instance1
+ibm_mas_suite:
+  mas_channel: "8.11.x"
+</code></pre>
+<p>Follow the same pattern used in the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a> as described <a href="#the-cluster-root-application-set">above</a>, the  YAML object is used to render tje <strong>Instance Root Application Set</strong> template, generating an <strong>Instance Root Application</strong>:</p>
+<pre><code class="language-yaml">kind: Application
+metadata:
+  name: instance.cluster1.instance1
+spec:
+  source:
+    path: root-applications/ibm-mas-instance-root
+    helm:
+      values: |-
+        merge-key: dev/cluster1/instance1
+        account:
+          id: dev
+        cluster:
+          id: cluster1
+          url: https://api.cluster1.cakv.p3.openshiftapps.com:443
+        instance:
+          id: instance1
+        ibm_mas_suite:
+          mas_channel: "8.11.x"
+      parameters:
+        - name: source.repo_url
+          value: "https://github.com/..."
+        - name: argo.namespace
+          value: "openshift-gitops"
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: openshift-gitops
+</code></pre>
+<p>. </p>
+<h2 id="the-instance-root-application">The Instance Root Application<a class="headerlink" href="#the-instance-root-application" title="Permanent link"></a></h2>
+<p><strong>Instance Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-instance-root">Instance Root Chart</a> into the ArgoCD namespace of the <strong>Management Cluster</strong>.</p>
+<p>The <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-instance-root">Instance Root Chart</a> contains templates to conditionally render ArgoCD Applications that deploy MAS instances to <strong>Target Clusters</strong> once the configuration for the ArgoCD Application is present in the <strong>Config Repository</strong>.</p>
+<p>It follows the same pattern as the <strong>Cluster Root Application</strong> described <a href="#the-cluster-root-application">above</a>; specific applications are enabled once their configuration is pushed to the <strong>Config Repository</strong>. For instance, the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml">130-ibm-mas-suite-app.yaml template</a> generates an Application that deploys the MAS <code>Suite</code> CR to the target cluster once configuration under the <code>ibm_mas_suite</code> key is present.</p>
+<p>Some special templates are capable of generating multiple applications: </p>
+<ul>
+<li><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml">120-db2-databases-app.yaml</a></li>
+<li><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml">130-ibm-mas-suite-configs-app.yaml</a></li>
+<li><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/200-ibm-mas-workspaces.yaml">200-ibm-mas-workspaces.yaml</a></li>
+<li><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/510-550-ibm-mas-masapp-configs">510-550-ibm-mas-masapp-configs</a></li>
+</ul>
+<p>These are used when there can be more than one instance of the <em>type</em> of resource that these Applications are responsible for managing. </p>
+<p>For example, MAS instances may require more than one DB2 Database. To accommodate this, we make use of the Helm <code>range</code> control structure to iterate over a list in YAML configuration files in the <strong>Config Repository</strong>.</p>
+<p>For instance, the <code>ibm-db2u-databases.yaml</code> configuration file contains:</p>
+<pre><code class="language-yaml">ibm_db2u_databases:
+  - mas_application_id: iot
+    db2_memory_limits: 12Gi
+    ...
+  - mas_application_id: manage
+    db2_memory_limits: 16Gi
+    db2_database_db_config:
+      CHNGPGS_THRESH: '40'
+      ...
+    ...
+</code></pre>
+<p>The <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml">120-db2-databases-app.yaml template</a> iterates over this list to generate multiple DB2 Database Applications configured as needed:</p>
+<pre><code class="language-yaml">
+{{- range $i, $value := .Values.ibm_db2u_databases }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: "db2-db.{{ $.Values.cluster.id }}.{{ $.Values.instance.id }}.{{ $value.mas_application_id }}"
+...
+{{- end}}
+
+</code></pre>
+<div class="admonition info">
+<p class="admonition-title">Why not use ApplicationSets here?</p>
+<p>We encountered some limitations when using ApplicationSets for this purpose. For instance, Applications generated by ApplicationSets do not participate in the <a href="https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/">ArgoCD syncwave</a> with other Applications so we would have no way of ensuring that resources would be configured in the correct order. By using the Helm <code>range</code> control structure we generate "normal" Applications that do not suffer from this limitation. This means, for instance, that we can ensure that DB2 Databases are configured <strong>before</strong> attempting to provide the corresponding JDBC configuration to MAS.</p>
+</div>
+</div>
+</div><footer>
+<hr/>
+<div role="contentinfo">
+<!-- Copyright etc -->
+</div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+</div>
+</div>
+</section>
+</div>
+<div aria-label="Versions" class="rst-versions" role="note">
+<span class="rst-current-version" data-toggle="rst-current-version">
+<span>
+<a class="fa fa-github" href="https://github.com/ibm-mas/gitops" style="color: #fcfcfc"> GitHub</a>
+</span>
+<span><a href="../secrets/" style="color: #fcfcfc">« Previous</a></span>
+<span><a href="../orchestration/" style="color: #fcfcfc">Next »</a></span>
+</span>
+</div>
+<script src="../js/jquery-3.6.0.min.js"></script>
+<script>var base_url = "..";</script>
+<script src="../js/theme_extra.js"></script>
+<script src="../js/theme.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js"></script>
+<script src="../js/version-select.js"></script>
+<script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+<script src="https://viewer.diagrams.net/js/viewer-static.min.js"></script></body>
+</html>

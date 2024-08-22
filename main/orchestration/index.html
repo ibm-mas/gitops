@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="canonical" href="https://pages.github.com/ibm-mas/gitops/main/orchestration/" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Deployment Orchestration - MAS GitOps</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+        <link href="../extra.css" rel="stylesheet" />
+        <link href="https://cdn.jsdelivr.net/gh/fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" rel="stylesheet" />
+        <link href="../css/version-select.css" rel="stylesheet" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Deployment Orchestration";
+        var mkdocs_page_input_path = "orchestration.md";
+        var mkdocs_page_url = "/ibm-mas/gitops/main/orchestration/";
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> MAS GitOps
+        </a>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Architecture</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../architecture/">Overview</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../helmcharts/">The Source Repository</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../configrepo/">The Config Repository</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../secrets/">The Secrets Vault</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Details</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../configtoinstances/">Mapping Config to MAS Deployments</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Deployment Orchestration</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#automated-sync-policies">Automated Sync Policies</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#sync-waves">Sync Waves</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#custom-resource-healthchecks">Custom Resource Healthchecks</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#resource-hooks">Resource Hooks</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#presync-hooks">PreSync Hooks</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#postsync-hooks">"PostSync" Hooks</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#postdelete-hooks">PostDelete Hooks</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Reference</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../accountrootmanifest/">Account Root Application Manifest</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../limitations/">Known Limitations</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">MAS GitOps</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+          <li class="breadcrumb-item">Details</li>
+      <li class="breadcrumb-item active">Deployment Orchestration</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/ibm-mas/gitops/blob/main/docs/orchestration.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="deployment-orchestration">Deployment Orchestration<a class="headerlink" href="#deployment-orchestration" title="Permanent link"></a></h1>
+<p>The MAS GitOps Helm Charts have been developed with the aim of simplifying the orchestration of MAS deployments as much as possible. 
+Once a <strong>Target Cluster</strong> has been provisioned and registered with the ArgoCD instance running in the <strong>Management Cluster</strong>, MAS instances can be deployed and managed on that <strong>Target Cluster</strong> solely by registering secrets in the <strong>Secrets Vault</strong> and pushing configuration files to the <strong>Config Repository</strong>. There is no need to run any commands against ArgoCD or the <strong>Target Cluster</strong> to initiate or control synchronization.</p>
+<p>This is achieved using a combination of the following ArgoCD mechanisms:</p>
+<ul>
+<li><a href="https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/#automated-sync-policy">Automated Sync Policies</a></li>
+<li><a href="https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/">Sync Waves</a></li>
+<li><a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/health/#custom-health-checks">Custom Resource Healthchecks</a></li>
+<li><a href="https://argo-cd.readthedocs.io/en/stable/user-guide/resource_hooks/">Resource Hooks</a></li>
+</ul>
+<h2 id="automated-sync-policies">Automated Sync Policies<a class="headerlink" href="#automated-sync-policies" title="Permanent link"></a></h2>
+<p>The ArgoCD Application Set git generators poll the <strong>Config Repository</strong> every three minutes and will automatically pick up configuration files pushed the the <strong>Config Repository</strong>.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>If needed, ArgoCD can be configured to <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/#webhook-configuration">receive webhook events</a> to eliminate the inherent delay introduced by the default polling behaviour.</p>
+</div>
+<p>The resulting MAS GitOps Applications will be automatically synced as they have an automated sync policy:</p>
+<pre><code class="language-yaml">syncPolicy:
+  automated:
+    selfHeal: true
+    prune: true
+</code></pre>
+<p>In addition:</p>
+<ul>
+<li><a href="https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/#automatic-self-healing"><code>selfHeal: true</code></a>: causes ArgoCD to trigger a sync if changes are made to a ArgoCD-managed resource in the live cluster by something other than ArgoCD (e.g. a human operator). This forces any updates to MAS configuration to be made by pushing a commit to the <strong>Config Repository</strong>, ensuring that the configuration in the <strong>Config Repository</strong> is always the "source of truth". </li>
+<li><a href="https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/#automatic-pruning"><code>prune: true</code></a>: this allows ArgoCD to automatically deprovision MAS resources when their corresponding configuration files are deleted from the <strong>Config Repository</strong>.</li>
+</ul>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>We may make <code>prune</code> configurable on a per-account basis in future releases. <code>prune: true</code> is useful in development systems as it allows MAS instances to be deprovisioned with no manual intervention. This may be too risky for use in production systems though and <code>prune: false</code> may be necessary; meaning a request must be made to ArgoCD after configuration files are deleted to explicitly perform a sync with pruning enabled.</p>
+</div>
+<h2 id="sync-waves">Sync Waves<a class="headerlink" href="#sync-waves" title="Permanent link"></a></h2>
+<p>All Kubernetes resources defined in the MAS GitOps Helm Charts are annotated with an ArgoCD <a href="https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/">sync wave</a>. This ensures that resources (including generated ArgoCD Applications on the <strong>Management Cluster</strong> and Kubernetes resources on <strong>Target Cluster</strong>s) are synced in the correct order.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For clarity, all resource filenames are prefixed with the sync wave that they belong to.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Sync waves are <em>local</em> to each ArgoCD application (i.e. each Helm chart).</p>
+</div>
+<h2 id="custom-resource-healthchecks">Custom Resource Healthchecks<a class="headerlink" href="#custom-resource-healthchecks" title="Permanent link"></a></h2>
+<p>MAS GitOps requires a set of <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/health/#custom-health-checks">Custom Resource Healthchecks</a> to be registered with the ArgoCD in the <strong>Management Cluster</strong>. </p>
+<p>This allows ArgoCD to properly interpret and report the health status of the various custom resources used by MAS. This is a crucial part of ensuring that resources have finished reconciling before allowing subsequent sync waves (which may contain dependent resources) to proceed.</p>
+<p>The set of Custom Resource Healthchecks required by MAS GitOps can be found in the <a href="https://github.com/ibm-mas/cli/blob/45cc815ec6244c9d58e050900ec0e27403d9ea92/image/cli/mascli/templates/gitops/bootstrap/argocd.yaml#L83">ibm-mas/cli project</a>.</p>
+<h2 id="resource-hooks">Resource Hooks<a class="headerlink" href="#resource-hooks" title="Permanent link"></a></h2>
+<p>Configuration tasks have to be performed at various points during the MAS synchronization procedure. We achieve this via the use of ArgoCD <a href="https://argo-cd.readthedocs.io/en/stable/user-guide/resource_hooks/">Resource Hooks</a>.</p>
+<h4 id="presync-hooks">PreSync Hooks<a class="headerlink" href="#presync-hooks" title="Permanent link"></a></h4>
+<p>Tasks that must be performed <strong>before</strong> an Application begins syncing are defined as <code>PreSync</code> hooks. These are used, for example, to verify that cluster CRDs are present before proceeding with an installation (e.g. <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/120-ibm-db2u-database/templates/00-presync-await-crd_Job.yaml">00-presync-await-crd_Job</a>).</p>
+<h3 id="postsync-hooks">"PostSync" Hooks<a class="headerlink" href="#postsync-hooks" title="Permanent link"></a></h3>
+<p>Tasks that must be performed <strong>after</strong> an Application finishes syncing (before <strong>before</strong> it can report <code>Healthy</code>) are performed by Kubernetes Jobs in the final sync wave of the Application.</p>
+<p>Jobs of this kind typically perform some post-install configuration (e.g. <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/120-ibm-db2u-database/templates/05-postsync-setup-db2_Job.yaml">05-postsync-setup-db2_Job</a>) and/or register some runtime-generated information as a secret in the <strong>Secrets Vault</strong> for use by downstream applications (e.g. <a href="https://github.com/ibm-mas/gitops/blob/main/cluster-applications/020-ibm-dro/templates/08-postsync-update-sm_Job.yaml">08-postsync-update-sm_Job</a>).</p>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>You may notice that we do not actually use the <code>PostSync</code> ArgoCD annotation on many of these Jobs. This is because the completion status of Jobs annotated as <code>PostSync</code> is not taken into account when computing the overall health status of an application. Since the tasks we perform are typically required steps that must be performed before downstream applications in later sync waves are allowed to sync, we instead use "ordinary" Kuberenetes Jobs. Since the health status of "ordinary" Kubernetes Jobs <strong>is</strong> taken into account, subsequent sync waves will not be allowed to start until the Job has completed successfully.</p>
+</div>
+<h3 id="postdelete-hooks">PostDelete Hooks<a class="headerlink" href="#postdelete-hooks" title="Permanent link"></a></h3>
+<p>Tasks that must be performed to ensure an orderly teardown of resources when configuration files are deleted from the <strong>Config Repository</strong>.  For example, Suite Config CRs (e.g. <code>MongoCfg</code>) cannot be pruned by ArgoCD since they are assigned the <code>Suite</code> as an owner during reconciliation. To work around this, we use PostDelete hooks to issue <code>oc delete</code> commands (e.g. <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/130-ibm-mas-mongo-config/templates/postdelete-delete-cr.yaml">postdelete-delete-cr</a>). </p>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/ibm-mas/gitops" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../configtoinstances/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../accountrootmanifest/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/gh/fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js"></script>
+      <script src="../js/version-select.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>

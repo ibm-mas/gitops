@@ -1,24 +1,40 @@
 name: Build Documentation
 on:
   push:
+    tags: [ '*.*.*' ]
     branches:
-      - '**'
-    tags-ignore:
-      - '**'
+      - main
+      - dev
+
 jobs:
   deploy-docs:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2.3.1
 
-      - name: Install and Build
+      - name: Install Python dependencies
         run: |
-          bash build/bin/build-docs.sh
+          python -m pip install -q mkdocs
+          python -m pip install -q mkdocs-redirects
+          python -m pip install -q mkdocs-macros-plugin
+          python -m pip install -q mkdocs-drawio-file
+          python -m pip install -q mike
 
-      - name: Deploy
-        uses: JamesIves/github-pages-deploy-action@4.1.7
-        if: github.ref == 'refs/heads/main'
-        with:
-          branch: gh-pages
-          folder: site
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # GITHUB_REF is one of the following: "refs/heads/main", "refs/heads/dev", "refs/tags/x.x.x"
+      # We use this to determine the version of documentation that we want to publish; one of: "main", "dev" or "x.x"
+      # Note: the latter is deliberately "x.x" (not "x.x.x") so we group docs by minor release; each version of the docs will correspond to the latest patch release for that minor version.
+      # The command uses sed/regex to pull out "main", "dev" or "x.x" and assign it to the "branch" output of this step, accessible in later steps via ${{ steps.get_branch_name.outputs.branch }}"
+      - name: Get branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF} | sed -rn "s/refs\/(tags\/([0-9]+\.[0-9]+).*|heads\/(.*))/\2\3/p")"
+        id: get_branch_name
+
+      - name: Deploy with mike 🚀
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages --depth=1
+          echo "Pushing docs for version ${{ steps.get_branch_name.outputs.branch }}"
+          mike deploy --push ${{ steps.get_branch_name.outputs.branch }}

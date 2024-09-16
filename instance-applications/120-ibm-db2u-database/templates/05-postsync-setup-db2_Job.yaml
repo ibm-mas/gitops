@@ -194,14 +194,15 @@ spec:
                 return 1
               }
 
-              # DB2 operator does not automatically apply dbConfig parameters set on the Db2uCluster CR
-              # Instead, a script /db2u/scripts/apply-db2cfg-settings.sh must be executed on one of the db2u pods
-              # However, this does not always seem to work and no indication is given in the output of the script whether it worked or not.
-              # One approach is to check the current configuration parameters (db2 get db cfg for ${DB2_DBNAME}) one by one and verify that their value aligns with that set in the CR.
-              # However, this is not straightforward since DB2 implicitly reformats certain param values (e.g. APPLHEAPSZ: '8192 AUTOMATIC' is reformatted to AUTOMATIC(8192)).
-              # Until we can come up with a better way of doing this (or the Db2u operator is fixed), we will take the approach used in ansible-devops,
-              # whereby the value of single parameter (CHNGPGS_THRESH) is checked against a known value (40) to see if the script executed successfully (and retry if not)
-              # See https://github.com/ibm-mas/ansible-devops/blob/b9f3ef5b7999640b0a31d0aba518ba85ef8b704f/ibm/mas_devops/roles/suite_db2_setup_for_manage/tasks/apply-db2-config-settings.yml#L39
+
+              # The Db2u operator is capable of automatically applying dbConfig, dbmConfig and registry configuration parameters specified on the Db2uInstance CR.
+              # However, certain parameters (e.g. MIRRORLOGPATH)  may reference paths on the db2u pod (e.g. /mnt/backup/MIRRORLOGPATH) that do not exist until 
+              # after the operator has already attemped to apply settings (which it will not subsequently reattempt if something went wrong).
+              # To work around this, we manually re-invoke this process again by calling the '/db2u/scripts/apply-db2cfg-settings.sh --setting all' script on the db2 pod.
+
+              # Moreover, the Db2u operator it does not give any indication on any CR if something went wrong while attempting to apply these settings (and no meaningful return code is provided by the apply-db2cfg-settings.sh script)
+              # For this reason, we are forced to perform our own verification that the settings on the Db2uInstance CR align with those active in DB2 
+              # This is done using the "mas-devops-db2-validate-config" command from the mas-devops library (see https://github.com/ibm-mas/python-devops)
               function db2apply {
                 RETRIES=${1:-5}
                 RETRY_DELAY_SECONDS=${2:-30}
@@ -213,7 +214,7 @@ spec:
                   # no useful info in return code of this script
 
                   rc=0
-                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc 'db2 get db cfg for '${DB2_DBNAME}' | grep "(CHNGPGS_THRESH) = 40"' db2inst1 || rc=$?
+                  mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
                   if [[ "$rc" == "0" ]]; then
                     echo "...... success"
                     return 0
@@ -397,14 +398,14 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1 || exit $?
 
-                echo ""
-                echo "================================================================================"
-                echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "================================================================================"
-                db2apply || exit $?
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
 
+              echo ""
+              echo "================================================================================"
+              echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "================================================================================"
+              db2apply || exit $?
 
               echo ""
               echo "================================================================================"

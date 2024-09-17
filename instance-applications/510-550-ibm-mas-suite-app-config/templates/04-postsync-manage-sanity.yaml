@@ -1,16 +1,17 @@
-{{- if eq .Values.mas_app_id "manage" }}
+{{- if and (eq .Values.mas_app_id "manage") (.Values.run_sanity_test) }}
 
-# A verify test is one that is non disruptive i.e. it won't create new users, i won't call authenticated apis, and it won't creates resources 
-# in the application. This type of test is run on every environment and allows a layer of verification of the app
+# A sanity test is one that can be disruptive i.e. it can create new users, call authenticated apis, creates resources 
+# in the application. This type of test should only be run in a downstream environment such as a dev or staging env
+# The control over if these tests run or not is controlled by the `run_sanity_test` boolean in the values
 
 {{ $ns               :=  .Values.mas_app_namespace }}
-{{ $np_name          :=  "postsync-verify-manage-np" }}
-{{ $role_name        :=  "postsync-verify-manage-role" }}
-{{ $sa_name          :=  "postsync-verify-manage-sa" }}
-{{ $rb_name          :=  "postsync-verify-manage-rb" }}
-{{ $tests_cm_name    :=  "postsync-verify-tests-manage-cm" }}
-{{ $record_cm_name   :=  "postsync-verify-tests-manage-record-cm" }}
-{{ $job_name         :=  "postsync-verify-manage-job" }}
+{{ $np_name          :=  "postsync-sanity-manage-np" }}
+{{ $role_name        :=  "postsync-sanity-manage-role" }}
+{{ $sa_name          :=  "postsync-sanity-manage-sa" }}
+{{ $rb_name          :=  "postsync-sanity-manage-rb" }}
+{{ $tests_cm_name    :=  "postsync-sanity-tests-manage-cm" }}
+{{ $record_cm_name   :=  "postsync-sanity-tests-manage-record-cm" }}
+{{ $job_name         :=  "postsync-sanity-manage-job" }}
 
 
 
@@ -187,25 +188,8 @@ data:
     def mange_app_cr(v1_manageapp):
       yield v1_manageapp.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
 
-    def test_expected_reconciled_version(mange_workspace_reconciled_version, manage_version):
-      assert manage_version == mange_workspace_reconciled_version, f"Expected ManageWorkspace Reconciled version: {mange_workspace_reconciled_version} to match Manage Operator version: {manage_version}"
-
-    def test_languages_set(mange_workspace_cr):
-      status_langs = mange_workspace_cr['status']['settings']['languages']
-      spec_langs = mange_workspace_cr['spec']['settings']['languages']
-      if spec_langs is not None:
-        assert status_langs == spec_langs, f"Expected languages set in the spec: {spec_langs} to be equal to the languages in the status: {status_langs}"
-
-    def test_addons_enabled(mange_workspace_cr):
-      for component in mange_workspace_cr['spec']['components']:
-        print(f"check component {component[0]} in status")
-        assert mange_workspace_cr['status']['components'][component[0]]["enabled"], f"Expected component {component} to be enabled in status"
-
-    def test_bundle_sizes(mange_workspace_cr):
-      spec_serverbundles = mange_workspace_cr['spec']['settings']['deployment']['serverBundles']
-      status_serverbundles = mange_workspace_cr['status']['settings']['deployment']['serverBundles']
-      if spec_serverbundles is not None:
-        assert status_serverbundles == spec_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the languages in the status: {status_serverbundles}"
+    def test_placeholder():
+      print("Placeholder for sanity tests to be added")
 
 
 ---

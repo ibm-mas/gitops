@@ -196,6 +196,7 @@ data:
     import tempfile
     import os
     import semver
+    import certifi
 
 
     # e.g. "dclain-1a"
@@ -253,15 +254,46 @@ data:
 
     @pytest.fixture(scope="session")
     def mvi_host_ca_filepath(mvi_route):
-      try:
-        mvi_route_ca = mvi_route['spec']['tls']['caCertificate']
-      except KeyError as e:
-        assert False, f"Unable to determine MVI ca cetrt; spec.tls.caCertificate key not present in {mvi_route_name}/{mvi_namespace}: {mvi_route}. Error details: {e}"
 
-      with tempfile.NamedTemporaryFile() as fp:
-        fp.write(mvi_route_ca.encode())
-        fp.flush()
-        yield fp.name
+      # Read the certificate field from the MVI Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the external MVI endpoint.
+      try:
+        mvi_route_certificate = mvi_route['spec']['tls']['certificate']
+      except KeyError as e:
+        pass
+
+      # Read the caCertificate field from the MVI Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the external MVI endpoint.
+      try:
+        mvi_route_caCertificate = mvi_route['spec']['tls']['caCertificate']
+      except KeyError as e:
+        pass
+
+      # Load default CA bundle. This will include certs for well-known CAs. This ensures that we will
+      # trust the certificates presented by the external MVI endpoints when MAS is configured to use
+      # an external frontend like CIS.
+      with open(certifi.where(), 'rb') as default_ca:
+        default_ca_content = default_ca.read()
+
+      # Combine all of the above into a single .pem file that we can use when issuing HTTP requests
+      chain_file = tempfile.NamedTemporaryFile(delete=False)
+      try:
+        
+        if mvi_route_certificate:
+          chain_file.write(mvi_route_certificate.encode())
+        
+        if mvi_route_caCertificate:
+          chain_file.write(mvi_route_caCertificate.encode())
+
+        chain_file.write(default_ca_content)
+
+        chain_file.flush()
+        chain_file.close()
+
+        yield chain_file.name
+
+      finally:
+        os.remove(chain_file.name)
 
 
     @pytest.fixture(scope="session")

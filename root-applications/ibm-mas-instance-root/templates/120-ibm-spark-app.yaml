@@ -1,10 +1,10 @@
-{{- if not (empty .Values.ibm_db2u) }}
+{{- if not (empty .Values.ibm_spark) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: db2u.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: spark.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -12,8 +12,7 @@ metadata:
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "060"
-    healthCheckTimeout: "1800"
+    argocd.argoproj.io/sync-wave: "120"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
@@ -21,28 +20,37 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: "{{ .Values.ibm_db2u.db2_namespace }}"
+    namespace: default
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/060-ibm-db2u
+    path: instance-applications/120-ibm-spark
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            argo_namespace: "{{ .Values.argo.namespace }}"
-            db2_namespace: "{{ .Values.ibm_db2u.db2_namespace }}"
-            ibm_entitlement_key: "{{ .Values.ibm_db2u.ibm_entitlement_key }}"
-            db2_channel: "{{ .Values.ibm_db2u.db2_channel }}"
+            ccs_version: "{{ .Values.ibm_spark.ccs_version }}"
+            cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+            cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
+            cpd_service_block_storage_class: "{{ .Values.ibm_spark.cpd_service_block_storage_class }}"
+            cpd_service_scale_config: "{{ .Values.ibm_spark.cpd_service_scale_config }}"
+            cpd_service_storage_class: "{{ .Values.ibm_spark.cpd_service_storage_class }}"
+            spark_channel: "{{ .Values.ibm_spark.spark_channel }}"
+            spark_version: "{{ .Values.ibm_spark.spark_version }}"                                                            
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
         - name: ARGOCD_APP_NAME
-          value: db2uapp
+          value: cpdsparkapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}
@@ -54,10 +62,6 @@ spec:
       {{- end }}
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
-    managedNamespaceMetadata:
-      labels:
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 8 }}
-{{- end }}
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
 {{- end }}

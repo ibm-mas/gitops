@@ -1,10 +1,10 @@
-{{- if not (empty .Values.ibm_wml) }}
+{{- if not (empty .Values.ibm_spss) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: wml.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: spss.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -12,7 +12,7 @@ metadata:
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "090"
+    argocd.argoproj.io/sync-wave: "120"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
@@ -21,37 +21,40 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   ignoreDifferences:
-  - group: '*'
-    kind: ServiceAccount
-    jsonPointers:
-    - /imagePullSecrets
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/090-ibm-wml
+    path: instance-applications/120-ibm-spss
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            instance_id: "{{ .Values.instance.id }}"
+            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
             cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
-            cpd_product_version: "{{ .Values.ibm_cp4d.cpd_product_version }}"
-            ccs_version: "{{ .Values.ibm_wml.ccs_version }}"
-            cpd_service_block_storage_class: "{{ .Values.ibm_wml.cpd_service_block_storage_class }}"
-            cpd_service_scale_config: "{{ .Values.ibm_wml.cpd_service_scale_config }}"
-            cpd_service_storage_class: "{{ .Values.ibm_wml.cpd_service_storage_class }}"
-            wml_channel: "{{ .Values.ibm_wml.wml_channel }}"
-            wml_version: "{{ .Values.ibm_wml.wml_version }}"
+            cpd_service_storage_class: "{{ .Values.ibm_spss.cpd_service_storage_class }}"
+            cpd_service_block_storage_class: "{{ .Values.ibm_spss.cpd_service_block_storage_class }}"
+            cpd_service_scale_config: "{{ .Values.ibm_spss.cpd_service_scale_config }}"
+            spss_version: "{{ .Values.ibm_spss.spss_version }}"
+            spss_channel: "{{ .Values.ibm_spss.spss_channel }}"
+            ccs_version: "{{ .Values.ibm_spss.ccs_version }}"
+            canvasbase_channel: "{{ .Values.ibm_spss.canvasbase_channel }}"
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
+
         - name: ARGOCD_APP_NAME
-          value: cpdwmlapp
+          value: cpdspssapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}
@@ -64,5 +67,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
-      - RespectIgnoreDifferences=true
 {{- end }}

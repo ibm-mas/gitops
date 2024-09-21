@@ -1,10 +1,10 @@
-{{- if not (empty .Values.ibm_spss) }}
+{{- if not (empty .Values.ibm_wsl) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: spss.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: wsl.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -12,7 +12,7 @@ metadata:
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "090"
+    argocd.argoproj.io/sync-wave: "120"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
@@ -27,7 +27,7 @@ spec:
     namespace: default
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/090-ibm-spss
+    path: instance-applications/120-ibm-wsl
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
@@ -42,19 +42,19 @@ spec:
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
             cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
-            cpd_service_storage_class: "{{ .Values.ibm_spss.cpd_service_storage_class }}"
-            cpd_service_block_storage_class: "{{ .Values.ibm_spss.cpd_service_block_storage_class }}"
-            cpd_service_scale_config: "{{ .Values.ibm_spss.cpd_service_scale_config }}"
-            spss_version: "{{ .Values.ibm_spss.spss_version }}"
-            spss_channel: "{{ .Values.ibm_spss.spss_channel }}"
-            ccs_version: "{{ .Values.ibm_spss.ccs_version }}"
-            canvasbase_channel: "{{ .Values.ibm_spss.canvasbase_channel }}"
+            cpd_service_storage_class: "{{ .Values.ibm_wsl.cpd_service_storage_class }}"
+            cpd_service_block_storage_class: "{{ .Values.ibm_wsl.cpd_service_block_storage_class }}"
+            cpd_service_scale_config: "{{ .Values.ibm_wsl.cpd_service_scale_config }}"
+            wsl_version: "{{ .Values.ibm_wsl.wsl_version }}"
+            wsl_channel: "{{ .Values.ibm_wsl.wsl_channel }}"
+            ccs_version: "{{ .Values.ibm_wsl.ccs_version }}"
+            datarefinery_version: "{{ .Values.ibm_wsl.datarefinery_version }}"
+            ws_runtimes_version: "{{ .Values.ibm_wsl.ws_runtimes_version }}"
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
-
         - name: ARGOCD_APP_NAME
-          value: cpdspssapp
+          value: cpdwslapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}

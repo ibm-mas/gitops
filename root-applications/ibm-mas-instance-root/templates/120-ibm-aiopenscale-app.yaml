@@ -1,10 +1,10 @@
-{{- if not (empty .Values.ibm_spark) }}
+{{- if not (empty .Values.ibm_aiopenscale) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: spark.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: aiopenscale.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -12,7 +12,7 @@ metadata:
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "090"
+    argocd.argoproj.io/sync-wave: "120"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
@@ -20,37 +20,33 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  ignoreDifferences:
-  - group: '*'
-    kind: ServiceAccount
-    jsonPointers:
-    - /imagePullSecrets
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
     namespace: default
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/090-ibm-spark
+    path: instance-applications/120-ibm-aiopenscale
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            ccs_version: "{{ .Values.ibm_spark.ccs_version }}"
-            cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+            instance_id: "{{ .Values.instance.id }}"
             cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
-            cpd_service_block_storage_class: "{{ .Values.ibm_spark.cpd_service_block_storage_class }}"
-            cpd_service_scale_config: "{{ .Values.ibm_spark.cpd_service_scale_config }}"
-            cpd_service_storage_class: "{{ .Values.ibm_spark.cpd_service_storage_class }}"
-            spark_channel: "{{ .Values.ibm_spark.spark_channel }}"
-            spark_version: "{{ .Values.ibm_spark.spark_version }}"                                                            
+            cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+            cpd_service_storage_class: "{{ .Values.ibm_aiopenscale.cpd_service_storage_class }}"
+            cpd_service_block_storage_class: "{{ .Values.ibm_aiopenscale.cpd_service_block_storage_class }}"
+            cpd_service_scale_config: "{{ .Values.ibm_aiopenscale.cpd_service_scale_config }}"
+            aiopenscale_version: "{{ .Values.ibm_aiopenscale.aiopenscale_version }}"
+            aiopenscale_channel: "{{ .Values.ibm_aiopenscale.aiopenscale_channel }}"
+            ccs_version: "{{ .Values.ibm_aiopenscale.ccs_version }}"
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
         - name: ARGOCD_APP_NAME
-          value: cpdsparkapp
+          value: cpdaiopenscaleapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}
@@ -63,5 +59,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
-      - RespectIgnoreDifferences=true
 {{- end }}

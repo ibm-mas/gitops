@@ -1,8 +1,8 @@
-{{- if .Values.devops_mongo_uri }}
+{{- if .Values.global.devops_mongo_uri }}
 
 
-{{ $ns := .Values.reporter_namespace }}
-{{ $prefix := printf "pre-junitreporter-%s" .Values.reporter_name }}
+{{ $ns := .Values.global.reporter_namespace }}
+{{ $prefix := printf "pre-junitreporter-%s" .Values.global.reporter_name }}
 {{ $secret := printf "%s-devopsuri" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
 
@@ -22,12 +22,8 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
 stringData:
-  devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
+  devops_mongo_uri: "{{ .Values.global.devops_mongo_uri }}"
 
 ---
 apiVersion: batch/v1
@@ -38,18 +34,11 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
 spec:
   template:
     metadata:
       labels:
         app: {{ $job }}
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 8 }}
-{{- end }}
     spec:
       containers:
         - name: run
@@ -66,7 +55,7 @@ spec:
               memory: 64Mi
           env:
             - name: DEVOPS_ENVIRONMENT
-              value: "{{ .Values.cluster_id }}"
+              value: "{{ .Values.global.cluster_id }}"
 
           volumeMounts:
             - name: devops-uri

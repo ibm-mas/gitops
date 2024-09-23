@@ -1,0 +1,102 @@
+{{- if .Values.devops_mongo_uri }}
+
+
+{{ $ns := .Values.reporter_namespace }}
+{{ $prefix := printf "pre-junit-reporter-%s" .Values.reporter_name }}
+{{ $secret := printf "%s-devopsuri" $prefix }}
+{{ $job := printf "%s-job" $prefix }}
+
+---
+
+# We need to embed the supplied JDBC creds in a K8S secret so we can safely access them from
+# the Job without exposing them via the ArgoCD resources
+# NOTE: do not want to use the actual usersupplied jdbc creds secret as I'd have to annotate that
+# to be a presync hook which will cause ArgoCD to delete it and could cause problems; safer just to create a dedicated secret for the presync hook.
+# (alternatively could look up the secret via SM in the Job script but it's better this way as we use the actual credentials set in the chart values)
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: {{ $secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          # TODO: use a dedicated image with a smaller footprint for this sort of thing?
+          # Just using cli for now since it has all the deps we need to talk with AWS SM
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: DEVOPS_ENVIRONMENT
+              value: "{{ .Values.cluster_id }}"
+
+          volumeMounts:
+            - name: devops-uri
+              mountPath: /etc/mas/devops-uri
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              export DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri)
+
+              # DEVOPS_MONGO_URI
+              # DEVOPS_ENVIRONMENT
+              # DEVOPS_BUILD_NUMBER
+              # DEVOPS_SUITE_NAME
+              # productId
+
+              echo "Run register-start"
+              # python3 /opt/app-root/src/register-start.py
+
+
+      restartPolicy: Never
+
+      volumes:
+        - name: devops-uri
+          secret:
+            secretName: {{ $secret }}
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+
+{{- end }}

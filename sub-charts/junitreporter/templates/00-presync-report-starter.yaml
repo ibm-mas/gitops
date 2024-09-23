@@ -1,6 +1,6 @@
-{{- if and .Values.junitreporter .Values.junitreporter.devops_mongo_uri }}
+{{- if .Values.devops_mongo_uri }}
 
-{{ $prefix := printf "pre-junitreporter-%s" .Values.junitreporter.reporter_name }}
+{{ $prefix := printf "pre-junitreporter-%s" .Values.reporter_name }}
 {{ $secret := printf "%s-devopsuri" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
 
@@ -14,7 +14,7 @@ metadata:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 stringData:
-  devops_mongo_uri: "{{ .Values.junitreporter.devops_mongo_uri }}"
+  devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
 
 ---
 apiVersion: batch/v1
@@ -45,7 +45,7 @@ spec:
               memory: 64Mi
           env:
             - name: DEVOPS_ENVIRONMENT
-              value: "{{ .Values.junitreporter.cluster_id }}"
+              value: "{{ .Values.cluster_id }}"
 
           volumeMounts:
             - name: devops-uri

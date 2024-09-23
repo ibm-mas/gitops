@@ -1,17 +1,10 @@
-{{- if and .Values.junitreporter not (empty .Values.junitreporter.devops_mongo_uri) }}
-
+{{- if and .Values.junitreporter .Values.junitreporter.devops_mongo_uri }}
 
 {{ $prefix := printf "pre-junitreporter-%s" .Values.junitreporter.reporter_name }}
 {{ $secret := printf "%s-devopsuri" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
 
 ---
-
-# We need to embed the supplied JDBC creds in a K8S secret so we can safely access them from
-# the Job without exposing them via the ArgoCD resources
-# NOTE: do not want to use the actual usersupplied jdbc creds secret as I'd have to annotate that
-# to be a presync hook which will cause ArgoCD to delete it and could cause problems; safer just to create a dedicated secret for the presync hook.
-# (alternatively could look up the secret via SM in the Job script but it's better this way as we use the actual credentials set in the chart values)
 apiVersion: v1
 kind: Secret
 type: Opaque

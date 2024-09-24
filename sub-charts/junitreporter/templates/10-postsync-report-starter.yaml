@@ -1,7 +1,7 @@
 {{- if .Values.devops_mongo_uri }}
 
 
-{{ $prefix := printf "pre-junitreporter-%s" .Values.reporter_name }}
+{{ $prefix := printf "post-junitreporter-%s" .Values.reporter_name }}
 {{ $secret := printf "%s-devopsuri" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
 
@@ -12,7 +12,7 @@ type: Opaque
 metadata:
   name: {{ $secret }}
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 stringData:
   devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
@@ -23,7 +23,7 @@ kind: Job
 metadata:
   name: {{ $job }}
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   template:
@@ -65,7 +65,7 @@ spec:
               # DEVOPS_SUITE_NAME
               # productId
 
-              echo "Run register-start"
+              echo "Run save-junit"
               # python3 /opt/app-root/src/register-start.py
 
 

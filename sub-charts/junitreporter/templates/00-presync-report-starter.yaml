@@ -36,7 +36,7 @@ spec:
           # TODO: use a dedicated image with a smaller footprint for this sort of thing?
           # Just using cli for now since it has all the deps we need to talk with AWS SM
           image: quay.io/ibmmas/cli:11.2.0-pre.ajw-mascore3939
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           resources:
             limits:
               cpu: 200m
@@ -53,17 +53,19 @@ spec:
               value: "{{ .Values.devops_build_number }}"
             - name: PRODUCT_ID
               value: "ibm-mas-gitops"
+            - name: GITOPS_VERSION
+              value: "{{ .Values.gitops_version }}"
           volumeMounts:
             - name: devops-uri
               mountPath: /etc/mas/devops-uri
           command:
-            - /bin/sh
+            - /bin/bash
             - -c
             - |
 
               set -e
               export DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri)
-
+              export ANSIBLE_DEVOPS_VERSION=$(grep -oP '(?<="version": ")[^"]*' $ANSIBLE_COLLECTIONS_PATH/ibm/mas_devops/MANIFEST.json) # get ibm.mas_devops version from manifest.json
               echo "Run register-start.py"
               python3 /opt/app-root/src/register-start.py
 

@@ -3,9 +3,9 @@
 <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="canonical" href="https://pages.github.com/ibm-mas/gitops/main/limitations/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="canonical" href="https://pages.github.com/ibm-mas/gitops/main/timings/" />
       <link rel="shortcut icon" href="../img/favicon.ico" />
-    <title>Known Limitations - MAS GitOps</title>
+    <title>Deployment Timings - MAS GitOps</title>
     <link rel="stylesheet" href="../css/theme.css" />
     <link rel="stylesheet" href="../css/theme_extra.css" />
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
@@ -15,9 +15,9 @@
     
       <script>
         // Current page data
-        var mkdocs_page_name = "Known Limitations";
-        var mkdocs_page_input_path = "limitations.md";
-        var mkdocs_page_url = "/ibm-mas/gitops/main/limitations/";
+        var mkdocs_page_name = "Deployment Timings";
+        var mkdocs_page_input_path = "timings.md";
+        var mkdocs_page_url = "/ibm-mas/gitops/main/timings/";
       </script>
     
     <!--[if lt IE 9]>
@@ -55,21 +55,21 @@
                   </li>
               </ul>
               <p class="caption"><span class="caption-text">Details</span></p>
-              <ul>
+              <ul class="current">
                   <li class="toctree-l1"><a class="reference internal" href="../configtoinstances/">Mapping Config to MAS Deployments</a>
                   </li>
                   <li class="toctree-l1"><a class="reference internal" href="../orchestration/">Deployment Orchestration</a>
                   </li>
-                  <li class="toctree-l1"><a class="reference internal" href="../timings/">Deployment Timings</a>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Deployment Timings</a>
+    <ul class="current">
+    </ul>
                   </li>
               </ul>
               <p class="caption"><span class="caption-text">Reference</span></p>
-              <ul class="current">
+              <ul>
                   <li class="toctree-l1"><a class="reference internal" href="../accountrootmanifest/">Account Root Application Manifest</a>
                   </li>
-                  <li class="toctree-l1 current"><a class="reference internal current" href="#">Known Limitations</a>
-    <ul class="current">
-    </ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../limitations/">Known Limitations</a>
                   </li>
               </ul>
       </div>
@@ -86,10 +86,10 @@
         <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
   <ul class="wy-breadcrumbs">
     <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
-          <li class="breadcrumb-item">Reference</li>
-      <li class="breadcrumb-item active">Known Limitations</li>
+          <li class="breadcrumb-item">Details</li>
+      <li class="breadcrumb-item active">Deployment Timings</li>
     <li class="wy-breadcrumbs-aside">
-          <a href="https://github.com/ibm-mas/gitops/blob/main/docs/limitations.md" class="icon icon-github"> Edit on GitHub</a>
+          <a href="https://github.com/ibm-mas/gitops/blob/main/docs/timings.md" class="icon icon-github"> Edit on GitHub</a>
     </li>
   </ul>
   <hr/>
@@ -97,11 +97,127 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
             <div class="section" itemprop="articleBody">
               
-                <h1 id="known-limitations">Known Limitations<a class="headerlink" href="#known-limitations" title="Permanent link"></a></h1>
-<p><strong>A single ArgoCD instance cannot manage more than one Account Root Application.</strong>. This is primarily due to a limitation we have inherited to be compatible with internal IBM systems where we must have everything under a single ArgoCD project. This limitation could be addressed by adding support for multi-project configurations, assigning each <strong>Account Root Application</strong> its own project in ArgoCD. This is something we'd like to do in the long term but it's not a priority at the moment.</p>
-<p><strong>MAS GitOps only supports AWS Secrets Manager at present.</strong> Support for other backends will be added in future releases.</p>
-<p>Any modifications made via the MAS admin UI or REST API that result in modifications to existing K8S resources will be undone by ArgoCD. We plan to provide the option in MAS to disable these UI/REST APIs when being managed by GitOps.</p>
-<p>MAS GitOps only supports the definition of <code>system</code> scope for all MAS configuration types (other than <code>JDBC</code> which supports all scopes: <code>system</code>, <code>ws</code>, <code>app</code> and <code>wsapp</code>).</p>
+                <h1 id="deployment-timings">Deployment Timings<a class="headerlink" href="#deployment-timings" title="Permanent link"></a></h1>
+<p>Each ArgoCD Application will take a number of minutes to complete syncing and to show as healthy, before moving onto the next application in the wave. This can vary for each app from a few minutes to mulitple hours. Depending on what configuration is choosen then each environment might not have the application present i.e. you might not have CP4D installed.</p>
+<p>Below is a table to show the expected elapsed time for the argocd application to finish syncing. Times are approximate and other factors can vary these times such as performance of the cluster or external dependencies.</p>
+<table>
+<thead>
+<tr>
+<th>Application</th>
+<th>Approximate Duration</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>operator-catalog</td>
+<td>3 minutes</td>
+</tr>
+<tr>
+<td>redhat-cert-manager</td>
+<td>2 minutes</td>
+</tr>
+<tr>
+<td>dro</td>
+<td>5 minutes</td>
+</tr>
+<tr>
+<td>cis-compliance</td>
+<td>3 minutes</td>
+</tr>
+<tr>
+<td>ibm-sls</td>
+<td>10 minutes</td>
+</tr>
+<tr>
+<td>ibm-suite</td>
+<td>10 minutes</td>
+</tr>
+<tr>
+<td>ibm-cp4d-operators</td>
+<td>2 minutes</td>
+</tr>
+<tr>
+<td>ibm-spss</td>
+<td>80 minutes</td>
+</tr>
+<tr>
+<td>ibm-openscale</td>
+<td>15 minutes</td>
+</tr>
+<tr>
+<td>ibm-wml</td>
+<td>25 minutes</td>
+</tr>
+<tr>
+<td>ibm-wsl</td>
+<td>45 minutes</td>
+</tr>
+<tr>
+<td>ibm-spark</td>
+<td>15 minutes</td>
+</tr>
+<tr>
+<td>ibm-db2u-database</td>
+<td>12 minutes</td>
+</tr>
+<tr>
+<td>ibm-assist</td>
+<td>20 minutes</td>
+</tr>
+<tr>
+<td>ibm-assist-cfg</td>
+<td>2 minutes</td>
+</tr>
+<tr>
+<td>ibm-iot</td>
+<td>60 minutes</td>
+</tr>
+<tr>
+<td>ibm-iot-cfg</td>
+<td>2 minutes</td>
+</tr>
+<tr>
+<td>ibm-monitor</td>
+<td>12 minutes</td>
+</tr>
+<tr>
+<td>ibm-monitor-cfg</td>
+<td>30 minutes</td>
+</tr>
+<tr>
+<td>ibm-optimizer</td>
+<td>5 minutes</td>
+</tr>
+<tr>
+<td>ibm-optimizer-cfg</td>
+<td>12 minutes</td>
+</tr>
+<tr>
+<td>ibm-visualinspection</td>
+<td>20 minutes</td>
+</tr>
+<tr>
+<td>ibm-visualinspection-cfg</td>
+<td>2 minutes</td>
+</tr>
+<tr>
+<td>ibm-manage</td>
+<td>8 minutes</td>
+</tr>
+<tr>
+<td>ibm-manage-cfg</td>
+<td>240 minutes</td>
+</tr>
+<tr>
+<td>ibm-predict</td>
+<td>2 minutes</td>
+</tr>
+<tr>
+<td>ibm-predict-cfg</td>
+<td>15 minutes</td>
+</tr>
+</tbody>
+</table>
               
             </div>
           </div><footer>
@@ -130,8 +246,10 @@
         </span>
     
     
-      <span><a href="../accountrootmanifest/" style="color: #fcfcfc">&laquo; Previous</a></span>
+      <span><a href="../orchestration/" style="color: #fcfcfc">&laquo; Previous</a></span>
     
+    
+      <span><a href="../accountrootmanifest/" style="color: #fcfcfc">Next &raquo;</a></span>
     
   </span>
 </div>

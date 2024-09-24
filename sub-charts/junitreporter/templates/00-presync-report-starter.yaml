@@ -35,7 +35,7 @@ spec:
         - name: run
           # TODO: use a dedicated image with a smaller footprint for this sort of thing?
           # Just using cli for now since it has all the deps we need to talk with AWS SM
-          image: quay.io/ibmmas/cli:latest
+          image: quay.io/ibmmas/cli:11.2.0-pre.ajw-mascore3939
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -47,7 +47,12 @@ spec:
           env:
             - name: DEVOPS_ENVIRONMENT
               value: "{{ .Values.cluster_id }}"
-
+            - name: DEVOPS_SUITE_NAME
+              value: "{{ .Values.reporter_name }}"
+            - name: DEVOPS_BUILD_NUMBER
+              value: "{{ .Values.devops_build_number }}"
+            - name: PRODUCT_ID
+              value: "ibm-mas-gitops"
           volumeMounts:
             - name: devops-uri
               mountPath: /etc/mas/devops-uri
@@ -59,14 +64,8 @@ spec:
               set -e
               export DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri)
 
-              # DEVOPS_MONGO_URI
-              # DEVOPS_ENVIRONMENT
-              # DEVOPS_BUILD_NUMBER
-              # DEVOPS_SUITE_NAME
-              # productId
-
-              echo "Run register-start"
-              # python3 /opt/app-root/src/register-start.py
+              echo "Run register-start.py"
+              python3 /opt/app-root/src/register-start.py
 
 
       restartPolicy: Never

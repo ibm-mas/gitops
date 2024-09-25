@@ -3,6 +3,7 @@
 
 {{ $prefix := printf "post-junitreporter-%s" .Values.reporter_name }}
 {{ $secret := printf "%s-devopsuri" $prefix }}
+{{ $time_cm := printf "%s-synctime" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
 
 ---
@@ -55,6 +56,11 @@ spec:
               value: "ibm-mas-gitops"
             - name: JUNIT_OUTPUT_DIR
               value: "/tmp"
+            - name: SYNC_START
+              valueFrom:
+                configMapKeyRef:
+                  name: special-config
+                  key: sync_start
           volumeMounts:
             - name: devops-uri
               mountPath: /etc/mas/devops-uri
@@ -65,10 +71,14 @@ spec:
 
               set -e
               export DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri)
+              # Compute elapsed time between pre-sync and post-sync
+              CURRENTTIME=$(date +%s)
+              ELAPSEDTIME=$(($SYNC_START-$CURRENTTIME))
+              echo "Elapsed time is ${ELAPSEDTIME}"
 
               pip install junit-xml
               # Create junit xml for one testsuite of the parent argo app, and the testcase of sync
-              python3 /opt/app-root/src/junit-xml-generator.py --test-suite-name ${DEVOPS_SUITE_NAME} --test-cases sync --output-dir ${JUNIT_OUTPUT_DIR}
+              python3 /opt/app-root/src/junit-xml-generator.py --test-suite-name ${DEVOPS_SUITE_NAME} --test-cases Sync:$ELAPSEDTIME --output-dir ${JUNIT_OUTPUT_DIR}
 
               echo "Run save-junit-to-mongo.py"
               python3 /opt/app-root/src/save-junit-to-mongo.py

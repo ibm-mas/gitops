@@ -3,6 +3,7 @@
 
 {{ $prefix := printf "pre-junitreporter-%s" .Values.reporter_name }}
 {{ $secret := printf "%s-devopsuri" $prefix }}
+{{ $time_cm := printf "%s-synctime" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
 
 ---
@@ -16,6 +17,17 @@ metadata:
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 stringData:
   devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $time_cm }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+data:
+  sync_start: "{{ now | unixEpoch }}"
 
 ---
 apiVersion: batch/v1

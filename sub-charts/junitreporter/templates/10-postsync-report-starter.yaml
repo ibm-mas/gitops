@@ -7,6 +7,31 @@
 {{ $prefix := printf "post-junitreporter-%s" .Values.reporter_name }}
 {{ $secret := printf "%s-devopsuri" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
+{{ $np_name :=  "post-junitreporter" }}
+
+---
+# Permit outbound communication by the Job pod
+# (Needed to communicate with the external devops mongodb )
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "01"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
 
 ---
 apiVersion: v1

@@ -33,7 +33,7 @@ if [ ! -d "$CHART_PATH" ]; then
     exit 1
 fi
 
-helm dependency update
+helm dependency update "$CHART_PATH" || exit 1
 
 echo "--------"
 echo "Linting chart $CHART_PATH using Helm lint"

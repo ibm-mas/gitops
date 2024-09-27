@@ -1,0 +1,189 @@
+{{- if .Values.devops_mongo_uri }}
+
+
+{{ $prefix := printf "pre-junitreporter-%s" .Values.reporter_name }}
+{{ $secret := printf "%s-devopsuri" $prefix }}
+{{ $role_name := printf "%s-role" $prefix }}
+{{ $rb_name := printf "%s-rb" $prefix }}
+{{ $sa_name := printf "%s-sa" $prefix }}
+{{ $time_cm := printf "%s-synctime" $prefix }}
+{{ $job := printf "%s-job" $prefix }}
+{{ $np_name :=  "pre-junitreporter" }}
+
+---
+# Permit outbound communication by the Job pod
+# (Needed to communicate with the external devops mongodb )
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "01"
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: {{ $secret }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "01"
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+stringData:
+  devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "01"
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "01"
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - create
+      - list
+    apiGroups:
+      - ""
+    resources:
+      - configmaps
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "02"
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "05"
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DEVOPS_ENVIRONMENT
+              value: "{{ .Values.cluster_id }}"
+            - name: DEVOPS_SUITE_NAME
+              value: "{{ .Values.reporter_name }}"
+            - name: DEVOPS_BUILD_NUMBER
+              value: "{{ .Values.devops_build_number }}"
+            - name: PRODUCT_ID
+              value: "ibm-mas-gitops"
+            - name: GITOPS_VERSION
+              value: "{{ .Values.gitops_version }}"
+            - name: SYNC_TIME_CM_NAME
+              value: {{ $time_cm }}
+          volumeMounts:
+            - name: devops-uri
+              mountPath: /etc/mas/devops-uri
+          command:
+            - /bin/bash
+            - -c
+            - |
+
+              set -e
+              trap 'echo "[ERROR] Error occurred at line $LINENO, exited with $?"; exit 1' ERR
+
+              export DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri)
+              export ANSIBLE_DEVOPS_VERSION=$(grep -oP '(?<="version": ")[^"]*' $ANSIBLE_COLLECTIONS_PATH/ibm/mas_devops/MANIFEST.json) # get ibm.mas_devops version from manifest.json
+              
+              # Create the configmap with the time via code rather than a resource as we don't want
+              # a re-sync of a nonsynced app to cause the configmap to be recreated (and thus reset the time).
+              # It will be the post-sync job that deletes this configmap
+              CONFIGMAP=$(oc get configmap -n $NAMESPACE | grep $SYNC_TIME_CM_NAME || true)
+              if [[ -z $CONFIGMAP ]]; then
+                echo "Creating $SYNC_TIME_CM_NAME configmap"
+                oc create configmap $SYNC_TIME_CM_NAME --from-literal=sync_start=$(date +%s)
+              fi
+
+              echo "Run register-start.py"
+              python3 /opt/app-root/src/register-start.py
+
+
+      restartPolicy: Never
+      serviceAccountName: {{ $sa_name }}
+
+      volumes:
+        - name: devops-uri
+          secret:
+            secretName: {{ $secret }}
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+
+{{- end }}

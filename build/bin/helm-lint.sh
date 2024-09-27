@@ -33,6 +33,8 @@ if [ ! -d "$CHART_PATH" ]; then
     exit 1
 fi
 
+helm build update
+
 echo "--------"
 echo "Linting chart $CHART_PATH using Helm lint"
 helm lint "$CHART_PATH" || exit 1

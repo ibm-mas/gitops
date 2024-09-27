@@ -159,12 +159,12 @@ spec:
             - |
 
               set -e
-              trap 'echo "[ERROR] Error occurred at $BASH_SOURCE, line $LINENO, exited with $?"; exit 1' ERR
+              trap 'echo "[ERROR] Error occurred at line $LINENO, exited with $?"; exit 1' ERR
 
               export DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri)
               export ANSIBLE_DEVOPS_VERSION=$(grep -oP '(?<="version": ")[^"]*' $ANSIBLE_COLLECTIONS_PATH/ibm/mas_devops/MANIFEST.json) # get ibm.mas_devops version from manifest.json
               
-              CONFIGMAP=$(oc get configmap -n $NAMESPACE | grep $SYNC_TIME_CM_NAME)
+              CONFIGMAP=$(oc get configmap -n $NAMESPACE | grep $SYNC_TIME_CM_NAME || true)
               if [[ -z $CONFIGMAP ]]; then
                 echo "Creating $SYNC_TIME_CM_NAME configmap"
                 oc create configmap $SYNC_TIME_CM_NAME --from-literal=sync_start=$(date +%s)

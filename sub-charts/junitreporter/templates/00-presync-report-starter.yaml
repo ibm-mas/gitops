@@ -169,11 +169,15 @@ spec:
               if [[ -z $CONFIGMAP ]]; then
                 echo "Creating $SYNC_TIME_CM_NAME configmap"
                 oc create configmap $SYNC_TIME_CM_NAME --from-literal=sync_start=$(date +%s)
+                echo "Run register-start.py"
+                python3 /opt/app-root/src/register-start.py
               fi
-
-              echo "Run register-start.py"
-              python3 /opt/app-root/src/register-start.py
-
+              export SYNC_COMPLETE=$((oc get configmap $SYNC_TIME_CM_NAME -o json) | yq '.data.sync_complete')
+              if [[ -z "${SYNC_COMPLETE}" || "${SYNC_COMPLETE}" == "null" ]]; then
+                echo "Sync not complete yet."
+              else
+                echo "Sync called again but was already marked as completed once."
+              fi
 
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}

@@ -78,7 +78,7 @@ metadata:
 {{- end }}
 rules:
   - verbs:
-      - delete
+      - patch
     apiGroups:
       - ""
     resources:
@@ -151,6 +151,12 @@ spec:
                 configMapKeyRef:
                   name: {{ $time_cm }}
                   key: sync_start
+            - name: SYNC_COMPLETE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ $time_cm }}
+                  key: sync_complete
+                  optional: true 
             - name: SYNC_TIME_CM_NAME
               value: {{ $time_cm }}
           volumeMounts:
@@ -165,19 +171,24 @@ spec:
               trap 'echo "[ERROR] Error occurred at line $LINENO, exited with $?"; exit 1' ERR
 
               export DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri)
-              # Compute elapsed time between pre-sync and post-sync
-              CURRENTTIME=$(date +%s)
-              ELAPSEDTIME=$(($CURRENTTIME-$SYNC_START))
-              echo "Elapsed time is ${ELAPSEDTIME}"
 
-              # Create junit xml for one testsuite of the parent argo app, and the testcase of sync
-              python3 /opt/app-root/src/junit-xml-generator.py --test-suite-name ${DEVOPS_SUITE_NAME} --test-cases Sync:$ELAPSEDTIME --output-dir ${JUNIT_OUTPUT_DIR}
+              if [[ -z "${SYNC_COMPLETE}" ]]; then
+                # Compute elapsed time between pre-sync and post-sync
+                CURRENTTIME=$(date +%s)
+                ELAPSEDTIME=$(($CURRENTTIME-$SYNC_START))
+                echo "Elapsed time is ${ELAPSEDTIME}"
 
-              echo "Run save-junit-to-mongo.py"
-              python3 /opt/app-root/src/save-junit-to-mongo.py
+                # Create junit xml for one testsuite of the parent argo app, and the testcase of sync
+                python3 /opt/app-root/src/junit-xml-generator.py --test-suite-name ${DEVOPS_SUITE_NAME} --test-cases Sync:$ELAPSEDTIME --output-dir ${JUNIT_OUTPUT_DIR}
 
-              echo "Delete $SYNC_TIME_CM_NAME configmap"
-              oc delete configmap $SYNC_TIME_CM_NAME -n $NAMESPACE
+                echo "Run save-junit-to-mongo.py"
+                python3 /opt/app-root/src/save-junit-to-mongo.py
+
+                echo "Patching $SYNC_TIME_CM_NAME configmap with sync_complete"
+                oc patch configmap $SYNC_TIME_CM_NAME -p '{"data":{"sync_start":"'$SYNC_START'","sync_complete":"'$CURRENTTIME'"}}'
+              else
+                echo "SYNC_COMPLETE already set in configmap"
+              fi
 
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}

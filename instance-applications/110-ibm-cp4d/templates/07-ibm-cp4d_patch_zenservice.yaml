@@ -44,6 +44,39 @@ spec:
               set -e
               echo
               echo "================================================================================"
+              echo "Patch zenmetastore postgres job to workaround https://www.ibm.com/support/pages/node/7158524"
+              echo "================================================================================"
+              echo
+              echo "Wait for create-postgres-license-config job to be present"
+              
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+60))
+                if [ $wait_period -gt 1200 ]; then
+                  echo "create-postgres-license-config job is not found after 20 minutes of waiting. exiting..."
+                  exit 1
+                else
+                  sleep 60
+                fi
+                
+                POSTGRES_JOB_LOOKUP=$(oc get job create-postgres-license-config -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.spec}')
+                if [[ ! -z $POSTGRES_JOB_LOOKUP ]]; then
+                  echo "create-postgres-license-config job has been fetched"
+                  IS_PATCHED=$(echo $POSTGRES_JOB_LOOKUP | grep "cp.icr.io/cp/cpd/edb-postgres-license-provider@sha256:c1670e7dd93c1e65a6659ece644e44aa5c2150809ac1089e2fd6be37dceae4ce")
+                  if [[ -z $IS_PATCHED ]]; then
+                    echo "patching create-postgres-license-config..."
+                    oc get job create-postgres-license-config -n ${CPD_OPERATORS_NAMESPACE} -o yaml | \
+                    sed -e 's/operator.ibm.com\/opreq-control: "true"/operator.ibm.com\/opreq-control: "false"/' \
+                    -e 's|\(image: \).*|\1"cp.icr.io/cp/cpd/edb-postgres-license-provider@sha256:c1670e7dd93c1e65a6659ece644e44aa5c2150809ac1089e2fd6be37dceae4ce"|' \
+                    -e '/controller-uid:/d' | \
+                    oc replace --force -f -
+                  fi
+                  break
+                fi
+              done
+
+              echo
+              echo "================================================================================"
               echo "Wait for ZenService Cr and patch it if needed"
               echo "================================================================================"
               echo

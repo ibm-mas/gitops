@@ -37,18 +37,20 @@ spec:
             - name: CPD_SCALE_CONFIG
               value: {{ .Values.cpd_scale_config }}
           command:
-            - /bin/sh
+            - /bin/bash
             - -c
             - |
 
               set -e
+              trap 'echo "[ERROR] Error occurred at line $LINENO, exited with $?"; exit 1' ERR
+
               echo
               echo "================================================================================"
               echo "Patch zenmetastore postgres job to workaround https://www.ibm.com/support/pages/node/7158524"
               echo "================================================================================"
               echo
               echo "Wait for create-postgres-license-config job to be present"
-              
+
               wait_period=0
               while true; do
                 wait_period=$(($wait_period+60))

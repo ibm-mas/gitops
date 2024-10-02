@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "cpd-patch-zenservices-v1-{{ .Values | toYaml | adler32sum }}"
+  name: "cpd-patch-zenservices-v2-{{ .Values | toYaml | adler32sum }}"
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "087"
@@ -65,6 +65,7 @@ spec:
                 if [[ ! -z $POSTGRES_JOB_LOOKUP ]]; then
                   echo "create-postgres-license-config job has been fetched"
                   IS_PATCHED=$(echo $POSTGRES_JOB_LOOKUP | grep "cp.icr.io/cp/cpd/edb-postgres-license-provider@sha256:c1670e7dd93c1e65a6659ece644e44aa5c2150809ac1089e2fd6be37dceae4ce")
+                  echo "IS_PATCHED=$IS_PATCHED"
                   if [[ -z $IS_PATCHED ]]; then
                     echo "patching create-postgres-license-config..."
                     oc get job create-postgres-license-config -n ${CPD_OPERATORS_NAMESPACE} -o yaml | \

@@ -230,7 +230,7 @@ data:
         assert False, f"Unable to determine Manage host; spec.host key not present in {manage_route_name}/{manage_namespace}: {manage_route}. Error details: {e}"
 
     # Obtain Manage Details
-    def test_getManageComponents():
+    def test_getManageComponents(dyn_client):
       instanceId = os.getenv("MAS_INSTANCE_ID")
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
       manage_namespace = f"mas-{mas_instance_id}-manage"
@@ -242,14 +242,14 @@ data:
       manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
       print(f'{manageComponentListInStr}') # like this: base,health,nuclear
 
-    def test_getClusterInfo():
+    def test_getClusterInfo(dyn_client):
       instanceId = os.getenv("MAS_INSTANCE_ID")
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
       manage_namespace = f"mas-{mas_instance_id}-manage"
       manageDBCredential = f'jdbc-mas-{instanceId}-{workspaceId}-manage-credentials'
       manageWorkspaceCR = None
       try:
-          manageWorkspaceCRD = dyn_client.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+          manageWorkspaceCRD = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
           manageWorkspaceCR = manageWorkspaceCRD.get(name=f'{instanceId}-{workspaceId}', namespace=manage_namespace)
       except Exception:
           print("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")

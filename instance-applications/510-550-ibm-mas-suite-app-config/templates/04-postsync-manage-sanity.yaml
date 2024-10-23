@@ -142,8 +142,12 @@ data:
     import requests
     import random
     import json
+    import logging
     import base64
     from assertpy import assert_that
+    from pathlib import Path
+    from urllib.parse import urlparse
+    logger = logging.getLogger()
     apikey=""
     siteid=""
     currency=""
@@ -161,6 +165,8 @@ data:
     MANAGE_JDBC_DRIVER = ""
     MANAGE_JDBC_SCHEMA = ""
     MANAGE_JDBC_CERT = ""
+    nextval = ""
+    schema = ""
 
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
     if mas_instance_id is None:
@@ -228,12 +234,10 @@ data:
       instanceId = os.getenv("MAS_INSTANCE_ID")
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
       manage_namespace = f"mas-{mas_instance_id}-manage"
-        
-      k8sUtil = KubernetesUtil()
-      manageWorkspaces = k8sUtil.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+      manageWorkspaces = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
       try:
           manageWorkspaceInstance = manageWorkspaces.get(name=f'{instanceId}-{workspaceId}', namespace=manage_namespace)
-      except ApiException:
+      except Exception:
           print(f'ApiException: Failed to retrieve {instanceId}-{workspaceId} instance of ManageWorkspace in namespace {manage_namespace}')
       manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
       print(f'{manageComponentListInStr}') # like this: base,health,nuclear
@@ -243,38 +247,31 @@ data:
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
       manage_namespace = f"mas-{mas_instance_id}-manage"
       manageDBCredential = f'jdbc-mas-{instanceId}-{workspaceId}-manage-credentials'
-
-      k8sUtil = KubernetesUtil()
-
-      # -------------------------------
-      # Obtain ManageWorkspace CR
-      # - Used to obtain other data bwlow
-      # -------------------------------
       manageWorkspaceCR = None
       try:
-          manageWorkspaceCRD = k8sUtil.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+          manageWorkspaceCRD = dyn_client.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
           manageWorkspaceCR = manageWorkspaceCRD.get(name=f'{instanceId}-{workspaceId}', namespace=manage_namespace)
-      except ApiException as ex:
+      except Exception:
           print("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
 
       # -------------------------------
       # Obtain DB Driver
       # -------------------------------
 
-      manageDeployments = k8sUtil.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageDeployment')
+      manageDeployments = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageDeployment')
       try:
           manageDeploymentInstance = manageDeployments.get(name=f'manage-maxinst', namespace=manage_namespace)
           dbDriver = (manageDeploymentInstance['spec']['db']['maximoDBdriver'])
           dbSchema = (manageDeploymentInstance['spec']['db']['maximoDBschema'])
-
-      except ApiException:
+      
+      except Exception:
           print(f'ApiException: Failed to retrieve manage-maxinst instance of ManageWorkspace in namespace {manage_namespace}')   
 
       # -------------------------------
       # Obtain MAS URL
       # -------------------------------
       masNamespace = os.getenv("MAS_NAMESPACE")
-      masRouteDetails = k8sUtil.dynClient.resources.get(api_version='route.openshift.io/v1', kind='Route')
+      masRouteDetails = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
       masUrl = masRouteDetails.get(name=f'{instanceId}-admin', namespace=masNamespace)
       masHome = masRouteDetails.get(name=f'{instanceId}-{workspaceId}-home', namespace=masNamespace)
       masDomain = masUrl.spec.host.replace('home.', '', 1)
@@ -283,7 +280,7 @@ data:
       # Obtain Manage URL
       # -------------------------------
       try:
-          manageRouteDetails = k8sUtil.dynClient.resources.get(api_version='route.openshift.io/v1', kind='Route')
+          manageRouteDetails = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
           manageUrl = masRouteDetails.get(name=f'{instanceId}-manage-{workspaceId}', namespace=manage_namespace)
       except Exception as e:
           if e.status == 404:
@@ -293,9 +290,9 @@ data:
       # Obtain JDBC credentials
       # -------------------------------
       try:
-          jdbcCfgDetails = k8sUtil.dynClient.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
+          jdbcCfgDetails = dyn_client.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
           bindingManage = manageWorkspaceCR.spec.bindings.jdbc
-      except ApiException as ex:
+      except Exception as ex:
           print("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
       
       print(f"ManageWorkspace has jdbc binding set to {bindingManage}")
@@ -310,14 +307,14 @@ data:
       try:
           jdbcCfg = jdbcCfgDetails.get(name=jdbcCfgInstName, namespace=masNamespace)
           credentialsSecret = jdbcCfg.spec.config.credentials.secretName
-          credentials = k8sUtil.getSecret(credentialsSecret, masNamespace)
-      except ApiException:
+          credentials = dyn_client.getSecret(credentialsSecret, masNamespace)
+      except Exception:
           print("ApiException: Failed to retrieve Manage database details. Check ManageWorkspace jdbc binding spec")
 
       # -------------------------------
       # Obtain Superuser credentials
       # -------------------------------
-      superuserCredentials = k8sUtil.getSecret(instanceId+'-credentials-superuser', masNamespace)
+      superuserCredentials = dyn_client.getSecret(instanceId+'-credentials-superuser', masNamespace)
 
       # -------------------------------
       # Generate the DBC cert file
@@ -391,6 +388,7 @@ data:
             ibm_db.close(connection)
 
     def test_updateMaxadminGroup(manage_db_connection):
+        global nextval,schema
         nextval = ("NEXT VALUE" if "dbo" in {MANAGE_JDBC_SCHEMA} else "NEXTVAL")
         schema = ("" if "dbo" in {MANAGE_JDBC_SCHEMA} else ({MANAGE_JDBC_SCHEMA}+"."))
         os_query = f"""select app from {schema}applicationauth
@@ -423,10 +421,47 @@ data:
             executeQuery(manage_db_connection, update_query)
             logger.info("Object Structure permission successfully granted to MAXADMIN")
 
+    def fetchBoth(manage_db_connection,stmt):
+        #DB2
+        response=ibm_db.exec_immediate(manage_db_connection, stmt)
+        return ibm_db.fetch_both(response)
+
+    def fetchTuple(manage_db_connection,stmt):
+        response=ibm_db.exec_immediate(manage_db_connection, stmt)
+        return ibm_db.fetch_tuple(response)
+
+    def executeQuery(manage_db_connection, stmt):
+        ibm_db.exec_immediate(manage_db_connection, stmt)
+        
+    def updateSpecificPermissionToGroup(manage_db_connection, application, group):
+
+        # Check if app/os permission is already present
+        select_query = f"""select app from {schema}applicationauth 
+        where app in ('{application}') AND groupname='{group}';
+        """
+        resultSet = fetchBoth(manage_db_connection,select_query)
+
+        if(resultSet):
+            logger.info(f"Few permission for app {application} already present. Applying all permissions now..")
+            delete_query = f"""delete from {schema}applicationauth where app in ('{application}') and groupname='{group}';"""
+            executeQuery(manage_db_connection, delete_query)
+            update_after_delete_query = f"""insert into {schema}applicationauth (groupname, app, optionname, applicationauthid)
+            select '{group}', app, optionname, {nextval} for {schema}applicationauthseq from {schema}sigoption
+            where app in ('{application}');"""
+            logger.info(update_after_delete_query)
+            executeQuery(manage_db_connection, update_after_delete_query)
+            logger.info(f"All permission for {application} applied successfully.")
+        else:
+            logger.info(f"Adding permission for app {application} to {group}")
+            update_query = f"""insert into {schema}applicationauth (groupname, app, optionname, applicationauthid)
+            select '{group}', app, optionname, {nextval} for {schema}applicationauthseq from {schema}sigoption
+            where app in ('{application}');"""
+            executeQuery(manage_db_connection, update_query)
+            logger.info(f"Added all permission for {application} to {group} successfully.")
+
     def test_generatekey():
         global apikey
         maxauth=str(MAS_ADMIN_USERNAME+":"+MAS_ADMIN_PASSWORD)
-      
         base64_maxauth = base64.b64encode(maxauth.encode("utf-8"))
         maxauth = base64_maxauth.decode("utf-8")
         url = MANAGE_URL+"/oslc/apitoken/create"
@@ -436,7 +471,6 @@ data:
             "maxauth":maxauth
         }
         response = requests.request("POST", url, json=payload, headers=headers).json()
-      
         apikey=response['apikey']
 
     def test_generateObjectStructureforCurrency():
@@ -455,7 +489,6 @@ data:
             "Content-Type": "application/json",
             "apikey": apikey
         }
-
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         assert_that(response.status_code).is_equal_to(requests.codes.created)
 
@@ -473,11 +506,9 @@ data:
             "description": currency+" Description"
         }
         headers = {
-
             "Content-Type": "application/json",
             "apikey": apikey
         }
-
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         assert_that(response.status_code).is_equal_to(requests.codes.created)
         print(response.text)
@@ -495,7 +526,6 @@ data:
             "setid": setid
         }
         headers = {
-          
             "Content-Type": "application/json",
             "apikey": apikey
         }
@@ -507,20 +537,16 @@ data:
         url = MANAGE_URL+"/api/os/mxapisets"
         global csetid
         csetid="comset"+str(random.randint(5,100))
-
         querystring = {"lean":"1"}
-
         payload = {
             "settype_description": "Item Sets",
             "settype": "COMPANY",
             "setid": csetid
         }
         headers = {
-          
             "Content-Type": "application/json",
             "apikey": apikey
         }
-
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         print(response.text)
         assert_that(response.status_code).is_equal_to(requests.codes.created)
@@ -545,11 +571,10 @@ data:
             "category": "NS"
         }
         headers = {
-          
+            
             "Content-Type": "application/json",
             "apikey": apikey
         }
-
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         assert_that(response.status_code).is_equal_to(requests.codes.created)
         print(response.text)
@@ -632,7 +657,7 @@ data:
             "orgid": orgid
         }
         headers = {
-          
+            
             "Content-Type": "application/json",
             "apikey": apikey
         }
@@ -722,6 +747,7 @@ data:
         }
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         assert_that(response.status_code).is_equal_to(requests.codes.created)
+
 
 
 ---

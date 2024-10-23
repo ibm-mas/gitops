@@ -174,7 +174,6 @@ data:
     manage_namespace = f"mas-{mas_instance_id}-manage"
     manage_route_name = f"{mas_instance_id}-{mas_workspace_id}"
 
-    @pytest.fixture(scope="session")
     def dyn_client():
       if "KUBERNETES_SERVICE_HOST" in os.environ:
         config.load_incluster_config()
@@ -185,49 +184,39 @@ data:
       dyn_client = DynamicClient(k8s_client)
       yield dyn_client
 
-    @pytest.fixture(scope="session")
     def v1_manageworkspace(dyn_client):
       yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
 
-    @pytest.fixture(scope="session")
     def v1_manageapp(dyn_client):
       yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageApp')
 
-    @pytest.fixture(scope="session")
     def mange_workspace_reconciled_version(mange_workspace_cr):
       try:
         yield mange_workspace_cr['status']['versions']['reconciled']
       except KeyError as e:
         assert False, f"Unable to determine ManageWorkspace reconciled version. Error details: {e}"
 
-    @pytest.fixture(scope="session")
     def manage_version(mange_app_cr):
       try:
         yield mange_app_cr['status']['components']['manage']['version']
       except KeyError as e:
         assert False, f"Unable to determine ManageApp component version. Error details: {e}"
 
-    @pytest.fixture(scope="session")
     def mange_workspace_cr(v1_manageworkspace):
       yield v1_manageworkspace.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
 
-    @pytest.fixture(scope="session")
     def mange_app_cr(v1_manageapp):
       yield v1_manageapp.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
 
-    @pytest.fixture(scope="session")
     def v1_secrets(dyn_client):
       yield dyn_client.resources.get(api_version='v1', kind='Secret')
 
-    @pytest.fixture(scope="session")
     def v1_routes(dyn_client):
       yield dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
 
-    @pytest.fixture(scope="session")
     def manage_route(v1_routes):
       yield v1_routes.get(name=manage_route_name, namespace=manage_namespace)
 
-    @pytest.fixture(scope="session")
     def manage_host(manage_route):
       try:
         yield manage_route['spec']['host']
@@ -235,8 +224,7 @@ data:
         assert False, f"Unable to determine Manage host; spec.host key not present in {manage_route_name}/{manage_namespace}: {manage_route}. Error details: {e}"
 
     # Obtain Manage Details
-    @pytest.fixture(scope="session")
-    def getManageComponents():
+    def test_getManageComponents():
       instanceId = os.getenv("MAS_INSTANCE_ID")
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
       manage_namespace = f"mas-{mas_instance_id}-manage"
@@ -250,8 +238,7 @@ data:
       manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
       print(f'{manageComponentListInStr}') # like this: base,health,nuclear
 
-    @pytest.fixture(scope="session")
-    def getClusterInfo():
+    def test_getClusterInfo():
       instanceId = os.getenv("MAS_INSTANCE_ID")
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
       manage_namespace = f"mas-{mas_instance_id}-manage"
@@ -358,8 +345,7 @@ data:
       print(f'MANAGE_JDBC_CERT=./db2-tls.cert')
 
     # Manage db configuration
-    @pytest.fixture(scope="session")
-    def manage_db_connection():
+    def test_manage_db_connection():
         import ibm_db
         url = MANAGE_JDBC_URL.replace("jdbc:", "") if MANAGE_JDBC_URL is not None else None
         jdbcDetails = urlparse(url)
@@ -404,8 +390,7 @@ data:
             yield connection
             ibm_db.close(connection)
 
-    @pytest.fixture(scope="session")
-    def updateMaxadminGroup(manage_db_connection):
+    def test_updateMaxadminGroup(manage_db_connection):
         nextval = ("NEXT VALUE" if "dbo" in {MANAGE_JDBC_SCHEMA} else "NEXTVAL")
         schema = ("" if "dbo" in {MANAGE_JDBC_SCHEMA} else ({MANAGE_JDBC_SCHEMA}+"."))
         os_query = f"""select app from {schema}applicationauth
@@ -438,7 +423,6 @@ data:
             executeQuery(manage_db_connection, update_query)
             logger.info("Object Structure permission successfully granted to MAXADMIN")
 
-    @pytest.fixture(scope="session")
     def test_generatekey():
         global apikey
         maxauth=str(MAS_ADMIN_USERNAME+":"+MAS_ADMIN_PASSWORD)
@@ -455,7 +439,6 @@ data:
       
         apikey=response['apikey']
 
-    @pytest.fixture(scope="session")
     def test_generateObjectStructureforCurrency():
         url = MANAGE_URL+"/api/os/mxintobject"
         global currobject
@@ -476,7 +459,6 @@ data:
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         assert_that(response.status_code).is_equal_to(requests.codes.created)
 
-    @pytest.fixture(scope="session")
     def test_create_currency():
         global currency
         currency="curr"+str(random.randint(0,100))
@@ -500,7 +482,6 @@ data:
         assert_that(response.status_code).is_equal_to(requests.codes.created)
         print(response.text)
 
-    @pytest.fixture(scope="session")
     def test_create_item_set():
         url = MANAGE_URL+"/api/os/mxapisets"
         global setid
@@ -522,7 +503,6 @@ data:
         print(response.text)
         assert_that(response.status_code).is_equal_to(201)
         
-    @pytest.fixture(scope="session")
     def test_create_company_set():
         url = MANAGE_URL+"/api/os/mxapisets"
         global csetid
@@ -545,7 +525,6 @@ data:
         print(response.text)
         assert_that(response.status_code).is_equal_to(requests.codes.created)
         
-    @pytest.fixture(scope="session")
     def test_create_org():
         url = MANAGE_URL+"/api/os/mxapiorganization"
         global siteid,orgid
@@ -575,7 +554,6 @@ data:
         assert_that(response.status_code).is_equal_to(requests.codes.created)
         print(response.text)
 
-    @pytest.fixture(scope="session")
     def test_createGlCompany():
         url = MANAGE_URL+"/api/os/MXAPIGLCOMP"
 
@@ -597,7 +575,6 @@ data:
         assert_that(response.status_code).is_equal_to(requests.codes.created)
         print(response.text)
 
-    @pytest.fixture(scope="session")
     def test_createGlCompany2():
         url = MANAGE_URL+"/api/os/MXAPIGLCOMP"
 
@@ -619,7 +596,6 @@ data:
         assert_that(response.status_code).is_equal_to(requests.codes.created)
         print(response.text)
 
-    @pytest.fixture(scope="session")
     def test_createGlCompany3():
         url = MANAGE_URL+"/api/os/MXAPIGLCOMP"
 
@@ -641,7 +617,6 @@ data:
         assert_that(response.status_code).is_equal_to(requests.codes.created)
         print(response.text)
 
-    @pytest.fixture(scope="session")
     def test_createGlAccount():
         url = MANAGE_URL+"/api/os/MXAPICOA"
 
@@ -667,7 +642,6 @@ data:
         print(response.text)
         assert_that(response.status_code).is_equal_to(requests.codes.created)
 
-    @pytest.fixture(scope="session")
     def test_updateOrgToActiveSiteAndGL():
         url = MANAGE_URL+"/api/os/mxapiorganization"
         global siteid
@@ -715,7 +689,6 @@ data:
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         assert_that(response.status_code).is_equal_to(204)
 
-    @pytest.fixture(scope="session")
     def test_create_user():
         url = MANAGE_URL+"/api/os/mxapiperuser"
         querystring = {"lean":"1"}

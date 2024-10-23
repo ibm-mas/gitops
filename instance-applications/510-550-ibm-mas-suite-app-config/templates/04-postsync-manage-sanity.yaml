@@ -240,7 +240,8 @@ data:
         assert False, f"Unable to determine Manage host; spec.host key not present in {manage_route_name}/{manage_namespace}: {manage_route}. Error details: {e}"
 
     # Obtain Manage Details
-    def test_getManageComponents(dyn_client):
+    @pytest.fixture(scope="session")
+    def getManageComponents(dyn_client):
       instanceId = os.getenv("MAS_INSTANCE_ID")
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
       manage_namespace = f"mas-{mas_instance_id}-manage"
@@ -252,7 +253,8 @@ data:
       manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
       print(f'{manageComponentListInStr}') # like this: base,health,nuclear
 
-    def test_getClusterInfo(dyn_client):
+    @pytest.fixture(scope="session")
+    def getClusterInfo(dyn_client):
       instanceId = os.getenv("MAS_INSTANCE_ID")
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
       manage_namespace = f"mas-{mas_instance_id}-manage"
@@ -352,7 +354,8 @@ data:
       print(f'MANAGE_JDBC_CERT=./db2-tls.cert')
 
     # Manage db configuration
-    def test_manage_db_connection():
+    @pytest.fixture(scope="session")
+    def manage_db_connection():
         import ibm_db
         url = MANAGE_JDBC_URL.replace("jdbc:", "") if MANAGE_JDBC_URL is not None else None
         jdbcDetails = urlparse(url)
@@ -397,7 +400,8 @@ data:
             yield connection
             ibm_db.close(connection)
 
-    def test_updateMaxadminGroup(manage_db_connection):
+    @pytest.fixture(scope="session")
+    def updateMaxadminGroup(manage_db_connection):
         global nextval,schema
         nextval = ("NEXT VALUE" if "dbo" in {MANAGE_JDBC_SCHEMA} else "NEXTVAL")
         schema = ("" if "dbo" in {MANAGE_JDBC_SCHEMA} else ({MANAGE_JDBC_SCHEMA}+"."))
@@ -431,18 +435,22 @@ data:
             executeQuery(manage_db_connection, update_query)
             logger.info("Object Structure permission successfully granted to MAXADMIN")
 
+    @pytest.fixture(scope="session")
     def fetchBoth(manage_db_connection,stmt):
         #DB2
         response=ibm_db.exec_immediate(manage_db_connection, stmt)
         return ibm_db.fetch_both(response)
 
+    @pytest.fixture(scope="session")
     def fetchTuple(manage_db_connection,stmt):
         response=ibm_db.exec_immediate(manage_db_connection, stmt)
         return ibm_db.fetch_tuple(response)
 
+    @pytest.fixture(scope="session")
     def executeQuery(manage_db_connection, stmt):
         ibm_db.exec_immediate(manage_db_connection, stmt)
-        
+
+    @pytest.fixture(scope="session")
     def updateSpecificPermissionToGroup(manage_db_connection, application, group):
 
         # Check if app/os permission is already present

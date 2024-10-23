@@ -158,7 +158,6 @@ data:
     MANAGE_URL = ""
     MAS_ADMIN_USERNAME = "" 
     MAS_ADMIN_PASSWORD = ""
-    MANAGE_URL = ""
     MANAGE_JDBC_URL = "" 
     MANAGE_JDBC_USERNAME = "" 
     MANAGE_JDBC_PASSWORD = ""
@@ -180,6 +179,7 @@ data:
     manage_namespace = f"mas-{mas_instance_id}-manage"
     manage_route_name = f"{mas_instance_id}-{mas_workspace_id}"
 
+    @pytest.fixture(scope="session")
     def dyn_client():
       if "KUBERNETES_SERVICE_HOST" in os.environ:
         config.load_incluster_config()
@@ -190,39 +190,49 @@ data:
       dyn_client = DynamicClient(k8s_client)
       yield dyn_client
 
+    @pytest.fixture(scope="session")
     def v1_manageworkspace(dyn_client):
       yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
 
+    @pytest.fixture(scope="session")
     def v1_manageapp(dyn_client):
       yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageApp')
 
+    @pytest.fixture(scope="session")
     def mange_workspace_reconciled_version(mange_workspace_cr):
       try:
         yield mange_workspace_cr['status']['versions']['reconciled']
       except KeyError as e:
         assert False, f"Unable to determine ManageWorkspace reconciled version. Error details: {e}"
 
+    @pytest.fixture(scope="session")
     def manage_version(mange_app_cr):
       try:
         yield mange_app_cr['status']['components']['manage']['version']
       except KeyError as e:
         assert False, f"Unable to determine ManageApp component version. Error details: {e}"
 
+    @pytest.fixture(scope="session")
     def mange_workspace_cr(v1_manageworkspace):
       yield v1_manageworkspace.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
 
+    @pytest.fixture(scope="session")
     def mange_app_cr(v1_manageapp):
       yield v1_manageapp.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
 
+    @pytest.fixture(scope="session")
     def v1_secrets(dyn_client):
       yield dyn_client.resources.get(api_version='v1', kind='Secret')
 
+    @pytest.fixture(scope="session")
     def v1_routes(dyn_client):
       yield dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
 
+    @pytest.fixture(scope="session")
     def manage_route(v1_routes):
       yield v1_routes.get(name=manage_route_name, namespace=manage_namespace)
 
+    @pytest.fixture(scope="session")
     def manage_host(manage_route):
       try:
         yield manage_route['spec']['host']

@@ -261,7 +261,6 @@ data:
       # -------------------------------
       # Environment Variables Setup
       # -------------------------------
-
       instanceId = os.getenv("MAS_INSTANCE_ID")
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
       masNamespace = os.getenv("MAS_NAMESPACE")
@@ -306,12 +305,13 @@ data:
       # -------------------------------
       # JDBC Credentials
       # -------------------------------
+      jdbcCfg = None
       try:
           jdbcCfgDetails = dyn_client.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
           bindingManage = manageWorkspaceCR.spec.bindings.jdbc
       except Exception as ex:
-          logger.info("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
-    
+          logger.info(f"######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
+
       logger.info(f"ManageWorkspace has jdbc binding set to {bindingManage}")
 
       if "system" in bindingManage:
@@ -320,6 +320,7 @@ data:
           jdbcCfgInstName = f'{instanceId}-jdbc-wsapp-{workspaceId}-manage'
       else:
           logger.info("######### WARN: Unknown jdbc binding found in ManageWorkspace")
+
       try:
           jdbcCfg = jdbcCfgDetails.get(name=jdbcCfgInstName, namespace=masNamespace)
           credentialsSecret = jdbcCfg.spec.config.credentials.secretName
@@ -331,12 +332,14 @@ data:
       # -------------------------------
       # Database Certificate
       # -------------------------------
-      try:
-          with open('db2-tls.cert', 'w') as f:
-              f.write(jdbcCfg.spec.certificates[0].crt)
-      except (TypeError, AttributeError) as ex:
-          logger.info(f"######### WARN: Database certificates not found: {str(ex)}")
-
+      if jdbcCfg is not None:
+          try:
+              with open('db2-tls.cert', 'w') as f:
+                  f.write(jdbcCfg.spec.certificates[0].crt)
+          except Exception as e:
+              logger.info(f"Error writing certificate: {str(e)}")
+      else:
+          logger.info("JdbcCfg was not assigned. Skipping certificate writing.")
 
       global MAS_ADMIN_USERNAME, MAS_ADMIN_PASSWORD, MANAGE_URL, MANAGE_JDBC_URL, MANAGE_JDBC_USERNAME, MANAGE_JDBC_PASSWORD
       global MANAGE_JDBC_DRIVER, MANAGE_JDBC_SCHEMA, MANAGE_JDBC_CERT

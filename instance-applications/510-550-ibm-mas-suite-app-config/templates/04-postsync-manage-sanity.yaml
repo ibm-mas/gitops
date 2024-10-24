@@ -364,123 +364,102 @@ data:
       MANAGE_JDBC_CERT="./db2-tls.cert"
       logger.info(MANAGE_JDBC_CERT)
 
-    # Manage db configuration
-    @pytest.fixture(scope="session")
-    def manage_db_connection():
-        url = MANAGE_JDBC_URL.replace("jdbc:", "") if MANAGE_JDBC_URL is not None else None
-        jdbcDetails = urlparse(url)
-        db_config = {
-            "database": jdbcDetails.path.replace("/", "").split(":")[0],
-            "hostname": jdbcDetails.hostname,
-            "port": jdbcDetails.port,
-            "protocol": "TCPIP",
-            "user": MANAGE_JDBC_USERNAME if 'MANAGE_JDBC_USERNAME' in globals() else None,
-            "password": MANAGE_JDBC_PASSWORD if 'MANAGE_JDBC_PASSWORD' in globals() else None,
-            "cert": MANAGE_JDBC_CERT if 'MANAGE_JDBC_CERT' in globals() else None,
-            "driver": MANAGE_JDBC_DRIVER if 'MANAGE_JDBC_DRIVER' in globals() else None
-        }
+    def test_manage_db_connection_and_update_permissions():
+    
+    url = MANAGE_JDBC_URL.replace("jdbc:", "") if MANAGE_JDBC_URL else None
+    jdbc_details = urlparse(url)
+    
+    db_config = {
+        "database": jdbc_details.path.replace("/", "").split(":")[0],
+        "hostname": jdbc_details.hostname,
+        "port": jdbc_details.port,
+        "protocol": "TCPIP",
+        "user": globals().get('MANAGE_JDBC_USERNAME'),
+        "password": globals().get('MANAGE_JDBC_PASSWORD'),
+        "cert": globals().get('MANAGE_JDBC_CERT'),
+        "driver": globals().get('MANAGE_JDBC_DRIVER')
+    }
+
+    # Check DB2 database and validate certificate
+    if "DB2" in db_config["driver"]:
+        logger.info("=== DB2 Database -- Setting up connection ===")
+
+        # Certificate validation
+        cert_path = db_config["cert"]
+        valid_cert = cert_path and Path(cert_path).exists() and any("CERTIFICATE" in line for line in open(cert_path))
+        if cert_path:
+            logger.info(f"Certificate location: {cert_path}")
         
-        # Check database type
-        # -----------------------------------------------------------------------------
-        # DB2 - with and without certification
-        if "DB2" in db_config["driver"]:
-            logger.info("=== DB2 Database -- Setting up connection ===")
+        # Create connection string
+        conn_str = (
+            f"DATABASE={db_config['database']};HOSTNAME={db_config['hostname']};PORT={db_config['port']};"
+            f"PROTOCOL={db_config['protocol']};UID={db_config['user']};PWD={db_config['password']};"
+            + (f"SECURITY=SSL;SSLServerCertificate={db_config['cert']};" if valid_cert else "")
+        )
+        connection = ibm_db.connect(conn_str, "", "")
+        logger.info("Connection established successfully.")
+        
+        try:
+            # Manage permissions
+            schema = "" if "dbo" in MANAGE_JDBC_SCHEMA else (MANAGE_JDBC_SCHEMA + ".")
+            nextval = "NEXT VALUE" if "dbo" in MANAGE_JDBC_SCHEMA else "NEXTVAL"
 
-            # Validate if certification is not empty
-            ValidCert = False
-            cert_path = MANAGE_JDBC_CERT if 'MANAGE_JDBC_CERT' in globals() else None
-            if cert_path is not None:
-                cert_file = Path(cert_path)
-                logger.info(f"Certificate location:{cert_path}")
-                if cert_file.exists():
-                    file = open(MANAGE_JDBC_CERT, "r")
-                    for line in file:
-                        if re.search("CERTIFICATE", line):
-                            ValidCert = True
+            os_query = (
+                f"SELECT app FROM {schema}applicationauth WHERE app IN "
+                f"('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM','INTOBJECT','MXAPIINTOBJECT','MXAPIMAXAPP','MXAPIPERUSER') "
+                f"AND groupname='MAXADMIN';"
+            )
+            
+            result_set = fetch_both(connection, os_query)
 
-            conn_str = (
-                f"DATABASE={db_config['database']};HOSTNAME={db_config['hostname']};PORT={db_config['port']};PROTOCOL={db_config['protocol']};UID={db_config['user']};PWD={db_config['password']};"
-                + (
-                    f"SECURITY=SSL;SSLServerCertificate={db_config['cert']};"
-                    if ValidCert
-                    else f""
+            if result_set:
+                logger.info("Object structures already present: %s", result_set)
+                update_permissions(connection, 'MXAPIPERSONGROUP', 'MAXADMIN', schema, nextval)
+                update_permissions(connection, 'MXAPIPROP', 'MAXADMIN', schema, nextval)
+                update_permissions(connection, 'MXAPIGROUP', 'MAXADMIN', schema, nextval)
+                update_permissions(connection, 'MXASSET', 'MAXADMIN', schema, nextval)
+                update_permissions(connection, 'MXEXTSYSTEM', 'MAXADMIN', schema, nextval)
+                update_permissions(connection, 'INTOBJECT', 'MAXADMIN', schema, nextval)
+                update_permissions(connection, 'MXAPIINTOBJECT', 'MAXADMIN', schema, nextval)
+                update_permissions(connection, 'MXAPIMAXAPP', 'MAXADMIN', schema, nextval)
+                update_permissions(connection, 'MXAPIPERUSER', 'MAXADMIN', schema, nextval)
+            else:
+                logger.info("No required object structure found. Updating MAXADMIN group.")
+                update_query = (
+                    f"INSERT INTO {schema}applicationauth (groupname, app, optionname, applicationauthid) "
+                    f"SELECT 'MAXADMIN', app, optionname, {nextval} FROM {schema}sigoption WHERE app IN "
+                    f"('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM','INTOBJECT','MXAPIINTOBJECT','MXAPIMAXAPP','MXAPIPERUSER');"
                 )
-            )
-            connection = ibm_db.connect(conn_str, "", "")
-            yield connection
+                execute_query(connection, update_query)
+                logger.info("Permissions successfully granted to MAXADMIN.")
+        finally:
             ibm_db.close(connection)
+            logger.info("Connection closed.")
 
-    def test_updateMaxadminGroup(manage_db_connection):
-        global nextval,schema
-        nextval = ("NEXT VALUE" if "dbo" in MANAGE_JDBC_SCHEMA else "NEXTVAL")
-        schema = ("" if "dbo" in MANAGE_JDBC_SCHEMA else (MANAGE_JDBC_SCHEMA+"."))
-        os_query = f"""select app from {schema}applicationauth
-        where app in ('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM', 'INTOBJECT', 'MXAPIINTOBJECT', 'MXAPIMAXAPP','MXAPIPERUSER') 
-        and groupname='MAXADMIN';
-        """
-        result_set = fetchBoth(manage_db_connection,os_query)
-        if result_set:
-            logger.info("Some object structure is already there as %s", result_set)
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIPERSONGROUP', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIPROP', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIGROUP', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXASSET', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXEXTSYSTEM', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'INTOBJECT', 'MAXADMIN')        
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIINTOBJECT', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIMAXAPP', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIPERUSER', 'MAXADMIN')
-        else:
-            logger.info(
-                "No required object structure is present in MAXADMIN. Hence, updating MAXADMIN group."
-            )
-            update_query = (
-                f"""insert into {schema}applicationauth 
-                (groupname, app, optionname, applicationauthid) select 'MAXADMIN', app, optionname, 
-                {nextval} for {schema}applicationauthseq from {schema}sigoption where app in 
-                ('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET',
-                'MXEXTSYSTEM', 'INTOBJECT', 'MXAPIINTOBJECT', 'MXAPIMAXAPP','MXAPIPERUSER');"""
-            )
-            executeQuery(manage_db_connection, update_query)
-            logger.info("Object Structure permission successfully granted to MAXADMIN")
-
-    def fetchBoth(manage_db_connection,stmt):
-        #DB2
-        response=ibm_db.exec_immediate(manage_db_connection, stmt)
+    def fetch_both(connection, stmt):
+        response = ibm_db.exec_immediate(connection, stmt)
         return ibm_db.fetch_both(response)
 
-    def fetchTuple(manage_db_connection,stmt):
-        response=ibm_db.exec_immediate(manage_db_connection, stmt)
-        return ibm_db.fetch_tuple(response)
+    def execute_query(connection, stmt):
+        ibm_db.exec_immediate(connection, stmt)
 
-    def executeQuery(manage_db_connection, stmt):
-        ibm_db.exec_immediate(manage_db_connection, stmt)
-        
-    def updateSpecificPermissionToGroup(manage_db_connection, application, group):
+    def update_permissions(connection, application, group, schema, nextval):
+        # Check if permission is already present
+        select_query = f"SELECT app FROM {schema}applicationauth WHERE app = '{application}' AND groupname = '{group}';"
+        result_set = fetch_both(connection, select_query)
 
-        # Check if app/os permission is already present
-        select_query = f"""select app from {schema}applicationauth 
-        where app in ('{application}') AND groupname='{group}';
-        """
-        resultSet = fetchBoth(manage_db_connection,select_query)
+        if result_set:
+            logger.info(f"Permissions for {application} already present. Reapplying permissions.")
+            delete_query = f"DELETE FROM {schema}applicationauth WHERE app = '{application}' AND groupname = '{group}';"
+            execute_query(connection, delete_query)
 
-        if(resultSet):
-            logger.info(f"Few permission for app {application} already present. Applying all permissions now..")
-            delete_query = f"""delete from {schema}applicationauth where app in ('{application}') and groupname='{group}';"""
-            executeQuery(manage_db_connection, delete_query)
-            update_after_delete_query = f"""insert into {schema}applicationauth (groupname, app, optionname, applicationauthid)
-            select '{group}', app, optionname, {nextval} for {schema}applicationauthseq from {schema}sigoption
-            where app in ('{application}');"""
-            logger.info(update_after_delete_query)
-            executeQuery(manage_db_connection, update_after_delete_query)
-            logger.info(f"All permission for {application} applied successfully.")
-        else:
-            logger.info(f"Adding permission for app {application} to {group}")
-            update_query = f"""insert into {schema}applicationauth (groupname, app, optionname, applicationauthid)
-            select '{group}', app, optionname, {nextval} for {schema}applicationauthseq from {schema}sigoption
-            where app in ('{application}');"""
-            executeQuery(manage_db_connection, update_query)
-            logger.info(f"Added all permission for {application} to {group} successfully.")
+        # new permissions
+        update_query = (
+            f"INSERT INTO {schema}applicationauth (groupname, app, optionname, applicationauthid) "
+            f"SELECT '{group}', app, optionname, {nextval} FROM {schema}sigoption WHERE app = '{application}';"
+        )
+        execute_query(connection, update_query)
+        logger.info(f"Permissions for {application} applied successfully.")
 
     def test_generatekey():
         global apikey

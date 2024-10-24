@@ -252,7 +252,7 @@ data:
       manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
       print(f'{manageComponentListInStr}') # like this: base,health,nuclear
 
-    def test_getClusterInfo(self, dyn_client):
+    def test_getClusterInfo(dyn_client):
       instanceId = os.getenv("MAS_INSTANCE_ID")
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
       manage_namespace = f"mas-{mas_instance_id}-manage"
@@ -352,19 +352,20 @@ data:
       print(f'MANAGE_JDBC_CERT=./db2-tls.cert')
 
     # Manage db configuration
-    def test_manage_db_connection():
+    @pytest.fixture(scope="session")
+    def manage_db_connection():
         import ibm_db
-        url = MANAGE_JDBC_URL.replace("jdbc:", "") if MANAGE_JDBC_URL is not None else None
+        url = {MANAGE_JDBC_URL}.replace("jdbc:", "") if {MANAGE_JDBC_URL} is not None else None
         jdbcDetails = urlparse(url)
         db_config = {
             "database": jdbcDetails.path.replace("/", "").split(":")[0],
             "hostname": jdbcDetails.hostname,
             "port": jdbcDetails.port,
             "protocol": "TCPIP",
-            "user": MANAGE_JDBC_USERNAME if 'MANAGE_JDBC_USERNAME' in globals() else None,
-            "password": MANAGE_JDBC_PASSWORD if 'MANAGE_JDBC_PASSWORD' in globals() else None,
-            "cert": MANAGE_JDBC_CERT if 'MANAGE_JDBC_CERT' in globals() else None,
-            "driver": MANAGE_JDBC_DRIVER if 'MANAGE_JDBC_DRIVER' in globals() else None
+            "user": {MANAGE_JDBC_USERNAME} if 'MANAGE_JDBC_USERNAME' in globals() else None,
+            "password": {MANAGE_JDBC_PASSWORD} if 'MANAGE_JDBC_PASSWORD' in globals() else None,
+            "cert": {MANAGE_JDBC_CERT} if 'MANAGE_JDBC_CERT' in globals() else None,
+            "driver": {MANAGE_JDBC_DRIVER} if 'MANAGE_JDBC_DRIVER' in globals() else None
         }
         
         # Check database type
@@ -375,7 +376,7 @@ data:
 
             # Validate if certification is not empty
             ValidCert = False
-            cert_path = MANAGE_JDBC_CERT if 'MANAGE_JDBC_CERT' in globals() else None
+            cert_path = {MANAGE_JDBC_CERT} if 'MANAGE_JDBC_CERT' in globals() else None
             if cert_path is not None:
                 cert_file = Path(cert_path)
                 logger.info(f"Certificate location:{cert_path}")
@@ -397,7 +398,7 @@ data:
             yield connection
             ibm_db.close(connection)
 
-    def test_updateMaxadminGroup(self, manage_db_connection):
+    def test_updateMaxadminGroup(manage_db_connection):
         global nextval,schema
         nextval = ("NEXT VALUE" if "dbo" in {MANAGE_JDBC_SCHEMA} else "NEXTVAL")
         schema = ("" if "dbo" in {MANAGE_JDBC_SCHEMA} else ({MANAGE_JDBC_SCHEMA}+"."))
@@ -471,10 +472,10 @@ data:
 
     def test_generatekey():
         global apikey
-        maxauth=str(MAS_ADMIN_USERNAME+":"+MAS_ADMIN_PASSWORD)
+        maxauth=str({MAS_ADMIN_USERNAME}+":"+{MAS_ADMIN_PASSWORD})
         base64_maxauth = base64.b64encode(maxauth.encode("utf-8"))
         maxauth = base64_maxauth.decode("utf-8")
-        url = MANAGE_URL+"/oslc/apitoken/create"
+        url = {MANAGE_URL}+"/oslc/apitoken/create"
         payload = {"expiration": -1}
         headers = {
             "Content-Type": "application/json",
@@ -484,7 +485,7 @@ data:
         apikey=response['apikey']
 
     def test_generateObjectStructureforCurrency():
-        url = MANAGE_URL+"/api/os/mxintobject"
+        url = {MANAGE_URL}+"/api/os/mxintobject"
         global currobject
         querystring = {"lean":"1"}
         currobject="MXCUR"+str(random.randint(0,100))
@@ -507,7 +508,7 @@ data:
         currency="curr"+str(random.randint(0,100))
         print(currency)
 
-        url = MANAGE_URL+"/api/os/"+currobject
+        url = {MANAGE_URL}+"/api/os/"+currobject
 
         querystring = {"lean":"1"}
 
@@ -524,7 +525,7 @@ data:
         print(response.text)
 
     def test_create_item_set():
-        url = MANAGE_URL+"/api/os/mxapisets"
+        url = {MANAGE_URL}+"/api/os/mxapisets"
         global setid
         setid="itset"+str(random.randint(5,100))
 
@@ -544,7 +545,7 @@ data:
         assert_that(response.status_code).is_equal_to(201)
         
     def test_create_company_set():
-        url = MANAGE_URL+"/api/os/mxapisets"
+        url = {MANAGE_URL}+"/api/os/mxapisets"
         global csetid
         csetid="comset"+str(random.randint(5,100))
         querystring = {"lean":"1"}
@@ -562,7 +563,7 @@ data:
         assert_that(response.status_code).is_equal_to(requests.codes.created)
         
     def test_create_org():
-        url = MANAGE_URL+"/api/os/mxapiorganization"
+        url = {MANAGE_URL}+"/api/os/mxapiorganization"
         global siteid,orgid
         querystring = {"lean":["1","1"]}
         orgid="org"+str(random.randint(0,1000))
@@ -590,7 +591,7 @@ data:
         print(response.text)
 
     def test_createGlCompany():
-        url = MANAGE_URL+"/api/os/MXAPIGLCOMP"
+        url = {MANAGE_URL}+"/api/os/MXAPIGLCOMP"
 
         querystring = {"lean":"1"}
 
@@ -611,7 +612,7 @@ data:
         print(response.text)
 
     def test_createGlCompany2():
-        url = MANAGE_URL+"/api/os/MXAPIGLCOMP"
+        url = {MANAGE_URL}+"/api/os/MXAPIGLCOMP"
 
         querystring = {"lean":"1"}
 
@@ -632,7 +633,7 @@ data:
         print(response.text)
 
     def test_createGlCompany3():
-        url = MANAGE_URL+"/api/os/MXAPIGLCOMP"
+        url = {MANAGE_URL}+"/api/os/MXAPIGLCOMP"
 
         querystring = {"lean":"1"}
 
@@ -653,7 +654,7 @@ data:
         print(response.text)
 
     def test_createGlAccount():
-        url = MANAGE_URL+"/api/os/MXAPICOA"
+        url = {MANAGE_URL}+"/api/os/MXAPICOA"
 
         querystring = {"lean":"1"}
 
@@ -678,7 +679,7 @@ data:
         assert_that(response.status_code).is_equal_to(requests.codes.created)
 
     def test_updateOrgToActiveSiteAndGL():
-        url = MANAGE_URL+"/api/os/mxapiorganization"
+        url = {MANAGE_URL}+"/api/os/mxapiorganization"
         global siteid
         orgid2= "orgid=\""+orgid+"\""
         print(orgid2)
@@ -697,7 +698,7 @@ data:
         print(jsonresponse['member'][0]['organizationid'])
         orgid3=jsonresponse['member'][0]['organizationid']
 
-        url = MANAGE_URL+"/api/os/mxapiorganization/"+str(orgid3)
+        url = {MANAGE_URL}+"/api/os/mxapiorganization/"+str(orgid3)
         siteid="site"+str(random.randint(0,100))
         print(siteid)
         querystring = {"lean":["1","1"]}
@@ -725,7 +726,7 @@ data:
         assert_that(response.status_code).is_equal_to(204)
 
     def test_create_user():
-        url = MANAGE_URL+"/api/os/mxapiperuser"
+        url = {MANAGE_URL}+"/api/os/mxapiperuser"
         querystring = {"lean":"1"}
         personid="person"+str(random.randint(0,100))
         payload = {

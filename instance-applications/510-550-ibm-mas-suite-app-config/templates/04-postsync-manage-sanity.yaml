@@ -318,14 +318,15 @@ data:
       try:
           jdbcCfg = jdbcCfgDetails.get(name=jdbcCfgInstName, namespace=masNamespace)
           credentialsSecret = jdbcCfg.spec.config.credentials.secretName
-          credentials = v1_secrets.get(credentialsSecret, masNamespace)
+          secrets = dyn_client.resources.get(api_version='v1', kind='Secret')
+          credentials = secrets.get(credentialsSecret, masNamespace)
       except Exception:
           logger.info("ApiException: Failed to retrieve Manage database details. Check ManageWorkspace jdbc binding spec")
 
       # -------------------------------
       # Obtain Superuser credentials
       # -------------------------------
-      superuserCredentials = v1_secrets.get(instanceId+'-credentials-superuser', masNamespace)
+      superuserCredentials = secrets.get(instanceId+'-credentials-superuser', masNamespace)
 
       # -------------------------------
       # Generate the DBC cert file

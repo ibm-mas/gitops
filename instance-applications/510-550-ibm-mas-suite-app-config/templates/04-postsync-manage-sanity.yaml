@@ -309,19 +309,24 @@ data:
       try:
           jdbcCfgDetails = dyn_client.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
           bindingManage = manageWorkspaceCR.spec.bindings.jdbc
-          if bindingManage:
-              if "system" in bindingManage:
-                  jdbcCfgInstName = f'{instanceId}-jdbc-system'
-              elif "workspace-application" in bindingManage:
-                  jdbcCfgInstName = f'{instanceId}-jdbc-wsapp-{workspaceId}-manage'
-              else:
-                  logger.info("######### WARN: Unknown jdbc binding found in ManageWorkspace")
+      except Exception as ex:
+          logger.info("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
+    
+      logger.info(f"ManageWorkspace has jdbc binding set to {bindingManage}")
+
+      if "system" in bindingManage:
+          jdbcCfgInstName = f'{instanceId}-jdbc-system'
+      elif "workspace-application" in bindingManage:
+          jdbcCfgInstName = f'{instanceId}-jdbc-wsapp-{workspaceId}-manage'
+      else:
+          logger.info("######### WARN: Unknown jdbc binding found in ManageWorkspace")
+      try:
           jdbcCfg = jdbcCfgDetails.get(name=jdbcCfgInstName, namespace=masNamespace)
           credentialsSecret = jdbcCfg.spec.config.credentials.secretName
           secrets = dyn_client.resources.get(api_version='v1', kind='Secret')
           credentials = secrets.get(name=credentialsSecret, namespace=masNamespace)
-      except Exception as ex:
-          logger.info(f"ApiException: Failed to retrieve Manage database details: {str(ex)}")
+      except Exception:
+          logger.info("ApiException: Failed to retrieve Manage database details. Check ManageWorkspace jdbc binding spec")
 
       # -------------------------------
       # Database Certificate
@@ -456,6 +461,40 @@ data:
         )
         execute_query(connection, update_query)
         logger.info(f"Permissions for {application} applied successfully.")
+
+    def test_create_user():
+        url = MANAGE_URL+"/api/os/mxapiperuser"
+        querystring = {"lean":"1"}
+        personid="person"+str(random.randint(0,100))
+        payload = {
+            "personid": personid,
+            "firstname": "first"+str(random.randint(0,100)),
+            "lastname": "last"+str(random.randint(0,100)),
+            "primaryemail": personid+"@yahoo.com",
+            "primaryphone": "999 999 9999",
+            "city": "Boston",
+            "addressline1": "23 wabashs street",
+            "stateprovince": "MA",
+            "postalcode": "01111",
+            "country": "US",
+            "language": "EN",
+            "maxuser": [
+                {
+                    "loginid": personid,
+                    "passwordcheck": personid,
+                    "passwordinput": personid,
+                    "defsite": "BEDFORD",
+                    "type": "TYPE 1",
+                    "userid": personid
+                }
+            ]
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": apikey
+        }
+        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
+        assert_that(response.status_code).is_equal_to(requests.codes.created)
 
     def test_generatekey():
         global apikey
@@ -711,42 +750,6 @@ data:
         }
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         assert_that(response.status_code).is_equal_to(204)
-
-    def test_create_user():
-        url = MANAGE_URL+"/api/os/mxapiperuser"
-        querystring = {"lean":"1"}
-        personid="person"+str(random.randint(0,100))
-        payload = {
-            "personid": personid,
-            "firstname": "first"+str(random.randint(0,100)),
-            "lastname": "last"+str(random.randint(0,100)),
-            "primaryemail": personid+"@yahoo.com",
-            "primaryphone": "999 999 9999",
-            "city": "Boston",
-            "addressline1": "crazy road",
-            "stateprovince": "MA",
-            "postalcode": "01111",
-            "country": "US",
-            "language": "EN",
-            "maxuser": [
-                {
-                    "loginid": personid,
-                    "passwordcheck": personid,
-                    "passwordinput": personid,
-                    "defsite": "BEDFORD",
-                    "type": "TYPE 1",
-                    "userid": personid
-                }
-            ]
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": apikey
-        }
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-        assert_that(response.status_code).is_equal_to(requests.codes.created)
-
-
 
 ---
 apiVersion: batch/v1

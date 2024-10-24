@@ -258,115 +258,111 @@ data:
       logger.info(f'{manageComponentListInStr}') # like this: base,health,nuclear
 
     def test_getClusterInfo(dyn_client):
+      # -------------------------------
+      # Environment Variables Setup
+      # -------------------------------
+
       instanceId = os.getenv("MAS_INSTANCE_ID")
       workspaceId = os.getenv("MAS_WORKSPACE_ID")
-      manage_namespace = f"mas-{mas_instance_id}-manage"
+      masNamespace = os.getenv("MAS_NAMESPACE")
+      manage_namespace = f"mas-{instanceId}-manage"
+
+      # Manage Workspace and Credentials
       manageDBCredential = f'jdbc-mas-{instanceId}-{workspaceId}-manage-credentials'
       manageWorkspaceCR = None
+
+      # -------------------------------
+      # Manage Workspace CR
+      # -------------------------------
       try:
           manageWorkspaceCRD = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
           manageWorkspaceCR = manageWorkspaceCRD.get(name=f'{instanceId}-{workspaceId}', namespace=manage_namespace)
-      except Exception:
-          logger.info("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
+      except Exception as ex:
+          logger.info(f"######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
 
       # -------------------------------
-      # Obtain DB Driver
+      # Manage Deployment DB Info
       # -------------------------------
-
-      manageDeployments = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageDeployment')
       try:
-          manageDeploymentInstance = manageDeployments.get(name=f'manage-maxinst', namespace=manage_namespace)
-          dbDriver = (manageDeploymentInstance['spec']['db']['maximoDBdriver'])
-          dbSchema = (manageDeploymentInstance['spec']['db']['maximoDBschema'])
-      
-      except Exception:
-          logger.info(f'ApiException: Failed to retrieve manage-maxinst instance of ManageWorkspace in namespace {manage_namespace}')   
+          manageDeployments = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageDeployment')
+          manageDeploymentInstance = manageDeployments.get(name='manage-maxinst', namespace=manage_namespace)
+          dbDriver = manageDeploymentInstance['spec']['db']['maximoDBdriver']
+          dbSchema = manageDeploymentInstance['spec']['db']['maximoDBschema']
+      except Exception as ex:
+          logger.info(f"ApiException: Failed to retrieve manage-maxinst instance in namespace {manage_namespace}: {str(ex)}")
 
       # -------------------------------
-      # Obtain MAS URL
-      # -------------------------------
-      masNamespace = os.getenv("MAS_NAMESPACE")
-
-      # -------------------------------
-      # Obtain Manage URL
+      # Manage URL (OpenShift Route)
       # -------------------------------
       try:
           manageRouteDetails = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
-          logger.info(manageRouteDetails)
           manageUrl = manageRouteDetails.get(name=f'{instanceId}-manage-{workspaceId}', namespace=manage_namespace)
       except Exception as e:
           if e.status == 404:
               logger.info(f"Unable to find route {instanceId}-manage-{workspaceId} in {manage_namespace}")
+          else:
+              logger.info(f"Error retrieving route: {str(e)}")
 
       # -------------------------------
-      # Obtain JDBC credentials
+      # JDBC Credentials
       # -------------------------------
       try:
           jdbcCfgDetails = dyn_client.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
-          bindingManage = manageWorkspaceCR.spec.bindings.jdbc
-      except Exception as ex:
-          logger.info("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
-      
-      logger.info(f"ManageWorkspace has jdbc binding set to {bindingManage}")
-
-      if "system" in bindingManage:
-          jdbcCfgInstName = f'{instanceId}-jdbc-system'
-      elif "workspace-application" in bindingManage:
-          jdbcCfgInstName = f'{instanceId}-jdbc-wsapp-{workspaceId}-manage'
-      else:
-          logger.info("######### WARN: Unknown jdbc binding found in ManageWorkspace")
-
-      try:
+          bindingManage = manageWorkspaceCR.spec.bindings.jdbc if manageWorkspaceCR else None
+          if bindingManage:
+              if "system" in bindingManage:
+                  jdbcCfgInstName = f'{instanceId}-jdbc-system'
+              elif "workspace-application" in bindingManage:
+                  jdbcCfgInstName = f'{instanceId}-jdbc-wsapp-{workspaceId}-manage'
+              else:
+                  logger.info("######### WARN: Unknown jdbc binding found in ManageWorkspace")
           jdbcCfg = jdbcCfgDetails.get(name=jdbcCfgInstName, namespace=masNamespace)
           credentialsSecret = jdbcCfg.spec.config.credentials.secretName
           secrets = dyn_client.resources.get(api_version='v1', kind='Secret')
-          credentials = secrets.get(credentialsSecret, masNamespace)
-      except Exception:
-          logger.info("ApiException: Failed to retrieve Manage database details. Check ManageWorkspace jdbc binding spec")
+          credentials = secrets.get(name=credentialsSecret, namespace=masNamespace)
+      except Exception as ex:
+          logger.info(f"ApiException: Failed to retrieve Manage database details: {str(ex)}")
 
       # -------------------------------
-      # Obtain Superuser credentials
-      # -------------------------------
-      # secrets = dyn_client.resources.get(api_version='v1', kind='Secret')
-      # superuserCredentials = secrets.get(instanceId+'-credentials-superuser', masNamespace)
-
-      # -------------------------------
-      # Generate the DBC cert file
+      # Database Certificate
       # -------------------------------
       try:
           with open('db2-tls.cert', 'w') as f:
               f.write(jdbcCfg.spec.certificates[0].crt)
-      except TypeError:
-          logger.info("######### WARN: Database certificates not found")
+      except (TypeError, AttributeError) as ex:
+          logger.info(f"######### WARN: Database certificates not found: {str(ex)}")
 
-      # -------------------------------
-      # Output to be recovered by caller sh
-      # -------------------------------
 
-      global MAS_ADMIN_USERNAME, MAS_ADMIN_PASSWORD,MANAGE_URL,MANAGE_JDBC_URL,MANAGE_JDBC_USERNAME,MANAGE_JDBC_PASSWORD,MANAGE_JDBC_DRIVER,MANAGE_JDBC_SCHEMA,MANAGE_JDBC_CERT
-      MANAGE_JDBC_URL=jdbcCfg.spec.config.url
-      MANAGE_JDBC_USERNAME=credentials.get("username")
-      MANAGE_JDBC_PASSWORD=credentials.get("password")
+      global MAS_ADMIN_USERNAME, MAS_ADMIN_PASSWORD, MANAGE_URL, MANAGE_JDBC_URL, MANAGE_JDBC_USERNAME, MANAGE_JDBC_PASSWORD
+      global MANAGE_JDBC_DRIVER, MANAGE_JDBC_SCHEMA, MANAGE_JDBC_CERT
+
+      MAS_ADMIN_USERNAME = "maxadmin"
+      MAS_ADMIN_PASSWORD = "maxadmin1234567"
+
+      MANAGE_JDBC_URL = jdbcCfg.spec.config.url if jdbcCfg else None
+      MANAGE_JDBC_USERNAME = credentials.get("username") if credentials else None
+      MANAGE_JDBC_PASSWORD = credentials.get("password") if credentials else None
+
+      if manageUrl:
+          MANAGE_URL = f"https://{manageUrl.spec.host}{manageUrl.spec.path}maximo"
+
+      MANAGE_JDBC_DRIVER = dbDriver
+      MANAGE_JDBC_SCHEMA = dbSchema
+      MANAGE_JDBC_CERT = "./db2-tls.cert"
+
       logger.info(MANAGE_JDBC_URL)
       logger.info(MANAGE_JDBC_USERNAME)
       logger.info(MANAGE_JDBC_PASSWORD)
-      if manageUrl is not None:
-        MANAGE_URL="https://"+manageUrl.spec.host+manageUrl.spec.path+"maximo"
-        logger.info(MANAGE_URL)
-      MAS_ADMIN_USERNAME="maxadmin"
+      logger.info(MANAGE_URL)
       logger.info(MAS_ADMIN_USERNAME)
-      MAS_ADMIN_PASSWORD="maxadmin1234567"
       logger.info(MAS_ADMIN_PASSWORD)
-      MANAGE_JDBC_DRIVER=dbDriver
       logger.info(MANAGE_JDBC_DRIVER)
-      MANAGE_JDBC_SCHEMA=dbSchema
       logger.info(MANAGE_JDBC_SCHEMA)
-      MANAGE_JDBC_CERT="./db2-tls.cert"
       logger.info(MANAGE_JDBC_CERT)
 
     def test_manage_db_connection_and_update_permissions():
     
-      url = MANAGE_JDBC_URL.replace("jdbc:", "") if MANAGE_JDBC_URL else None
+      url = MANAGE_JDBC_URL.replace("jdbc:", "") if MANAGE_JDBC_URL is not None else None
       jdbc_details = urlparse(url)
       
       db_config = {

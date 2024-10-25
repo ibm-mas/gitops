@@ -313,28 +313,18 @@ data:
 
     # Obtain Manage Details
     def test_getManageComponents(dyn_client):
-        instanceId = os.getenv("MAS_INSTANCE_ID")
-        workspaceId = os.getenv("MAS_WORKSPACE_ID")
-        manageNamespace = f"mas-{instanceId}-manage"
         manageWorkspaces = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
         try:
-            manageWorkspaceInstance = manageWorkspaces.get(name=f'{instanceId}-{workspaceId}', namespace=manageNamespace)
+            manageWorkspaceInstance = manageWorkspaces.get(name=f'{mas_instance_id}-{mas_workspace_id}', namespace=manageNamespace)
         except Exception:
-            logger.info(f'ApiException: Failed to retrieve {instanceId}-{workspaceId} instance of ManageWorkspace in namespace {manageNamespace}')
+            logger.info(f'ApiException: Failed to retrieve {mas_instance_id}-{mas_workspace_id} instance of ManageWorkspace in namespace {manageNamespace}')
         manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
         logger.info(f'{manageComponentListInStr}') # like this: base,health,nuclear
 
     def test_getClusterInfo(dyn_client,dyn_client_mas_core):
-        # -------------------------------
-        # Environment Variables Setup
-        # -------------------------------
-        instanceId = os.getenv("MAS_INSTANCE_ID")
-        workspaceId = os.getenv("MAS_WORKSPACE_ID")
-        masNamespace = f"mas-{instanceId}-core"
-        manageNamespace = f"mas-{instanceId}-manage"
 
         # Manage Workspace and Credentials
-        manageDBCredential = f'jdbc-mas-{instanceId}-{workspaceId}-manage-credentials'
+        manageDBCredential = f'jdbc-mas-{mas_instance_id}-{mas_workspace_id}-manage-credentials'
         manageWorkspaceCR = None
 
         # -------------------------------
@@ -342,7 +332,7 @@ data:
         # -------------------------------
         try:
             manageWorkspaceCRD = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
-            manageWorkspaceCR = manageWorkspaceCRD.get(name=f'{instanceId}-{workspaceId}', namespace=manageNamespace)
+            manageWorkspaceCR = manageWorkspaceCRD.get(name=f'{mas_instance_id}-{mas_workspace_id}', namespace=manageNamespace)
         except Exception as ex:
             logger.info(f"######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
 
@@ -362,11 +352,11 @@ data:
         # -------------------------------
         try:
             manageRouteObject = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
-            manageRouteDetails = manageRouteObject.get(name=f'{instanceId}-manage-{workspaceId}', namespace=manageNamespace)
+            manageRouteDetails = manageRouteObject.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=manageNamespace)
             manageUrl = manageRouteDetails.spec.host
         except Exception as e:
             if e.status == 404:
-                logger.info(f"Unable to find route {instanceId}-manage-{workspaceId} in {manageNamespace}")
+                logger.info(f"Unable to find route {mas_instance_id}-manage-{mas_workspace_id} in {manageNamespace}")
             else:
                 logger.info(f"Error retrieving route: {str(e)}")
 
@@ -379,7 +369,7 @@ data:
         # Obtain Superuser credentials
         # -------------------------------
         secrets = dyn_client_mas_core.resources.get(api_version='v1', kind='Secret')
-        superuserCredentials = secrets.get(instanceId+'-credentials-superuser', masNamespace)
+        superuserCredentials = secrets.get(mas_instance_id+'-credentials-superuser', masNamespace)
         MAS_ADMIN_USERNAME = superuserCredentials.data.username
         MAS_ADMIN_PASSWORD = superuserCredentials.data.password
         # -------------------------------
@@ -387,16 +377,16 @@ data:
         # -------------------------------
         try:
             jdbcCfgObj = dyn_client_mas_core.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
-            #jdbcCfgDetails = jdbcCfgObj.get(name=f'{instanceId}-manage-{workspaceId}', namespace=masNamespace)
+            #jdbcCfgDetails = jdbcCfgObj.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=masNamespace)
             bindingManage = manageWorkspaceCR.spec.bindings.jdbc
         except Exception as ex:
             logger.info(f"######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
         logger.info(f"ManageWorkspace has jdbc binding set to {bindingManage}")
 
         if "system" in bindingManage:
-            jdbcCfgInstName = f'{instanceId}-jdbc-system'
+            jdbcCfgInstName = f'{mas_instance_id}-jdbc-system'
         elif "workspace-application" in bindingManage:
-            jdbcCfgInstName = f'{instanceId}-jdbc-wsapp-{workspaceId}-manage'
+            jdbcCfgInstName = f'{mas_instance_id}-jdbc-wsapp-{mas_workspace_id}-manage'
         else:
             logger.info("######### WARN: Unknown jdbc binding found in ManageWorkspace")
 

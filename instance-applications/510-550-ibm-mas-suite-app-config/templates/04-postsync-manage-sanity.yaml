@@ -233,11 +233,11 @@ data:
         raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
 
     manageNamespace = f"mas-{mas_instance_id}-manage"
+    masNamespace = f"mas-{instanceId}-core"
     manage_route_name = f"{mas_instance_id}-{mas_workspace_id}"
 
     @pytest.fixture(scope="session")
     def dyn_client():
-        namespace = os.getenv("MANAGE_NAMESPACE")
         if "KUBERNETES_SERVICE_HOST" in os.environ:
             config.load_incluster_config()
             k8s_config = Configuration.get_default_copy()
@@ -246,12 +246,11 @@ data:
             k8s_client = config.new_client_from_config()
 
         dyn_client = DynamicClient(k8s_client)
-        dyn_client.namespace = namespace
+        dyn_client.namespace = manageNamespace
         yield dyn_client
 
     @pytest.fixture(scope="session")
     def dyn_client_mas_core():
-        namespace = os.getenv("MAS_NAMESPACE")
         if "KUBERNETES_SERVICE_HOST" in os.environ:
             config.load_incluster_config()
             k8s_config = Configuration.get_default_copy()
@@ -260,7 +259,7 @@ data:
             k8s_client = config.new_client_from_config()
 
         dyn_client = DynamicClient(k8s_client)
-        dyn_client.namespace = namespace
+        dyn_client.namespace = masNamespace
         yield dyn_client
 
     @pytest.fixture(scope="session")

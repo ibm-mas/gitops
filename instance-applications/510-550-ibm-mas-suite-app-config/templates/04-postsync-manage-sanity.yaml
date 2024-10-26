@@ -213,6 +213,7 @@ data:
     from assertpy import assert_that
     from pathlib import Path
     from urllib.parse import urlparse
+    import time
     logger = logging.getLogger()
     authToken=""
     MANAGE_URL = ""
@@ -441,6 +442,7 @@ data:
         print(MANAGE_JDBC_USERNAME)
         print(MANAGE_JDBC_PASSWORD)
         print(MAS_URL)
+        print(MAS_APIURL)
         print(MANAGE_URL)
         print(MAS_ADMIN_USERNAME)
         print(MAS_ADMIN_PASSWORD)
@@ -448,102 +450,102 @@ data:
         print(MANAGE_JDBC_SCHEMA)
         print(MANAGE_JDBC_CERT)
 
-    def test_manage_db_connection_and_update_permissions():
+    # # def manage_db_connection_and_update_permissions():
 
-        url = MANAGE_JDBC_URL.replace("jdbc:", "") if MANAGE_JDBC_URL is not None else None
-        jdbc_details = urlparse(url)
+    # #     url = MANAGE_JDBC_URL.replace("jdbc:", "") if MANAGE_JDBC_URL is not None else None
+    # #     jdbc_details = urlparse(url)
         
-        db_config = {
-            "database": jdbc_details.path.replace("/", "").split(":")[0],
-            "hostname": jdbc_details.hostname,
-            "port": jdbc_details.port,
-            "protocol": "TCPIP",
-            "user": globals().get('MANAGE_JDBC_USERNAME'),
-            "password": globals().get('MANAGE_JDBC_PASSWORD'),
-            "cert": globals().get('MANAGE_JDBC_CERT'),
-            "driver": globals().get('MANAGE_JDBC_DRIVER')
-        }
+    # #     db_config = {
+    # #         "database": jdbc_details.path.replace("/", "").split(":")[0],
+    # #         "hostname": jdbc_details.hostname,
+    # #         "port": jdbc_details.port,
+    # #         "protocol": "TCPIP",
+    # #         "user": globals().get('MANAGE_JDBC_USERNAME'),
+    # #         "password": globals().get('MANAGE_JDBC_PASSWORD'),
+    # #         "cert": globals().get('MANAGE_JDBC_CERT'),
+    # #         "driver": globals().get('MANAGE_JDBC_DRIVER')
+    # #     }
 
-        # Check DB2 database and validate certificate
-        if "DB2" in db_config["driver"]:
-            logger.info("=== DB2 Database -- Setting up connection ===")
+    # #     # Check DB2 database and validate certificate
+    # #     if "DB2" in db_config["driver"]:
+    # #         logger.info("=== DB2 Database -- Setting up connection ===")
 
-            # Certificate validation
-            cert_path = db_config["cert"]
-            valid_cert = cert_path and Path(cert_path).exists() and any("CERTIFICATE" in line for line in open(cert_path))
-            if cert_path:
-                logger.info(f"Certificate location: {cert_path}")
+    # #         # Certificate validation
+    # #         cert_path = db_config["cert"]
+    # #         valid_cert = cert_path and Path(cert_path).exists() and any("CERTIFICATE" in line for line in open(cert_path))
+    # #         if cert_path:
+    # #             logger.info(f"Certificate location: {cert_path}")
             
-            # Create connection string
-            conn_str = (
-                f"DATABASE={db_config['database']};HOSTNAME={db_config['hostname']};PORT={db_config['port']};"
-                f"PROTOCOL={db_config['protocol']};UID={db_config['user']};PWD={db_config['password']};"
-                + (f"SECURITY=SSL;SSLServerCertificate={db_config['cert']};" if valid_cert else "")
-            )
-            connection = ibm_db.connect(conn_str, "", "")
-            logger.info("Connection established successfully.")
+    # #         # Create connection string
+    # #         conn_str = (
+    # #             f"DATABASE={db_config['database']};HOSTNAME={db_config['hostname']};PORT={db_config['port']};"
+    # #             f"PROTOCOL={db_config['protocol']};UID={db_config['user']};PWD={db_config['password']};"
+    # #             + (f"SECURITY=SSL;SSLServerCertificate={db_config['cert']};" if valid_cert else "")
+    # #         )
+    # #         connection = ibm_db.connect(conn_str, "", "")
+    # #         logger.info("Connection established successfully.")
             
-            try:
-                # Manage permissions
-                schema = "" if "dbo" in MANAGE_JDBC_SCHEMA else (MANAGE_JDBC_SCHEMA + ".")
-                nextval = "NEXT VALUE" if "dbo" in MANAGE_JDBC_SCHEMA else "NEXTVAL"
+    # #         try:
+    # #             # Manage permissions
+    # #             schema = "" if "dbo" in MANAGE_JDBC_SCHEMA else (MANAGE_JDBC_SCHEMA + ".")
+    # #             nextval = "NEXT VALUE" if "dbo" in MANAGE_JDBC_SCHEMA else "NEXTVAL"
 
-                os_query = (
-                    f"SELECT app FROM {schema}applicationauth WHERE app IN "
-                    f"('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM','INTOBJECT','MXAPIINTOBJECT','MXAPIMAXAPP','MXAPIPERUSER') "
-                    f"AND groupname='MAXADMIN';"
-                )
+    # #             os_query = (
+    # #                 f"SELECT app FROM {schema}applicationauth WHERE app IN "
+    # #                 f"('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM','INTOBJECT','MXAPIINTOBJECT','MXAPIMAXAPP','MXAPIPERUSER') "
+    # #                 f"AND groupname='MAXADMIN';"
+    # #             )
                 
-                result_set = fetch_both(connection, os_query)
+    # #             result_set = fetch_both(connection, os_query)
 
-                if result_set:
-                    logger.info("Object structures already present: %s", result_set)
-                    update_permissions(connection, 'MXAPIPERSONGROUP', 'MAXADMIN', schema, nextval)
-                    update_permissions(connection, 'MXAPIPROP', 'MAXADMIN', schema, nextval)
-                    update_permissions(connection, 'MXAPIGROUP', 'MAXADMIN', schema, nextval)
-                    update_permissions(connection, 'MXASSET', 'MAXADMIN', schema, nextval)
-                    update_permissions(connection, 'MXEXTSYSTEM', 'MAXADMIN', schema, nextval)
-                    update_permissions(connection, 'INTOBJECT', 'MAXADMIN', schema, nextval)
-                    update_permissions(connection, 'MXAPIINTOBJECT', 'MAXADMIN', schema, nextval)
-                    update_permissions(connection, 'MXAPIMAXAPP', 'MAXADMIN', schema, nextval)
-                    update_permissions(connection, 'MXAPIPERUSER', 'MAXADMIN', schema, nextval)
-                else:
-                    logger.info("No required object structure found. Updating MAXADMIN group.")
-                    update_query = (
-                        f"INSERT INTO {schema}applicationauth (groupname, app, optionname, applicationauthid) "
-                        f"SELECT 'MAXADMIN', app, optionname, {nextval} FROM {schema}sigoption WHERE app IN "
-                        f"('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM','INTOBJECT','MXAPIINTOBJECT','MXAPIMAXAPP','MXAPIPERUSER');"
-                    )
-                    execute_query(connection, update_query)
-                    logger.info("Permissions successfully granted to MAXADMIN.")
-            finally:
-                ibm_db.close(connection)
-                logger.info("Connection closed.")
+    # #             if result_set:
+    # #                 logger.info("Object structures already present: %s", result_set)
+    # #                 update_permissions(connection, 'MXAPIPERSONGROUP', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXAPIPROP', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXAPIGROUP', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXASSET', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXEXTSYSTEM', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'INTOBJECT', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXAPIINTOBJECT', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXAPIMAXAPP', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXAPIPERUSER', 'MAXADMIN', schema, nextval)
+    # #             else:
+    # #                 logger.info("No required object structure found. Updating MAXADMIN group.")
+    # #                 update_query = (
+    # #                     f"INSERT INTO {schema}applicationauth (groupname, app, optionname, applicationauthid) "
+    # #                     f"SELECT 'MAXADMIN', app, optionname, {nextval} FROM {schema}sigoption WHERE app IN "
+    # #                     f"('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM','INTOBJECT','MXAPIINTOBJECT','MXAPIMAXAPP','MXAPIPERUSER');"
+    # #                 )
+    # #                 execute_query(connection, update_query)
+    # #                 logger.info("Permissions successfully granted to MAXADMIN.")
+    # #         finally:
+    # #             ibm_db.close(connection)
+    # #             logger.info("Connection closed.")
 
-    def fetch_both(connection, stmt):
-        response = ibm_db.exec_immediate(connection, stmt)
-        return ibm_db.fetch_both(response)
+    # def fetch_both(connection, stmt):
+    #     response = ibm_db.exec_immediate(connection, stmt)
+    #     return ibm_db.fetch_both(response)
 
-    def execute_query(connection, stmt):
-        ibm_db.exec_immediate(connection, stmt)
+    # def execute_query(connection, stmt):
+    #     ibm_db.exec_immediate(connection, stmt)
 
-    def update_permissions(connection, application, group, schema, nextval):
-        # Check if permission is already present
-        select_query = f"SELECT app FROM {schema}applicationauth WHERE app = '{application}' AND groupname = '{group}';"
-        result_set = fetch_both(connection, select_query)
+    # def update_permissions(connection, application, group, schema, nextval):
+    #     # Check if permission is already present
+    #     select_query = f"SELECT app FROM {schema}applicationauth WHERE app = '{application}' AND groupname = '{group}';"
+    #     result_set = fetch_both(connection, select_query)
 
-        if result_set:
-            logger.info(f"Permissions for {application} already present. Reapplying permissions.")
-            delete_query = f"DELETE FROM {schema}applicationauth WHERE app = '{application}' AND groupname = '{group}';"
-            execute_query(connection, delete_query)
+    #     if result_set:
+    #         logger.info(f"Permissions for {application} already present. Reapplying permissions.")
+    #         delete_query = f"DELETE FROM {schema}applicationauth WHERE app = '{application}' AND groupname = '{group}';"
+    #         execute_query(connection, delete_query)
 
-        # new permissions
-        update_query = (
-            f"INSERT INTO {schema}applicationauth (groupname, app, optionname, applicationauthid) "
-            f"SELECT '{group}', app, optionname, {nextval} FROM {schema}sigoption WHERE app = '{application}';"
-        )
-        execute_query(connection, update_query)
-        logger.info(f"Permissions for {application} applied successfully.")
+    #     # new permissions
+    #     update_query = (
+    #         f"INSERT INTO {schema}applicationauth (groupname, app, optionname, applicationauthid) "
+    #         f"SELECT '{group}', app, optionname, {nextval} FROM {schema}sigoption WHERE app = '{application}';"
+    #     )
+    #     execute_query(connection, update_query)
+    #     logger.info(f"Permissions for {application} applied successfully.")
 
     def test_create_super_user_token():
         url = MAS_URL+"logininitial"
@@ -647,6 +649,34 @@ data:
         assert_that(response.status_code).is_equal_to(200)
         print("Created user:"+manage_user+"and Password is:"+manage_user_password)
 
+    def test_check_user_sync():
+        headers = {"Authorization": f"Bearer {authToken}"}
+
+        def get_user():
+            url = f"{MAS_APIURL}/v3/users/{manage_user}"
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()  # Raises an exception for HTTP errors
+            return response.json()
+
+        # Obtain user just created to check sync status
+        test_user = get_user()
+
+        # Wait for sync status to become SUCCESS within 10 minutes
+        logger.debug("Waiting for user coordinator to update sync status")
+        t_end = time.time() + 60 * 10
+        while time.time() < t_end:
+            sync_state = test_user["applications"]["manage"]["sync"]["state"]
+            if sync_state == "SUCCESS":
+                break
+            else:
+                logger.debug(f"User sync has not been completed yet for app manage: {t_end - time.time():.2f} seconds remaining")
+                time.sleep(5)
+                # Re-check the user sync status
+                test_user = get_user()
+
+        # Verify the sync status is SUCCESS after timeout period
+        assert test_user["applications"]["manage"]["sync"]["state"] == "SUCCESS"
+
     def test_get_or_generate_manage_user_apikey(dyn_client):
         api_storage = {}  # Cache for API keys
         # Try to retrieve the existing API key
@@ -656,7 +686,7 @@ data:
             certSecret = certSecretObj.get(
                 f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
             )
-            internal_cert = certSecret.data["ca.crt"]
+            internal_cert = certSecret.data["tls.crt"]
             internal_key = certSecret.data["tls.key"]
 
             with open("internal.crt", "w+") as f:
@@ -675,13 +705,13 @@ data:
             else:
                 logger.info(f"No existing API key for {manage_user}. Generating a new one.")
                 # If retrieval failed, attempt to create a new API key
-                url = MANAGE_URL+"/api/os/mxapiapikey?lean=1"
+                url = f"{MANAGE_URL}/api/os/mxapiapikey?ccm=1&lean=1"
                 headers = {"content-type": "application/json"}
                 payload = {"expiration": -1, "userid": manage_user}
                 resp = requests.post(url, headers=headers, json=payload, cert=client_cert, verify=False)
                 if resp.status_code <= 201:
                     # After generating, retrieve to confirm
-                    data = requests.get(url, cert=client_cert, verify=False).json()
+                    data = requests.get(url, verify=False).json()
                     apiKey = data["member"][0]["apikey"]
                     logger.info(f"Generated new API key for {manage_user}: {apiKey}")
                     api_storage[manage_user] = apiKey

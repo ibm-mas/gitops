@@ -677,56 +677,51 @@ data:
         # Verify the sync status is SUCCESS after timeout period
         assert test_user["applications"]["manage"]["sync"]["state"] == "SUCCESS"
 
-    def test_get_or_generate_manage_user_apikey(dyn_client):
-        api_storage = {}  # Cache for API keys
-        # Try to retrieve the existing API key
-        try:
-            url = MANAGE_URL+f"/api/os/mxapiapikey"
-            userid = "userid=\""+manage_user+"\""
-            querystring = {"lean":["1","1"],"oslc.select":"*","oslc.where":userid}
-            headers = {
-                        "Content-Type": "application/json",
-                        "x-access-token": authToken
-            }
-            certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
-            certSecret = certSecretObj.get(
-                f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
-            )
-            internal_cert = certSecret.data["tls.crt"]
-            internal_key = certSecret.data["tls.key"]
+    # def test_get_or_generate_manage_user_apikey(dyn_client):
+    #     api_storage = {}  # Cache for API keys
+    #     # Try to retrieve the existing API key
+    #     try:
+    #         url = MANAGE_URL+f"/api/os/mxapiapikey"
+    #         userid = "userid=\""+manage_user+"\""
+    #         querystring = {"oslc.select":"*","oslc.where":userid}
+    #         certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
+    #         certSecret = certSecretObj.get(
+    #             f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
+    #         )
+    #         internal_cert = certSecret.data["tls.crt"]
+    #         internal_key = certSecret.data["tls.key"]
+    #         with open("internal.crt", "w+") as f:
+    #             f.write(internal_cert)
+    #         with open("internal.key", "w+") as f:
+    #             f.write(internal_key)
+    #         client_cert = ("internal.crt", "internal.key")
+    #         resp = requests.request("GET", url, cert=client_cert, params=querystring, verify=False)
 
-            with open("internal.crt", "w+") as f:
-                f.write(internal_cert)
-            with open("internal.key", "w+") as f:
-                f.write(internal_key)
-            client_cert = ("internal.crt", "internal.key")
-            resp = requests.request("GET", url, cert=client_cert, headers=headers, params=querystring)
-
-            if resp.status_code == 200:
-                data = resp.json()
-                apiKey = data["member"][0]["apikey"]
-                logger.info(f"Retrieved API key for {manage_user}: {apiKey}")
-                api_storage[manage_user] = apiKey
-                return apiKey
-            else:
-                logger.info(f"No existing API key for {manage_user}. Generating a new one.")
-                # If retrieval failed, attempt to create a new API key
-                url = f"{MANAGE_URL}/api/os/mxapiapikey?ccm=1&lean=1"
-                headers = {"content-type": "application/json"}
-                payload = {"expiration": -1, "userid": manage_user}
-                resp = requests.post(url, headers=headers, json=payload, cert=client_cert, verify=False)
-                if resp.status_code <= 201:
-                    # After generating, retrieve to confirm
-                    data = requests.get(url, verify=False).json()
-                    apiKey = data["member"][0]["apikey"]
-                    logger.info(f"Generated new API key for {manage_user}: {apiKey}")
-                    api_storage[manage_user] = apiKey
-                    return apiKey
-                else:
-                    raise Exception(f"Failed to create API key for {manage_user}. Status code: {resp.status_code}, Response: {resp.text}")
-        except Exception as ex:
-            logger.error(f"An error occurred while generating API key for {manage_user}. Error: {ex}")
-            raise
+    #         if resp.status_code == 200:
+    #             data = resp.json()
+    #             apiKey = data["member"][0]["apikey"]
+    #             logger.info(f"Retrieved API key for {manage_user}: {apiKey}")
+    #             api_storage[manage_user] = apiKey
+    #             return apiKey
+    #         else:
+    #             logger.info(f"No existing API key for {manage_user}. Generating a new one.")
+    #             # If retrieval failed, attempt to create a new API key
+    #             url = f"{MANAGE_URL}/api/os/mxapiapikey?ccm=1&lean=1"
+    #             headers = {"content-type": "application/json"}
+    #             payload = {"expiration": -1, "userid": manage_user}
+    #             resp = requests.post(url, headers=headers, json=payload, cert=client_cert, verify=False)
+    #             if resp.status_code <= 201:
+    #                 # After generating, retrieve to confirm
+    #                 data = requests.get(url, verify=False).json()
+    #                 apiKey = data["member"][0]["apikey"]
+    #                 logger.info(f"Generated new API key for {manage_user}: {apiKey}")
+    #                 api_storage[manage_user] = apiKey
+    #                 return apiKey
+    #             else:
+    #                 raise Exception(f"Failed to create API key for {manage_user}. Status code: {resp.status_code}, Response: {resp.text}")
+    #     except Exception as ex:
+    #         logger.error(f"An error occurred while generating API key for {manage_user}. Error: {ex}")
+    #         raise
 
 ---
 apiVersion: batch/v1

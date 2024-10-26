@@ -214,14 +214,10 @@ data:
     from pathlib import Path
     from urllib.parse import urlparse
     logger = logging.getLogger()
-    apikey=""
-    siteid=""
-    currency=""
-    orgid=""
-    setid=""
-    csetid=""
-    currobject=""
+    authToken=""
     MANAGE_URL = ""
+    MAS_URL = ""
+    MAS_APIURL = ""
     MAS_ADMIN_USERNAME = "" 
     MAS_ADMIN_PASSWORD = ""
     MANAGE_JDBC_URL = "" 
@@ -232,6 +228,8 @@ data:
     MANAGE_JDBC_CERT = ""
     nextval = ""
     schema = ""
+    manage_user="saasuser"+str(random.randint(0,100))
+    manage_user_password=manage_user+str(random.randint(0,100))
 
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
     if mas_instance_id is None:
@@ -358,6 +356,12 @@ data:
             logger.info(f"ApiException: Failed to retrieve manage-maxinst instance in namespace {manageNamespace}: {str(ex)}")
 
         # -------------------------------
+        # Obtain MAS URL
+        # -------------------------------
+        masRouteDetails = dyn_client_mas_core.resources.get(api_version='route.openshift.io/v1', kind='Route')
+        masUrl = masRouteDetails.get(name=f'{mas_instance_id}-admin', namespace=masNamespace)
+        masapiUrl = masRouteDetails.get(name=f'{mas_instance_id}-api', namespace=masNamespace)
+        # -------------------------------
         # Manage URL (OpenShift Route)
         # -------------------------------
         try:
@@ -370,7 +374,9 @@ data:
             else:
                 logger.info(f"Error retrieving route: {str(e)}")
 
-        global MAS_ADMIN_USERNAME, MAS_ADMIN_PASSWORD, MANAGE_URL
+        global MAS_ADMIN_USERNAME, MAS_ADMIN_PASSWORD, MANAGE_URL, MAS_URL, MAS_APIURL
+        MAS_URL=f"https://{masUrl.spec.host}{masUrl.spec.path}"
+        MAS_APIURL=f"https://{masapiUrl.spec.host}{masapiUrl.spec.path}"
         if manageUrl:
             MANAGE_URL = f"https://{manageUrl}/maximo"
         global MANAGE_JDBC_URL, MANAGE_JDBC_USERNAME, MANAGE_JDBC_PASSWORD, MANAGE_JDBC_DRIVER, MANAGE_JDBC_SCHEMA, MANAGE_JDBC_CERT
@@ -380,8 +386,12 @@ data:
         # -------------------------------
         secrets = dyn_client_mas_core.resources.get(api_version='v1', kind='Secret')
         superuserCredentials = secrets.get(mas_instance_id+'-credentials-superuser', masNamespace)
-        MAS_ADMIN_USERNAME = superuserCredentials.data.username
-        MAS_ADMIN_PASSWORD = superuserCredentials.data.password
+        MAS_ADMIN_USERNAME_ENCODE = superuserCredentials.data.username
+        MAS_ADMIN_USERNAME_BYTE = base64.b64decode(str(MAS_ADMIN_USERNAME_ENCODE))
+        MAS_ADMIN_USERNAME = MAS_ADMIN_USERNAME_BYTE.decode("utf-8")
+        MAS_ADMIN_PASSWORD_DECODE = superuserCredentials.data.password
+        MAS_ADMIN_PASSWORD_BYTE = base64.b64decode(str(MAS_ADMIN_PASSWORD_DECODE))
+        MAS_ADMIN_PASSWORD = MAS_ADMIN_PASSWORD_BYTE.decode("utf-8")
         # -------------------------------
         # JDBC Credentials
         # -------------------------------
@@ -430,6 +440,7 @@ data:
         print(MANAGE_JDBC_URL)
         print(MANAGE_JDBC_USERNAME)
         print(MANAGE_JDBC_PASSWORD)
+        print(MAS_URL)
         print(MANAGE_URL)
         print(MAS_ADMIN_USERNAME)
         print(MAS_ADMIN_PASSWORD)
@@ -534,294 +545,152 @@ data:
         execute_query(connection, update_query)
         logger.info(f"Permissions for {application} applied successfully.")
 
-    def test_generatekey():
-        global apikey
-        maxauth=str(MAS_ADMIN_USERNAME+":"+MAS_ADMIN_PASSWORD)
-        base64_maxauth = base64.b64encode(maxauth.encode("utf-8"))
-        maxauth = base64_maxauth.decode("utf-8")
-        url = MANAGE_URL+"/api/apitoken/create"
-        payload = {"expiration": -1}
-        headers = {
-            "Content-Type": "application/json",
-            "maxauth":maxauth
-        }
-        response = requests.request("POST", url, json=payload, headers=headers).json()
-        apikey=response['apikey']
-        
-    def test_create_user():
-        url = MANAGE_URL+"/api/os/mxapiperuser"
-        querystring = {"lean":"1"}
-        personid="person"+str(random.randint(0,100))
+    def test_create_super_user_token():
+        url = MAS_URL+"logininitial"
+        querystring = {"verify":"False"}
+
         payload = {
-            "personid": personid,
-            "firstname": "first"+str(random.randint(0,100)),
-            "lastname": "last"+str(random.randint(0,100)),
-            "primaryemail": personid+"@yahoo.com",
-            "primaryphone": "999 999 9999",
-            "city": "Boston",
-            "addressline1": "23 wabashs street",
-            "stateprovince": "MA",
-            "postalcode": "01111",
-            "country": "US",
-            "language": "EN",
-            "maxuser": [
+            "username": f"{MAS_ADMIN_USERNAME}",
+            "password": f"{MAS_ADMIN_PASSWORD}"
+        }
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
+        global authToken
+        authToken = response.json()["token"]
+
+    def test_v3_create_user():
+        url = MAS_APIURL+"v3/users"
+        querystring = {"lean":"1"}
+        payload = {
+            "id": manage_user,
+            "status": {"active": True},
+            "username": manage_user,
+            "token": manage_user_password,
+            "owner": "local",
+            "emails": [
                 {
-                    "loginid": personid,
-                    "passwordcheck": personid,
-                    "passwordinput": personid,
-                    "defsite": "BEDFORD",
-                    "type": "TYPE 1",
-                    "userid": personid
+                    "value": f"{manage_user}_email@ibm.com",
+                    "type": "Work",
+                    "primary": True
                 }
-            ]
+            ],
+            "displayName": "Api default JSON User",
+            "issuer": "local",
+            "permissions": {
+                "systemAdmin": True,
+                "userAdmin": True
+            },
+            "entitlement": {
+                "application": "PREMIUM",
+                "admin": "ADMIN_PREMIUM",
+                "alwaysReserveLicense": True
+            },
+            "title": "Mr.Sanity",
+            "givenName": manage_user,
+            "familyName": manage_user
         }
         headers = {
             "Content-Type": "application/json",
-            "apikey": apikey
-        }
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-        assert_that(response.status_code).is_equal_to(requests.codes.created)
-
-    def test_generateObjectStructureforCurrency():
-        url = MANAGE_URL+"/api/os/mxintobject"
-        global currobject
-        querystring = {"lean":"1"}
-        currobject="MXCUR"+str(random.randint(0,100))
-        payload = {
-            "intobjectname": currobject,
-            "description": "API Automation - "+currobject,
-            "usewith": "INTEGRATION",
-            "authapp": "MXAPIINTOBJECT",
-            "maxintobjdetail": {"objectname": "CURRENCY"}
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": apikey
-        }
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-        assert_that(response.status_code).is_equal_to(requests.codes.created)
-
-    def test_create_currency():
-        global currency
-        currency="curr"+str(random.randint(0,100))
-        logger.info(currency)
-
-        url = MANAGE_URL+"/api/os/"+currobject
-
-        querystring = {"lean":"1"}
-
-        payload = {
-            "currencycode": currency,
-            "description": currency+" Description"
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": apikey
-        }
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-        assert_that(response.status_code).is_equal_to(requests.codes.created)
-        logger.info(response.text)
-
-    def test_create_item_set():
-        url = MANAGE_URL+"/api/os/mxapisets"
-        global setid
-        setid="itset"+str(random.randint(5,100))
-
-        querystring = {"lean":"1"}
-
-        payload = {
-            "settype_description": "Item Sets",
-            "settype": "ITEM",
-            "setid": setid
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": apikey
+            "x-access-token": authToken
         }
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         logger.info(response.text)
         assert_that(response.status_code).is_equal_to(201)
-        
-    def test_create_company_set():
-        url = MANAGE_URL+"/api/os/mxapisets"
-        global csetid
-        csetid="comset"+str(random.randint(5,100))
+
+    def test_v3_user_link_to_idp():
+        url = MAS_APIURL+"v3/users/"+manage_user+"/idps/local"  # url = "https://api.fvtsaas.ibmmasfvt.com/v3/users/saasuser/idps/local"
+        querystring = {"emailPassword":"False"}
+        payload = {"idpUserId": manage_user}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.request("PUT", url, json=payload, headers=headers, params=querystring)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+
+    def test_v3_user_add_user_to_workspace():
+        url = MAS_APIURL+"workspaces/"+mas_workspace_id+"/users/"+manage_user  #url = "https://api.fvtsaas.ibmmasfvt.com/workspaces/masdev/users/saasUser"
+        payload = {"permissions": {"workspaceAdmin": False}}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.request("PUT", url, json=payload, headers=headers)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+
+    def test_v3_user_application_permission():
+        url = MAS_APIURL+"workspaces/"+mas_workspace_id+"/applications/manage/users/"+manage_user  #url = "https://api.fvtsaas.ibmmasfvt.com/workspaces/masdev/applications/manage/users/saasUser"
+        payload = {"role": "MANAGEUSER"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.request("PUT", url, json=payload, headers=headers)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+
+    def test_v3_user_reset_password():
+        url = MAS_APIURL+"v3/users/"+manage_user+"/password"  #url = "https://api.fvtsaas.ibmmasfvt.com/v3/users/saasUser/password"
         querystring = {"lean":"1"}
-        payload = {
-            "settype_description": "Item Sets",
-            "settype": "COMPANY",
-            "setid": csetid
-        }
+        payload = {"token": "Maximo_default123_Password"}
         headers = {
             "Content-Type": "application/json",
-            "apikey": apikey
+            "x-access-token": authToken
         }
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         logger.info(response.text)
-        assert_that(response.status_code).is_equal_to(requests.codes.created)
-        
-    def test_create_org():
-        url = MANAGE_URL+"/api/os/mxapiorganization"
-        global siteid,orgid
-        querystring = {"lean":["1","1"]}
-        orgid="org"+str(random.randint(0,1000))
-        logger.info(orgid)
-        
-        payload = {
-            "active": False,
-            "dfltitemstatus_description": "Active",
-            "orgid": orgid,
-            "basecurrency1": currency,
-            "companysetid": csetid,
-            "organizationid": 7,
-            "description": "MY ORG IN GUJARAT",
-            "dfltitemstatus": "ACTIVE",
-            "itemsetid": setid,
-            "category": "NS"
-        }
-        headers = {
-            
-            "Content-Type": "application/json",
-            "apikey": apikey
-        }
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-        assert_that(response.status_code).is_equal_to(requests.codes.created)
-        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+        print("Created user:"+manage_user+"and Password is:"+manage_user_password)
 
-    def test_createGlCompany():
-        url = MANAGE_URL+"/api/os/MXAPIGLCOMP"
+    def test_get_or_generate_manage_user_apikey(dyn_client):
+        api_storage = {}  # Cache for API keys
+        # Try to retrieve the existing API key
+        try:
+            url = f"{MANAGE_URL}/api/os/mxapiapikey?ccm=1&lean=1&oslc.select=*&oslc.where=userid=\"{manage_user}\""
+            certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
+            certSecret = certSecretObj.get(
+                f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
+            )
+            internal_cert = certSecret.data["ca.crt"]
+            internal_key = certSecret.data["tls.key"]
 
-        querystring = {"lean":"1"}
+            with open("internal.crt", "w+") as f:
+                f.write(internal_cert)
+            with open("internal.key", "w+") as f:
+                f.write(internal_key)
+            client_cert = ("internal.crt", "internal.key")
+            resp = requests.get(url, cert=client_cert, verify=False)
 
-        payload = {
-            "comptext": "Automation GL (111)",
-            "glorder": 0,
-            "active": True,
-            "compvalue": 111,
-            "orgid": orgid
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": apikey
-        }
-
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-        assert_that(response.status_code).is_equal_to(requests.codes.created)
-        logger.info(response.text)
-
-    def test_createGlCompany2():
-        url = MANAGE_URL+"/api/os/MXAPIGLCOMP"
-
-        querystring = {"lean":"1"}
-
-        payload = {
-            "comptext": "Automation GL (222)",
-            "glorder": 1,
-            "active": True,
-            "compvalue": 222,
-            "orgid": orgid
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": apikey
-        }
-
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-        assert_that(response.status_code).is_equal_to(requests.codes.created)
-        logger.info(response.text)
-
-    def test_createGlCompany3():
-        url = MANAGE_URL+"/api/os/MXAPIGLCOMP"
-
-        querystring = {"lean":"1"}
-
-        payload = {
-            "comptext": "Automation GL (333)",
-            "glorder": 2,
-            "active": True,
-            "compvalue": 333,
-            "orgid": orgid
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": apikey
-        }
-
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-        assert_that(response.status_code).is_equal_to(requests.codes.created)
-        logger.info(response.text)
-
-    def test_createGlAccount():
-        url = MANAGE_URL+"/api/os/MXAPICOA"
-
-        querystring = {"lean":"1"}
-
-        payload = {
-            "glaccount": "111-222-333",
-            "accountname": "111-222-333",
-            "active": True,
-            "glcomp01": "111",
-            "glcomp02": "222",
-            "glcomp03": "333",
-            "orgid": orgid
-        }
-        headers = {
-            
-            "Content-Type": "application/json",
-            "apikey": apikey
-        }
-
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-
-        logger.info(response.text)
-        assert_that(response.status_code).is_equal_to(requests.codes.created)
-
-    def test_updateOrgToActiveSiteAndGL():
-        url = MANAGE_URL+"/api/os/mxapiorganization"
-        global siteid
-        orgid2= "orgid=\""+orgid+"\""
-        logger.info(orgid2)
-        querystring = {"lean":["1","1"],"oslc.select":"*","oslc.where":orgid2}
-        logger.info(querystring)
-
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": apikey
-        }
-
-        response = requests.request("GET", url, headers=headers, params=querystring)
-        logger.info("response")
-        jsonresponse=response.json()
-
-        logger.info(jsonresponse['member'][0]['organizationid'])
-        orgid3=jsonresponse['member'][0]['organizationid']
-
-        url = MANAGE_URL+"/api/os/mxapiorganization/"+str(orgid3)
-        siteid="site"+str(random.randint(0,100))
-        logger.info(siteid)
-        querystring = {"lean":["1","1"]}
-
-        payload = {
-            "site": [
-                {
-                    "description_longdescription": "Automation Site 1",
-                    "active": True,
-                    "description": "Automation Site 1",
-                    "siteid": siteid
-                }
-            ],
-            "clearingacct": "111-222-333",
-            "active": True
-        }
-        headers = {
-        
-            "Content-Type": "application/json",
-            "x-method-override": "PATCH",
-            "patchtype": "MERGE",
-            "apikey": apikey
-        }
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-        assert_that(response.status_code).is_equal_to(204)
+            if resp.status_code == 200:
+                data = resp.json()
+                apiKey = data["member"][0]["apikey"]
+                logger.info(f"Retrieved API key for {manage_user}: {apiKey}")
+                api_storage[manage_user] = apiKey
+                return apiKey
+            else:
+                logger.info(f"No existing API key for {manage_user}. Generating a new one.")
+                # If retrieval failed, attempt to create a new API key
+                url = MANAGE_URL+"/api/os/mxapiapikey?lean=1"
+                headers = {"content-type": "application/json"}
+                payload = {"expiration": -1, "userid": manage_user}
+                resp = requests.post(url, headers=headers, json=payload, cert=client_cert, verify=False)
+                if resp.status_code <= 201:
+                    # After generating, retrieve to confirm
+                    data = requests.get(url, cert=client_cert, verify=False).json()
+                    apiKey = data["member"][0]["apikey"]
+                    logger.info(f"Generated new API key for {manage_user}: {apiKey}")
+                    api_storage[manage_user] = apiKey
+                    return apiKey
+                else:
+                    raise Exception(f"Failed to create API key for {manage_user}. Status code: {resp.status_code}, Response: {resp.text}")
+        except Exception as ex:
+            logger.error(f"An error occurred while generating API key for {manage_user}. Error: {ex}")
+            raise
 
 ---
 apiVersion: batch/v1

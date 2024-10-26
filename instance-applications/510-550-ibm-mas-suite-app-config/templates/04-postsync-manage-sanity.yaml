@@ -396,47 +396,47 @@ data:
         # -------------------------------
         # JDBC Credentials
         # -------------------------------
-        try:
-            jdbcCfgObj = dyn_client_mas_core.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
-            #jdbcCfgDetails = jdbcCfgObj.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=masNamespace)
-            bindingManage = manageWorkspaceCR.spec.bindings.jdbc
-        except Exception as ex:
-            logger.info(f"######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
-        logger.info(f"ManageWorkspace has jdbc binding set to {bindingManage}")
+        # try:
+        #     jdbcCfgObj = dyn_client_mas_core.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
+        #     #jdbcCfgDetails = jdbcCfgObj.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=masNamespace)
+        #     bindingManage = manageWorkspaceCR.spec.bindings.jdbc
+        # except Exception as ex:
+        #     logger.info(f"######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
+        # logger.info(f"ManageWorkspace has jdbc binding set to {bindingManage}")
 
-        if "system" in bindingManage:
-            jdbcCfgInstName = f'{mas_instance_id}-jdbc-system'
-        elif "workspace-application" in bindingManage:
-            jdbcCfgInstName = f'{mas_instance_id}-jdbc-wsapp-{mas_workspace_id}-manage'
-        else:
-            logger.info("######### WARN: Unknown jdbc binding found in ManageWorkspace")
+        # if "system" in bindingManage:
+        #     jdbcCfgInstName = f'{mas_instance_id}-jdbc-system'
+        # elif "workspace-application" in bindingManage:
+        #     jdbcCfgInstName = f'{mas_instance_id}-jdbc-wsapp-{mas_workspace_id}-manage'
+        # else:
+        #     logger.info("######### WARN: Unknown jdbc binding found in ManageWorkspace")
 
-        try:
-            jdbcCfg = jdbcCfgObj.get(name=jdbcCfgInstName, namespace=masNamespace)
-            credentialsSecret = jdbcCfg.spec.config.credentials.secretName
-            secrets = dyn_client_mas_core.resources.get(api_version='v1', kind='Secret')
-            credentials = secrets.get(name=credentialsSecret, namespace=masNamespace)
-        except Exception:
-            logger.info("ApiException: Failed to retrieve Manage database details. Check ManageWorkspace jdbc binding spec")
+        # try:
+        #     jdbcCfg = jdbcCfgObj.get(name=jdbcCfgInstName, namespace=masNamespace)
+        #     credentialsSecret = jdbcCfg.spec.config.credentials.secretName
+        #     secrets = dyn_client_mas_core.resources.get(api_version='v1', kind='Secret')
+        #     credentials = secrets.get(name=credentialsSecret, namespace=masNamespace)
+        # except Exception:
+        #     logger.info("ApiException: Failed to retrieve Manage database details. Check ManageWorkspace jdbc binding spec")
 
-        # -------------------------------
-        # Database Certificate
-        # -------------------------------
-        if jdbcCfg is not None:
-            try:
-                with open('db2-tls.cert', 'w') as f:
-                    f.write(jdbcCfg.spec.certificates[0].crt)
-            except Exception as e:
-                logger.info(f"Error writing certificate: {str(e)}")
-        else:
-            logger.info("JdbcCfg was not assigned. Skipping certificate writing.")
+        # # -------------------------------
+        # # Database Certificate
+        # # -------------------------------
+        # if jdbcCfg is not None:
+        #     try:
+        #         with open('db2-tls.cert', 'w') as f:
+        #             f.write(jdbcCfg.spec.certificates[0].crt)
+        #     except Exception as e:
+        #         logger.info(f"Error writing certificate: {str(e)}")
+        # else:
+        #     logger.info("JdbcCfg was not assigned. Skipping certificate writing.")
 
-        MANAGE_JDBC_URL = jdbcCfg.spec.config.url if jdbcCfg else None
-        MANAGE_JDBC_USERNAME = credentials.data.username
-        MANAGE_JDBC_PASSWORD = credentials.data.password
-        MANAGE_JDBC_DRIVER = dbDriver
-        MANAGE_JDBC_SCHEMA = dbSchema
-        MANAGE_JDBC_CERT = "./db2-tls.cert"
+        # MANAGE_JDBC_URL = jdbcCfg.spec.config.url if jdbcCfg else None
+        # MANAGE_JDBC_USERNAME = credentials.data.username
+        # MANAGE_JDBC_PASSWORD = credentials.data.password
+        # MANAGE_JDBC_DRIVER = dbDriver
+        # MANAGE_JDBC_SCHEMA = dbSchema
+        # MANAGE_JDBC_CERT = "./db2-tls.cert"
 
         print(MANAGE_JDBC_URL)
         print(MANAGE_JDBC_USERNAME)
@@ -446,9 +446,9 @@ data:
         print(MANAGE_URL)
         print(MAS_ADMIN_USERNAME)
         print(MAS_ADMIN_PASSWORD)
-        print(MANAGE_JDBC_DRIVER)
-        print(MANAGE_JDBC_SCHEMA)
-        print(MANAGE_JDBC_CERT)
+        # print(MANAGE_JDBC_DRIVER)
+        # print(MANAGE_JDBC_SCHEMA)
+        # print(MANAGE_JDBC_CERT)
 
     # # def manage_db_connection_and_update_permissions():
 
@@ -681,7 +681,13 @@ data:
         api_storage = {}  # Cache for API keys
         # Try to retrieve the existing API key
         try:
-            url = f"{MANAGE_URL}/api/os/mxapiapikey?ccm=1&lean=1&oslc.select=*&oslc.where=userid=\"{manage_user}\""
+            url = MANAGE_URL+f"/api/os/mxapiapikey"
+            userid = "userid=\""+manage_user+"\""
+            querystring = {"lean":["1","1"],"oslc.select":"*","oslc.where":userid}
+            headers = {
+                        "Content-Type": "application/json",
+                        "x-access-token": authToken
+            }
             certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
             certSecret = certSecretObj.get(
                 f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
@@ -694,7 +700,7 @@ data:
             with open("internal.key", "w+") as f:
                 f.write(internal_key)
             client_cert = ("internal.crt", "internal.key")
-            resp = requests.get(url, cert=client_cert, verify=False)
+            resp = requests.request("GET", url, cert=client_cert, headers=headers, params=querystring)
 
             if resp.status_code == 200:
                 data = resp.json()

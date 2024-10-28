@@ -69,9 +69,50 @@ spec:
 
                 if [[ ${COMPARE} -ge 0 ]]; then
                   echo
-                  echo "Cleanup old or existing ibm-common-service and cpd-platform operators from ${CPD_OPERATORS_NAMESPACE}"
+                  echo "Cleanup old or existing cp4d operators from ${CPD_OPERATORS_NAMESPACE}"
                   echo "================================================================================"
                   echo
+                  
+                  DEP1=$(oc get deployment ibm-common-service-operator -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found)
+                  
+                  if [[ ! -z $DEP1 ]]; then
+                    oc scale deployment ibm-common-service-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+                  fi
+
+                  DEP2=$(oc get deployment operand-deployment-lifecycle-manager -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found)
+                  if [[ ! -z $DEP2 ]]; then
+                    oc scale deployment operand-deployment-lifecycle-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+                  fi
+
+                  DEP3=$(oc get deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found)
+                  if [[ ! -z $DEP3 ]]; then
+                    oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+                  fi
+                  
+                  echo
+                  echo "Delete Common Service operandregistry if exists..."
+                  oc delete operandregistry -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found common-service
+
+                  echo
+                  echo "Delete Common Service operandconfig if exists..."
+                  oc delete operandconfig -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found common-service
+
+                  echo
+                  echo "Delete Namespace Scope nss-managedby-odlm if exists..."
+                  oc delete namespacescopes.operator.ibm.com nss-managedby-odlm -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+
+                  echo
+                  echo "Delete Namespace Scope odlm-scope-managedby-odlm if exists..."
+                  oc delete namespacescopes.operator.ibm.com odlm-scope-managedby-odlm -n ${CPFS_NAMESPACE} --ignore-not-found
+
+                  echo
+                  echo "Delete Namespace Scope nss-odlm-scope if exists..."
+                  oc delete namespacescopes.operator.ibm.com nss-odlm-scope -n ${CPFS_NAMESPACE} --ignore-not-found
+
+                  echo
+                  echo "Delete Namespace Scope common-service from if exists..."
+                  oc delete namespacescopes.operator.ibm.com common-service -n ${CPFS_NAMESPACE} --ignore-not-found
+
 
                   OP1=$(oc get Subscription --selector="operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')
                   OP2=$(oc get Subscription --selector="operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')
@@ -80,7 +121,7 @@ spec:
                     echo "============"
                     echo "Debug:"
                     echo "============"
-                    echo "- IBM CP4D Platform channel installed ............ v${OP1}"
+                    echo "- IBM CP4D Platform channel installed ............ ${OP1}"
                     echo "- IBM CP4D Platform channel expected  ............ ${CPD_PLATFORM_CHANNEL}"
               
                     if [[ $COMP1 != 0 ]]; then
@@ -94,7 +135,7 @@ spec:
                     echo "============"
                     echo "Debug:"
                     echo "============"
-                    echo "- IBM CPFS channel installed ............ v${OP2}"
+                    echo "- IBM CPFS channel installed ............ ${OP2}"
                     echo "- IBM CPFS channel expected  ............ ${CPFS_CHANNEL}"
 
                     if [[ $COMP2 != 0 ]]; then

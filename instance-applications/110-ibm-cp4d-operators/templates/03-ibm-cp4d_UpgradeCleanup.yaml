@@ -1,0 +1,116 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "cpd-upg-cleanup-{{ .Values | toYaml | adler32sum }}"
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "083"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ .Values.cpd_operators_namespace }}
+            - name: CPFS_CHANNEL
+              value: {{ .Values.cpfs_channel }}
+            - name: CPD_PLATFORM_CHANNEL
+              value: {{ .Values.cpd_platform_channel }}
+            - name: CPD_PRODUCT_VERSION
+              value: {{ .Values.cpd_product_version }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              # function to compare the channel versions
+              compare_channels(){
+                CH1=$(echo "$1" | tr -d '.')
+                CH2=$(echo "$2" | tr -d '.')
+                echo $(( $CH1 - $CH2 ))
+              }
+
+              echo "Verify that the available channel in the packagemanifests is enough for the product version currently installing"
+              export CPFS_AVAILABLE_CHANNEL=$((oc get PackageManifest ibm-common-service-operator -o json) | jq -r '[.status.channels | .[].name] | last | split ("v") | last')
+
+              echo
+              echo "============"
+              echo "Debug:"
+              echo "============"
+              echo "- IBM Foundational Services channel in package manifest ............. v${CPFS_AVAILABLE_CHANNEL}"
+              echo "- IBM Foundational Services channel ................................. ${CPFS_CHANNEL}"
+              echo "- CP4D Product Version .............................................. ${CPD_PRODUCT_VERSION}"
+              echo
+
+              if [[ ! -z "${CPFS_AVAILABLE_CHANNEL}" ]]; then
+                COMPARE=$(compare_channels ${CPFS_AVAILABLE_CHANNEL} ${CPFS_CHANNEL:1})
+
+                if [[ ${COMPARE} -ge 0 ]]; then
+                  echo
+                  echo "Cleanup old or existing ibm-common-service and cpd-platform operators from ${CPD_OPERATORS_NAMESPACE}"
+                  echo "================================================================================"
+                  echo
+
+                  OP1=$(oc get Subscription --selector="operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')
+                  OP2=$(oc get Subscription --selector="operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')
+                  if [[ ! -z $OP1 ]]; then
+                    COMP1=$(compare_channels ${OP1:1} ${CPD_PLATFORM_CHANNEL:1})
+                    echo "============"
+                    echo "Debug:"
+                    echo "============"
+                    echo "- IBM CP4D Platform channel installed ............ v${OP1}"
+                    echo "- IBM CP4D Platform channel expected  ............ ${CPD_PLATFORM_CHANNEL}"
+              
+                    if [[ $COMP1 != 0 ]]; then
+                      oc delete Subscription --selector="operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                      oc delete ClusterServiceVersion --selector="operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                    fi
+                  fi
+
+                  if [[ ! -z $OP2 ]]; then
+                    COMP2=$(compare_channels ${OP2:1} ${CPFS_CHANNEL:1})
+                    echo "============"
+                    echo "Debug:"
+                    echo "============"
+                    echo "- IBM CPFS channel installed ............ v${OP2}"
+                    echo "- IBM CPFS channel expected  ............ ${CPFS_CHANNEL}"
+
+                    if [[ $COMP2 != 0 ]]; then
+                      oc delete Subscription --selector="operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                      oc delete ClusterServiceVersion --selector="operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                    fi
+                  fi
+                  echo "Done"
+                else
+                  echo "The channel available in ibm-common-service-operator package manifest (v${CPFS_AVAILABLE_CHANNEL}) is older than the minimum required version ${CPFS_CHANNEL} needed by Cloud Pak for Data ${CPD_PRODUCT_VERSION}!"
+                  echo "exiting..."
+                  exit 1
+                fi
+              fi
+
+      restartPolicy: Never
+      serviceAccountName: cpd-sa
+  backoffLimit: 4
+

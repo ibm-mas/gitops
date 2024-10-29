@@ -36,6 +36,8 @@ spec:
               value: {{ .Values.cpd_operators_namespace }}
             - name: CPD_SCALE_CONFIG
               value: {{ .Values.cpd_scale_config }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
           command:
             - /bin/bash
             - -c
@@ -107,8 +109,8 @@ spec:
                 if [[ ! -z $ZS_LOOKUP ]]; then
 
                   echo "ZenService spec has been fetched"
-                  
-                  ZEN_CR_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.zen.cr_version')
+
+                  ZEN_CR_VERSION=$((oc get ConfigMap olm-utils-cm -n mas-${INSTANCE_ID}-syncres -o json) | yq '.data.release_components_meta' | yq '.zen.cr_version')
 
                   CURR_VERSION=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.version}')
                   IS_PATCHED=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.ZenCoreMetaDb}')

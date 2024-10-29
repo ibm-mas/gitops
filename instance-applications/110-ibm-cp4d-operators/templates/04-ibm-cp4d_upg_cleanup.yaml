@@ -5,7 +5,7 @@ metadata:
   name: "cpd-upg-cleanup-{{ .Values | toYaml | adler32sum }}"
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "083"
+    argocd.argoproj.io/sync-wave: "086"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -69,50 +69,27 @@ spec:
 
                 if [[ ${COMPARE} -ge 0 ]]; then
                   echo
+                  echo "Backup and Delete existing common-service-maps configmap"
+                  echo "================================================================================"
+                  echo
+                  CSM_NAME=$((oc get ConfigMap common-service-maps -n kube-public --ignore-not-found -o json) | jq -r '.metadata.name')
+
+                  if [[ ! -z $CSM_NAME ]]; then
+                    BK_CM=$CSM_NAME-bkp-$(date +"%Y-%m-%d-%H-%M-%S")
+                    echo "Creating backup config map ${BK_CM}..."
+                    BK_OUTPUT=$(oc patch cm common-service-maps -n kube-public -p "{\"metadata\":{ \"name\":\"$BK_CM\" }}" --dry-run=client -o yaml | oc apply -f -)
+                    
+                    if [[ $BK_OUTPUT == *"created"* ]]; then
+                      echo "deleting existing common-service-maps ConfigMap..."
+                      oc delete ConfigMap common-service-maps -n kube-public
+                    fi
+
+                  fi
+                  
+                  echo
                   echo "Cleanup old or existing cp4d operators from ${CPD_OPERATORS_NAMESPACE}"
                   echo "================================================================================"
                   echo
-                  
-                  DEP1=$(oc get deployment ibm-common-service-operator -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found)
-                  
-                  if [[ ! -z $DEP1 ]]; then
-                    oc scale deployment ibm-common-service-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
-                  fi
-
-                  DEP2=$(oc get deployment operand-deployment-lifecycle-manager -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found)
-                  if [[ ! -z $DEP2 ]]; then
-                    oc scale deployment operand-deployment-lifecycle-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
-                  fi
-
-                  DEP3=$(oc get deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found)
-                  if [[ ! -z $DEP3 ]]; then
-                    oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
-                  fi
-                  
-                  echo
-                  echo "Delete Common Service operandregistry if exists..."
-                  oc delete operandregistry -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found common-service
-
-                  echo
-                  echo "Delete Common Service operandconfig if exists..."
-                  oc delete operandconfig -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found common-service
-
-                  echo
-                  echo "Delete Namespace Scope nss-managedby-odlm if exists..."
-                  oc delete namespacescopes.operator.ibm.com nss-managedby-odlm -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
-
-                  echo
-                  echo "Delete Namespace Scope odlm-scope-managedby-odlm if exists..."
-                  oc delete namespacescopes.operator.ibm.com odlm-scope-managedby-odlm -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
-
-                  echo
-                  echo "Delete Namespace Scope nss-odlm-scope if exists..."
-                  oc delete namespacescopes.operator.ibm.com nss-odlm-scope -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
-
-                  echo
-                  echo "Delete Namespace Scope common-service from if exists..."
-                  oc delete namespacescopes.operator.ibm.com common-service -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
-
 
                   OP1=$(oc get Subscription --selector="operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')
                   OP2=$(oc get Subscription --selector="operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')

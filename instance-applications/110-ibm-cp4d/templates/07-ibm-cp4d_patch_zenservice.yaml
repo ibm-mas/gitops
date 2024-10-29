@@ -105,11 +105,18 @@ spec:
               while true; do
                 ZS_LOOKUP=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec}')
                 if [[ ! -z $ZS_LOOKUP ]]; then
+
                   echo "ZenService spec has been fetched"
+                  
+                  ZEN_CR_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.zen.cr_version')
+
+                  CURR_VERSION=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.version}')
                   IS_PATCHED=$(oc get ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.ZenCoreMetaDb}')
-                  if [[ -z $IS_PATCHED ]]; then
+                  
+                  if [[ (-z $IS_PATCHED) || ($CURR_VERSION != $ZEN_CR_VERSION) ]]; then
                     echo "patching zenservice..."
-                    oc patch --type='merge' ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"scaleConfig\":\"$CPD_SCALE_CONFIG\",\"ZenCoreMetaDb\":{ \"name\":\"zen-metastoredb\",\"kind\":\"StatefulSet\",\"container\":\"zen-metastoredb\",\"replicas\":\"3\",\"resources\":{ \"limits\":{ \"cpu\":\"2\",\"memory\":\"4Gi\"},\"requests\":{ \"cpu\":\"200m\",\"memory\":\"1024Mi\"}}}}}"
+                    oc patch --type='merge' ZenService lite-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"version\":\"$ZEN_CR_VERSION\",\"scaleConfig\":\"$CPD_SCALE_CONFIG\",\"ZenCoreMetaDb\":{ \"name\":\"zen-metastoredb\",\"kind\":\"StatefulSet\",\"container\":\"zen-metastoredb\",\"replicas\":\"3\",\"resources\":{ \"limits\":{ \"cpu\":\"2\",\"memory\":\"4Gi\"},\"requests\":{ \"cpu\":\"200m\",\"memory\":\"1024Mi\"}}}}}"
+                    
                     echo "scaling zen operator down and up to force reconcile when the pod is restarted"
                     oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
                     oc scale deployment ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=1

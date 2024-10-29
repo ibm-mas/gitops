@@ -1,8 +1,11 @@
 ---
+# this job cleans up existing operators that might cause the cp4d upgrade to fail in the case of an upgrade.
+# Checks will be done and if no upgrade, nothing will be done
+
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "cpd-upg-cleanup-{{ .Values | toYaml | adler32sum }}"
+  name: "cpd-upg-cleanup-v1-{{ .Values | toYaml | adler32sum }}"
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "086"
@@ -52,6 +55,7 @@ spec:
                 echo $(( $CH1 - $CH2 ))
               }
 
+              # Verify that the available channel for common service operator is enough for the given product version
               echo "Verify that the available channel in the packagemanifests is enough for the product version currently installing"
               export CPFS_AVAILABLE_CHANNEL=$((oc get PackageManifest ibm-common-service-operator -o json) | jq -r '[.status.channels | .[].name] | last | split ("v") | last')
 
@@ -64,6 +68,7 @@ spec:
               echo "- CP4D Product Version .............................................. ${CPD_PRODUCT_VERSION}"
               echo
 
+              # Check available channels against the expected channel that would be installed
               if [[ ! -z "${CPFS_AVAILABLE_CHANNEL}" ]]; then
                 COMPARE=$(compare_channels ${CPFS_AVAILABLE_CHANNEL} ${CPFS_CHANNEL:1})
 
@@ -91,6 +96,7 @@ spec:
                   echo "================================================================================"
                   echo
 
+                  # Remove old or existing version of cpd-platform and ibm-common-service operators if their channels do not match the expected channel
                   OP1=$(oc get Subscription --selector="operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')
                   OP2=$(oc get Subscription --selector="operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')
                   if [[ ! -z $OP1 ]]; then

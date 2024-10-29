@@ -1,16 +1,16 @@
 {{- if .Values.ingress }}
 
-{{ $job_label :=  "mas-route-patch" }}
+{{ $job_label :=  "mas-ws-route-patch" }}
 ---
 # Permit outbound communication by the Job pods
 # (Needed to communicate with the K8S HTTP API and AWS SM)
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: mas-route-np
+  name: mas-ws-route-np
   namespace: mas-{{ .Values.instance_id }}-core
   annotations:
-    argocd.argoproj.io/sync-wave: "140"
+    argocd.argoproj.io/sync-wave: "221"
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 {{- if .Values.custom_labels }}
@@ -31,10 +31,10 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: mas-route-sa
+  name: mas-ws-route-sa
   namespace: mas-{{ .Values.instance_id }}-core
   annotations:
-    argocd.argoproj.io/sync-wave: "140"
+    argocd.argoproj.io/sync-wave: "221"
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 {{- if .Values.custom_labels }}
@@ -45,11 +45,12 @@ metadata:
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
-  name: mas-route-prereq-role-{{ .Values.instance_id }}
+  name: mas-ws-route-prereq-role-{{ .Values.instance_id }}
+  namespace: mas-{{ .Values.instance_id }}-core
   annotations:
-    argocd.argoproj.io/sync-wave: "140"
+    argocd.argoproj.io/sync-wave: "221"
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 {{- if .Values.custom_labels }}
@@ -71,16 +72,17 @@ rules:
     apiGroups:
       - core.mas.ibm.com
     resources:
-      - suites
+      - workspaces
 
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: mas-route-prereq-rb-{{ .Values.instance_id }}
+  name: mas-ws-route-prereq-rb-{{ .Values.instance_id }}
+  namespace: mas-{{ .Values.instance_id }}-core
   annotations:
-    argocd.argoproj.io/sync-wave: "141"
+    argocd.argoproj.io/sync-wave: "222"
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 {{- if .Values.custom_labels }}
@@ -89,21 +91,21 @@ metadata:
 {{- end }}
 subjects:
   - kind: ServiceAccount
-    name: mas-route-sa
+    name: mas-ws-route-sa
     namespace: mas-{{ .Values.instance_id }}-core
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: mas-route-prereq-role-{{ .Values.instance_id }}
+  kind: Role
+  name: mas-ws-route-prereq-role-{{ .Values.instance_id }}
 
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "mas-route-patch-v1-{{ .Values | toYaml | adler32sum }}"
+  name: "mas-ws-route-patch-v1-{{ .Values | toYaml | adler32sum }}"
   namespace: mas-{{ .Values.instance_id }}-core
   annotations:
-    argocd.argoproj.io/sync-wave: "142"
+    argocd.argoproj.io/sync-wave: "223"
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 {{- if .Values.custom_labels }}
@@ -141,30 +143,30 @@ spec:
               set -e
               echo
               echo "================================================================================"
-              echo "Wait for Suite Routes to be ready and add label type=external to routes"
+              echo "Wait for Suite Workspace Routes to be ready and add label type=external to routes"
               echo "================================================================================"
               echo
 
-              echo "Wait for Suite Routes to be ready"
+              echo "Wait for Suite Workspace Routes to be ready"
               wait_period=0
               while true; do
                 wait_period=$(($wait_period+60))
                 if [ $wait_period -gt 3600 ]; then
-                  echo "Suite Routes is not ready after 20 minutes of waiting. exiting..."
+                  echo "Suite Workspace Routes is not ready after 20 minutes of waiting. exiting..."
                   exit 1
                 else
                   sleep 60
                 fi
 
 
-                SUITE_NAME=$(oc get Suite -n $SUITE_NAMESPACE -o NAME)
-                echo "SUITE_NAME == ${SUITE_NAME}"
+                SUITE_WORKSPACE_NAME=$(oc get Workspace -n $SUITE_NAMESPACE -o NAME)
+                echo "SUITE_WORKSPACE_NAME == ${SUITE_WORKSPACE_NAME}"
 
-                export ROUTES_READY=$(oc get ${SUITE_NAME} -n ${SUITE_NAMESPACE} -o=jsonpath="{.status.conditions[?(@.type=='RoutesReady')].status}")
-                echo "ROUTES_READY == ${ROUTES_READY}"
+                export READY=$(oc get ${SUITE_WORKSPACE_NAME} -n ${SUITE_NAMESPACE} -o=jsonpath="{.status.conditions[?(@.type=='Ready')].status}")
+                echo "READY == ${READY}"
 
-                if [[ "${ROUTES_READY}" == "True" ]]; then
-                  echo "Suite Routes are now in ready status"
+                if [[ "${READY}" == "True" ]]; then
+                  echo "Suite Workspace Routes are now in ready status"
                   break
                 fi
               done
@@ -177,7 +179,7 @@ spec:
                 oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}'
               done
       restartPolicy: Never
-      serviceAccountName: "mas-route-sa"
+      serviceAccountName: "mas-ws-route-sa"
   backoffLimit: 4
 
 {{- end }}

@@ -81,18 +81,11 @@ rules:
       - list
     apiGroups:
       - "apps.mas.ibm.com"
-      - "route.openshift.io"
-      - "config.mas.ibm.com"
-      - "core.mas.ibm.com"
-      - ""
     resources:
       - manageworkspace
       - manageapp
       - manageworkspaces
       - manageapps
-      - secrets
-      - routes
-      - suites
 ---
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -119,8 +112,7 @@ roleRef:
 
 ---
 # -------------------------------------
-# MVI Verification tests need to be able to get/list nodes
-# to check for ready GPU nodes
+# Manage Verification tests need to be able to get jdbc and superuser credentials from Core
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -438,17 +430,17 @@ data:
         # MANAGE_JDBC_SCHEMA = dbSchema
         # MANAGE_JDBC_CERT = "./db2-tls.cert"
 
-        print(MANAGE_JDBC_URL)
-        print(MANAGE_JDBC_USERNAME)
-        print(MANAGE_JDBC_PASSWORD)
-        print(MAS_URL)
-        print(MAS_APIURL)
-        print(MANAGE_URL)
-        print(MAS_ADMIN_USERNAME)
-        print(MAS_ADMIN_PASSWORD)
-        # print(MANAGE_JDBC_DRIVER)
-        # print(MANAGE_JDBC_SCHEMA)
-        # print(MANAGE_JDBC_CERT)
+        logger.info(MANAGE_JDBC_URL)
+        logger.info(MANAGE_JDBC_USERNAME)
+        logger.info(MANAGE_JDBC_PASSWORD)
+        logger.info(MAS_URL)
+        logger.info(MAS_APIURL)
+        logger.info(MANAGE_URL)
+        logger.info(MAS_ADMIN_USERNAME)
+        logger.info(MAS_ADMIN_PASSWORD)
+        # logger.info(MANAGE_JDBC_DRIVER)
+        # logger.info(MANAGE_JDBC_SCHEMA)
+        # logger.info(MANAGE_JDBC_CERT)
 
     # # def manage_db_connection_and_update_permissions():
 
@@ -562,8 +554,36 @@ data:
         response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
         global authToken
         authToken = response.json()["token"]
+        logger.info(authToken)
 
     def test_v3_create_user():
+        #GET Same User first and verify whether it is already present or NOT!
+        url = MAS_APIURL+"v3/users"+manage_user
+        querystring = {"lean":"1"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.request("GET", url, headers=headers, params=querystring)
+        if response.status_code == 404:
+            logger.info("User was not present and being created.....")
+            create_user()
+        elif response.status_code == 200:
+            logger.info("User was already present, deleting first and then creating.....")
+            delete_user()
+            create_user()
+
+    def delete_user():
+        url = MAS_APIURL+"v3/users"+manage_user
+        querystring = {"lean":"1"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.request("DELETE", url, headers=headers, params=querystring)
+        assert_that(response.status_code).is_equal_to(204)
+            
+    def create_user():
         url = MAS_APIURL+"v3/users"
         querystring = {"lean":"1"}
         payload = {
@@ -636,19 +656,6 @@ data:
         logger.info(response.text)
         assert_that(response.status_code).is_equal_to(200)
 
-    def test_v3_user_reset_password():
-        url = MAS_APIURL+"v3/users/"+manage_user+"/password"  #url = "https://api.fvtsaas.ibmmasfvt.com/v3/users/saasUser/password"
-        querystring = {"lean":"1"}
-        payload = {"token": "Maximo_default123_Password"}
-        headers = {
-            "Content-Type": "application/json",
-            "x-access-token": authToken
-        }
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
-        logger.info(response.text)
-        assert_that(response.status_code).is_equal_to(200)
-        print("Created user:"+manage_user+"and Password is:"+manage_user_password)
-
     def test_check_user_sync():
         headers = {"Authorization": f"Bearer {authToken}"}
 
@@ -677,51 +684,55 @@ data:
         # Verify the sync status is SUCCESS after timeout period
         assert test_user["applications"]["manage"]["sync"]["state"] == "SUCCESS"
 
-    # def test_get_or_generate_manage_user_apikey(dyn_client):
-    #     api_storage = {}  # Cache for API keys
-    #     # Try to retrieve the existing API key
-    #     try:
-    #         url = MANAGE_URL+f"/api/os/mxapiapikey"
-    #         userid = "userid=\""+manage_user+"\""
-    #         querystring = {"oslc.select":"*","oslc.where":userid}
-    #         certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
-    #         certSecret = certSecretObj.get(
-    #             f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
-    #         )
-    #         internal_cert = certSecret.data["tls.crt"]
-    #         internal_key = certSecret.data["tls.key"]
-    #         with open("internal.crt", "w+") as f:
-    #             f.write(internal_cert)
-    #         with open("internal.key", "w+") as f:
-    #             f.write(internal_key)
-    #         client_cert = ("internal.crt", "internal.key")
-    #         resp = requests.request("GET", url, cert=client_cert, params=querystring, verify=False)
+    def test_get_or_generate_manage_user_apikey(dyn_client):
+        api_storage = {}  # Cache for API keys
+        # Try to retrieve the existing API key
+        try:
+            url = MANAGE_URL+f"/api/os/mxapiapikey"
+            logger.info(url)
+            #DEMO DATA is installed Hence retieving apikey for maxadmin
+            manageadmin = "maxadmin"
+            userid = "userid=\""+manageadmin+"\""
+            querystring = {"oslc.select":"*","oslc.where":userid}
+            certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
+            certSecret = certSecretObj.get(
+                f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
+            )
+            internal_cert = certSecret.data["tls.crt"]
+            internal_key = certSecret.data["tls.key"]
+            with open("internal.crt", "w+") as f:
+                f.write(internal_cert)
+            with open("internal.key", "w+") as f:
+                f.write(internal_key)
+            client_cert = ("internal.crt", "internal.key")
+            resp = requests.request("GET", url, cert=client_cert, params=querystring, verify=False)
 
-    #         if resp.status_code == 200:
-    #             data = resp.json()
-    #             apiKey = data["member"][0]["apikey"]
-    #             logger.info(f"Retrieved API key for {manage_user}: {apiKey}")
-    #             api_storage[manage_user] = apiKey
-    #             return apiKey
-    #         else:
-    #             logger.info(f"No existing API key for {manage_user}. Generating a new one.")
-    #             # If retrieval failed, attempt to create a new API key
-    #             url = f"{MANAGE_URL}/api/os/mxapiapikey?ccm=1&lean=1"
-    #             headers = {"content-type": "application/json"}
-    #             payload = {"expiration": -1, "userid": manage_user}
-    #             resp = requests.post(url, headers=headers, json=payload, cert=client_cert, verify=False)
-    #             if resp.status_code <= 201:
-    #                 # After generating, retrieve to confirm
-    #                 data = requests.get(url, verify=False).json()
-    #                 apiKey = data["member"][0]["apikey"]
-    #                 logger.info(f"Generated new API key for {manage_user}: {apiKey}")
-    #                 api_storage[manage_user] = apiKey
-    #                 return apiKey
-    #             else:
-    #                 raise Exception(f"Failed to create API key for {manage_user}. Status code: {resp.status_code}, Response: {resp.text}")
-    #     except Exception as ex:
-    #         logger.error(f"An error occurred while generating API key for {manage_user}. Error: {ex}")
-    #         raise
+            if resp.status_code == 200:
+                data = resp.json()
+                apiKey = data["member"][0]["apikey"]
+                logger.info(f"Retrieved API key for {manageadmin}: {apiKey}")
+                api_storage[manageadmin] = apiKey
+                return apiKey
+            else:
+                logger.info(f"No existing API key for {manageadmin}. Generating a new one.")
+                # If retrieval failed, attempt to create a new API key
+                url = f"{MANAGE_URL}/api/os/mxapiapikey?ccm=1&lean=1"
+                headers = {"content-type": "application/json"}
+                payload = {"expiration": -1, "userid": manageadmin}
+                resp = requests.post(url, headers=headers, json=payload, cert=client_cert, verify=False)
+                if resp.status_code <= 201:
+                    # After generating, retrieve to confirm
+                    data = requests.get(url, verify=False).json()
+                    apiKey = data["member"][0]["apikey"]
+                    logger.info(f"Generated new API key for {manageadmin}: {apiKey}")
+                    api_storage[manage_user] = apiKey
+                    logger.info(apiKey)
+                    return apiKey
+                else:
+                    raise Exception(f"Failed to create API key for {manageadmin}. Status code: {resp.status_code}, Response: {resp.text}")
+        except Exception as ex:
+            logger.error(f"An error occurred while generating API key for {manageadmin}. Error: {ex}")
+            raise
 
 ---
 apiVersion: batch/v1

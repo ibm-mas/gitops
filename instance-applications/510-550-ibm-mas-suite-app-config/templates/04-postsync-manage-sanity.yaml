@@ -221,7 +221,7 @@ data:
     MANAGE_JDBC_CERT = ""
     nextval = ""
     schema = ""
-    manage_user="saasuser"+str(random.randint(0,100))
+    manage_user="saasuser"+str(random.randint(0,10000))
     manage_user_password=manage_user+str(random.randint(0,100))
 
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
@@ -551,41 +551,49 @@ data:
             "Content-Type": "application/json"
         }
 
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
+        response = requests.post(url, json=payload, headers=headers, params=querystring)
         global authToken
         authToken = response.json()["token"]
         logger.info(authToken)
 
     def test_v3_create_user():
-        #GET Same User first and verify whether it is already present or NOT!
-        url = MAS_APIURL+"v3/users"+manage_user
-        querystring = {"lean":"1"}
+        # GET Same User first and verify whether it is already present or NOT!
+        url = MAS_APIURL + "v3/users/" + manage_user
+        querystring = {"lean": "1"}
         headers = {
             "Content-Type": "application/json",
             "x-access-token": authToken
         }
-        response = requests.request("GET", url, headers=headers, params=querystring)
+        response = requests.get(url, headers=headers, params=querystring)
+
         if response.status_code == 404:
             logger.info("User was not present and being created.....")
             create_user()
         elif response.status_code == 200:
-            logger.info("User was already present, deleting first and then creating.....")
-            delete_user()
+            logger.info("User was already present, deleting first.....")
+            # Keep deleting the user until a 404 status code is received
+            while True:
+                delete_response = delete_user()
+                if delete_response.status_code == 404:
+                    break
+            # create the user as its deleted now
             create_user()
 
     def delete_user():
-        url = MAS_APIURL+"v3/users"+manage_user
-        querystring = {"lean":"1"}
+        url = MAS_APIURL + "v3/users/" + manage_user
+        querystring = {"lean": "1"}
         headers = {
             "Content-Type": "application/json",
             "x-access-token": authToken
         }
-        response = requests.request("DELETE", url, headers=headers, params=querystring)
-        assert_that(response.status_code).is_equal_to(204)
-            
+        response = requests.delete(url, headers=headers, params=querystring)
+        logger.info(response.text)
+        assert_that(response.status_code).is_in(204, 404)
+        return response
+
     def create_user():
-        url = MAS_APIURL+"v3/users"
-        querystring = {"lean":"1"}
+        url = MAS_APIURL + "v3/users"
+        querystring = {"lean": "1"}
         payload = {
             "id": manage_user,
             "status": {"active": True},
@@ -618,7 +626,7 @@ data:
             "Content-Type": "application/json",
             "x-access-token": authToken
         }
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring)
+        response = requests.post(url, json=payload, headers=headers, params=querystring)
         logger.info(response.text)
         assert_that(response.status_code).is_equal_to(201)
 
@@ -630,7 +638,7 @@ data:
             "Content-Type": "application/json",
             "x-access-token": authToken
         }
-        response = requests.request("PUT", url, json=payload, headers=headers, params=querystring)
+        response = requests.put(url, json=payload, headers=headers, params=querystring)
         logger.info(response.text)
         assert_that(response.status_code).is_equal_to(200)
 
@@ -641,7 +649,7 @@ data:
             "Content-Type": "application/json",
             "x-access-token": authToken
         }
-        response = requests.request("PUT", url, json=payload, headers=headers)
+        response = requests.put(url, json=payload, headers=headers)
         logger.info(response.text)
         assert_that(response.status_code).is_equal_to(200)
 
@@ -652,7 +660,7 @@ data:
             "Content-Type": "application/json",
             "x-access-token": authToken
         }
-        response = requests.request("PUT", url, json=payload, headers=headers)
+        response = requests.put(url, json=payload, headers=headers)
         logger.info(response.text)
         assert_that(response.status_code).is_equal_to(200)
 
@@ -688,30 +696,35 @@ data:
         api_storage = {}  # Cache for API keys
         # Try to retrieve the existing API key
         try:
-            url = MANAGE_URL+f"/api/os/mxapiapikey"
-            logger.info(url)
             #DEMO DATA is installed Hence retieving apikey for maxadmin
             manageadmin = "maxadmin"
-            userid = "userid=\""+manageadmin+"\""
-            querystring = {"oslc.select":"*","oslc.where":userid}
             certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
             certSecret = certSecretObj.get(
                 f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
             )
             internal_cert = certSecret.data["tls.crt"]
             internal_key = certSecret.data["tls.key"]
-            with open("internal.crt", "w+") as f:
-                f.write(internal_cert)
-            with open("internal.key", "w+") as f:
-                f.write(internal_key)
-            client_cert = ("internal.crt", "internal.key")
-            resp = requests.request("GET", url, cert=client_cert, params=querystring, verify=False)
+            decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
+            decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
 
+            with open("internal.crt", "w+") as f:
+                f.write(decoded_internal_cert)
+            with open("internal.key", "w+") as f:
+                f.write(decoded_internal_key)
+            client_cert = ("internal.crt", "internal.key")
+            print(client_cert)
+            resp = requests.get(
+                MANAGE_URL
+                + "/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22maxadmin%22&lean=1",
+                cert=client_cert,
+                verify=False,
+            )
             if resp.status_code == 200:
                 data = resp.json()
                 apiKey = data["member"][0]["apikey"]
                 logger.info(f"Retrieved API key for {manageadmin}: {apiKey}")
                 api_storage[manageadmin] = apiKey
+                print("APIKEY"+apiKey)
                 return apiKey
             else:
                 logger.info(f"No existing API key for {manageadmin}. Generating a new one.")

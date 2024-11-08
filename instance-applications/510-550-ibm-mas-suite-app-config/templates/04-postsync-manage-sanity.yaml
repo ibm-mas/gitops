@@ -7,8 +7,10 @@
 {{ $ns               :=  .Values.mas_app_namespace }}
 {{ $np_name          :=  "postsync-sanity-manage-np" }}
 {{ $role_name        :=  "postsync-sanity-manage-role" }}
+{{ $crole_name       :=  "postsync-verify-manage-crole" }}
 {{ $sa_name          :=  "postsync-sanity-manage-sa" }}
 {{ $rb_name          :=  "postsync-sanity-manage-rb" }}
+{{ $crb_name         :=  "postsync-verify-manage-crb" }}
 {{ $tests_cm_name    :=  "postsync-sanity-tests-manage-cm" }}
 {{ $record_cm_name   :=  "postsync-sanity-tests-manage-record-cm" }}
 {{ $job_name         :=  "postsync-sanity-manage-job" }}
@@ -108,6 +110,62 @@ roleRef:
   name: {{ $role_name }}
 # -------------------------------------
 
+---
+# -------------------------------------
+# Manage Verification tests need to be able to get jdbc and superuser credentials from Core
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $crole_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - "apps.mas.ibm.com"
+      - "route.openshift.io"
+      - "config.mas.ibm.com"
+      - "core.mas.ibm.com"
+      - ""
+    resources:
+      - manageworkspace
+      - manageapp
+      - manageworkspaces
+      - manageapps
+      - secrets
+      - routes
+      - suites
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $crb_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "601"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $crole_name }}
+# -------------------------------------
 
 ---
 kind: ConfigMap
@@ -129,68 +187,748 @@ data:
     pytest
     kubernetes
     openshift
+    ibm_db==3.2.3
+    requests==2.31.0
+    assertpy==1.1
+    urllib3==1.26.18
   tests.py: |-
     from kubernetes import client,config
     from kubernetes.client import Configuration
     from openshift.dynamic import DynamicClient
     import pytest
     import os
+    import urllib3
+    import requests
+    import random
+    import logging
+    import base64
+    from assertpy import assert_that
+    import time
+    logger = logging.getLogger()
+    authToken=""
+    MANAGE_URL = ""
+    MAS_URL = ""
+    MAS_APIURL = ""
+    MAS_ADMIN_USERNAME = "" 
+    MAS_ADMIN_PASSWORD = ""
+    MANAGE_JDBC_URL = "" 
+    MANAGE_JDBC_USERNAME = "" 
+    MANAGE_JDBC_PASSWORD = ""
+    MANAGE_JDBC_DRIVER = ""
+    MANAGE_JDBC_SCHEMA = ""
+    MANAGE_JDBC_CERT = ""
+    admin_api_key = ""
+    user_api_key = ""
+    user_id="maxadmin"  #admin user
+    nextval = ""
+    schema = ""
+    manage_user="saasuser"+str(random.randint(0,10000))
+    manage_user_password=manage_user+str(random.randint(0,100))
+    asset="sanity"+str(random.randint(0,1000))
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    session = requests.Session()
+    session.verify = False
 
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
     if mas_instance_id is None:
-      raise Exception(f"Required MAS_INSTANCE_ID environment variable is not set")
+        raise Exception(f"Required MAS_INSTANCE_ID environment variable is not set")
 
     # e.g. "masdev"
     mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
     if mas_workspace_id is None:
-      raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
+        raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
 
-    manage_namespace = f"mas-{mas_instance_id}-manage"
+    manageNamespace = f"mas-{mas_instance_id}-manage"
+    masNamespace = f"mas-{mas_instance_id}-core"
+    manage_route_name = f"{mas_instance_id}-{mas_workspace_id}"
 
     @pytest.fixture(scope="session")
     def dyn_client():
-      if "KUBERNETES_SERVICE_HOST" in os.environ:
-        config.load_incluster_config()
-        k8s_config = Configuration.get_default_copy()
-        k8s_client = client.api_client.ApiClient(configuration=k8s_config)
-      else:
-        k8s_client = config.new_client_from_config()
-      dyn_client = DynamicClient(k8s_client)
-      yield dyn_client
+        if "KUBERNETES_SERVICE_HOST" in os.environ:
+            config.load_incluster_config()
+            k8s_config = Configuration.get_default_copy()
+            k8s_client = client.ApiClient(configuration=k8s_config)
+        else:
+            k8s_client = config.new_client_from_config()
+
+        dyn_client = DynamicClient(k8s_client)
+        dyn_client.namespace = manageNamespace
+        yield dyn_client
+
+    @pytest.fixture(scope="session")
+    def dyn_client_mas_core():
+        if "KUBERNETES_SERVICE_HOST" in os.environ:
+            config.load_incluster_config()
+            k8s_config = Configuration.get_default_copy()
+            k8s_client = client.ApiClient(configuration=k8s_config)
+        else:
+            k8s_client = config.new_client_from_config()
+
+        dyn_client = DynamicClient(k8s_client)
+        dyn_client.namespace = masNamespace
+        yield dyn_client
 
     @pytest.fixture(scope="session")
     def v1_manageworkspace(dyn_client):
-      yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+        yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
 
     @pytest.fixture(scope="session")
     def v1_manageapp(dyn_client):
-      yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageApp')
+        yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageApp')
 
     @pytest.fixture(scope="session")
     def mange_workspace_reconciled_version(mange_workspace_cr):
-      try:
-        yield mange_workspace_cr['status']['versions']['reconciled']
-      except KeyError as e:
-        assert False, f"Unable to determine ManageWorkspace reconciled version. Error details: {e}"
+        try:
+            yield mange_workspace_cr['status']['versions']['reconciled']
+        except KeyError as e:
+            assert False, f"Unable to determine ManageWorkspace reconciled version. Error details: {e}"
 
     @pytest.fixture(scope="session")
     def manage_version(mange_app_cr):
-      try:
-        yield mange_app_cr['status']['components']['manage']['version']
-      except KeyError as e:
-        assert False, f"Unable to determine ManageApp component version. Error details: {e}"
+        try:
+            yield mange_app_cr['status']['components']['manage']['version']
+        except KeyError as e:
+            assert False, f"Unable to determine ManageApp component version. Error details: {e}"
 
     @pytest.fixture(scope="session")
     def mange_workspace_cr(v1_manageworkspace):
-      yield v1_manageworkspace.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
+        yield v1_manageworkspace.get(namespace=manageNamespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
 
     @pytest.fixture(scope="session")
     def mange_app_cr(v1_manageapp):
-      yield v1_manageapp.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
+        yield v1_manageapp.get(namespace=manageNamespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
 
-    def test_placeholder():
-      print("Placeholder for sanity tests to be added")
+    @pytest.fixture(scope="session")
+    def v1_secrets(dyn_client):
+        yield dyn_client.resources.get(api_version='v1', kind='Secret')
 
+    @pytest.fixture(scope="session")
+    def v1_routes(dyn_client):
+        yield dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+
+    @pytest.fixture(scope="session")
+    def manage_route(v1_routes):
+        yield v1_routes.get(name=manage_route_name, namespace=manageNamespace)
+
+    @pytest.fixture(scope="session")
+    def manage_host(manage_route):
+        try:
+            yield manage_route['spec']['host']
+        except KeyError as e:
+            assert False, f"Unable to determine Manage host; spec.host key not present in {manage_route_name}/{manageNamespace}: {manage_route}. Error details: {e}"
+
+    # Obtain Manage Details
+    def test_getManageComponents(dyn_client):
+        manageWorkspaces = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+        try:
+            manageWorkspaceInstance = manageWorkspaces.get(name=f'{mas_instance_id}-{mas_workspace_id}', namespace=manageNamespace)
+        except Exception:
+            logger.info(f'ApiException: Failed to retrieve {mas_instance_id}-{mas_workspace_id} instance of ManageWorkspace in namespace {manageNamespace}')
+        manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
+        logger.info(f'{manageComponentListInStr}') # like this: base,health,nuclear
+
+    def test_getClusterInfo(dyn_client,dyn_client_mas_core):
+
+        # Manage Workspace and Credentials
+        manageDBCredential = f'jdbc-mas-{mas_instance_id}-{mas_workspace_id}-manage-credentials'
+        manageWorkspaceCR = None
+
+        # -------------------------------
+        # Manage Workspace CR
+        # -------------------------------
+        try:
+            manageWorkspaceCRD = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+            manageWorkspaceCR = manageWorkspaceCRD.get(name=f'{mas_instance_id}-{mas_workspace_id}', namespace=manageNamespace)
+        except Exception as ex:
+            logger.info(f"######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
+
+        # -------------------------------
+        # Manage Deployment DB Info
+        # -------------------------------
+        try:
+            manageDeployments = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageDeployment')
+            manageDeploymentInstance = manageDeployments.get(name='manage-maxinst', namespace=manageNamespace)
+            dbDriver = manageDeploymentInstance['spec']['db']['maximoDBdriver']
+            dbSchema = manageDeploymentInstance['spec']['db']['maximoDBschema']
+        except Exception as ex:
+            logger.info(f"ApiException: Failed to retrieve manage-maxinst instance in namespace {manageNamespace}: {str(ex)}")
+
+        # -------------------------------
+        # Obtain MAS URL
+        # -------------------------------
+        masRouteDetails = dyn_client_mas_core.resources.get(api_version='route.openshift.io/v1', kind='Route')
+        masUrl = masRouteDetails.get(name=f'{mas_instance_id}-admin', namespace=masNamespace)
+        masapiUrl = masRouteDetails.get(name=f'{mas_instance_id}-api', namespace=masNamespace)
+        # -------------------------------
+        # Manage URL (OpenShift Route)
+        # -------------------------------
+        try:
+            manageRouteObject = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+            manageRouteDetails = manageRouteObject.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=manageNamespace)
+            manageUrl = manageRouteDetails.spec.host
+        except Exception as e:
+            if e.status == 404:
+                logger.info(f"Unable to find route {mas_instance_id}-manage-{mas_workspace_id} in {manageNamespace}")
+            else:
+                logger.info(f"Error retrieving route: {str(e)}")
+
+        global MAS_ADMIN_USERNAME, MAS_ADMIN_PASSWORD, MANAGE_URL, MAS_URL, MAS_APIURL
+        MAS_URL=f"https://{masUrl.spec.host}{masUrl.spec.path}"
+        MAS_APIURL=f"https://{masapiUrl.spec.host}{masapiUrl.spec.path}"
+        if manageUrl:
+            #MANAGE_URL = f"https://{manageUrl}"
+            #MANAGE_URL="https://127.0.0.1:9080"    # Use when run from Local. Do port forwarding...
+            MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'  # Use for cluster
+            
+        global MANAGE_JDBC_URL, MANAGE_JDBC_USERNAME, MANAGE_JDBC_PASSWORD, MANAGE_JDBC_DRIVER, MANAGE_JDBC_SCHEMA, MANAGE_JDBC_CERT
+
+        # -------------------------------
+        # Obtain Superuser credentials
+        # -------------------------------
+        secrets = dyn_client_mas_core.resources.get(api_version='v1', kind='Secret')
+        superuserCredentials = secrets.get(mas_instance_id+'-credentials-superuser', masNamespace)
+        MAS_ADMIN_USERNAME_ENCODE = superuserCredentials.data.username
+        MAS_ADMIN_USERNAME_BYTE = base64.b64decode(str(MAS_ADMIN_USERNAME_ENCODE))
+        MAS_ADMIN_USERNAME = MAS_ADMIN_USERNAME_BYTE.decode("utf-8")
+        MAS_ADMIN_PASSWORD_DECODE = superuserCredentials.data.password
+        MAS_ADMIN_PASSWORD_BYTE = base64.b64decode(str(MAS_ADMIN_PASSWORD_DECODE))
+        MAS_ADMIN_PASSWORD = MAS_ADMIN_PASSWORD_BYTE.decode("utf-8")
+        # -------------------------------
+        # JDBC Credentials
+        # -------------------------------
+        # try:
+        #     jdbcCfgObj = dyn_client_mas_core.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
+        #     #jdbcCfgDetails = jdbcCfgObj.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=masNamespace)
+        #     bindingManage = manageWorkspaceCR.spec.bindings.jdbc
+        # except Exception as ex:
+        #     logger.info(f"######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
+        # logger.info(f"ManageWorkspace has jdbc binding set to {bindingManage}")
+
+        # if "system" in bindingManage:
+        #     jdbcCfgInstName = f'{mas_instance_id}-jdbc-system'
+        # elif "workspace-application" in bindingManage:
+        #     jdbcCfgInstName = f'{mas_instance_id}-jdbc-wsapp-{mas_workspace_id}-manage'
+        # else:
+        #     logger.info("######### WARN: Unknown jdbc binding found in ManageWorkspace")
+
+        # try:
+        #     jdbcCfg = jdbcCfgObj.get(name=jdbcCfgInstName, namespace=masNamespace)
+        #     credentialsSecret = jdbcCfg.spec.config.credentials.secretName
+        #     secrets = dyn_client_mas_core.resources.get(api_version='v1', kind='Secret')
+        #     credentials = secrets.get(name=credentialsSecret, namespace=masNamespace)
+        # except Exception:
+        #     logger.info("ApiException: Failed to retrieve Manage database details. Check ManageWorkspace jdbc binding spec")
+
+        # # -------------------------------
+        # # Database Certificate
+        # # -------------------------------
+        # if jdbcCfg is not None:
+        #     try:
+        #         with open('db2-tls.cert', 'w') as f:
+        #             f.write(jdbcCfg.spec.certificates[0].crt)
+        #     except Exception as e:
+        #         logger.info(f"Error writing certificate: {str(e)}")
+        # else:
+        #     logger.info("JdbcCfg was not assigned. Skipping certificate writing.")
+
+        # MANAGE_JDBC_URL = jdbcCfg.spec.config.url if jdbcCfg else None
+        # MANAGE_JDBC_USERNAME = credentials.data.username
+        # MANAGE_JDBC_PASSWORD = credentials.data.password
+        # MANAGE_JDBC_DRIVER = dbDriver
+        # MANAGE_JDBC_SCHEMA = dbSchema
+        # MANAGE_JDBC_CERT = "./db2-tls.cert"
+
+        logger.info(MANAGE_JDBC_URL)
+        logger.info(MANAGE_JDBC_USERNAME)
+        logger.info(MANAGE_JDBC_PASSWORD)
+        logger.info(MAS_URL)
+        logger.info(MAS_APIURL)
+        logger.info(MANAGE_URL)
+        logger.info(MAS_ADMIN_USERNAME)
+        logger.info(MAS_ADMIN_PASSWORD)
+        # logger.info(MANAGE_JDBC_DRIVER)
+        # logger.info(MANAGE_JDBC_SCHEMA)
+        # logger.info(MANAGE_JDBC_CERT)
+
+    # # def manage_db_connection_and_update_permissions():
+
+    # #     url = MANAGE_JDBC_URL.replace("jdbc:", "") if MANAGE_JDBC_URL is not None else None
+    # #     jdbc_details = urlparse(url)
+        
+    # #     db_config = {
+    # #         "database": jdbc_details.path.replace("/", "").split(":")[0],
+    # #         "hostname": jdbc_details.hostname,
+    # #         "port": jdbc_details.port,
+    # #         "protocol": "TCPIP",
+    # #         "user": globals().get('MANAGE_JDBC_USERNAME'),
+    # #         "password": globals().get('MANAGE_JDBC_PASSWORD'),
+    # #         "cert": globals().get('MANAGE_JDBC_CERT'),
+    # #         "driver": globals().get('MANAGE_JDBC_DRIVER')
+    # #     }
+
+    # #     # Check DB2 database and validate certificate
+    # #     if "DB2" in db_config["driver"]:
+    # #         logger.info("=== DB2 Database -- Setting up connection ===")
+
+    # #         # Certificate validation
+    # #         cert_path = db_config["cert"]
+    # #         valid_cert = cert_path and Path(cert_path).exists() and any("CERTIFICATE" in line for line in open(cert_path))
+    # #         if cert_path:
+    # #             logger.info(f"Certificate location: {cert_path}")
+            
+    # #         # Create connection string
+    # #         conn_str = (
+    # #             f"DATABASE={db_config['database']};HOSTNAME={db_config['hostname']};PORT={db_config['port']};"
+    # #             f"PROTOCOL={db_config['protocol']};UID={db_config['user']};PWD={db_config['password']};"
+    # #             + (f"SECURITY=SSL;SSLServerCertificate={db_config['cert']};" if valid_cert else "")
+    # #         )
+    # #         connection = ibm_db.connect(conn_str, "", "")
+    # #         logger.info("Connection established successfully.")
+            
+    # #         try:
+    # #             # Manage permissions
+    # #             schema = "" if "dbo" in MANAGE_JDBC_SCHEMA else (MANAGE_JDBC_SCHEMA + ".")
+    # #             nextval = "NEXT VALUE" if "dbo" in MANAGE_JDBC_SCHEMA else "NEXTVAL"
+
+    # #             os_query = (
+    # #                 f"SELECT app FROM {schema}applicationauth WHERE app IN "
+    # #                 f"('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM','INTOBJECT','MXAPIINTOBJECT','MXAPIMAXAPP','MXAPIPERUSER') "
+    # #                 f"AND groupname='MAXADMIN';"
+    # #             )
+                
+    # #             result_set = fetch_both(connection, os_query)
+
+    # #             if result_set:
+    # #                 logger.info("Object structures already present: %s", result_set)
+    # #                 update_permissions(connection, 'MXAPIPERSONGROUP', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXAPIPROP', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXAPIGROUP', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXASSET', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXEXTSYSTEM', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'INTOBJECT', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXAPIINTOBJECT', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXAPIMAXAPP', 'MAXADMIN', schema, nextval)
+    # #                 update_permissions(connection, 'MXAPIPERUSER', 'MAXADMIN', schema, nextval)
+    # #             else:
+    # #                 logger.info("No required object structure found. Updating MAXADMIN group.")
+    # #                 update_query = (
+    # #                     f"INSERT INTO {schema}applicationauth (groupname, app, optionname, applicationauthid) "
+    # #                     f"SELECT 'MAXADMIN', app, optionname, {nextval} FROM {schema}sigoption WHERE app IN "
+    # #                     f"('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM','INTOBJECT','MXAPIINTOBJECT','MXAPIMAXAPP','MXAPIPERUSER');"
+    # #                 )
+    # #                 execute_query(connection, update_query)
+    # #                 logger.info("Permissions successfully granted to MAXADMIN.")
+    # #         finally:
+    # #             ibm_db.close(connection)
+    # #             logger.info("Connection closed.")
+
+    # def fetch_both(connection, stmt):
+    #     response = ibm_db.exec_immediate(connection, stmt)
+    #     return ibm_db.fetch_both(response)
+
+    # def execute_query(connection, stmt):
+    #     ibm_db.exec_immediate(connection, stmt)
+
+    # def update_permissions(connection, application, group, schema, nextval):
+    #     # Check if permission is already present
+    #     select_query = f"SELECT app FROM {schema}applicationauth WHERE app = '{application}' AND groupname = '{group}';"
+    #     result_set = fetch_both(connection, select_query)
+
+    #     if result_set:
+    #         logger.info(f"Permissions for {application} already present. Reapplying permissions.")
+    #         delete_query = f"DELETE FROM {schema}applicationauth WHERE app = '{application}' AND groupname = '{group}';"
+    #         execute_query(connection, delete_query)
+
+    #     # new permissions
+    #     update_query = (
+    #         f"INSERT INTO {schema}applicationauth (groupname, app, optionname, applicationauthid) "
+    #         f"SELECT '{group}', app, optionname, {nextval} FROM {schema}sigoption WHERE app = '{application}';"
+    #     )
+    #     execute_query(connection, update_query)
+    #     logger.info(f"Permissions for {application} applied successfully.")
+
+    def test_create_super_user_token():
+        url = MAS_URL+"logininitial"
+        querystring = {"verify":"False"}
+
+        payload = {
+            "username": f"{MAS_ADMIN_USERNAME}",
+            "password": f"{MAS_ADMIN_PASSWORD}"
+        }
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        response = requests.post(url, json=payload, headers=headers, params=querystring)
+        global authToken
+        authToken = response.json()["token"]
+        logger.info(authToken)
+
+    def test_v3_create_user():
+        # GET Same User first and verify whether it is already present or NOT!
+        url = MAS_APIURL + "v3/users/" + manage_user
+        querystring = {"lean": "1"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.get(url, headers=headers, params=querystring)
+
+        if response.status_code == 404:
+            logger.info("User was not present and being created.....")
+            create_user()
+        elif response.status_code == 200:
+            logger.info("User was already present, deleting first.....")
+            # Keep deleting the user until a 404 status code is received
+            while True:
+                delete_response = delete_user()
+                if delete_response.status_code == 404:
+                    break
+            # create the user as its deleted now
+            create_user()
+
+    def delete_user():
+        url = MAS_APIURL + "v3/users/" + manage_user
+        querystring = {"lean": "1"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.delete(url, headers=headers, params=querystring)
+        logger.info(response.text)
+        assert_that(response.status_code).is_in(204, 404)
+        return response
+
+    def create_user():
+        url = MAS_APIURL + "v3/users"
+        querystring = {"lean": "1"}
+        payload = {
+            "id": manage_user,
+            "status": {"active": True},
+            "username": manage_user,
+            "token": manage_user_password,
+            "owner": "local",
+            "emails": [
+                {
+                    "value": f"{manage_user}_email@ibm.com",
+                    "type": "Work",
+                    "primary": True
+                }
+            ],
+            "displayName": "Api default JSON User",
+            "issuer": "local",
+            "permissions": {
+                "systemAdmin": True,
+                "userAdmin": True
+            },
+            "entitlement": {
+                "application": "PREMIUM",
+                "admin": "ADMIN_PREMIUM",
+                "alwaysReserveLicense": True
+            },
+            "title": "Mr.Sanity",
+            "givenName": manage_user,
+            "familyName": manage_user
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.post(url, json=payload, headers=headers, params=querystring)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(201)
+
+    def test_v3_user_link_to_idp():
+        url = MAS_APIURL+"v3/users/"+manage_user+"/idps/local"  # url = "https://api.fvtsaas.ibmmasfvt.com/v3/users/saasuser/idps/local"
+        querystring = {"emailPassword":"False"}
+        payload = {"idpUserId": manage_user}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.put(url, json=payload, headers=headers, params=querystring)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+
+    def test_v3_user_add_user_to_workspace():
+        url = MAS_APIURL+"workspaces/"+mas_workspace_id+"/users/"+manage_user  #url = "https://api.fvtsaas.ibmmasfvt.com/workspaces/masdev/users/saasUser"
+        payload = {"permissions": {"workspaceAdmin": False}}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.put(url, json=payload, headers=headers)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+
+    def test_v3_user_application_permission():
+        url = MAS_APIURL+"workspaces/"+mas_workspace_id+"/applications/manage/users/"+manage_user  #url = "https://api.fvtsaas.ibmmasfvt.com/workspaces/masdev/applications/manage/users/saasUser"
+        payload = {"role": "MANAGEUSER"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.put(url, json=payload, headers=headers)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+
+    def test_check_user_sync():
+        headers = {"Authorization": f"Bearer {authToken}"}
+
+        def get_user():
+            url = f"{MAS_APIURL}/v3/users/{manage_user}"
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()  # Raises an exception for HTTP errors
+            return response.json()
+
+        # Obtain user just created to check sync status
+        test_user = get_user()
+
+        # Wait for sync status to become SUCCESS within 10 minutes
+        logger.debug("Waiting for user coordinator to update sync status")
+        t_end = time.time() + 60 * 10
+        while time.time() < t_end:
+            sync_state = test_user["applications"]["manage"]["sync"]["state"]
+            if sync_state == "SUCCESS":
+                break
+            else:
+                logger.debug(f"User sync has not been completed yet for app manage: {t_end - time.time():.2f} seconds remaining")
+                time.sleep(5)
+                # Re-check the user sync status
+                test_user = get_user()
+
+        # Verify the sync status is SUCCESS after timeout period
+        assert test_user["applications"]["manage"]["sync"]["state"] == "SUCCESS"
+
+    @pytest.fixture(scope="session")
+    def client_cert(dyn_client):
+        certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
+        certSecret = certSecretObj.get(
+            f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
+        )
+        internal_cert = certSecret.data["tls.crt"]
+        internal_key = certSecret.data["tls.key"]
+        decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
+        decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
+
+        with open("internal.crt", "w") as f:
+            f.write(decoded_internal_cert)
+        with open("internal.key", "w") as f:
+            f.write(decoded_internal_key)
+        client_cert = ("internal.crt", "internal.key")
+        
+        with open("internal.crt", "r") as f:
+            cert_content = f.read()
+            logger.info("Contents of cert:")
+            logger.info(cert_content)
+        with open("internal.key", "r") as f:
+            cert_content = f.read()
+            logger.info("Contents of cert:")
+            logger.info(cert_content)
+        return client_cert
+
+    def test_generate_api_key_for_new_added_user(client_cert):
+        #user_id="maxadmin"
+        global user_api_key
+        user_id=manage_user
+        api_key = get_api_key(user_id, client_cert, session)
+        if api_key is None:
+            url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
+            logger.info("generate_api_key_URL: " + url)
+            logger.info("generate_api_key_CERT" + str(client_cert))
+            resp = ""
+            try:
+                # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert)
+                headers = {'content-type': 'application/json'}
+                payload = {'expiration': '-1', 'userid': user_id}
+                resp = session.post(url, headers=headers,
+                                    json=payload, cert=client_cert, timeout=600)
+                if resp.status_code <= 201:
+                    api_key = get_api_key(user_id, client_cert, session)
+                    logger.info(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
+                    user_api_key = api_key
+                    return api_key
+                else:
+                    logger.info("Failed to Create APIKEY: " + user_id)
+                    logger.info(resp.status_code)
+                    logger.info(resp.text)
+                    return None
+
+            except Exception as ex:
+                logger.info("Something wrong here")
+                logger.info(ex)
+        else:
+            logger.info(f"RETRIEVED MXAPIKEY for {user_id} is: " + api_key)
+            user_api_key = api_key
+            return api_key
+        
+    def test_get_api_key_for_admin(client_cert):
+        global admin_api_key
+        api_key = get_api_key(user_id, client_cert, session)
+        if api_key is None:
+            url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
+            logger.info("generate_api_key_URL: " + url)
+            logger.info("generate_api_key_CERT" + str(client_cert))
+            resp = ""
+            try:
+                # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert)
+                headers = {'content-type': 'application/json'}
+                payload = {'expiration': '-1', 'userid': user_id}
+                resp = session.post(url, headers=headers,
+                                    json=payload, cert=client_cert, timeout=600)
+                if resp.status_code <= 201:
+                    api_key = get_api_key(user_id, client_cert, session)
+                    logger.info(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
+                    admin_api_key = api_key
+                    return api_key
+                else:
+                    logger.info("Failed to Create APIKEY: " + user_id)
+                    logger.info(resp.status_code)
+                    logger.info(resp.text)
+                    return None
+
+            except Exception as ex:
+                logger.info("Something wrong here")
+                logger.info(ex)
+        else:
+            logger.info(f"RETRIVED MXAPIKEY for {user_id} is: " + api_key)
+            admin_api_key = api_key
+            return api_key
+
+
+    def get_api_key(user_id, client_cert, session):
+        api_key = None
+        try:
+            get_api_key_url=f'''{MANAGE_URL}/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22{user_id}%22'''
+            logger.info("get APIKEY URL: " + get_api_key_url)
+            resp = session.get(get_api_key_url, cert=client_cert, timeout=600)
+            if resp.status_code == 200:
+                data = resp.json()
+                api_key = data['member'][0]['apikey']
+            else:
+                logger.info("Failed to Get APIKEY for: " + user_id)
+                logger.info(resp.status_code)
+                logger.info(resp.text)
+        except Exception as ex:
+            logger.info(ex)
+        return api_key
+
+    def test_add_new_user_to_admin_group():
+        groupid= get_group_id(user_id, session)
+        user_group_url=f'''{MANAGE_URL}/maximo/api/os/mxapigroup/{groupid}?lean=1'''
+
+        payload = {
+            "groupuser": [
+                {
+                    "userid": f"{manage_user}"        
+                }
+            ]
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "x-method-override": "PATCH",
+            "patchtype": "MERGE",
+            "apikey": admin_api_key
+        }
+        response = session.post(user_group_url, json=payload, headers=headers)
+        assert_that(response.status_code).is_equal_to(204)
+
+    def get_group_id(user_id, session):
+        group_url = f'''{MANAGE_URL}/maximo/api/os/mxapigroup?lean=1&oslc.select=*&oslc.where=groupname%3D%22{user_id}%22'''
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": admin_api_key
+        }
+        response = session.get(group_url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            group_id = data['member'][0]['maxgroupid']
+            return group_id
+        
+
+    ###ASSET Object CRUD Operation using Newly created user as User is now added to maxadmin group
+
+    def test_asset_crud_operation_using_new_added_user():
+        #Check if asset exists, delete it if present
+        assetid = get_asset(asset,session)
+        if assetid is not None:
+            logger.info("assetid not none")
+            delete_asset(assetid,session)
+        # Create Asset
+        create_asset(asset,session)
+        # Get Asset id for newly created Asset
+        time.sleep(20)
+        assetid = get_asset(asset,session)
+        logger.info(f"ASSETID+{assetid}")
+        time.sleep(20)
+        # Update newly created Asset
+        update_asset(assetid,session)
+        # Delete newly created Asset
+        delete_asset(assetid,session)
+        
+    def get_asset(asset,session):
+        asset_url = f'''{MANAGE_URL}/maximo/api/os/mxapiasset?lean=1&oslc.select=assetnum&oslc.where=assetnum%3D%22{asset}%22'''
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": user_api_key
+        }
+        response = session.get(asset_url, headers=headers)
+        assert_that(response.status_code).is_equal_to(200)
+        
+        # Check if the member array is empty
+        asset_member = response.json().get('member')
+        if asset_member:
+            asset_url = asset_member[0]['href']
+            asset_id = asset_url.rsplit("mxapiasset/", 1)[-1]
+            return asset_id
+        else:
+            # Asset does not exist
+            return None
+
+    def create_asset(asset,session):
+        asset_url = f'''{MANAGE_URL}/maximo/api/os/mxapiasset?lean=1'''
+        payload = {
+            "_action": "AddChange",
+            "assetnum": f"{asset}",
+            "description": "Sanity Test Asset",
+            "priority": "1",
+            "siteid": "BEDFORD"
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": user_api_key
+        }
+        response = session.post(asset_url, json=payload, headers=headers)
+        assert_that(response.status_code).is_equal_to(201)
+
+    def update_asset(assetid,session):
+        asset_url = MANAGE_URL+"/maximo/api/os/mxapiasset/"+assetid
+        payload = {
+            "_action": "AddChange",
+            "priority": "2"
+        }
+        querystring = {"lean":"1"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-method-override": "PATCH",
+            "patchtype": "MERGE",
+            "apikey": user_api_key
+        }
+        response = session.post(asset_url, json=payload, headers=headers, params=querystring)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(204)
+
+    def delete_asset(assetid,session):
+        asset_url = MANAGE_URL+"/maximo/api/os/mxapiasset/"+assetid
+        querystring = {"lean":"1"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-method-override": "PATCH",
+            "patchtype": "MERGE",
+            "apikey": user_api_key
+        }
+        response = session.delete(asset_url, headers=headers, params=querystring)
+        assert_that(response.status_code).is_equal_to(204)
 
 ---
 apiVersion: batch/v1
@@ -232,6 +970,10 @@ spec:
               value: "{{ .Values.instance_id }}"
             - name: MAS_WORKSPACE_ID
               value: "{{ .Values.mas_workspace_id }}"
+            - name: MANAGE_NAMESPACE
+              value: "{{ .Values.mas_app_namespace }}"
+            - name: MAS_NAMESPACE
+              value: "mas-{{ .Values.instance_id }}-core"
           volumeMounts:
             - name: tests
               mountPath: /tmp/tests
@@ -239,6 +981,8 @@ spec:
             - /bin/sh
             - -c
             - |
+              python -m venv .venv
+              source .venv/bin/activate
               pip install -r /tmp/tests/requirements.txt
               pytest -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py 
       restartPolicy: Never

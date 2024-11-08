@@ -197,16 +197,12 @@ data:
     from openshift.dynamic import DynamicClient
     import pytest
     import os
-    import ibm_db
     import urllib3
     import requests
     import random
-    import json
     import logging
     import base64
     from assertpy import assert_that
-    from pathlib import Path
-    from urllib.parse import urlparse
     import time
     logger = logging.getLogger()
     authToken=""
@@ -374,7 +370,10 @@ data:
         MAS_URL=f"https://{masUrl.spec.host}{masUrl.spec.path}"
         MAS_APIURL=f"https://{masapiUrl.spec.host}{masapiUrl.spec.path}"
         if manageUrl:
-            MANAGE_URL = f"https://{manageUrl}/maximo"
+            #MANAGE_URL = f"https://{manageUrl}"
+            #MANAGE_URL="https://127.0.0.1:9080"    # Use when run from Local. Do port forwarding...
+            MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'  # Use for cluster
+            
         global MANAGE_JDBC_URL, MANAGE_JDBC_USERNAME, MANAGE_JDBC_PASSWORD, MANAGE_JDBC_DRIVER, MANAGE_JDBC_SCHEMA, MANAGE_JDBC_CERT
 
         # -------------------------------
@@ -695,60 +694,151 @@ data:
         # Verify the sync status is SUCCESS after timeout period
         assert test_user["applications"]["manage"]["sync"]["state"] == "SUCCESS"
 
-    def test_get_or_generate_manage_user_apikey(dyn_client):
-        api_storage = {}  # Cache for API keys
-        # Try to retrieve the existing API key
-        try:
-            #DEMO DATA is installed Hence retieving apikey for maxadmin
-            manageadmin = "maxadmin"
-            certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
-            certSecret = certSecretObj.get(
-                f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
-            )
-            internal_cert = certSecret.data["tls.crt"]
-            internal_key = certSecret.data["tls.key"]
-            decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
-            decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
+    # def test_get_or_generate_manage_user_apikey(dyn_client):
+    #     api_storage = {}  # Cache for API keys
+    #     # Try to retrieve the existing API key
+    #     try:
+    #         #DEMO DATA is installed Hence retieving apikey for maxadmin
+    #         manageadmin = "maxadmin"
+    #         certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
+    #         certSecret = certSecretObj.get(
+    #             f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
+    #         )
+    #         internal_cert = certSecret.data["tls.crt"]
+    #         internal_key = certSecret.data["tls.key"]
+    #         decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
+    #         decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
 
-            with open("internal.crt", "w+") as f:
-                f.write(decoded_internal_cert)
-            with open("internal.key", "w+") as f:
-                f.write(decoded_internal_key)
-            client_cert = ("internal.crt", "internal.key")
-            print(client_cert)
-            resp = requests.get(
-                MANAGE_URL
-                + "/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22maxadmin%22&lean=1",
-                cert=client_cert,
-                verify=False,
-            )
+    #         with open("internal.crt", "w") as f:
+    #             f.write(decoded_internal_cert)
+    #         with open("internal.key", "w") as f:
+    #             f.write(decoded_internal_key)
+    #         client_cert = ("internal.crt", "internal.key")
+            
+    #         with open("internal.crt", "r") as f:
+    #             cert_content = f.read()
+    #             print("Contents of cert:")
+    #             print(cert_content)
+    #         with open("internal.key", "r") as f:
+    #             cert_content = f.read()
+    #             print("Contents of cert:")
+    #             print(cert_content)
+    #         resp = requests.get(
+    #             MANAGE_URL
+    #             + "/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22maxadmin%22&lean=1",
+    #             cert=client_cert,
+    #             verify=False
+    #         )
+    #         if resp.status_code == 200:
+    #             data = resp.json()
+    #             apiKey = data["member"][0]["apikey"]
+    #             logger.info(f"Retrieved API key for {manageadmin}: {apiKey}")
+    #             api_storage[manageadmin] = apiKey
+    #             print("APIKEY"+apiKey)
+    #             return apiKey
+    #         else:
+    #             logger.info(f"No existing API key for {manageadmin}. Generating a new one.")
+    #             # If retrieval failed, attempt to create a new API key
+    #             url = f"{MANAGE_URL}/maximo/api/os/mxapiapikey?ccm=1&lean=1"
+    #             headers = {"content-type": "application/json"}
+    #             payload = {"expiration": -1, "userid": manageadmin}
+    #             resp = requests.post(url, headers=headers, json=payload, cert=client_cert, verify=False)
+    #             if resp.status_code <= 201:
+    #                 # After generating, retrieve to confirm
+    #                 data = requests.get(url, verify=False).json()
+    #                 apiKey = data["member"][0]["apikey"]
+    #                 logger.info(f"Generated new API key for {manageadmin}: {apiKey}")
+    #                 api_storage[manage_user] = apiKey
+    #                 logger.info(apiKey)
+    #                 return apiKey
+    #             else:
+    #                 raise Exception(f"Failed to create API key for {manageadmin}. Status code: {resp.status_code}, Response: {resp.text}")
+    #     except Exception as ex:
+    #         logger.error(f"An error occurred while generating API key for {manageadmin}. Error: {ex}")
+    #         raise
+
+    def test_generate_api_key(dyn_client):
+        session = requests.Session()
+        session.verify = False
+        user_id="maxadmin"
+        certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
+        certSecret = certSecretObj.get(
+            f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
+        )
+        internal_cert = certSecret.data["tls.crt"]
+        internal_key = certSecret.data["tls.key"]
+        decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
+        decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
+
+        with open("internal.crt", "w") as f:
+            f.write(decoded_internal_cert)
+        with open("internal.key", "w") as f:
+            f.write(decoded_internal_key)
+        client_cert = ("internal.crt", "internal.key")
+        
+        with open("internal.crt", "r") as f:
+            cert_content = f.read()
+            print("Contents of cert:")
+            print(cert_content)
+        with open("internal.key", "r") as f:
+            cert_content = f.read()
+            print("Contents of cert:")
+            print(cert_content)
+        api_key = get_api_key(user_id, client_cert, session)
+        if api_key is None:
+            url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
+            print("generate_api_key_URL: " + url)
+            print("generate_api_key_CERT" + str(client_cert))
+            resp = ""
+            try:
+                # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert, verify=False)
+                headers = {'content-type': 'application/json'}
+                payload = {'expiration': '-1', 'user_id': user_id}
+                resp = session.post(url, headers=headers,
+                                    json=payload, cert=client_cert, verify=False, timeout=600)
+                print(resp.text)
+                if resp.status_code <= 201:
+                    data = resp.text
+                    print(str(data))
+                    api_key = get_api_key(user_id, client_cert, session)
+                    return api_key
+                else:
+                    print("Failed to Create APIKEY: " + user_id)
+                    print(resp.status_code)
+                    print(resp.text)
+                    return None
+
+            except Exception as ex:
+                print("Something wrong here")
+                print(ex)
+        else:
+            print(f"MXAPIKEY for {user_id} is: " + api_key)
+            return api_key
+
+
+    def get_api_key(user_id, client_cert, session):
+        """
+        Get health api key
+
+        Returns:
+            string: api key
+        """
+        api_key = None
+        try:
+            get_api_key_url=MANAGE_URL+ "/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22maxadmin%22&lean=1"
+            print("get APIKEY URL: " + get_api_key_url)
+            resp = session.get(get_api_key_url, cert=client_cert, verify=False, timeout=600)
             if resp.status_code == 200:
                 data = resp.json()
-                apiKey = data["member"][0]["apikey"]
-                logger.info(f"Retrieved API key for {manageadmin}: {apiKey}")
-                api_storage[manageadmin] = apiKey
-                print("APIKEY"+apiKey)
-                return apiKey
+                print(data)
+                api_key = data['member'][0]['apikey']
             else:
-                logger.info(f"No existing API key for {manageadmin}. Generating a new one.")
-                # If retrieval failed, attempt to create a new API key
-                url = f"{MANAGE_URL}/api/os/mxapiapikey?ccm=1&lean=1"
-                headers = {"content-type": "application/json"}
-                payload = {"expiration": -1, "userid": manageadmin}
-                resp = requests.post(url, headers=headers, json=payload, cert=client_cert, verify=False)
-                if resp.status_code <= 201:
-                    # After generating, retrieve to confirm
-                    data = requests.get(url, verify=False).json()
-                    apiKey = data["member"][0]["apikey"]
-                    logger.info(f"Generated new API key for {manageadmin}: {apiKey}")
-                    api_storage[manage_user] = apiKey
-                    logger.info(apiKey)
-                    return apiKey
-                else:
-                    raise Exception(f"Failed to create API key for {manageadmin}. Status code: {resp.status_code}, Response: {resp.text}")
+                print("Failed to Get APIKEY for: " + user_id)
+                print(resp.status_code)
+                print(resp.text)
         except Exception as ex:
-            logger.error(f"An error occurred while generating API key for {manageadmin}. Error: {ex}")
-            raise
+            print(ex)
+        return api_key
 
 ---
 apiVersion: batch/v1

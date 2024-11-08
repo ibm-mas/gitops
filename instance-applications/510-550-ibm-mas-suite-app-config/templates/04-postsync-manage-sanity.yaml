@@ -217,11 +217,17 @@ data:
     MANAGE_JDBC_DRIVER = ""
     MANAGE_JDBC_SCHEMA = ""
     MANAGE_JDBC_CERT = ""
+    admin_api_key = ""
+    user_api_key = ""
+    user_id="maxadmin"  #admin user
     nextval = ""
     schema = ""
     manage_user="saasuser"+str(random.randint(0,10000))
     manage_user_password=manage_user+str(random.randint(0,100))
+    asset="sanity"+str(random.randint(0,1000))
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    session = requests.Session()
+    session.verify = False
 
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
     if mas_instance_id is None:
@@ -371,8 +377,8 @@ data:
         MAS_APIURL=f"https://{masapiUrl.spec.host}{masapiUrl.spec.path}"
         if manageUrl:
             #MANAGE_URL = f"https://{manageUrl}"
-            #MANAGE_URL="https://127.0.0.1:9080"    # Use when run from Local. Do port forwarding...
-            MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'  # Use for cluster
+            MANAGE_URL="https://127.0.0.1:9080"    # Use when run from Local. Do port forwarding...
+            #MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'  # Use for cluster
             
         global MANAGE_JDBC_URL, MANAGE_JDBC_USERNAME, MANAGE_JDBC_PASSWORD, MANAGE_JDBC_DRIVER, MANAGE_JDBC_SCHEMA, MANAGE_JDBC_CERT
 
@@ -694,73 +700,8 @@ data:
         # Verify the sync status is SUCCESS after timeout period
         assert test_user["applications"]["manage"]["sync"]["state"] == "SUCCESS"
 
-    # def test_get_or_generate_manage_user_apikey(dyn_client):
-    #     api_storage = {}  # Cache for API keys
-    #     # Try to retrieve the existing API key
-    #     try:
-    #         #DEMO DATA is installed Hence retieving apikey for maxadmin
-    #         manageadmin = "maxadmin"
-    #         certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
-    #         certSecret = certSecretObj.get(
-    #             f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
-    #         )
-    #         internal_cert = certSecret.data["tls.crt"]
-    #         internal_key = certSecret.data["tls.key"]
-    #         decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
-    #         decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
-
-    #         with open("internal.crt", "w") as f:
-    #             f.write(decoded_internal_cert)
-    #         with open("internal.key", "w") as f:
-    #             f.write(decoded_internal_key)
-    #         client_cert = ("internal.crt", "internal.key")
-            
-    #         with open("internal.crt", "r") as f:
-    #             cert_content = f.read()
-    #             print("Contents of cert:")
-    #             print(cert_content)
-    #         with open("internal.key", "r") as f:
-    #             cert_content = f.read()
-    #             print("Contents of cert:")
-    #             print(cert_content)
-    #         resp = requests.get(
-    #             MANAGE_URL
-    #             + "/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22maxadmin%22&lean=1",
-    #             cert=client_cert,
-    #             verify=False
-    #         )
-    #         if resp.status_code == 200:
-    #             data = resp.json()
-    #             apiKey = data["member"][0]["apikey"]
-    #             logger.info(f"Retrieved API key for {manageadmin}: {apiKey}")
-    #             api_storage[manageadmin] = apiKey
-    #             print("APIKEY"+apiKey)
-    #             return apiKey
-    #         else:
-    #             logger.info(f"No existing API key for {manageadmin}. Generating a new one.")
-    #             # If retrieval failed, attempt to create a new API key
-    #             url = f"{MANAGE_URL}/maximo/api/os/mxapiapikey?ccm=1&lean=1"
-    #             headers = {"content-type": "application/json"}
-    #             payload = {"expiration": -1, "userid": manageadmin}
-    #             resp = requests.post(url, headers=headers, json=payload, cert=client_cert, verify=False)
-    #             if resp.status_code <= 201:
-    #                 # After generating, retrieve to confirm
-    #                 data = requests.get(url, verify=False).json()
-    #                 apiKey = data["member"][0]["apikey"]
-    #                 logger.info(f"Generated new API key for {manageadmin}: {apiKey}")
-    #                 api_storage[manage_user] = apiKey
-    #                 logger.info(apiKey)
-    #                 return apiKey
-    #             else:
-    #                 raise Exception(f"Failed to create API key for {manageadmin}. Status code: {resp.status_code}, Response: {resp.text}")
-    #     except Exception as ex:
-    #         logger.error(f"An error occurred while generating API key for {manageadmin}. Error: {ex}")
-    #         raise
-
-    def test_generate_api_key(dyn_client):
-        session = requests.Session()
-        session.verify = False
-        user_id="maxadmin"
+    @pytest.fixture(scope="session")
+    def client_cert(dyn_client):
         certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
         certSecret = certSecretObj.get(
             f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
@@ -778,67 +719,216 @@ data:
         
         with open("internal.crt", "r") as f:
             cert_content = f.read()
-            print("Contents of cert:")
-            print(cert_content)
+            logger.info("Contents of cert:")
+            logger.info(cert_content)
         with open("internal.key", "r") as f:
             cert_content = f.read()
-            print("Contents of cert:")
-            print(cert_content)
+            logger.info("Contents of cert:")
+            logger.info(cert_content)
+        return client_cert
+
+    def test_generate_api_key_for_new_added_user(client_cert):
+        #user_id="maxadmin"
+        global user_api_key
+        user_id=manage_user
         api_key = get_api_key(user_id, client_cert, session)
         if api_key is None:
             url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
-            print("generate_api_key_URL: " + url)
-            print("generate_api_key_CERT" + str(client_cert))
+            logger.info("generate_api_key_URL: " + url)
+            logger.info("generate_api_key_CERT" + str(client_cert))
             resp = ""
             try:
-                # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert, verify=False)
+                # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert)
                 headers = {'content-type': 'application/json'}
-                payload = {'expiration': '-1', 'user_id': user_id}
+                payload = {'expiration': '-1', 'userid': user_id}
                 resp = session.post(url, headers=headers,
-                                    json=payload, cert=client_cert, verify=False, timeout=600)
-                print(resp.text)
+                                    json=payload, cert=client_cert, timeout=600)
                 if resp.status_code <= 201:
-                    data = resp.text
-                    print(str(data))
                     api_key = get_api_key(user_id, client_cert, session)
+                    logger.info(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
+                    user_api_key = api_key
                     return api_key
                 else:
-                    print("Failed to Create APIKEY: " + user_id)
-                    print(resp.status_code)
-                    print(resp.text)
+                    logger.info("Failed to Create APIKEY: " + user_id)
+                    logger.info(resp.status_code)
+                    logger.info(resp.text)
                     return None
 
             except Exception as ex:
-                print("Something wrong here")
-                print(ex)
+                logger.info("Something wrong here")
+                logger.info(ex)
         else:
-            print(f"MXAPIKEY for {user_id} is: " + api_key)
+            logger.info(f"RETRIEVED MXAPIKEY for {user_id} is: " + api_key)
+            user_api_key = api_key
+            return api_key
+        
+    def test_get_api_key_for_admin(client_cert):
+        global admin_api_key
+        api_key = get_api_key(user_id, client_cert, session)
+        if api_key is None:
+            url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
+            logger.info("generate_api_key_URL: " + url)
+            logger.info("generate_api_key_CERT" + str(client_cert))
+            resp = ""
+            try:
+                # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert)
+                headers = {'content-type': 'application/json'}
+                payload = {'expiration': '-1', 'userid': user_id}
+                resp = session.post(url, headers=headers,
+                                    json=payload, cert=client_cert, timeout=600)
+                if resp.status_code <= 201:
+                    api_key = get_api_key(user_id, client_cert, session)
+                    logger.info(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
+                    admin_api_key = api_key
+                    return api_key
+                else:
+                    logger.info("Failed to Create APIKEY: " + user_id)
+                    logger.info(resp.status_code)
+                    logger.info(resp.text)
+                    return None
+
+            except Exception as ex:
+                logger.info("Something wrong here")
+                logger.info(ex)
+        else:
+            logger.info(f"RETRIVED MXAPIKEY for {user_id} is: " + api_key)
+            admin_api_key = api_key
             return api_key
 
 
     def get_api_key(user_id, client_cert, session):
-        """
-        Get health api key
-
-        Returns:
-            string: api key
-        """
         api_key = None
         try:
-            get_api_key_url=MANAGE_URL+ "/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22maxadmin%22&lean=1"
-            print("get APIKEY URL: " + get_api_key_url)
-            resp = session.get(get_api_key_url, cert=client_cert, verify=False, timeout=600)
+            get_api_key_url=f'''{MANAGE_URL}/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22{user_id}%22'''
+            logger.info("get APIKEY URL: " + get_api_key_url)
+            resp = session.get(get_api_key_url, cert=client_cert, timeout=600)
             if resp.status_code == 200:
                 data = resp.json()
-                print(data)
                 api_key = data['member'][0]['apikey']
             else:
-                print("Failed to Get APIKEY for: " + user_id)
-                print(resp.status_code)
-                print(resp.text)
+                logger.info("Failed to Get APIKEY for: " + user_id)
+                logger.info(resp.status_code)
+                logger.info(resp.text)
         except Exception as ex:
-            print(ex)
+            logger.info(ex)
         return api_key
+
+    def test_add_new_user_to_admin_group():
+        groupid= get_group_id(user_id, session)
+        user_group_url=f'''{MANAGE_URL}/maximo/api/os/mxapigroup/{groupid}?lean=1'''
+
+        payload = {
+            "groupuser": [
+                {
+                    "userid": f"{manage_user}"        
+                }
+            ]
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "x-method-override": "PATCH",
+            "patchtype": "MERGE",
+            "apikey": admin_api_key
+        }
+        response = session.post(user_group_url, json=payload, headers=headers)
+        assert_that(response.status_code).is_equal_to(204)
+
+    def get_group_id(user_id, session):
+        group_url = f'''{MANAGE_URL}/maximo/api/os/mxapigroup?lean=1&oslc.select=*&oslc.where=groupname%3D%22{user_id}%22'''
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": admin_api_key
+        }
+        response = session.get(group_url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            group_id = data['member'][0]['maxgroupid']
+            return group_id
+        
+
+    ###ASSET Object CRUD Operation using Newly created user as User is now added to maxadmin group
+
+    def test_asset_crud_operation_using_new_added_user():
+        #Check if asset exists, delete it if present
+        assetid = get_asset(asset,session)
+        if assetid is not None:
+            logger.info("assetid not none")
+            delete_asset(assetid,session)
+        # Create Asset
+        create_asset(asset,session)
+        # Get Asset id for newly created Asset
+        time.sleep(20)
+        assetid = get_asset(asset,session)
+        logger.info(f"ASSETID+{assetid}")
+        time.sleep(20)
+        # Update newly created Asset
+        update_asset(assetid,session)
+        # Delete newly created Asset
+        delete_asset(assetid,session)
+        
+    def get_asset(asset,session):
+        asset_url = f'''{MANAGE_URL}/maximo/api/os/mxapiasset?lean=1&oslc.select=assetnum&oslc.where=assetnum%3D%22{asset}%22'''
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": user_api_key
+        }
+        response = session.get(asset_url, headers=headers)
+        assert_that(response.status_code).is_equal_to(200)
+        
+        # Check if the member array is empty
+        asset_member = response.json().get('member')
+        if asset_member:
+            asset_url = asset_member[0]['href']
+            asset_id = asset_url.rsplit("mxapiasset/", 1)[-1]
+            return asset_id
+        else:
+            # Asset does not exist
+            return None
+
+    def create_asset(asset,session):
+        asset_url = f'''{MANAGE_URL}/maximo/api/os/mxapiasset?lean=1'''
+        payload = {
+            "_action": "AddChange",
+            "assetnum": f"{asset}",
+            "description": "Sanity Test Asset",
+            "priority": "1",
+            "siteid": "BEDFORD"
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": user_api_key
+        }
+        response = session.post(asset_url, json=payload, headers=headers)
+        assert_that(response.status_code).is_equal_to(201)
+
+    def update_asset(assetid,session):
+        asset_url = MANAGE_URL+"/maximo/api/os/mxapiasset/"+assetid
+        payload = {
+            "_action": "AddChange",
+            "priority": "2"
+        }
+        querystring = {"lean":"1"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-method-override": "PATCH",
+            "patchtype": "MERGE",
+            "apikey": user_api_key
+        }
+        response = session.post(asset_url, json=payload, headers=headers, params=querystring)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(204)
+
+    def delete_asset(assetid,session):
+        asset_url = MANAGE_URL+"/maximo/api/os/mxapiasset/"+assetid
+        querystring = {"lean":"1"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-method-override": "PATCH",
+            "patchtype": "MERGE",
+            "apikey": user_api_key
+        }
+        response = session.delete(asset_url, headers=headers, params=querystring)
+        assert_that(response.status_code).is_equal_to(204)
 
 ---
 apiVersion: batch/v1

@@ -503,13 +503,14 @@ spec:
             - -c
             - |
               pip install -r /tmp/tests/requirements.txt
-              pytest -vr --junit-xml=junitxml_test_output.xml --log-file=test_log.txt -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py 
+              pytest -v --junit-xml=junitxml_test_output.xml --log-file=test_log.txt -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py 
               if [[ $? -ne 0 ]]; then
                   TEST_PASSED=false
               else
                   TEST_PASSED=true
               fi
 
+              set -e
               echo "Updating $TEST_RECORD_CM configmap with test result"
               oc set data cm $TEST_RECORD_CM test_passed=$TEST_PASSED
               oc set data cm $TEST_RECORD_CM --from-file=junitxml_test_output.xml

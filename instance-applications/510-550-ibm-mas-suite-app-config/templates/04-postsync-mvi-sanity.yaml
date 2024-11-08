@@ -3,10 +3,8 @@
 {{ $ns               :=  .Values.mas_app_namespace }}
 {{ $np_name          :=  "postsync-sanity-mvi-np" }}
 {{ $role_name        :=  "postsync-sanity-mvi-role" }}
-{{ $crole_name       :=  "postsync-sanity-mvi-crole" }}
 {{ $sa_name          :=  "postsync-sanity-mvi-sa" }}
 {{ $rb_name          :=  "postsync-sanity-mvi-rb" }}
-{{ $crb_name         :=  "postsync-sanity-mvi-crb" }}
 {{ $tests_cm_name    :=  "postsync-sanity-tests-mvi-cm" }}
 {{ $record_cm_name   :=  "postsync-sanity-tests-mvi-record-cm" }}
 {{ $job_name         :=  "postsync-sanity-mvi-job" }}
@@ -80,6 +78,7 @@ rules:
       - ""
     resources:
       - secrets
+      - pods
   - verbs:
       - get
     apiGroups:
@@ -109,58 +108,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ $role_name }}
-# -------------------------------------
-
-
-
-
----
-# -------------------------------------
-# MVI Verification tests need to be able to get/list nodes
-# to check for ready GPU nodes
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $crole_name }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "600"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-  - verbs:
-      - get
-      - list
-    apiGroups:
-      - ""
-    resources:
-      - nodes
-
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $crb_name }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "601"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: {{ $sa_name }}
-    namespace: {{ $ns }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ $crole_name }}
-# -------------------------------------
 
 
 ---
@@ -556,7 +503,7 @@ spec:
               pytest -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py
 
       restartPolicy: Never
-      serviceAccountName: "ibm-mas-visualinspection-operator"
+      serviceAccountName: {{ $sa_name }}
       volumes:
         - name: tests
           configMap:
@@ -579,7 +526,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "605"
     argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
   labels:
       type: mas-app-verification-record
 {{- if .Values.custom_labels }}

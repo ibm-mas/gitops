@@ -85,6 +85,14 @@ rules:
       - "route.openshift.io"
     resources:
       - routes
+  - verbs:
+      - get
+      - list
+      - patch
+    apiGroups:
+      - ""
+    resources:
+      - configmaps
 
 ---
 kind: RoleBinding
@@ -451,6 +459,27 @@ data:
         print("Placeholder for sanity tests to be added")
 
 
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ $record_cm_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "604"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+      type: mas-app-sanity-record
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+immutable: false
+data:
+  mas_app: "visualinspection"
+  mas_catalog_version: "{{ .Values.mas_catalog_version }}"
+  test_passed: "unknown"
+
 
 ---
 apiVersion: batch/v1
@@ -459,7 +488,7 @@ metadata:
   name: {{ $job_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "604"
+    argocd.argoproj.io/sync-wave: "605"
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 {{- if .Values.custom_labels }}
@@ -492,6 +521,8 @@ spec:
               value: "{{ .Values.instance_id }}"
             - name: MAS_WORKSPACE_ID
               value: "{{ .Values.mas_workspace_id }}"
+            - name: TEST_RECORD_CM
+              value: "{{ $record_cm_name }}"
           volumeMounts:
             - name: tests
               mountPath: /tmp/tests
@@ -499,9 +530,31 @@ spec:
             - /bin/sh
             - -c
             - |
+              python -m venv .venv
+              source .venv/bin/activate
               pip install -r /tmp/tests/requirements.txt
-              pytest -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py
 
+              set -o pipefail
+              echo "Running tests..."
+              pytest -v --junit-xml=junitxml_test_output.xml -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py 2>&1 | tee test_log.txt
+              if [[ $? -ne 0 ]]; then
+                  TEST_PASSED=false
+              else
+                  TEST_PASSED=true
+              fi
+              echo "Test Result Passed: $TEST_PASSED"
+              set +o pipefail
+
+              set -e
+              echo "Updating $TEST_RECORD_CM configmap with test result"
+              oc set data cm $TEST_RECORD_CM test_passed=$TEST_PASSED
+              oc set data cm $TEST_RECORD_CM --from-file=junitxml_test_output.xml
+              oc set data cm $TEST_RECORD_CM --from-file=test_log.txt
+
+              if [[ $TEST_PASSED == "false" ]]; then
+                echo "Test Result failed, exit 1"
+                exit 1
+              fi
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}
       volumes:
@@ -516,25 +569,5 @@ spec:
             defaultMode: 420
             optional: false
   backoffLimit: 4
-
----
-kind: ConfigMap
-apiVersion: v1
-metadata:
-  name: {{ $record_cm_name }}
-  namespace: {{ $ns }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "605"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-  labels:
-      type: mas-app-verification-record
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-immutable: false
-data:
-  mas_app: "visualinspection"
-  mas_catalog_version: "{{ .Values.mas_catalog_version }}"
 
 {{- end }}

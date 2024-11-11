@@ -195,12 +195,6 @@ data:
     def v1_pods(dyn_client):
       yield dyn_client.resources.get(api_version='v1', kind='Pod')
 
-    def get_usage_pod(v1_pods):
-        usage_pod = v1_pods.get(label_selector="app.kubernetes.io/name=usage-hourly-job", namespace=mvi_namespace)
-        if not usage_pod.items:
-            assert False, f"Could not find any usage-hourly-job in {mvi_namespace}"
-        yield usage_pod
-
     @pytest.fixture(scope="session")
     def v1_secrets(dyn_client):
       yield dyn_client.resources.get(api_version='v1', kind='Secret')
@@ -297,6 +291,12 @@ data:
       except:
         assert False, "Expected data.dnn-apikey field not present in secret {mvi_apikey_secret_name} in {mvi_namespace}"
       yield base64.b64decode(dnn_apikey_b64)
+
+    def get_usage_pod(v1_pods):
+        usage_pod = v1_pods.get(label_selector="app.kubernetes.io/name=usage-hourly-job", namespace=mvi_namespace)
+        if not usage_pod.items:
+            assert False, f"Could not find any usage-hourly-job in {mvi_namespace}"
+        return usage_pod
 
     def test_usage_reporter(mvi_workspace_cr, v1_pods):
       print("Test usage reporter")

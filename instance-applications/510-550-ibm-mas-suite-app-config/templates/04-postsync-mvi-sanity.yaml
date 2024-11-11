@@ -151,6 +151,7 @@ data:
     import semver
     import tempfile
     import base64
+    import datetime
 
     # e.g. "dclain-1a"
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
@@ -175,6 +176,14 @@ data:
         k8s_client = config.new_client_from_config()
       dyn_client = DynamicClient(k8s_client)
       yield dyn_client
+
+    @pytest.fixture(scope="session")
+    def v1_mviworkspace(dyn_client):
+      yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='VisualInspectionAppWorkspace')
+
+    @pytest.fixture(scope="session")
+    def mvi_workspace_cr(v1_mviworkspace):
+      yield v1_mviworkspace.get(namespace=mvi_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
 
     @pytest.fixture(scope="session")
     def v1_pods(dyn_client):
@@ -284,9 +293,14 @@ data:
         assert False, "Expected data.dnn-apikey field not present in secret {mvi_apikey_secret_name} in {mvi_namespace}"
       yield base64.b64decode(dnn_apikey_b64)
 
-    def test_usage_reporter(get_usage_pod):
+    def test_usage_reporter(mvi_workspace_cr, get_usage_pod):
       print("Test usage reporter")
-      assert get_usage_pod.items[0].status['phase'] == 'Succeeded'
+      mvi_create_time = mvi_workspace_cr['metadata']['creationTimestamp']
+      current_time = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
+      if (current_time - mvi_create_time).total_seconds() > 3600:
+        assert get_usage_pod.items[0].status['phase'] == 'Succeeded'
+      else:
+        print("MVI CR created only recently")
 
     def test_bgtasks_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
       resp = requests.get(

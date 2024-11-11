@@ -1,0 +1,69 @@
+# {{- if not (empty .Values.selenium_grid) }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: selenium-grid.{{ .Values.cluster.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "060"
+    healthCheckTimeout: "1800"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ .Values.selenium_grid.selenium_namespace }}
+  source:
+    chart: selenium-grid
+    repoURL: https://www.selenium.dev/docker-selenium
+    helm:
+      releaseName: selenium-grid
+      values: |
+        hub:
+          imageTag: 4.19.1-20240402
+        chromeNode:
+          imageTag: 4.19.1-20240402
+          resources:
+            requests:
+              cpu: "0.1"
+        firefoxNode:
+          enabled: false
+        edgeNode:
+          enabled: false
+        autoscaling:
+          enabled: true
+          scalingType: job
+          scaledOptions:
+            maxReplicaCount: 999
+          scaledJobOptions:
+            scalingStrategy:
+              strategy: default
+        ingress:
+          hostname: selenium-grid.local
+          path: /selenium
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+# {{- end }}

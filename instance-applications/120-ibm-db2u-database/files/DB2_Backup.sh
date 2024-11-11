@@ -70,7 +70,7 @@ cat << ! >.curl_$database.sh
 	   fi
 cat << ! >.curl_${database}_ICD.sh
 	  curl --insecure --location --request POST "${ICD_URL}/maximo_mif/oslc/os/hsincident?lean=1" \
-	  --header 'Authorization: Basic Y2RzaW50ZGJhOklSZWFsbHlMb3ZlUHVwcGllcw==' \
+	  --header 'Authorization: Basic <basic_auth>' \
 	  --header 'Content-Type: application/json' \
 	  --data '{
 	  "description":"$des",

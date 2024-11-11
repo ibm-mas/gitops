@@ -1,0 +1,33 @@
+#apiVersion: batch/v1beta1
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: "masmsbackup-managedb-{{ .Values.db2_instance_name }}-db2u-0"
+  labels:
+    parent: cronjob
+    cosBucket: "{{ .Values.mas_appws_spec.settings.deployment.serverBundles[0].bundleLevelProperties.mxe.cosbucketname }}"
+    db2pod: "c-{{ .Values.db2_instance_name }}-db2u-0"
+spec:
+  schedule: '0 2 * * *'
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            parent: cronjob
+        spec:
+          containers:
+            - name: "masmsbackup-managedb-c-{{ .Values.db2_instance_name }}-db2u-0"
+              image: openshift3/ose-ansible
+              command:
+                - oc
+                - rsh
+                - "c-{{ .Values.db2_instance_name }}-db2u-0"
+                - /mnt/backup/bin/cronRunBKP.sh
+                - "{{ .Values.mas_appws_spec.settings.deployment.serverBundles[0].bundleLevelProperties.mxe.cosbucketname }}"
+              imagePullPolicy: IfNotPresent
+          restartPolicy: OnFailure
+          serviceAccountName: "account-{{ .Values.db2_namespace }}-{{ .Values.db2_instance_name }}"
+  successfulJobsHistoryLimit: 30
+  failedJobsHistoryLimit: 10

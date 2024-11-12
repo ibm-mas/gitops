@@ -4,13 +4,8 @@ metadata:
   name: db2u-scripts-{{ .Values.db2_instance_name }}-configmap
   namespace: "{{ .Values.db2_namespace }}"
 data:
-  {{- range $path, $_ :=  .Files.Glob  "files/**" }}
-  {{ $path | trimPrefix "files/" }}: |-
-  {{ $.Files.Get $path | indent 2 }}
-  {{ end }}
+{{ (.Files.Glob "files/*").AsConfig | indent 2 }}
 
-# binaryData:
-#     {{- range $path, $_ :=  .Files.Glob  "binary_files/**" }}
-#     {{ $path | trimPrefix "binary_files/" }}: |-
-# {{ $.Files.Get $path | indent 4 }}
-#     {{ end }}
+binaryData:
+  db2shc:
+    {{ .Files.Get "binary_files/db2shc" | b64enc }}

@@ -1,4 +1,3 @@
-{{- range $i, $value := .Values.ibm_mas_masapp_configs }}
 #apiVersion: batch/v1beta1
 kind: CronJob
 apiVersion: batch/v1
@@ -6,9 +5,7 @@ metadata:
   name: "masmsbackup-managedb-{{ .Values.db2_instance_name }}-db2u-0"
   labels:
     parent: cronjob
-{{- with (index $value.mas_appws_spec.settings.deployment.serverBundles 0) }}
-    cosBucket: "{{ .bundleLevelProperties.mxe.cosbucketname }}"
-{{- end }}
+    cosBucket: "{{ .Values.backup.bucket_name }}"
     db2pod: "c-{{ .Values.db2_instance_name }}-db2u-0"
 spec:
   schedule: '0 2 * * *'
@@ -28,12 +25,9 @@ spec:
                 - rsh
                 - "c-{{ .Values.db2_instance_name }}-db2u-0"
                 - /mnt/backup/bin/cronRunBKP.sh
-{{- with (index $value.mas_appws_spec.settings.deployment.serverBundles 0) }}
-                - "{{ .bundleLevelProperties.mxe.cosbucketname }}"
-{{- end }}
+                - "{{ .Values.backup.bucket_name }}"
               imagePullPolicy: IfNotPresent
           restartPolicy: OnFailure
           serviceAccountName: "account-{{ .Values.db2_namespace }}-{{ .Values.db2_instance_name }}"
   successfulJobsHistoryLimit: 30
   failedJobsHistoryLimit: 10
-{{- end }}

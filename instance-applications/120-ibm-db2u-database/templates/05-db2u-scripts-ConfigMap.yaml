@@ -4,15 +4,13 @@ metadata:
   name: db2u-scripts-{{ .Values.db2_instance_name }}-configmap
   namespace: "{{ .Values.db2_namespace }}"
 data:
-  {{- $files := .Files }}
-  {{- range tuple "files/*" }}
-  {{ . }}: |-
-        {{ $files.Get . }}
-  {{- end }}
+  {{- range $path, $_ :=  .Files.Glob  "files/**" }}
+  {{ $path | trimPrefix "files/" }}: |-
+{{ $.Files.Get $path | indent 4 }}
+  {{ end }}
 
 binaryData:
-  {{- $files := .Files }}
-  {{- range tuple "binary_files/*" }}
-  {{ . }}: |-
-        {{ $files.Get . }}
-  {{- end }}
+  {{- range $path, $_ :=  .Files.Glob  "binary_files/**" }}
+  {{ $path | trimPrefix "binary_files/" }}: |-
+{{ $.Files.Get $path | indent 4 }}
+  {{ end }}

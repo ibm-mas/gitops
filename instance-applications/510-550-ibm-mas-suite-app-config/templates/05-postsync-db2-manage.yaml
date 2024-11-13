@@ -3,6 +3,7 @@
 {{ $db2_namespace      := printf "db2u-%s" .Values.instance_id }}
 {{ $db2_instance_name  := printf "%s-manage-db2u" .Values.instance_id }}
 {{ $ns                 := .Values.mas_app_namespace }}
+{{ $np_name            := "postsync-manage-db2-np" }}
 {{ $role_name          := printf "postsync-manage-db2-role-%s" .Values.mas_app_id }}
 {{ $sa_name            := "postsync-manage-db2-sa" }}
 {{ $rb_name            := printf "postsync-manage-db2-rb-%s" .Values.mas_app_id }}
@@ -14,6 +15,29 @@
 
 # TODO: set all syncwaves to low values so this runs first for testing
 # change this before delivery!
+
+---
+# Permit outbound communication by the Job pod
+# (Needed to communicate with the K8S HTTP API, PyPI, manage Route)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_name }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
 
 ---
 # Service account that is authorized to exec into db2u pod

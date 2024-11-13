@@ -1,7 +1,6 @@
 {{- if eq .Values.mas_app_id "manage" }}
 
 {{ $db2_namespace      := printf "db2u-%s" .Values.instance_id }}
-{{ $db2_instance_name  := printf "%s-manage" .Values.instance_id }}
 {{ $ns                 := .Values.mas_app_namespace }}
 {{ $np_name            := "postsync-manage-db2-np" }}
 {{ $role_name          := printf "postsync-manage-db2-role-%s" .Values.mas_app_id }}
@@ -150,10 +149,10 @@ spec:
               value: "aws"
             - name: DB2_NAMESPACE
               value: "{{ $db2_namespace }}"
-            - name: DB2_INSTANCE_NAME
-              value: "{{ $db2_instance_name }}"
             - name: DB2_DBNAME
               value: "{{ $db2_dbname }}"
+            - name: INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
 
           volumeMounts: []
           command:
@@ -164,8 +163,7 @@ spec:
               set -e
 
               source /mascli/functions/gitops_utils
-
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc 'echo "hello world"' db2inst1
+              oc exec -n ${DB2_NAMESPACE} c-db2wh-${INSTANCE_ID}-manage-db2u-0 -- su -lc 'echo "hello world"' db2inst1
 
               # su - db2inst1
               # db2 connect to bludb

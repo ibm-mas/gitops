@@ -1,0 +1,155 @@
+{{- if eq .Values.mas_app_id "manage" }}
+
+{{ $db2_namespace      := printf "db2u-%s" .Values.mas_instance_id }}
+{{ $db2_instance_name  := printf "%s-manage-db2u" .Values.mas_instance_id }}
+{{ $ns                 := .Values.mas_app_namespace }}
+{{ $role_name          := printf "postsync-manage-db2-role-%s" .Values.mas_app_id }}
+{{ $sa_name            := "postsync-manage-db2-sa" }}
+{{ $rb_name            := printf "postsync-manage-db2-rb-%s" .Values.mas_app_id }}
+{{ $job_name           := "postsync-manage-db2-job" }}
+
+# TODO: hard-coded for now, but should be passing this in
+{{ $db2_dbname        := "BLUDB" }}
+
+
+# TODO: set all syncwaves to low values so this runs first for testing
+# change this before delivery!
+
+---
+# Service account that is authorized to exec into db2u pod
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "{{ $sa_name }}"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+---
+# Role permitting exec into db2u pod
+# NOTE: created in db2u namespace
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "{{ $role_name }}"
+  namespace: "{{ $db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - get
+    - list
+- apiGroups:
+    - ""
+  resources:
+    - pods/exec
+  verbs: 
+    - create
+    - get
+    - list
+
+---
+# RoleBinding from the Role in the db2u namespace to the Job's ServiceAccount in the app namespace
+# NOTE: created in db2u namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "{{ $rb_name }}"
+  namespace: "{{ $db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: "{{ $sa_name }}"
+    namespace: "{{ $ns }}"
+roleRef:
+  kind: Role
+  name: "{{ $role_name }}"
+  apiGroup: rbac.authorization.k8s.io
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Suffix the Job name with a hash of all chart values
+  # This is to ensure that ArgoCD will delete and recreate the job if anything changes in the application config
+  # The job is idempotent
+  name: {{ $job_name }}-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+            - name: DB2_NAMESPACE
+              value: "{{ $db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ $db2_instance_name }}"
+            - name: DB2_DBNAME
+              value: "{{ $db2_dbname }}"
+
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              source /mascli/functions/gitops_utils
+
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc 'echo "hello world"' db2inst1
+
+              # su - db2inst1
+              # db2 connect to bludb
+              # db2 "select 'alter sequence maximo.' || sequencename || ' cache 500;' from maximo.maxsequence" | grep "alter sequence" > AlterSEQ.sql
+              # echo "alter sequence maximo.maxseq cache 2000;" >> AlterSEQ.sql
+              # db2 -tvf AlterSEQ.sql | tee AlterSEQ.OUT
+
+      restartPolicy: Never
+      serviceAccountName: "{{ $sa_name }}"
+      volumes: []
+  backoffLimit: 4
+{{- end }}

@@ -380,7 +380,7 @@ spec:
                   db2 -x "select 'alter sequence maximo.' || sequencename || ' cache 500;' from maximo.maxsequence" | grep "alter sequence" >>\$TBSP_SQL
                   maxseq_cache=\$?
                   db2 -x "alter sequence maximo.maxseq cache 2000" >>\$TBSP_SQL
-                  alter_seq=\$}
+                  alter_seq=\$?
 
                   db2stop force; ipclean ; db2start
                   sleep 30
@@ -452,6 +452,11 @@ spec:
               echo "Creating ${INSTHOME}/Managed in c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/Managed" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating ${INSTHOME}/maintenance in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/maintenance" db2inst1 || exit $?
 
               echo ""
               echo "Copying all the required DB2 scripts in c-${DB2_INSTANCE_NAME}-db2u-0"
@@ -616,7 +621,7 @@ spec:
               echo "Running Compliance checks on pod c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "================================================================================"
 
-              COMPLIANCE_SH_PATH="${DB2_INSTANCE_HOME_PATH}/ITCS104/RunCompliance.sh"
+              COMPLIANCE_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/ITCS104/RunCompliance.sh"
               
               echo ""
               echo "Executing ${COMPLIANCE_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
@@ -628,7 +633,7 @@ spec:
               echo "Running Build Remediat script  on pod c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "================================================================================"
 
-              BUILD_REMEDIAT_SH_PATH="${DB2_INSTANCE_HOME_PATH}/ITCS104/Build_remediat_Script.sh"
+              BUILD_REMEDIAT_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/ITCS104/Build_remediat_Script.sh"
 
               echo ""
               echo "Executing ${BUILD_REMEDIAT_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
@@ -669,14 +674,12 @@ spec:
               echo "Creating .PROPS file"
               echo "--------------------------------------------------------------------------------"
 
-              cat > /tmp/${PROPS_FILE_NAME} << EOF
-                echo "PARM1=${PARM1}" > /tmp/${PROPS_FILE_NAME}
-                echo "PARM2=${PARM2}" >> /tmp/${PROPS_FILE_NAME}
-                echo "CONTAINER=${BUCKET_NAME}" >> /tmp/${PROPS_FILE_NAME}
-                echo "SERVER=${COS_SERVER}" >> /tmp/${PROPS_FILE_NAME}
-                echo "DAYOFFULL=Sat" >> /tmp/${PROPS_FILE_NAME}
-                echo "NUMOFBKUPTOKEEP=60" >> /tmp/${PROPS_FILE_NAME}
-              EOF
+              echo "PARM1=${PARM1}" > /tmp/${PROPS_FILE_NAME}
+              echo "PARM2=${PARM2}" >> /tmp/${PROPS_FILE_NAME}
+              echo "CONTAINER=${BUCKET_NAME}" >> /tmp/${PROPS_FILE_NAME}
+              echo "SERVER=${COS_SERVER}" >> /tmp/${PROPS_FILE_NAME}
+              echo "DAYOFFULL=Sat" >> /tmp/${PROPS_FILE_NAME}
+              echo "NUMOFBKUPTOKEEP=60" >> /tmp/${PROPS_FILE_NAME}
               # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
 
               echo ""

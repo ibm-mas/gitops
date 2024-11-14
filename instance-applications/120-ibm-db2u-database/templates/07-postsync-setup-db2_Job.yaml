@@ -377,16 +377,17 @@ spec:
                   end
                   from sysibm.sysdummy1"  >>\$TBSP_SQL
                   maxtmp_tbsp=\$?
-                  echo 'db2 "select 'alter sequence maximo.' || sequencename || ' cache 500;' from maximo.maxsequence" | grep "alter sequence"' >>\$TBSP_SQL
+                  db2 -x "select 'alter sequence maximo.' || sequencename || ' cache 500;' from maximo.maxsequence" | grep "alter sequence" >>\$TBSP_SQL
                   maxseq_cache=\$?
-                  #alter sequence maximo.maxseq cache 2000 - Is this correct DB2 statement?
+                  db2 -x "alter sequence maximo.maxseq cache 2000" >>\$TBSP_SQL
+                  alter_seq=\$}
 
                   db2stop force; ipclean ; db2start
                   sleep 30
 
-                  if [[ "\$maxd_bpf" -eq  "0" && "\$maxi_bpf" -eq  "0" && "\$maxtmp_bpf" -eq "0"  && "\$maxd_tbsp" -eq  "0" && "\$maxi_tbsp" -eq "0" && "\$maxtmp_tbsp" -eq "0" && "\$maxseq_cache" -eq "0" && -f "\$TBSP_SQL" ]]; then
+                  if [[ "\$maxd_bpf" -eq  "0" && "\$maxi_bpf" -eq  "0" && "\$maxtmp_bpf" -eq "0"  && "\$maxd_tbsp" -eq  "0" && "\$maxi_tbsp" -eq "0" && "\$maxtmp_tbsp" -eq "0" && "\$maxseq_cache" -eq "0" && "\$alter_seq" -eq "0" && -f "\$TBSP_SQL" ]]; then
                       db2 -tvf \$TBSP_SQL
-                      rm \$TBSP_SQL
+                      #rm \$TBSP_SQL
                       db2 connect reset
                       db2stop force; ipclean ; db2start
                       sleep 30
@@ -432,7 +433,7 @@ spec:
               echo ""
               echo "Getting Instance owner and home directory in c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
-              INSTOWNER=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "/usr/local/bin/db2greg -dump | grep -ae \"I,\" | grep -v \"/das,\" | awk -F ',' '{print $4}'" db2inst1`
+              INSTOWNER='db2inst1'
               echo "Instance owner is ${INSTOWNER}"
               INSTHOME=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cat /etc/passwd | grep ${INSTOWNER} | cut -d: -f6" db2inst1`
               echo "Instance home directory is ${INSTHOME}"

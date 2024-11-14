@@ -410,7 +410,11 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1 || exit $?
 
-                
+                CREATE_ROLES_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/CreateRoles.sh"
+                echo ""
+                echo "Executing ${CREATE_ROLES_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${CREATE_ROLES_SH_PATH} | tee /tmp/createroles.log" db2inst1 || exit $?
 
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
@@ -609,12 +613,6 @@ spec:
               sm_login
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-setup-db2\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret ${DB2_CONFIG_SECRET} "{ \"jdbc_connection_url\": \"${JDBC_CONNECTION_URL}\", \"jdbc_instance_name\": \"${DB2_INSTANCE_NAME}\", \"ca_b64\": \"${DB2_CA_PEM}\", \"db2_dbname\": \"${DB2_DBNAME}\", \"db2_namespace\": \"${DB2_NAMESPACE}\" }" "${TAGS}" || exit $?
-
-              CREATE_ROLES_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/CreateRoles.sh"
-              echo ""
-              echo "Executing ${CREATE_ROLES_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${CREATE_ROLES_SH_PATH} | tee /tmp/createroles.log" db2inst1 || exit $?
 
               echo ""
               echo "================================================================================"

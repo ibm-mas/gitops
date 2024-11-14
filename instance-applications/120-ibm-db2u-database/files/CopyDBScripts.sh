@@ -43,7 +43,7 @@ cp -rp Build_remediat_Script.sh ${INSTHOME}/bin/ITCS104/
 cp -rp RunCompliance.sh ${INSTHOME}/bin/ITCS104/
 
 echo -e "\nCopying files to /mnt/backup/bin directory . . .";
-cp -rp cronRunBKP.sh  /mnt/backup/bin/
+sudo cp -rp cronRunBKP.sh  /mnt/backup/bin/
 sudo chown db2uadm:wheel /mnt/backup/bin/cronRunBKP.sh
 
 echo -e "\nCopying files to Managed directory under Instance Home . . .";

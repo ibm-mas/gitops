@@ -49,7 +49,6 @@ sudo chown db2uadm:wheel /mnt/backup/bin/cronRunBKP.sh
 echo -e "\nCopying files to Managed directory under Instance Home . . .";
 cp -rp Set_DB_COS_Storage.sh ${INSTHOME}/Managed/
 cp -rp Reg-Large_TBSP.sh ${INSTHOME}/Managed/
-cp HADR_config_primary.txt ${INSTHOME}/Managed
 cp PostBackFlow.sh ${INSTHOME}/Managed
 cp OwnerCheck.txt ${INSTHOME}/Managed
 

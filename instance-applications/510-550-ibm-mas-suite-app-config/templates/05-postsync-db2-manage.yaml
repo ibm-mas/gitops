@@ -9,8 +9,11 @@
 # TODO: set all syncwaves to low values so this runs first for testing, change this before delivery!
 
 ---
-# Permit outbound communication by the Job pod
-# (Needed to communicate with the K8S HTTP API)
+{{- /*
+  Permit outbound communication by the Job pod (Needed to communicate with the K8S HTTP API)
+  This single policy is shared by all per-db2 job instances, 
+  it identifies these jobs by $job_label (which is the same for all)
+*/}}
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
@@ -32,7 +35,11 @@ spec:
     - Egress
 
 ---
-# Service account that is authorized to exec into db2u pod
+{{- /*
+  Service account that is authorized to exec into db2u pod
+  This single service account is shared by all per-db2 job instances
+  Each per-db2 job is assigned its own role (in the db2 namespace) which is bound to this service account
+*/}}
 kind: ServiceAccount
 apiVersion: v1
 metadata:
@@ -47,9 +54,22 @@ metadata:
 
 
 
+
+
+
+{{- /*
+  A separate Job is created in the manage namespace per DB2 instance assigned to Manage.
+  (i.e. all entries in ibm-db2u-databases.yaml with mas_application_id: "manage")
+  For each Job a separate Role and RoleBinding is created in the db2 namespace to permit
+  pod exec access to the (single) service account assigned to each Job.
+
+  NOTE: Most likely there will only ever be a single DB2 assigned to Manage
+
+  NOTE: When inside the range loop below, make sure you prefix any references to chart values NOT under .Values.manage_db2u_databases with $.
+  For example: {{ $.Values.custom_labels }} (instead of {{ .Values.custom_labels }} )
+*/}}
 {{- range $i, $db := .Values.manage_db2u_databases }}
 
-# TODO: hard-coded for now, but should be passing this in
 {{ $db2_namespace      := $db.db2_namespace }}
 {{ $db2_dbname         := $db.db2_dbname }}
 {{ $db2_instance_name  := $db.db2_instance_name }}
@@ -59,8 +79,10 @@ metadata:
 {{ $rb_name            := printf "postsync-manage-db2-rb-%s"   $db2_instance_name }}
 
 ---
-# Role permitting exec into db2u pod
-# NOTE: created in db2u namespace
+{{- /*
+  Role permitting exec into db2u pod
+  NOTE: created in db2u namespace
+*/}}
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -68,9 +90,9 @@ metadata:
   namespace: "{{ $db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "0"
-{{- if .Values.custom_labels }}
+{{- if $.Values.custom_labels }}
   labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
+{{ $.Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 rules:
 - apiGroups:
@@ -90,8 +112,10 @@ rules:
     - list
 
 ---
-# RoleBinding from the Role in the db2u namespace to the Job's ServiceAccount in the app namespace
-# NOTE: created in db2u namespace
+{{- /*
+  RoleBinding from the Role in the db2u namespace to the Job ServiceAccount in the app namespace
+  NOTE: created in db2u namespace
+*/}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -99,9 +123,9 @@ metadata:
   namespace: "{{ $db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "0"
-{{- if .Values.custom_labels }}
+{{- if $.Values.custom_labels }}
   labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
+{{ $.Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 subjects:
   - kind: ServiceAccount
@@ -120,21 +144,21 @@ metadata:
   # Suffix the Job name with a hash of all chart values
   # This is to ensure that ArgoCD will delete and recreate the job if anything changes in the application config
   # The job is idempotent
-  name: {{ $job_name }}-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: {{ $job_name }}-v1-{{ omit $.Values "junitreporter" | toYaml | adler32sum }}
   namespace: "{{ $manage_ns }}"
   annotations:
     argocd.argoproj.io/sync-wave: "1"
-{{- if .Values.custom_labels }}
+{{- if $.Values.custom_labels }}
   labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
+{{ $.Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
   template:
     metadata:
       labels:
         app: {{ $job_label }}
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- if $.Values.custom_labels }}
+{{ $.Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
       containers:

@@ -280,6 +280,59 @@ spec:
               echo "================================================================================"
               wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
 
+              echo ""
+              echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating /mnt/backup/staging in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating /mnt/backup/bin in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/bin" db2inst1 || exit $?
+
+              echo ""
+              echo "Getting Instance owner and home directory in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              INSTOWNER='db2inst1'
+              echo "Instance owner is ${INSTOWNER}"
+              INSTHOME=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cat /etc/passwd | grep ${INSTOWNER} | cut -d: -f6" db2inst1`
+              echo "Instance home directory is ${INSTHOME}"
+
+              echo ""
+              echo "Creating ${INSTHOME}/bin in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/bin" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating ${INSTHOME}/bin/ITCS104 in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/bin/ITCS104" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating ${INSTHOME}/Managed in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/Managed" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating ${INSTHOME}/maintenance in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/maintenance" db2inst1 || exit $?
+
+              echo ""
+              echo "Copying all the required DB2 scripts in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /tmp/db2-scripts/" db2inst1 || exit $?
+              cd /tmp
+              zip -r db2-scripts.zip db2-scripts/
+              oc cp /tmp/db2-scripts.zip ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2-scripts.zip -c db2u || exit $?
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cd /tmp; unzip db2-scripts.zip; chmod -R +x /tmp/db2-scripts" db2inst1 || exit $?
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "/tmp/db2-scripts/CopyDBScripts.sh | tee /tmp/copydbscripts.log" db2inst1 || exit $?
+
               if [[ "$MAS_APP_ID" == "manage" ]]; then
                 echo ""
                 echo "================================================================================"
@@ -418,59 +471,6 @@ spec:
 
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
-
-              echo ""
-              echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1 || exit $?
-
-              echo ""
-              echo "Creating /mnt/backup/staging in c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1 || exit $?
-
-              echo ""
-              echo "Creating /mnt/backup/bin in c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/bin" db2inst1 || exit $?
-
-              echo ""
-              echo "Getting Instance owner and home directory in c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              INSTOWNER='db2inst1'
-              echo "Instance owner is ${INSTOWNER}"
-              INSTHOME=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cat /etc/passwd | grep ${INSTOWNER} | cut -d: -f6" db2inst1`
-              echo "Instance home directory is ${INSTHOME}"
-
-              echo ""
-              echo "Creating ${INSTHOME}/bin in c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/bin" db2inst1 || exit $?
-
-              echo ""
-              echo "Creating ${INSTHOME}/bin/ITCS104 in c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/bin/ITCS104" db2inst1 || exit $?
-
-              echo ""
-              echo "Creating ${INSTHOME}/Managed in c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/Managed" db2inst1 || exit $?
-
-              echo ""
-              echo "Creating ${INSTHOME}/maintenance in c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/maintenance" db2inst1 || exit $?
-
-              echo ""
-              echo "Copying all the required DB2 scripts in c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /tmp/db2-scripts/" db2inst1 || exit $?
-              cd /tmp
-              zip -r db2-scripts.zip db2-scripts/
-              oc cp /tmp/db2-scripts.zip ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2-scripts.zip -c db2u || exit $?
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cd /tmp; unzip db2-scripts.zip; chmod -R +x /tmp/db2-scripts" db2inst1 || exit $?
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "/tmp/db2-scripts/CopyDBScripts.sh | tee /tmp/copydbscripts.log" db2inst1 || exit $?
 
               POST_BACKFLOW_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/PostBackFlow.sh"
               echo ""
@@ -683,7 +683,8 @@ spec:
               echo ""
               echo "Copy ${PROPS_FILE_NAME} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
-              oc cp /tmp/${PROPS_FILE_NAME} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/mnt/backup/bin/${PROPS_FILE_NAME} -c db2u || exit $?
+              oc cp /tmp/${PROPS_FILE_NAME} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${PROPS_FILE_NAME} -c db2u || exit $?
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mv /tmp/${PROPS_FILE_NAME /mnt/backup/bin/${PROPS_FILE_NAME}" db2inst1 || exit $?
 
               SET_COS_STORAGE_SH_PATH="/tmp/Set_DB_COS_Storage.sh"
 

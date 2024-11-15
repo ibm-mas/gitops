@@ -11,8 +11,7 @@
 ---
 {{- /*
   Permit outbound communication by the Job pod (Needed to communicate with the K8S HTTP API)
-  This single policy is shared by all per-db2 job instances, 
-  it identifies these jobs by $job_label (which is the same for all)
+  This single policy is shared by all per-db2 job instances, sit identifies these jobs by $job_label (which is the same for all)
 */}}
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
@@ -58,15 +57,14 @@ metadata:
 
 
 {{- /*
-  A separate Job is created in the manage namespace per DB2 instance assigned to Manage.
-  (i.e. all entries in ibm-db2u-databases.yaml with mas_application_id: "manage")
-  For each Job a separate Role and RoleBinding is created in the db2 namespace to permit
-  pod exec access to the (single) service account assigned to each Job.
+  A separate Job is created in the manage namespace per DB2 instance reserved for use by Manage.
+  For each Job a separate Role and RoleBinding is created in the db2 namespace to permit pod exec access to the (single) service account assigned to each Job.
 
-  NOTE: Most likely there will only ever be a single DB2 assigned to Manage
+  NOTE: Most likely there will only ever be a single DB2 reserved for use by Manage; i.e. exactly 1 entry in ibm-db2u-databases.yaml with mas_application_id: "manage".
+        But our config model (in theory) permits more than one, so it seems prudent to ensure this post Manage-sync DB2 maintenance Job is executed against all.
 
   NOTE: When inside the range loop below, make sure you prefix any references to chart values NOT under .Values.manage_db2u_databases with $.
-  For example: {{ $.Values.custom_labels }} (instead of {{ .Values.custom_labels }} )
+        For example: {{ $.Values.custom_labels }} (instead of {{ .Values.custom_labels }} )
 */}}
 {{- range $i, $db := .Values.manage_db2u_databases }}
 

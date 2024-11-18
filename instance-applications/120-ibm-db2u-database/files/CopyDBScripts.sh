@@ -30,7 +30,6 @@ cp -rp RUN_OnDemandFULL_BKP.sh ${INSTHOME}/bin/
 cp -rp runstats_rebind.sh ${INSTHOME}/bin/
 cp -rp CreateRoles.sh ${INSTHOME}/bin/
 cp -rp grant_check.sh ${INSTHOME}/bin/
-cp -rp PostMaint.sh ${INSTHOME}/bin/
 cp -rp reorgTablesIndexesInplace2.sh ${INSTHOME}/bin/
 cp -rp extract_authorization.sh  ${INSTHOME}/bin
 cp -rp HADRMON.sh ${INSTHOME}/bin

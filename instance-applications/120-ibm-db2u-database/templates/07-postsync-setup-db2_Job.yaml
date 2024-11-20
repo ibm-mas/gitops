@@ -152,13 +152,13 @@ spec:
             - name: DB2_TLS_VERSION
               value: "{{ .Values.db2_tls_version }}"
             - name: BUCKET_NAME
-              value: "{{ .Values.backup.bucket_name }}"
+              value: "{{ .Values.db2_backup_bucket_name }}"
             - name: PARM1
-              value: "{{ .Values.backup.bucket_access_key }}"
+              value: "{{ .Values.db2_backup_bucket_access_key }}"
             - name: PARM2
-              value: "{{ .Values.backup.bucket_secretkey }}"
+              value: "{{ .Values.db2_backup_bucket_secretkey }}"
             - name: COS_SERVER
-              value: "{{ .Values.backup.bucket_endpoint }}"
+              value: "{{ .Values.db2_backup_bucket_endpoint }}"
             - name: DB2_INSTANCE_HOME_PATH
               value: "{{ .Values.db2_instance_home_path }}"
 
@@ -697,6 +697,17 @@ spec:
               echo "Executing ${INSTHOME}/bin/CheckCOS.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | tee /tmp/checkcos.log" db2inst1 || exit $?
+
+              echo ""
+              echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+
+              DROP_TEMPTS = "/tmp/db2-scripts/dropTempts.sh"
+              echo ""
+              echo "Executing  file ${DROP_TEMPTS} on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${DROP_TEMPTS} | tee /tmp/dropTempts.log" db2inst1 || exit $?
 
               echo ""
               echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"

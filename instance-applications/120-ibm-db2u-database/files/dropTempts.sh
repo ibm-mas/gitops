@@ -34,7 +34,7 @@ TMPSQL="/tmp/droprecreatetbsp.sql"
 # -- Invoking DB2 Profile
 
 INST=`/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | awk -F, '{print $4}'`
-INSTHOME=`/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${INST}" | awk -F ',' '{print $5}'| cut -d/ -f 1,2,3`
+INSTHOME=`/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${INST}" | awk -F ',' '{print $5}'| cut -d/ -f 1,2,3,4,5`
 
 . ${INSTHOME}/sqllib/db2profile
 

@@ -13,6 +13,9 @@ metadata:
 data:
   aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+  parm1: {{ .Values.db2_backup_bucket_access_key | b64enc }}
+  parm2: {{ .Values.db2_backup_bucket_secret_key | b64enc }}
+  icd_auth_key: {{ .Values.icd_auth_key | b64enc }}
 type: Opaque
 
 ---
@@ -153,14 +156,12 @@ spec:
               value: "{{ .Values.db2_tls_version }}"
             - name: BUCKET_NAME
               value: "{{ .Values.db2_backup_bucket_name }}"
-            - name: PARM1
-              value: "{{ .Values.db2_backup_bucket_access_key }}"
-            - name: PARM2
-              value: "{{ .Values.db2_backup_bucket_secretkey }}"
             - name: COS_SERVER
               value: "{{ .Values.db2_backup_bucket_endpoint }}"
             - name: DB2_INSTANCE_HOME_PATH
               value: "{{ .Values.db2_instance_home_path }}"
+            - name: SLACKURL
+              value: "{{ .Values.db2_backup_notify_slack_url }}"
 
           volumeMounts:
             - name: aws
@@ -261,6 +262,10 @@ spec:
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               export SM_AWS_REGION=${REGION_ID}
+
+              export PARM1=$(cat /etc/mas/creds/aws/parm1)
+              export PARM2=$(cat /etc/mas/creds/aws/parm2)
+              export ICD_AUTH_KEY=$(cat /etc/mas/creds/aws/icd_auth_key)
              
               echo ""
               echo "================================================================================"
@@ -430,12 +435,8 @@ spec:
                   end
                   from sysibm.sysdummy1"  >>\$TBSP_SQL
                   maxtmp_tbsp=\$?
-                  db2 -x "select 'alter sequence maximo.' || sequencename || ' cache 500;' from maximo.maxsequence" | grep "alter sequence" >>\$TBSP_SQL
-                  maxseq_cache=\$?
-                  db2 -x "alter sequence maximo.maxseq cache 2000" >>\$TBSP_SQL
-                  alter_seq=\$?
 
-                  if [[ "\$maxd_bpf" -eq  "0" && "\$maxi_bpf" -eq  "0" && "\$maxtmp_bpf" -eq "0"  && "\$maxd_tbsp" -eq  "0" && "\$maxi_tbsp" -eq "0" && "\$maxtmp_tbsp" -eq "0" && "\$maxseq_cache" -eq "0" && "\$alter_seq" -eq "0" && -f "\$TBSP_SQL" ]]; then
+                  if [[ "\$maxd_bpf" -eq  "0" && "\$maxi_bpf" -eq  "0" && "\$maxtmp_bpf" -eq "0"  && "\$maxd_tbsp" -eq  "0" && "\$maxi_tbsp" -eq "0" && "\$maxtmp_tbsp" -eq "0" && -f "\$TBSP_SQL" ]]; then
                       db2 -tvf \$TBSP_SQL
                       #rm \$TBSP_SQL
                       db2 connect reset
@@ -676,8 +677,10 @@ spec:
               echo "PARM2=${PARM2}" >> /tmp/${PROPS_FILE_NAME}
               echo "CONTAINER=${BUCKET_NAME}" >> /tmp/${PROPS_FILE_NAME}
               echo "SERVER=${COS_SERVER}" >> /tmp/${PROPS_FILE_NAME}
+              echo "SLACKURL=${SLACKURL}" >> /tmp/${PROPS_FILE_NAME}
               echo "DAYOFFULL=Sat" >> /tmp/${PROPS_FILE_NAME}
               echo "NUMOFBKUPTOKEEP=60" >> /tmp/${PROPS_FILE_NAME}
+              echo "ICD_AUTH_KEY=${ICD_AUTH_KEY}" >> /tmp/${PROPS_FILE_NAME}
 
               echo ""
               echo "Copy ${PROPS_FILE_NAME} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"

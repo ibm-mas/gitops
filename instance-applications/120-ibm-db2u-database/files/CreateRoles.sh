@@ -100,6 +100,17 @@ db2 "grant deletein on schema MAXIMO to role MAXIMO_WRITE"
 db2 "grant insertin on schema MAXIMO to role MAXIMO_WRITE"
 db2 "grant selectin on schema MAXIMO to role MAXIMO_WRITE"
 
-db2 -tvf Explain.ddl
+echo "Creating the EXLAIN ROLE"
+ROLES=`db2 -x "select char(ROLENAME,30) as ROLENAME from syscat.roles"`
+ROLE="EXPLAIN"
+if grep -qw "${ROLE}" <<< "${ROLES}" ; then
+
+    echo "${ROLE} is already present in the database ${DBNAME}"; 
+    exit 1;
+else
+    echo "${ROLE} is Not FOUND, proceeding with creating the role "
+    db2 -tvf Explain.ddl
+fi
+
 
 db2 terminate

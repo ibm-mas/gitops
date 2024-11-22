@@ -81,7 +81,7 @@ do
 
 cat << ! >.curl_${DBNAME}_ICD.sh
   curl --insecure --location --request POST "${ICD_URL}/maximo_mif/oslc/os/hsincident?lean=1" \
-  --header 'Authorization: Basic Y2RzaW50ZGJhOklSZWFsbHlMb3ZlUHVwcGllcw==' \
+  --header "Authorization: Basic ${ICD_AUTH_KEY}" \
   --header 'Content-Type: application/json' \
   --data '{
   "description":"$des",

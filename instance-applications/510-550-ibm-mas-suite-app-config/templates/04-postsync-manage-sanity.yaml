@@ -344,6 +344,13 @@ data:
       except KeyError as e:
         pass
 
+      # Read the destinationCACertificate field from the Manage Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the internal Manage services.
+      try:
+        manage_route_destinationCACertificate = manage_route['spec']['tls']['destinationCACertificate']
+      except KeyError as e:
+        pass
+
       # Load default CA bundle. This will include certs for well-known CAs. This ensures that we will
       # trust the certificates presented by the external Manage endpoints when MAS is configured to use
       # an external frontend like CIS.
@@ -359,6 +366,9 @@ data:
         
         if manage_route_caCertificate:
           chain_file.write(manage_route_certificate.encode())
+
+        if manage_route_destinationCACertificate:
+          chain_file.write(manage_route_destinationCACertificate.encode())
 
         chain_file.write(default_ca_content)
 
@@ -868,7 +878,7 @@ data:
         return api_key
 
     def test_add_new_user_to_admin_group(manage_host_ca_filepath):
-        groupid= get_group_id(user_id, session, manage_host_ca_filepath)
+        groupid = get_group_id(user_id, session, manage_host_ca_filepath)
         user_group_url=f'''{MANAGE_URL}/maximo/api/os/mxapigroup/{groupid}?lean=1'''
 
         payload = {

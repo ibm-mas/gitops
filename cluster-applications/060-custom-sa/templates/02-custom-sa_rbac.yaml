@@ -1,0 +1,23 @@
+{{- range $key, $value := $.Values.custom_sa_details }}
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "{{ $key }}-crb"
+  annotations:
+    argocd.argoproj.io/sync-wave: "062"
+{{- if $.Values.custom_labels }}
+  labels:
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $key }}
+    namespace: {{ $.Values.custom_sa_namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $value }}
+
+{{- end }}

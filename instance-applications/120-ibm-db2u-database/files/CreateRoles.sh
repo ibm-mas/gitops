@@ -26,6 +26,7 @@ DATETIME=`date +%Y%m%d_%H%M%S`;
 
 ROLES=`db2 -x "select char(ROLENAME,30) as ROLENAME from syscat.roles"`
 ROLE="${SCHEMANAME}_read"
+echo "" > temp
 if grep -qw "${ROLE}" <<< "${ROLES}" ; then
     echo "create role ${SCHEMANAME}_read;"  > temp
 fi
@@ -56,6 +57,7 @@ echo "GRANT CONNECT ON DATABASE TO ROLE ${USER};" >>${USER}.sql
 #echo "GRANT USE OF TABLESPACE MAXDATA TO ROLE ${USER};" >> ${USER}.sql
 db2 -tvf ${USER}.sql > ${USER}_${DATETIME}.out
 
+echo "" > temp
 ROLE="${SCHEMANAME}_write"
 if grep -qw "${ROLE}" <<< "${ROLES}" ; then
     echo "create role ${SCHEMANAME}_write;"  > temp
@@ -80,7 +82,7 @@ rm temp
 echo "GRANT CONNECT ON DATABASE TO ROLE ${USER};" >>${WRITE}.sql
 #echo "GRANT USE OF TABLESPACE MAXDATA TO ROLE ${WRITE};" >> ${WRITE}.sql
 
-
+echo "" > temp
 ROLE="${SCHEMANAME}_SEQ"
 if grep -qw "${ROLE}" <<< "${ROLES}" ; then
     echo "create role ${SCHEMANAME}_SEQ;"  > temp

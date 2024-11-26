@@ -1,3 +1,4 @@
+echo ""  > Rem.sql
 ROLES=`db2 -x "select char(ROLENAME,30) as ROLENAME from syscat.roles"`
 ROLE="COLLECTIVE"
 if grep -qw "${ROLE}" <<< "${ROLES}" ; then

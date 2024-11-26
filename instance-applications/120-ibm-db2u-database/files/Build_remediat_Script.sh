@@ -1,4 +1,8 @@
-echo "create role COLLECTIVE;" > Rem.sql
+ROLES=`db2 -x "select char(ROLENAME,30) as ROLENAME from syscat.roles"`
+ROLE="COLLECTIVE"
+if grep -qw "${ROLE}" <<< "${ROLES}" ; then
+    echo "create role COLLECTIVE;" > Rem.sql
+fi
 FILE=NOTSET-db2-c-db2wh-*.info
 
 echo "GRANT ROLE COLLECTIVE TO USER DB2GSE; " >> Rem.sql

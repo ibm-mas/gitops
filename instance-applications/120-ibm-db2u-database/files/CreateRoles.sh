@@ -24,8 +24,11 @@ SCHEMANAME=MAXIMO
 
 DATETIME=`date +%Y%m%d_%H%M%S`;
 
-
-echo "create role ${SCHEMANAME}_read;"  > temp
+ROLES=`db2 -x "select char(ROLENAME,30) as ROLENAME from syscat.roles"`
+ROLE="${SCHEMANAME}_read"
+if grep -qw "${ROLE}" <<< "${ROLES}" ; then
+    echo "create role ${SCHEMANAME}_read;"  > temp
+fi
 USER=${SCHEMANAME}_READ
 WRITE=${SCHEMANAME}_WRITE
 
@@ -53,7 +56,10 @@ echo "GRANT CONNECT ON DATABASE TO ROLE ${USER};" >>${USER}.sql
 #echo "GRANT USE OF TABLESPACE MAXDATA TO ROLE ${USER};" >> ${USER}.sql
 db2 -tvf ${USER}.sql > ${USER}_${DATETIME}.out
 
-echo "create role ${SCHEMANAME}_write;"  > temp
+ROLE="${SCHEMANAME}_write"
+if grep -qw "${ROLE}" <<< "${ROLES}" ; then
+    echo "create role ${SCHEMANAME}_write;"  > temp
+fi
 echo "grant updatein on schema MAXIMO to role MAXIMO_WRITE;" >> temp
 echo "grant deletein on schema MAXIMO to role MAXIMO_WRITE;"  >> temp
 echo "grant insertin on schema MAXIMO to role MAXIMO_WRITE;" >> temp
@@ -75,8 +81,10 @@ echo "GRANT CONNECT ON DATABASE TO ROLE ${USER};" >>${WRITE}.sql
 #echo "GRANT USE OF TABLESPACE MAXDATA TO ROLE ${WRITE};" >> ${WRITE}.sql
 
 
-
-echo "create role ${SCHEMANAME}_SEQ;"  > temp
+ROLE="${SCHEMANAME}_SEQ"
+if grep -qw "${ROLE}" <<< "${ROLES}" ; then
+    echo "create role ${SCHEMANAME}_SEQ;"  > temp
+fi
 USER=${SCHEMANAME}_SEQ
 
 
@@ -100,8 +108,7 @@ db2 "grant deletein on schema MAXIMO to role MAXIMO_WRITE"
 db2 "grant insertin on schema MAXIMO to role MAXIMO_WRITE"
 db2 "grant selectin on schema MAXIMO to role MAXIMO_WRITE"
 
-echo "Creating the EXLAIN ROLE"
-ROLES=`db2 -x "select char(ROLENAME,30) as ROLENAME from syscat.roles"`
+echo "Creating the EXPLAIN ROLE"
 ROLE="EXPLAIN"
 if grep -qw "${ROLE}" <<< "${ROLES}" ; then
 

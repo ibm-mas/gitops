@@ -35,7 +35,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: cluster-verify-{{ .Values.cluster_id }}-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: cluster-verify-{{ .Values.cluster_id }}-v2-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
   namespace: mas-syncres
   annotations:
     argocd.argoproj.io/sync-wave: "202"
@@ -114,11 +114,19 @@ spec:
                       FOUND_CATALOG_VERION=$(oc get configmap -n $MAS_APP_NAMESPACE $MAS_APP_CM -o jsonpath='{.data.mas_catalog_version}')
                       if [[ $FOUND_CATALOG_VERION == $MAS_CATALOG_VERSION ]]; then
                           echo "Found ConfigMap $MAS_APP_CM with correct MAS_CATALOG_VERSION: $MAS_CATALOG_VERSION"
-                          SUCCESS=true
+
+                          TEST_PASSED=$(oc get configmap -n $MAS_APP_NAMESPACE $MAS_APP_CM -o jsonpath='{.data.test_passed}')
+                          echo "Found ConfigMap $MAS_APP_CM with TEST_PASSED value of: $TEST_PASSED"
+                          if [[ $TEST_PASSED ]]; then
+                            SUCCESS=true
+                          else
+                            SUCCESS=false
+                          fi
                       else
                           echo "Found ConfigMap $MAS_APP_CM with incorrect MAS_CATALOG_VERSION of $FOUND_CATALOG_VERION, expecting $MAS_CATALOG_VERSION"
                           SUCCESS=false
                       fi
+
 
                       if [[ $SUCCESS == "true" ]]; then
                           break

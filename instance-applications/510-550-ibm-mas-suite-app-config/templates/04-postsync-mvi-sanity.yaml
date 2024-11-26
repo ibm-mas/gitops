@@ -1,16 +1,13 @@
-{{- if eq .Values.mas_app_id "visualinspection" }}
-
+{{- if and (eq .Values.mas_app_id "visualinspection") (.Values.run_sanity_test) }}
 
 {{ $ns               :=  .Values.mas_app_namespace }}
-{{ $np_name          :=  "postsync-verify-mvi-np" }}
-{{ $role_name        :=  "postsync-verify-mvi-role" }}
-{{ $crole_name       :=  "postsync-verify-mvi-crole" }}
-{{ $sa_name          :=  "postsync-verify-mvi-sa" }}
-{{ $rb_name          :=  "postsync-verify-mvi-rb" }}
-{{ $crb_name         :=  "postsync-verify-mvi-crb" }}
-{{ $tests_cm_name    :=  "postsync-verify-tests-mvi-cm" }}
-{{ $record_cm_name   :=  "postsync-verify-tests-mvi-record-cm" }}
-{{ $job_name         :=  "postsync-verify-mvi-job" }}
+{{ $np_name          :=  "postsync-sanity-mvi-np" }}
+{{ $role_name        :=  "postsync-sanity-mvi-role" }}
+{{ $sa_name          :=  "postsync-sanity-mvi-sa" }}
+{{ $rb_name          :=  "postsync-sanity-mvi-rb" }}
+{{ $tests_cm_name    :=  "postsync-sanity-tests-mvi-cm" }}
+{{ $record_cm_name   :=  "postsync-sanity-tests-mvi-record-cm" }}
+{{ $job_name         :=  "postsync-sanity-mvi-job" }}
 
 
 
@@ -81,6 +78,13 @@ rules:
       - ""
     resources:
       - secrets
+      - pods
+  - verbs:
+      - get
+    apiGroups:
+      - "route.openshift.io"
+    resources:
+      - routes
   - verbs:
       - get
       - list
@@ -91,19 +95,11 @@ rules:
       - configmaps
   - verbs:
       - get
-    apiGroups:
-      - "route.openshift.io"
-    resources:
-      - routes
-  - verbs:
-      - get
       - list
     apiGroups:
       - "apps.mas.ibm.com"
     resources:
       - visualinspectionappworkspaces
-      - visualinspectionapps
-
 ---
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -126,58 +122,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ $role_name }}
-# -------------------------------------
-
-
-
-
----
-# -------------------------------------
-# MVI Verification tests need to be able to get/list nodes
-# to check for ready GPU nodes
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $crole_name }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "600"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-  - verbs:
-      - get
-      - list
-    apiGroups:
-      - ""
-    resources:
-      - nodes
-
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $crb_name }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "601"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: {{ $sa_name }}
-    namespace: {{ $ns }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ $crole_name }}
-# -------------------------------------
 
 
 ---
@@ -206,14 +150,14 @@ data:
     from kubernetes import client,config
     from kubernetes.client import Configuration
     from openshift.dynamic import DynamicClient
-    import base64
-    import requests
     import pytest
-    import tempfile
     import os
-    import semver
+    import requests
     import certifi
-
+    import semver
+    import tempfile
+    import base64
+    from datetime import datetime
 
     # e.g. "dclain-1a"
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
@@ -228,7 +172,6 @@ data:
     mvi_namespace = f"mas-{mas_instance_id}-visualinspection"
     mvi_route_name = f"{mas_instance_id}-{mas_workspace_id}"
 
-
     @pytest.fixture(scope="session")
     def dyn_client():
       if "KUBERNETES_SERVICE_HOST" in os.environ:
@@ -241,12 +184,16 @@ data:
       yield dyn_client
 
     @pytest.fixture(scope="session")
-    def v1_nodes(dyn_client):
-      yield dyn_client.resources.get(api_version='v1', kind='Node')
+    def v1_mviworkspace(dyn_client):
+      yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='VisualInspectionAppWorkspace')
 
     @pytest.fixture(scope="session")
-    def gpu_nodes(v1_nodes):
-      yield v1_nodes.get(label_selector='nvidia.com/gpu.count>0')
+    def mvi_workspace_cr(v1_mviworkspace):
+      yield v1_mviworkspace.get(namespace=mvi_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
+
+    @pytest.fixture(scope="session")
+    def v1_pods(dyn_client):
+      yield dyn_client.resources.get(api_version='v1', kind='Pod')
 
     @pytest.fixture(scope="session")
     def v1_secrets(dyn_client):
@@ -345,92 +292,191 @@ data:
         assert False, "Expected data.dnn-apikey field not present in secret {mvi_apikey_secret_name} in {mvi_namespace}"
       yield base64.b64decode(dnn_apikey_b64)
 
-    @pytest.fixture(scope="session")
-    def v1_mviapp(dyn_client):
-      yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='VisualInspectionApp')
+    def get_usage_pod(v1_pods):
+        usage_pod = v1_pods.get(label_selector="app.kubernetes.io/name=usage-hourly-job", namespace=mvi_namespace)
+        if not usage_pod.items:
+            assert False, f"Could not find any usage-hourly-job in {mvi_namespace}"
+        return usage_pod
 
-    @pytest.fixture(scope="session")
-    def v1_mviworkspace(dyn_client):
-      yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='VisualInspectionAppWorkspace')
+    def test_usage_reporter(mvi_workspace_cr, v1_pods):
+      print("Test usage reporter")
+      mvi_create_time = datetime.strptime(mvi_workspace_cr['metadata']['creationTimestamp'], '%Y-%m-%dT%H:%M:%SZ')
+      current_time = datetime.now()
+      if (current_time - mvi_create_time).total_seconds() > 3600:
+        assert get_usage_pod(v1_pods).items[0].status['phase'] == 'Succeeded'
+      else:
+        print("MVI CR created only recently")
 
-    @pytest.fixture(scope="session")
-    def mvi_app_cr(v1_mviapp):
-      yield v1_mviapp.get(namespace=mvi_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
-
-    @pytest.fixture(scope="session")
-    def mvi_workspace_cr(v1_mviworkspace):
-      yield v1_mviworkspace.get(namespace=mvi_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
-
-    @pytest.fixture(scope="session")
-    def mvi_app_reconciled_version(mvi_app_cr):
-      try:
-        yield mvi_app_cr['status']['versions']['reconciled']
-      except KeyError as e:
-        assert False, f"Unable to determine MVI Application reconciled version. Error details: {e}"
-
-    @pytest.fixture(scope="session")
-    def mvi_workspace_reconciled_version(mvi_workspace_cr):
-      try:
-        yield mvi_workspace_cr['status']['versions']['reconciled']
-      except KeyError as e:
-        assert False, f"Unable to determine MVIWorkspace reconciled version. Error details: {e}"
-
-    def test_expected_reconciled_version(mvi_workspace_reconciled_version, mvi_app_reconciled_version):
-      assert mvi_app_reconciled_version == mvi_workspace_reconciled_version, f"Expected MVI Workspace Reconciled version: {mvi_workspace_reconciled_version} to match MVI Operator version: {mvi_app_reconciled_version}"
-
-    def test_at_least_one_ready_gpu_node(gpu_nodes):
-      # We may have installed MVI on a cluster with no GPU nodes (e.g. an internal test system)
-      # In that case, skip this test so we don't block the pipeline unnecessarily
-      if len(gpu_nodes.items) == 0:
-        pytest.skip("Cluster does not have any GPU nodes, skipping test")
-
-      # If there are GPU nodes, check at least one of them is ready
-      for gpu_node in gpu_nodes.items:
-        for cond in gpu_node.status.conditions:
-            if cond.type == 'Ready' and cond.status == 'True':
-              return
-      assert False, f"No GPU nodes with condition Ready=True found in the cluster."
-
-    def test_at_least_one_gpu_visible_to_mvi(gpu_nodes, mvi_host, mvi_apikey, mvi_host_ca_filepath):
-
-      # We may have installed MVI on a cluster with no GPU nodes (e.g. an internal test system)
-      # In that case, skip this test so we don't block the pipeline unnecessarily
-      if len(gpu_nodes.items) == 0:
-        pytest.skip("Cluster does not have any GPU nodes, skipping test")
-
-      # If there are GPU nodes, check at least one of them is visible to MVI
+    def test_bgtasks_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
       resp = requests.get(
-        f"https://{mvi_host}/api/system/device-info",
+        f"https://{mvi_host}/api/bgtasks",
         headers={
-          'X-Auth-Token': mvi_apikey
+        'X-Auth-Token': mvi_apikey
         },
         verify=mvi_host_ca_filepath
       )
       assert resp.status_code == 200
-      resp_json = resp.json()
-      try:
-        total_gpu_count = resp_json['gpu_info']['total']
-        assert total_gpu_count > 0, f"No GPU Nodes available for use by MVI according to GET /api/system/device-info. Body: {resp_json}"
-      except KeyError as e:
-        assert False, f"Expected gpu_info.total key not found in response from GET /api/system/device-info: {resp_json}. Error details: {e}"
 
-    def test_ping_api(mvi_host, mvi_host_ca_filepath):
+    def test_dltasks_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
       resp = requests.get(
-        f"https://{mvi_host}/api/ping",
+        f"https://{mvi_host}/api/dltasks",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
         verify=mvi_host_ca_filepath
       )
-      resp_json = resp.json()
-      assert resp.status_code == 200, f"Expected status 200 from GET /api/ping, but got {resp.status_code}. Body: {resp_json}."
-      
-      try:
-        assert resp_json['healthy'] == True, f"Expected healthy field from GET /api/ping to be true, but was {resp_json['healthy']}. Body: {resp_json}"
-      except KeyError as e:
-        assert False, f"Expected healthy key not found in response from GET /api/ping. Body: {resp_json}"
+      assert resp.status_code == 200
 
-      try:
-        assert resp_json['status'] == "Ready", f"Expected status field from GET /api/ping to be 'Ready', but was {resp_json['status']}. Body: {resp_json}"
-      except KeyError as e:
-        assert False, f"Expected status key not found in response from GET /api/ping. Body: {resp_json}"
+    def test_trained_models_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.get(
+        f"https://{mvi_host}/api/trained-models",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+
+    def test_webapis_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.get(
+        f"https://{mvi_host}/api/webapis",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+
+    def test_apikeys_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.get(
+        f"https://{mvi_host}/api/apikeys",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 404
+      assert resp.json()['fault'] == "AIVVS0351E: Could not find an API Key for user \"__dnn_user\"."
+
+    def test_dlm_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.get(
+        f"https://{mvi_host}/api/dlm/policies",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+
+    def test_datasets_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.get(
+        f"https://{mvi_host}/api/datasets",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+
+    def test_create_demo_dataset_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.post(
+        f"https://{mvi_host}/api/datasets",
+        headers={
+        'X-Auth-Token': mvi_apikey,
+        'Content-Type': 'application/json'
+        },
+        data='{"name": "Demo Dataset"}',
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+      pytest.dataset_id = resp.json()["dataset_id"]
+
+    def test_delete_demo_dataset_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.delete(
+        f"https://{mvi_host}/api/datasets/{pytest.dataset_id}",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+
+    def test_uploads_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.get(
+        f"https://{mvi_host}/api/uploads",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+
+    def test_profiles_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.get(
+        f"https://{mvi_host}/api/profiles",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+
+    def test_system_configs_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.get(
+        f"https://{mvi_host}/api/system-configs",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+
+    def test_projects_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.get(
+        f"https://{mvi_host}/api/projects",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+
+    def test_create_demo_project_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.post(
+        f"https://{mvi_host}/api/projects",
+        headers={
+        'X-Auth-Token': mvi_apikey,
+        'Content-Type': 'application/json'
+        },
+        data='{"name": "Demo Project"}',
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+      assert resp.json()['name'] == "Demo Project"
+      pytest.project_id = resp.json()["_id"]
+
+    def test_delete_demo_project_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      resp = requests.delete(
+        f"https://{mvi_host}/api/projects/{pytest.project_id}",
+        headers={
+        'X-Auth-Token': mvi_apikey
+        },
+        verify=mvi_host_ca_filepath
+      )
+      assert resp.status_code == 200
+
+    @pytest.mark.skip(reason="Placeholder")
+    def test_import_model():
+        print("Placeholder for sanity tests to be added")
+
+    @pytest.mark.skip(reason="Placeholder")
+    def test_deploy_model():
+        print("Placeholder for sanity tests to be added")
+
+    @pytest.mark.skip(reason="Placeholder")
+    def test_inference_model():
+        print("Placeholder for sanity tests to be added")
+
 
 ---
 kind: ConfigMap
@@ -443,7 +489,7 @@ metadata:
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
   labels:
-      type: mas-app-verification-record
+      type: mas-app-sanity-record
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
@@ -452,6 +498,7 @@ data:
   mas_app: "visualinspection"
   mas_catalog_version: "{{ .Values.mas_catalog_version }}"
   test_passed: "unknown"
+
 
 ---
 apiVersion: batch/v1
@@ -516,7 +563,7 @@ spec:
               fi
               echo "Test Result Passed: $TEST_PASSED"
               set +o pipefail
-              
+
               set -e
               echo "Updating $TEST_RECORD_CM configmap with test result"
               oc set data cm $TEST_RECORD_CM test_passed=$TEST_PASSED
@@ -527,7 +574,6 @@ spec:
                 echo "Test Result failed, exit 1"
                 exit 1
               fi
-
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}
       volumes:

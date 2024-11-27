@@ -30,6 +30,7 @@ The following figure shows a tree of ArgoCD applications and Application Sets ge
 |CIS Compliance | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/040-cis-compliance-app.yaml", "040-cis-compliance-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/040-cis-compliance", "040-cis-compliance") }} |
 |NFD Operator | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/050-nfd-operator-app.yaml", "050-nfd-operator-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/050-nfd-operator", "050-nfd-operator") }} |
 |Nvidia GPU Operator | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/051-nvidia-gpu-operator-app.yaml", "051-nvidia-gpu-operator-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/051-nvidia-gpu-operator", "051-nvidia-gpu-operator") }} |
+|Custom Cluster Service Accounts | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/060-custom-sa.yaml", "060-custom-sa.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/060-custom-sa", "060-custom-sa") }} |
 The {{ cluster_root_chart() }} also installs the {{ instance_root_app_set() }}. This generates a set of **Instance Root Applications** based on the configuration in the {{  config_repo() }}.  
 
 ## {{ instance_root_chart() }} 

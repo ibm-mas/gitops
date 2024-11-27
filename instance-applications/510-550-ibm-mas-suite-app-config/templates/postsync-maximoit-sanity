@@ -1,0 +1,2114 @@
+{{- if and (eq .Values.mas_app_id "manage") (.Values.run_sanity_test) }}
+
+# A sanity test is one that can be disruptive i.e. it can create new users, call authenticated apis, creates resources 
+# in the application. This type of test should only be run in a downstream environment such as a dev or staging env
+# The control over if these tests run or not is controlled by the `run_sanity_test` boolean in the values
+
+{{ $ns               :=  .Values.mas_app_namespace }}
+{{ $np_name          :=  "postsync-sanity-maximoit-np" }}
+{{ $role_name        :=  "postsync-sanity-maximoit-role" }}
+{{ $sa_name          :=  "postsync-sanity-maximoit-sa" }}
+{{ $rb_name          :=  "postsync-sanity-maximoit-rb" }}
+{{ $tests_cm_name    :=  "postsync-sanity-tests-maximoit-cm" }}
+{{ $record_cm_name   :=  "postsync-sanity-tests-maximoit-record-cm" }}
+{{ $job_name         :=  "postsync-sanity-maximoit-job" }}
+
+
+
+---
+# Permit outbound communication by the Job pod
+# (Needed to communicate with the K8S HTTP API, PyPI, manage Route)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_name }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+
+---
+# -------------------------------------
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - "apps.mas.ibm.com"
+    resources:
+      - manageworkspace
+      - manageapp
+      - manageworkspaces
+      - manageapps
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "601"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+# -------------------------------------
+
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ $tests_cm_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "602"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+immutable: false
+data:
+  requirements.txt: |-
+    pytest
+    kubernetes
+    openshift
+    ibm_db==3.2.3
+    requests==2.31.0
+    assertpy==1.1
+  tests.py: |-
+    from kubernetes import client,config
+    from kubernetes.client import Configuration
+    from openshift.dynamic import DynamicClient
+    import string
+    import pytest
+    import os
+    import ibm_db
+    import requests
+    import random
+    import json
+    import base64
+    from assertpy import assert_that
+    apikey=""
+    siteid=""
+    currency=""
+    orgid=""
+    setid=""
+    csetid=""
+    currobject=""
+    MANAGE_URL = ""
+    MAS_ADMIN_USERNAME = "" 
+    MAS_ADMIN_PASSWORD = ""   
+
+    mas_instance_id = os.getenv("MAS_INSTANCE_ID")
+    if mas_instance_id is None:
+      raise Exception(f"Required MAS_INSTANCE_ID environment variable is not set")
+
+    # e.g. "masdev"
+    mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
+    if mas_workspace_id is None:
+      raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
+
+    manage_namespace = f"mas-{mas_instance_id}-manage"
+    manage_route_name = f"{mas_instance_id}-{mas_workspace_id}"
+
+    @pytest.fixture(scope="session")
+    def dyn_client():
+      if "KUBERNETES_SERVICE_HOST" in os.environ:
+        config.load_incluster_config()
+        k8s_config = Configuration.get_default_copy()
+        k8s_client = client.api_client.ApiClient(configuration=k8s_config)
+      else:
+        k8s_client = config.new_client_from_config()
+      dyn_client = DynamicClient(k8s_client)
+      yield dyn_client
+
+    @pytest.fixture(scope="session")
+    def v1_manageworkspace(dyn_client):
+      yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+
+    @pytest.fixture(scope="session")
+    def v1_manageapp(dyn_client):
+      yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageApp')
+
+    @pytest.fixture(scope="session")
+    def mange_workspace_reconciled_version(mange_workspace_cr):
+      try:
+        yield mange_workspace_cr['status']['versions']['reconciled']
+      except KeyError as e:
+        assert False, f"Unable to determine ManageWorkspace reconciled version. Error details: {e}"
+
+    @pytest.fixture(scope="session")
+    def manage_version(mange_app_cr):
+      try:
+        yield mange_app_cr['status']['components']['manage']['version']
+      except KeyError as e:
+        assert False, f"Unable to determine ManageApp component version. Error details: {e}"
+
+    @pytest.fixture(scope="session")
+    def mange_workspace_cr(v1_manageworkspace):
+      yield v1_manageworkspace.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
+
+    @pytest.fixture(scope="session")
+    def mange_app_cr(v1_manageapp):
+      yield v1_manageapp.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
+
+    @pytest.fixture(scope="session")
+    def v1_secrets(dyn_client):
+      yield dyn_client.resources.get(api_version='v1', kind='Secret')
+
+    @pytest.fixture(scope="session")
+    def v1_routes(dyn_client):
+      yield dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+
+    @pytest.fixture(scope="session")
+    def manage_route(v1_routes):
+      yield v1_routes.get(name=manage_route_name, namespace=manage_namespace)
+
+    @pytest.fixture(scope="session")
+    def manage_host(manage_route):
+      try:
+        yield manage_route['spec']['host']
+      except KeyError as e:
+        assert False, f"Unable to determine Manage host; spec.host key not present in {manage_route_name}/{manage_namespace}: {manage_route}. Error details: {e}"
+
+    # Obtain Manage Details
+    @pytest.fixture(scope="session")
+    def getManageComponents():
+      instanceId = os.getenv("MAS_INSTANCE_ID")
+      workspaceId = os.getenv("MAS_WORKSPACE_ID")
+      manage_namespace = f"mas-{mas_instance_id}-manage"
+        
+      k8sUtil = KubernetesUtil()
+      manageWorkspaces = k8sUtil.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+      try:
+          manageWorkspaceInstance = manageWorkspaces.get(name=f'{instanceId}-{workspaceId}', namespace=manage_namespace)
+      except ApiException:
+          print(f'ApiException: Failed to retrieve {instanceId}-{workspaceId} instance of ManageWorkspace in namespace {manage_namespace}')
+      manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
+      print(f'{manageComponentListInStr}') # like this: base,health,nuclear
+
+    @pytest.fixture(scope="session")
+    def getClusterInfo():
+      instanceId = os.getenv("MAS_INSTANCE_ID")
+      workspaceId = os.getenv("MAS_WORKSPACE_ID")
+      manage_namespace = f"mas-{mas_instance_id}-manage"
+      manageDBCredential = f'jdbc-mas-{instanceId}-{workspaceId}-manage-credentials'
+
+      k8sUtil = KubernetesUtil()
+
+      # -------------------------------
+      # Obtain ManageWorkspace CR
+      # - Used to obtain other data bwlow
+      # -------------------------------
+      manageWorkspaceCR = None
+      try:
+          manageWorkspaceCRD = k8sUtil.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+          manageWorkspaceCR = manageWorkspaceCRD.get(name=f'{instanceId}-{workspaceId}', namespace=manage_namespace)
+      except ApiException as ex:
+          print("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
+
+      # -------------------------------
+      # Obtain DB Driver
+      # -------------------------------
+
+      manageDeployments = k8sUtil.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageDeployment')
+      try:
+          manageDeploymentInstance = manageDeployments.get(name=f'manage-maxinst', namespace=manage_namespace)
+          dbDriver = (manageDeploymentInstance['spec']['db']['maximoDBdriver'])
+          dbSchema = (manageDeploymentInstance['spec']['db']['maximoDBschema'])
+
+      except ApiException:
+          print(f'ApiException: Failed to retrieve manage-maxinst instance of ManageWorkspace in namespace {manage_namespace}')   
+
+      # -------------------------------
+      # Obtain MAS URL
+      # -------------------------------
+      masNamespace = os.getenv("MAS_NAMESPACE")
+      masRouteDetails = k8sUtil.dynClient.resources.get(api_version='route.openshift.io/v1', kind='Route')
+      masUrl = masRouteDetails.get(name=f'{instanceId}-admin', namespace=masNamespace)
+      masHome = masRouteDetails.get(name=f'{instanceId}-{workspaceId}-home', namespace=masNamespace)
+      masDomain = masUrl.spec.host.replace('home.', '', 1)
+
+      # -------------------------------
+      # Obtain Manage URL
+      # -------------------------------
+      try:
+          manageRouteDetails = k8sUtil.dynClient.resources.get(api_version='route.openshift.io/v1', kind='Route')
+          manageUrl = masRouteDetails.get(name=f'{instanceId}-manage-{workspaceId}', namespace=manage_namespace)
+      except Exception as e:
+          if e.status == 404:
+              print(f"Unable to find route {instanceId}-manage-{workspaceId} in {manage_namespace}")
+
+      # -------------------------------
+      # Obtain JDBC credentials
+      # -------------------------------
+      try:
+          jdbcCfgDetails = k8sUtil.dynClient.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
+          bindingManage = manageWorkspaceCR.spec.bindings.jdbc
+      except ApiException as ex:
+          print("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
+      
+      print(f"ManageWorkspace has jdbc binding set to {bindingManage}")
+
+      if "system" in bindingManage:
+          jdbcCfgInstName = f'{instanceId}-jdbc-system'
+      elif "workspace-application" in bindingManage:
+          jdbcCfgInstName = f'{instanceId}-jdbc-wsapp-{workspaceId}-manage'
+      else:
+          print("######### WARN: Unknown jdbc binding found in ManageWorkspace")
+
+      try:
+          jdbcCfg = jdbcCfgDetails.get(name=jdbcCfgInstName, namespace=masNamespace)
+          credentialsSecret = jdbcCfg.spec.config.credentials.secretName
+          credentials = k8sUtil.getSecret(credentialsSecret, masNamespace)
+      except ApiException:
+          print("ApiException: Failed to retrieve Manage database details. Check ManageWorkspace jdbc binding spec")
+
+      # -------------------------------
+      # Obtain Superuser credentials
+      # -------------------------------
+      superuserCredentials = k8sUtil.getSecret(instanceId+'-credentials-superuser', masNamespace)
+
+      # -------------------------------
+      # Generate the DBC cert file
+      # -------------------------------
+      try:
+          with open('db2-tls.cert', 'w') as f:
+              f.write(jdbcCfg.spec.certificates[0].crt)
+      except TypeError:
+          print("######### WARN: Database certificates not found")
+
+      # -------------------------------
+      # Output to be recovered by caller sh
+      # -------------------------------
+      
+      MAS_URL=https://{masUrl.spec.host}{masUrl.spec.path}
+      MAS_HOME=https://{masHome.spec.host}{masHome.spec.path}
+      MAS_DOMAIN={masDomain}
+      MANAGE_JDBC_URL={jdbcCfg.spec.config.url}
+      MANAGE_JDBC_USERNAME={credentials.get("username")}
+      MANAGE_JDBC_PASSWORD={credentials.get("password")}
+      global MAS_ADMIN_USERNAME, MAS_ADMIN_PASSWORD,MANAGE_URL
+      if manageUrl is not None:
+          MANAGE_URL=https://{manageUrl.spec.host}{manageUrl.spec.path}maximo
+      MAS_ADMIN_USERNAME={superuserCredentials.get("username")}
+      MAS_ADMIN_PASSWORD={superuserCredentials.get("password")}
+      MANAGE_JDBC_DRIVER={dbDriver}
+      MANAGE_JDBC_SCHEMA={dbSchema}
+
+    # Manage db configuration
+    @pytest.fixture(scope="session")
+    def manage_db_connection():
+        import ibm_db
+        url = os.getenv("MANAGE_JDBC_URL", None).replace("jdbc:", "")
+        jdbcDetails = urlparse(url)
+
+        db_config = {
+            "database": jdbcDetails.path.replace("/", "").split(":")[0],
+            "hostname": jdbcDetails.hostname,
+            "port": jdbcDetails.port,
+            "protocol": "TCPIP",
+            "user": os.getenv("MANAGE_JDBC_USERNAME", None),
+            "password": os.getenv("MANAGE_JDBC_PASSWORD", None),
+            "cert": os.getenv("MANAGE_JDBC_CERT", None),
+            "driver": os.getenv("MANAGE_JDBC_DRIVER", None),
+        }
+        
+        # Check database type
+        # -----------------------------------------------------------------------------
+        # DB2 - with and without certification
+        if "DB2" in db_config["driver"]:
+            logger.info("=== DB2 Database -- Setting up connection ===")
+
+            # Validate if certification is not empty
+            ValidCert = False
+            cert_path = os.getenv("MANAGE_JDBC_CERT")
+            if cert_path is not None:
+                cert_file = Path(cert_path)
+                logger.info(f"Certificate location:{cert_path}")
+                if cert_file.exists():
+                    file = open(os.getenv("MANAGE_JDBC_CERT"), "r")
+                    for line in file:
+                        if re.search("CERTIFICATE", line):
+                            ValidCert = True
+
+            conn_str = (
+                f"DATABASE={db_config['database']};HOSTNAME={db_config['hostname']};PORT={db_config['port']};PROTOCOL={db_config['protocol']};UID={db_config['user']};PWD={db_config['password']};"
+                + (
+                    f"SECURITY=SSL;SSLServerCertificate={db_config['cert']};"
+                    if ValidCert
+                    else f""
+                )
+            )
+            connection = ibm_db.connect(conn_str, "", "")
+            yield connection
+            ibm_db.close(connection)
+
+    @pytest.fixture(scope="session")
+    def updateMaxadminGroup(manage_db_connection):
+        nextval = ("NEXT VALUE" if "dbo" in os.getenv("MANAGE_JDBC_SCHEMA") else "NEXTVAL")
+        schema = ("" if "dbo" in os.getenv("MANAGE_JDBC_SCHEMA") else (os.getenv("MANAGE_JDBC_SCHEMA")+"."))
+        os_query = fselect app from {schema}applicationauth
+        where app in ('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM', 'INTOBJECT', 'MXAPIINTOBJECT', 'MXAPIMAXAPP','MXAPIPERUSER') 
+        and groupname='MAXADMIN';
+        
+        result_set = fetchBoth(manage_db_connection,os_query)
+        if result_set:
+            logger.info("Some object structure is already there as %s", result_set)
+            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIPERSONGROUP', 'MAXADMIN')
+            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIPROP', 'MAXADMIN')
+            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIGROUP', 'MAXADMIN')
+            updateSpecificPermissionToGroup(manage_db_connection, 'MXASSET', 'MAXADMIN')
+            updateSpecificPermissionToGroup(manage_db_connection, 'MXEXTSYSTEM', 'MAXADMIN')
+            updateSpecificPermissionToGroup(manage_db_connection, 'INTOBJECT', 'MAXADMIN')        
+            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIINTOBJECT', 'MAXADMIN')
+            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIMAXAPP', 'MAXADMIN')
+            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIPERUSER', 'MAXADMIN')
+        else:
+            logger.info(
+                "No required object structure is present in MAXADMIN. Hence, updating MAXADMIN group."
+            )
+            update_query = (
+                finsert into {schema}applicationauth 
+                (groupname, app, optionname, applicationauthid) select 'MAXADMIN', app, optionname, 
+                {nextval} for {schema}applicationauthseq from {schema}sigoption where app in 
+                ('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET',
+                'MXEXTSYSTEM', 'INTOBJECT', 'MXAPIINTOBJECT', 'MXAPIMAXAPP','MXAPIPERUSER');"""
+            )
+            executeQuery(manage_db_connection, update_query)
+            logger.info("Object Structure permission successfully granted to MAXADMIN")
+
+    @pytest.fixture(scope="session")
+    def test_generatekey():
+        global apikey
+        maxauth=str(MAS_ADMIN_USERNAME+":"+MAS_ADMIN_PASSWORD)
+      
+        base64_maxauth = base64.b64encode(maxauth.encode("utf-8"))
+        maxauth = base64_maxauth.decode("utf-8")
+        url = MANAGE_URL+"/oslc/apitoken/create"
+        payload = {"expiration": -1}
+        headers = {
+            "Content-Type": "application/json",
+            "maxauth":maxauth
+        }
+        response = requests.request("POST", url, json=payload, headers=headers).json()
+      
+        apikey=response['apikey']
+        
+    #Variables   
+    @pytest.fixture
+    def random_string():
+        return ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
+    
+    @pytest.fixture
+    def fetch_system_info():
+        response = requests.get(MANAGE_URL + 'api/systeminfo', headers=HEADERS, verify=False)
+        return response
+    
+    @pytest.fixture
+    def incident_desc(random_string):
+        return 'Incident_kwntv'
+
+    @pytest.fixture
+    def incident_long_desc(random_string):
+        return 'Incident_longdesc_' + random_string   
+    
+    @pytest.fixture    
+    def service_name(random_string):
+        return 'Service_'+ random_string
+    
+    @pytest.fixture    
+    def service_desc(random_string):
+        return 'SERVICE_74R03'
+
+    service_provision= "In-house"
+    owned_by= "MAXADMIN"
+
+    @pytest.fixture
+    def problem_desc(random_string):
+        return 'Problem_3ahd5'
+    
+    @pytest.fixture
+    def problem_long_desc(random_string):
+        return 'Problem_longdesc_'+ random_string
+
+    @pytest.fixture
+    def sr_desc(random_string):
+        return 'ServiceRequest_' + random_string
+        
+    @pytest.fixture
+    def sr_long_desc(random_string):
+        return 'ServiceRequest_vjia6'
+        
+    @pytest.fixture
+    def bb_subject(random_string):
+        return 'BulletinBoard_ztnjv'
+        
+    @pytest.fixture
+    def bb_message(random_string):
+        return 'BulletinBoardMessage_' + random_string
+        
+    @pytest.fixture
+    def bb_expiredate():
+        return "2030-10-30T05:11:19-07:00"
+        
+    @pytest.fixture
+    def assetnum(random_string):
+        return 'Asset_' + random_string
+        
+    @pytest.fixture
+    def asset_desc(random_string):
+        return 'Asset_Desc_' + random_string
+        
+    #site="PMSCRTP"
+    @pytest.fixture
+    def change_request_desc(random_string):
+        return 'Change_'+ random_string
+        
+    @pytest.fixture
+    def change_request_long_desc(random_string):
+        return 'Change_longdesc_'+ random_string
+        
+    @pytest.fixture
+    def solution_desc(random_string):
+        return 'Solution_kbkvb'
+        
+    @pytest.fixture
+    def tk_template_desc(random_string):
+        return 'TK_Template_'+ random_string   
+        
+    # Self Serve Variables
+    @pytest.fixture
+    def ticket_desc(random_string):
+        return 'Ticket_'+ random_string 
+
+    # Headers for Create Service API requests
+    HEADERS = {
+        'Accept': 'application/json',
+        'apikey': apikey
+    }
+
+    # Headers for API Update requests
+    HEADERS_UPDATE = {
+        'Accept': 'application/json',
+        'apikey': apikey,
+        'properties': '*',
+        'x-method-override': 'PATCH',
+        'patchtype': 'MERGE',
+        'Content-Type': 'application/json'
+        
+    }
+
+    #**************Function Used*******************
+    #Generate a random service name using lowercase letters.
+    def generate_service_name(length=20):
+        random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
+        service_name = f"Service_{random_suffix}".upper() 
+        print("ServiceName:",service_name)
+        return service_name
+            
+    def create_service():
+        service_name=generate_service_name()
+        payload = {
+            "spi:service_name": service_name,
+            "spi:description": "Python_service_description",
+            "spi:service_provision": "In-house",
+            "spi:status": "ACTIVE"
+        }      
+        # Create the service
+        response = requests.post(f"{MANAGE_URL}api/os/cduiserviceview", json=payload, headers=HEADERS, verify=False)
+        print("Response Code in service Craete function",response.status_code)
+        assert response.status_code == 201, "Failed to create service."
+        print("Service created successfully.")
+        return service_name 
+        
+    def get_service_info(service_name):
+        # Validate the service creation
+        res = requests.get(
+            f"{MANAGE_URL}api/os/cduiserviceview?oslc.select=*&oslc.where=service_name=\"{service_name}\"",
+            headers=HEADERS,
+            verify=False
+        )    
+        response_data = res.json()    
+        assert response_data['rdfs:member'], "No service found with the given name."
+        res_service_name = response_data['rdfs:member'][0]['spi:service_name']
+        print("Response Service Name after service creation:", res_service_name)
+        assert res_service_name == service_name.upper(), "Service name does not match the expected name."
+        print("Service created with the same name.")
+        
+        # Extracting the value from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0]['rdf:about']
+        last_segment = rdf_about_url.split('/')[-1]  # Get the last segment of the URL
+        print('Value extracted from "rdf:about":', last_segment)
+        
+        # Extract SVID of Service
+        member = response_data["rdfs:member"][0]
+        serviceViewId = member["spi:svid"]
+        print("Service View ID:", serviceViewId)
+        
+        # Return the last segment and service view ID
+        return last_segment, serviceViewId 
+        
+    # Function to create incident
+    def create_incident(incident_desc, incident_long_desc):
+        payload = {
+            "spi:status": "NEW",
+            "spi:class": "INCIDENT",
+            "spi:description": incident_desc,
+            "spi:description_longdescription": incident_long_desc,
+            "spi:class_description": "Incident"
+        }
+
+        # Create the incident via API POST request
+        response = requests.post(MANAGE_URL + 'api/os/cduiincident?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=False)
+
+        if response.status_code == 201:
+            print("Incident created successfully.")
+        else:
+            print("Failed to create incident:", response.status_code, response.text)
+        
+        return response.status_code  # Return the status code
+        
+    #Create Ticket Template   
+    def create_ticket_template(tk_template_desc):
+        payload = {
+            "spi:status": "ACTIVE",
+            "spi:class": "SR",
+            "spi:description": tk_template_desc         
+        }
+
+        # Create the template
+        response = requests.post(MANAGE_URL+'api/os/CDUITKTEMPLATE?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=False)
+
+        if response.status_code == 201:
+            print("Ticket Template created successfully.")
+        else:
+            print("Failed to create ticket template:", response.status_code, response.text)
+        
+        return response.status_code            
+
+    #Create Asset    
+    def create_asset(assetnum, asset_desc):
+        payload = {
+                                       
+                "spi:status": "OPERATING",
+                "spi:assetnum": assetnum,
+                "spi:description": asset_desc,
+                "spi:siteid": siteid     
+               
+             }
+        # Create the asset
+        response = requests.post(MANAGE_URL+'api/os/cduiasset?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=False)
+
+        if response.status_code == 201:
+            print("Asset created successfully.")
+        else:
+            print("Failed to create Asset:", response.status_code, response.text)
+        
+        return response.status_code  
+        
+    #Create Change Request   
+    def create_changes(change_request_desc,change_request_long_desc):
+        payload = {
+                    
+                "spi:status": "ASSESS",
+                "spi:description": change_request_desc,
+                "spi:description_longdescription": change_request_long_desc,
+                "spi:siteid": siteid
+               
+             }
+
+        # Create the CR
+        response = requests.post(MANAGE_URL+'api/os/cduiwochange?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=False)
+
+        if response.status_code == 201:
+            print("CR created successfully.")
+        else:
+            print("Failed to create CR:", response.status_code, response.text)
+        
+        return response.status_code  
+        
+    #Create Service Request    
+    def create_sr(sr_desc,sr_long_desc):
+        payload = {
+            "spi:status": "NEW",
+            "spi:class": "SR",
+            "spi:description": sr_desc,
+            "spi:description_longdescription": sr_long_desc,
+            "spi:class_description": "Service Request"           
+        }
+
+        # Create the SR
+        response = requests.post(MANAGE_URL+'api/os/cduisr?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=False)
+
+        if response.status_code == 201:
+            print("SR created successfully.")
+        else:
+            print("Failed to create SR:", response.status_code, response.text)
+        
+        return response.status_code  
+        
+    #Create Solution   
+    def create_solution(solution_desc):
+        payload = {
+            "spi:status": "ACTIVE",        
+            "spi:description": solution_desc             
+        }
+
+        # Create the Solution
+        response = requests.post(MANAGE_URL+'api/os/CDUISRMSOLUTION?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=False)
+
+        if response.status_code == 201:
+            print("Solution created successfully.")
+        else:
+            print("Failed to create Solution:", response.status_code, response.text)
+        
+        return response.status_code    
+
+
+    #Create Problem    
+    def create_problem(problem_desc,problem_long_desc):
+        payload = {
+            "spi:status": "NEW",
+            "spi:class": "PROBLEM",
+            "spi:description": problem_desc,
+            "spi:description_longdescription": problem_long_desc,
+            "spi:class_description": "Problem"           
+        }
+
+        # Create the problem
+        response = requests.post(MANAGE_URL+'api/os/cduiproblem?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=False)
+
+        if response.status_code == 201:
+            print("Problem created successfully.")
+        else:
+            print("Failed to create problem:", response.status_code, response.text)
+        
+        return response.status_code      
+
+    #Create Bulletin Board   
+    def create_bulletin_board_msg(bb_subject,bb_message,bb_expiredate):
+        payload = {
+            "spi:status": "APPROVED",        
+            "spi:subject": bb_subject,
+            "spi:message": bb_message,
+            "spi:expiredate":bb_expiredate         
+        }
+
+        # Create the Bulletin Board Message
+        response = requests.post(MANAGE_URL+'api/os/CDUISRMBULLETIN?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=False)
+
+        if response.status_code == 201:
+            print("Bulletin Board created successfully.")
+        else:
+            print("Failed to create Bulletin Board:", response.status_code, response.text)
+        
+        return response.status_code  
+
+    # Get Incident Reference code    
+    def get_incident_info(incident_summary):
+        # Validate the incident creation
+        url = f"{MANAGE_URL}api/os/cduiincident?oslc.select=*&oslc.where=description=\"{incident_summary}\""
+        print("URL:", url)
+
+        try:
+            res = requests.get(url, headers=HEADERS, verify=False)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
+
+        response_data = res.json()
+        print("Response Data:", response_data)
+
+        # Validate that incidents were found
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No Incident found with the given description."
+        
+        # Get the incident summary from the response
+        res_incident_summary = response_data['rdfs:member'][0].get('spi:description')
+
+        if res_incident_summary is None:
+            print('No incident description found in the response.')
+            return None
+        
+        assert res_incident_summary.upper() == incident_summary.upper(), "Incident created is not as expected."
+
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
+
+        inc_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', inc_ref_code)
+        
+        # Return the incident reference code
+        return inc_ref_code
+            
+    # Get Problem Reference code    
+    def get_problem_info(problem_summary):
+        # Validate the problem creation
+        url = f"{MANAGE_URL}api/os/cduiproblem?oslc.select=*&oslc.where=description=\"{problem_summary}\""
+        print("URL:", url)
+
+        try:
+            res = requests.get(url, headers=HEADERS, verify=False)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
+
+        response_data = res.json()
+        print("Response Data:", response_data)
+
+        # Validate that problems were found
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No Problem found with the given description."
+        
+        # Get the problem summary from the response
+        res_problem_summary = response_data['rdfs:member'][0].get('spi:description')
+
+        if res_problem_summary is None:
+            print('No problem description found in the response.')
+            return None
+        
+        assert res_problem_summary.upper() == problem_summary.upper(), "Problem created is not as expected."
+
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
+
+        prb_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', prb_ref_code)
+        
+        # Return the incident reference code
+        return prb_ref_code
+        
+    # Get SR Reference code    
+    def get_sr_info(sr_summary):
+        # Validate the SR creation
+        url = f"{MANAGE_URL}api/os/cduisr?oslc.select=*&oslc.where=description=\"{sr_summary}\""
+        print("URL:", url)
+
+        try:
+            res = requests.get(url, headers=HEADERS, verify=False)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
+
+        response_data = res.json()
+        print("Response Data:", response_data)
+
+        # Validate that SR is present in response
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No SR found with the given Summary."
+        
+        # Get the SR summary from the response
+        res_sr_summary = response_data['rdfs:member'][0].get('spi:description')
+
+        if res_sr_summary is None:
+            print('No such SR summary found in the response.')
+            return None
+        
+        assert res_sr_summary.upper() == sr_summary.upper(), "SR created is not as expected."
+
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
+
+        sr_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', sr_ref_code)
+        
+        # Return the SR reference code
+        return sr_ref_code
+
+    # Get CR Reference code    
+    def get_cr_info(change_request_desc):
+        # Validate the CR creation
+        url = f"{MANAGE_URL}api/os/cduiwochange?oslc.select=*&oslc.where=description=\"{change_request_desc}\""
+        print("URL:", url)
+
+        try:
+            res = requests.get(url, headers=HEADERS, verify=False)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
+
+        response_data = res.json()
+        print("Response Data:", response_data)
+
+        # Validate that CR is present in response
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No CR found with the given Summary."
+        
+        # Get the CR summary from the response
+        res_cr_summary = response_data['rdfs:member'][0].get('spi:description')
+
+        if res_cr_summary is None:
+            print('No such CR summary found in the response.')
+            return None
+        
+        assert res_cr_summary.upper() == change_request_desc.upper(), "CR created is not as expected."
+
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
+
+        cr_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', cr_ref_code)
+        
+        # Return the CR reference code
+        return cr_ref_code        
+        
+    # Get Solution Reference code    
+    def get_solution_info(solution_summary):
+        # Validate the solution creation
+        url = f"{MANAGE_URL}api/os/CDUISRMSOLUTION?oslc.select=*&oslc.where=description=\"{solution_summary}\""
+        print("URL:", url)
+
+        try:
+            res = requests.get(url, headers=HEADERS, verify=False)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
+
+        response_data = res.json()
+        print("Response Data:", response_data)
+
+        # Validate that solutions were found
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No solution found with the given description."
+        
+        # Get the solution summary from the response
+        res_solution_summary = response_data['rdfs:member'][0].get('spi:description')
+
+        if res_solution_summary is None:
+            print('No solution description found in the response.')
+            return None
+        
+        assert res_solution_summary.upper() == solution_summary.upper(), "solution created is not as expected."
+
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
+
+        prb_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', prb_ref_code)
+        
+        # Return the incident reference code
+        return prb_ref_code
+           
+        
+    # Get Problem Reference code    
+    def get_problem_info(prb_summary):
+        # Validate the Problem creation
+        url = f"{MANAGE_URL}api/os/cduiproblem?oslc.select=*&oslc.where=description=\"{prb_summary}\""
+        print("URL:", url)
+
+        try:
+            res = requests.get(url, headers=HEADERS, verify=False)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
+
+        response_data = res.json()
+        print("Response Data:", response_data)
+
+        # Validate that problem is present in response
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No Problem found with the given Summary."
+        
+        # Get the problem summary from the response
+        res_problem_summary = response_data['rdfs:member'][0].get('spi:description')
+
+        if res_problem_summary is None:
+            print('No such problem summary found in the response.')
+            return None
+        
+        assert res_problem_summary.upper() == prb_summary.upper(), "Problem created is not as expected."
+
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
+
+        problem_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', problem_ref_code)
+        
+        # Return the SR reference code
+        return problem_ref_code
+        
+    #fetch services based on filter criteria.
+    def fetch_all_services_based_on_filter(filter_by, filter_value):
+       
+            response = requests.get(
+                #f"{MANAGE_URL}maximo/api/os/cduiserviceview?oslc.select=*&oslc.where={filter_by}=\"{filter_value}\"",
+                f"{MANAGE_URL}api/os/cduiserviceview?oslc.select=*&oslc..searchTerms={filter_by}&searchAttributes=\"{filter_value}\"",
+                            
+                headers=HEADERS,
+                verify=False
+            )
+            print("Filter response:", response.text)
+            print("Filter response code:", response.status_code)
+            assert response.status_code == 200, f"Failed to fetch services based on filter criteria {filter_by}" 
+            # Extract the totalCount value
+            total_count = response.json()['oslc:responseInfo']['oslc:totalCount']    
+            # Assert that the totalCount is 1 or greater
+            assert total_count >= 1, f"Failed to fetch services based on filter criteria {filter_by}"    
+          
+    #***** Self Serve Testcases******
+    #Create new ticket from Report an Issue in Self Serve
+    def create_ticket(ticket_desc):
+        ticket_payload = {
+            "spi:class": "SR",
+            "spi:class description": "Service Request",
+            "spi:reportedby": "MAXADMIN",
+            "spi:description": ticket_desc
+        }
+
+        # Create the New Ticket
+        response = requests.post(f'{MANAGE_URL}api/os/cduimysr?oslc.select=*', json=ticket_payload, headers=HEADERS,
+                                 verify=False)
+        print("Response Code in Service Creation", response.status_code)
+        assert response.status_code == 201, "Failed to create ticket."
+        print("Ticket created successfully.")
+        return ticket_desc
+
+    #***********************Test Functions***************  
+
+
+
+    #TC#1 Test to verify system info has Maximo IT
+    def test_system_info():
+        response = requests.get(MANAGE_URL + 'api/systeminfo', headers=HEADERS, verify=False)
+        # Check if the response code is 200 OK
+        assert response.status_code == 200, "System Info fetch failed."
+        
+        # Check if 'Maximo IT' is present in the response text
+        assert 'Maximo IT' in response.text, "'Maximo IT' not found in the response."
+        print("'Maximo IT' found in the response.")
+        
+    #TC#2 Test to verify Self Serve is installed
+    def test_self_serve_installed_insystem():
+
+        response = requests.get(f'{MANAGE_URL}api/os/mxapimaxapp?oslc.select=*', headers=HEADERS, verify=False)
+        print("Response Code ", response.status_code)
+        assert response.status_code == 200, "Failed to Fetch system information."
+        systemsinfo = response.json()
+        systemsinfo.get('oslc:responseInfo')
+        app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
+
+        # iterate through the application list
+        for i in range(app_count):
+            j=0
+            app_name = systemsinfo['rdfs:member'][i].get('spi:app')
+            if app_name == "SELFSERVE":
+                print("SELFSERVE : Installed in System")
+                j=1
+                break
+        assert j == 1, "Self Serve is not installed"
+
+    #TC#3 Test to verify Service View is installed
+    def test_service_view_installed_insystem():
+
+        response = requests.get(f'{MANAGE_URL}api/os/mxapimaxapp?oslc.select=*', headers=HEADERS, verify=False)
+        print("Response Code ", response.status_code)
+        assert response.status_code == 200, "Failed to Fetch system information."
+        systemsinfo = response.json()
+        systemsinfo.get('oslc:responseInfo')
+        app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
+
+        # iterate through the application list
+
+        for i in range(app_count):
+            j=0
+            app_name = systemsinfo['rdfs:member'][i].get('spi:app')
+            if app_name == "SERVICEVIEW":
+                print("SERVICEVIEW : Installed in System")
+                j=1
+                break
+        assert j == 1, "SERVICEVIEW is not installed"
+        
+    #TC#4 Test to verify Service Delivery is installed
+    def test_service_delivery_installed_insystem():
+
+        response = requests.get(f'{MANAGE_URL}api/os/mxapimaxapp?oslc.select=*', headers=HEADERS, verify=False)
+        print("Response Code ", response.status_code)
+        assert response.status_code == 200, "Failed to Fetch system information."
+        systemsinfo = response.json()
+        systemsinfo.get('oslc:responseInfo')
+        app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
+
+        # iterate through the application list
+        for i in range(app_count):
+            j=0
+            app_name = systemsinfo['rdfs:member'][i].get('spi:app')
+            if app_name == "SERVICEDELIVERY":
+                print("SERVICEDELIVERY : Installed in System")
+                j=1
+                break
+        assert j == 1, "SERVICEDELIVERY is not installed"
+
+
+
+    #TC#5 Test to create a incident and validate its creation.
+    def test_create_and_validate_incident(incident_desc, incident_long_desc):
+        response_code = create_incident(incident_desc, incident_long_desc)
+        assert response_code == 201, f"Failed to create Incident, got status code {response_code}"  
+
+        # Retrieve the created incident
+        res = requests.get(
+            MANAGE_URL + f'api/os/cduiincident?oslc.select=*&oslc.where=spi:description="{incident_desc}"',
+            headers=HEADERS,
+            verify=False
+        )    
+        response_data = res.json()
+        
+        if res.status_code == 200:
+            print('Response:', res.text)
+
+            # Check if 'rdfs:member' is in the response data
+            if response_data.get('rdfs:member'):
+                res_incident = response_data['rdfs:member'][0].get('spi:description')
+                print("Incident from Get request:", res_incident)
+
+                # Validate if the retrieved description matches the created description
+                if res_incident == incident_desc:
+                    print("Incident created successfully and verified.")
+                else:
+                    print("Incident not created correctly.")
+            else:
+                print("No incident found.")
+        else:
+            print(f"Failed to retrieve incident: {res.status_code}, {res.text}")
+            
+
+    #TC#6 Test to create a Asset and validate its creation.
+    def test_create_and_validate_asset(assetnum, asset_desc): 
+        response = create_asset(assetnum, asset_desc)
+        assert response == 201, "Failed to create asset."  
+          
+        # Retrieve the created asset
+        res = requests.get(
+            MANAGE_URL+'api/os/cduiasset?oslc.select=*&oslc.where=spi:assetnum="'+assetnum+'"',
+            headers=HEADERS,
+            verify=False
+        )    
+        response_data = res.json()
+        if res.status_code == 200:
+            print('Response:', res.text)
+            response_data = res.json()
+
+            if response_data.get('rdfs:member'):
+                res_asset = response_data['rdfs:member'][0].get('spi:assetnum')
+                print("Asset from Get request:", res_asset)
+
+                if res_asset == assetnum.upper():
+                    print("Asset created successfully and verified.")
+                else:
+                    print("Asset not created.")
+            else:
+                print("No asset found.")
+        else:
+            print("Failed to retrieve asset:", res.status_code, res.text)
+            
+            
+    #TC#7 Test to create a ticket template and validate its creation.
+    def test_create_and_validate_ticket_template(tk_template_desc): 
+        response = create_ticket_template(tk_template_desc)
+        assert response == 201, "Failed to create ticket template."  
+          
+        # Retrieve the created ticket template
+        res = requests.get(
+            MANAGE_URL+'api/os/CDUITKTEMPLATE?oslc.select=*&oslc.where=spi:description="'+tk_template_desc+'"',
+            headers=HEADERS,
+            verify=False
+        )    
+        response_data = res.json()
+        if res.status_code == 200:
+            print('Response:', res.text)
+            response_data = res.json()
+
+            if response_data.get('rdfs:member'):
+                res_tktemplate = response_data['rdfs:member'][0].get('spi:description')
+                print("Ticket Template from Get request:", res_tktemplate)
+
+                if res_tktemplate == tk_template_desc:
+                    print("Ticket Template created successfully and verified.")
+                else:
+                    print("Ticket Template not created.")
+            else:
+                print("No Ticket Template found.")
+        else:
+            print("Failed to retrieve Ticket Template:", res.status_code, res.text)
+            
+            
+    #TC#8 Test to create a Solution and validate its creation.
+    def test_create_and_validate_solution(solution_desc): 
+        response = create_solution(solution_desc)
+        assert response == 201, "Failed to create solution."  
+          
+        # Retrieve the created solution
+        res = requests.get(
+            MANAGE_URL+'api/os/CDUISRMSOLUTION?oslc.select=*&oslc.where=spi:description="'+solution_desc+'"',
+            headers=HEADERS,
+            verify=False
+        )    
+        response_data = res.json()
+        if res.status_code == 200:
+            print('Response:', res.text)
+            response_data = res.json()
+
+            if response_data.get('rdfs:member'):
+                res_sol = response_data['rdfs:member'][0].get('spi:description')
+                print("Solution from Get request:", res_sol)
+
+                if res_sol == solution_desc:
+                    print("Solution created successfully and verified.")
+                else:
+                    print("Solution not created.")
+            else:
+                print("No solution found.")
+        else:
+            print("Failed to retrieve solution:", res.status_code, res.text)
+            
+            
+           
+    #TC#9 Test to create a problem and validate its creation.
+    def test_create_and_validate_problem(problem_desc,problem_long_desc): 
+        response = create_problem(problem_desc,problem_long_desc)
+        assert response == 201, "Failed to create problem."  
+          
+        # Retrieve the created problem
+        res = requests.get(
+            MANAGE_URL+'api/os/cduiproblem?oslc.select=*&oslc.where=spi:description="'+problem_desc+'"',
+            headers=HEADERS,
+            verify=False
+        )    
+        response_data = res.json()
+        if res.status_code == 200:
+            print('Response:', res.text)
+            response_data = res.json()
+
+            if response_data.get('rdfs:member'):
+                res_problem = response_data['rdfs:member'][0].get('spi:description')
+                print("Problem from Get request:", res_problem)
+
+                if res_problem == problem_desc:
+                    print("Problem created successfully and verified.")
+                else:
+                    print("Problem not created.")
+            else:
+                print("No problem found.")
+        else:
+            print("Failed to retrieve problem:", res.status_code, res.text)
+            
+    #TC#10 Test to create a change request and validate its creation.
+    def test_create_and_validate_changes(change_request_desc,change_request_long_desc): 
+        response = create_changes(change_request_desc,change_request_long_desc)
+        assert response == 201, "Failed to create Change Request."  
+          
+        # Retrieve the created changes
+        res = requests.get(
+            MANAGE_URL+'api/os/cduiwochange?oslc.select=*&oslc.where=spi:description="'+change_request_desc+'"',
+            headers=HEADERS,
+            verify=False
+        )    
+        response_data = res.json()
+        if res.status_code == 200:
+            print('Response:', res.text)
+            response_data = res.json()
+
+            if response_data.get('rdfs:member'):
+                res_cr = response_data['rdfs:member'][0].get('spi:description')
+                print("Changes from Get request:", res_cr)
+
+                if res_cr == change_request_desc:
+                    print("Change Request created successfully and verified.")
+                else:
+                    print("Change Request not created.")
+            else:
+                print("No Change Request found.")
+        else:
+            print("Failed to retrieve Change Requests:", res.status_code, res.text)
+                   
+           
+        
+    #TC#11 Test to create a Service Request and validate its creation.
+    def test_create_and_validate_sr(sr_desc,sr_long_desc): 
+        response = create_sr(sr_desc,sr_long_desc)
+        assert response == 201, "Failed to create SR."  
+          
+        # Retrieve the created SR
+        res = requests.get(
+            MANAGE_URL+'api/os/cduisr?oslc.select=*&oslc.where=spi:description="'+sr_desc+'"',
+            headers=HEADERS,
+            verify=False
+        )    
+        response_data = res.json()
+        if res.status_code == 200:
+            print('Response:', res.text)
+            response_data = res.json()
+
+            if response_data.get('rdfs:member'):
+                res_sr = response_data['rdfs:member'][0].get('spi:description')
+                print("SR from Get request:", res_sr)
+
+                if res_sr == sr_desc:
+                    print("SR created successfully and verified.")
+                else:
+                    print("SR not created.")
+            else:
+                print("No SR found.")
+        else:
+            print("Failed to retrieve SR:", res.status_code, res.text)
+          
+          
+    #TC#12 Test to create a Bulletin Message and validate its creation.
+    def test_create_and_validate_bulletin_msg(bb_subject,bb_message,bb_expiredate): 
+        response = create_bulletin_board_msg(bb_subject,bb_message,bb_expiredate)
+        assert response == 201, "Failed to create BB Message."  
+        print("Bulletin Message Name:",bb_subject)
+          
+        # Retrieve the created Bulletin Message
+        res = requests.get(
+            MANAGE_URL+'api/os/CDUISRMBULLETIN?oslc.select=*&oslc.where=spi:subject="'+bb_subject+'"',
+            headers=HEADERS,
+            verify=False
+        )    
+        response_data = res.json()
+        print("Bulleting Board get request Response:",res.status_code)
+        if res.status_code == 200:
+            print('Response:', res.text)
+            response_data = res.json()
+
+            if response_data.get('rdfs:member'):
+                res_bb = response_data['rdfs:member'][0].get('spi:subject')
+                print("BB Message from Get request:", res_bb)
+
+                if res_bb == bb_subject:
+                    print("Bulletin Board Message created successfully and verified.")
+                else:
+                    print("Bulletin Board Message not created.")
+            else:
+                print("No Bulletin Message found.")
+        else:
+            print("Failed to retrieve Bulletin Board:", res.status_code, res_bb.text)   
+           
+    #TC#13 Test to search incident by incident description.
+    def test_search_incident(incident_desc,incident_long_desc):
+        response_code = create_incident(incident_desc, incident_long_desc)
+        print("incident desc:", incident_desc)
+        # Send a GET request to search for the incident by description
+        response = requests.get(
+            f"{MANAGE_URL}api/os/cduiincident?oslc.select=*&oslc.where=description=\"{incident_desc}\"",
+            headers=HEADERS,
+            verify=False
+        )
+
+        # Print response details
+        print("Incident search response:", response.text)
+        print("Incident search by description response code:", response.status_code)
+
+        # Assert the response code is 200 (OK)
+        assert response.status_code == 200, f"Failed to search incident by description, status code: {response.status_code}"
+        
+        # Parse the JSON response
+        response_data = response.json()
+
+        # Assert that 'rdfs:member' is present in the response
+        assert 'rdfs:member' in response_data, "No incidents found in response"
+
+        # Check if 'spi:description' is in the first item of 'rdfs:member'
+        description = response_data['rdfs:member'][0].get('spi:description', None)
+
+        # Assert that the description exists
+        assert description, "spi:description not found in the incident"
+
+        # Print the found incident description
+        print(f"Incident: {description} found")
+        
+        
+    #TC#14 Test to search Service Request by its summary
+    def test_search_sr(sr_desc,sr_long_desc):
+        response_code = create_sr(sr_desc,sr_long_desc)
+        print("SR desc:", sr_desc)
+        url=f"{MANAGE_URL}api/os/cduisr?oslc.select=*&oslc.where=description=\"{sr_desc}\""
+        print("URL***",url)
+        # Send a GET request to search for the SR by summary
+        response = requests.get(
+            f"{MANAGE_URL}api/os/cduisr?oslc.select=*&oslc.where=description=\"{sr_desc}\"",
+            headers=HEADERS,
+            verify=False
+        )
+
+        # Print response details
+        print("SR search response:", response.text)
+        print("SR search by description response code:", response.status_code)
+
+        # Assert the response code is 200 (OK)
+        assert response.status_code == 200, f"Failed to search SR by summary, status code: {response.status_code}"
+        
+        # Parse the JSON response
+        response_data = response.json()
+
+        # Assert that 'rdfs:member' is present in the response
+        assert 'rdfs:member' in response_data, "No SR found in response"
+
+        # Check if 'spi:description' is in the first item of 'rdfs:member'
+        description = response_data['rdfs:member'][0].get('spi:description', None)
+
+        # Assert that the description exists
+        assert description, "spi:description not found in the SR"
+
+        # Print the found SR description
+        print(f"SR: {description} found")
+        
+        
+        
+    #TC#15 Test to Search Problem by its summary
+    def test_search_problem(problem_desc,problem_long_desc):
+        response_code = create_problem(problem_desc,problem_long_desc)
+        print("Problem desc:", problem_desc)
+        # Send a GET request to search for the Problem by summary
+        response = requests.get(
+            f"{MANAGE_URL}api/os/cduiproblem?oslc.select=*&oslc.where=description=\"{problem_desc}\"",
+            headers=HEADERS,
+            verify=False
+        )
+
+        # Print response details
+        print("Problem search response:", response.text)
+        print("Problem search by description response code:", response.status_code)
+
+        # Assert the response code is 200 (OK)
+        assert response.status_code == 200, f"Failed to search Problem by summary, status code: {response.status_code}"
+        
+        # Parse the JSON response
+        response_data = response.json()
+
+        # Assert that 'rdfs:member' is present in the response
+        assert 'rdfs:member' in response_data, "No Problem found in response"
+
+        # Check if 'spi:description' is in the first item of 'rdfs:member'
+        description = response_data['rdfs:member'][0].get('spi:description', None)
+
+        # Assert that the description exists
+        assert description, "spi:description not found in the Problem"
+
+        # Print the found Problem description
+        print(f"Problem: {description} found")
+         
+    #TC#16 Test to update summary and long description of incident.
+    def test_update_incident(incident_desc, incident_long_desc):
+        response_code = create_incident(incident_desc, incident_long_desc)
+        assert response_code == 201, f"Failed to create Incident, got status code {response_code}"  
+
+        ref_code = get_incident_info(incident_desc)
+        
+        update_payload = {
+            "spi:description": "updated incident summary value",
+            "spi:description_longdescription": "updated incident long desc",
+        }
+        
+        # Sending a POST request to update the incident desc and long desc
+        response = requests.post(
+            url=f"{MANAGE_URL}api/os/cduiincident/{ref_code}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=False
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated incident summary and long description in response
+        response_body = response.json()
+        
+        updated_summary_in_response = response_body['spi:description']
+        updated_long_description_in_response = response_body['spi:description_longdescription']
+        assert updated_summary_in_response == 'updated incident summary value', "Incident Summary does not match with updated incident summary"
+        assert updated_long_description_in_response == 'updated incident long desc', "Long desc does not match with the updated incident long desc"
+        print("Incident Updated ")   
+
+    #TC#17 Test to update summary and detail of SR.
+    def test_update_sr(sr_desc,sr_long_desc):
+        response_code=create_sr(sr_desc,sr_long_desc)
+        assert response_code == 201, f"Failed to create SR, got status code {response_code}"
+        ref_code = get_sr_info(sr_desc)
+        
+        update_payload = {
+            "spi:description": "updated SR summary value",
+            "spi:description_longdescription": "updated SR Details",
+        }
+        
+        # Sending a POST request to update the SR summary and details
+        response = requests.post(
+            url=f"{MANAGE_URL}api/os/cduisr/{ref_code}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=False
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated SR summary and long description in response
+        response_body = response.json()
+        
+        updated_summary_in_response = response_body['spi:description']
+        updated_long_description_in_response = response_body['spi:description_longdescription']
+        assert updated_summary_in_response == 'updated SR summary value', "SR Summary does not match with updated SR summary"
+        assert updated_long_description_in_response == 'updated SR Details', "Long desc does not match with the updated SR long desc"
+        print("SR Updated")    
+        
+    #TC#18 Test to update summary and detail of Change Request.
+    def test_update_change(change_request_desc,change_request_long_desc):
+        response_code=create_changes(change_request_desc,change_request_long_desc)
+        assert response_code == 201, f"Failed to create CR, got status code {response_code}"
+        ref_code = get_cr_info(change_request_desc)
+        
+        update_payload = {
+            "spi:description": "updated CR summary value",
+            "spi:description_longdescription": "updated CR Details",
+        }
+        
+        # Sending a POST request to update the CR summary and details
+        response = requests.post(
+            url=f"{MANAGE_URL}api/os/cduiwochange/{ref_code}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=False
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated CR summary and long description in response
+        response_body = response.json()
+        
+        updated_summary_in_response = response_body['spi:description']
+        updated_long_description_in_response = response_body['spi:description_longdescription']
+        assert updated_summary_in_response == 'updated CR summary value', "CR Summary does not match with updated CR summary"
+        assert updated_long_description_in_response == 'updated CR Details', "Long desc does not match with the updated CR long desc"
+        print("CR Updated")         
+
+    #TC#19 Test to update summary and details of solution.
+    def test_update_solution(solution_desc):
+        response_code = create_solution(solution_desc)
+        assert response_code == 201, f"Failed to create solution, got status code {response_code}"  
+
+        ref_code = get_solution_info(solution_desc)
+        
+        update_payload = {
+            "spi:description": "updated solution summary value"
+           
+        }
+        
+        # Sending a POST request to update the solution desc and long desc
+        response = requests.post(
+            url=f"{MANAGE_URL}api/os/CDUISRMSOLUTION/{ref_code}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=False
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated solution summary and long description in response
+        response_body = response.json()
+        
+        updated_summary_in_response = response_body['spi:description']
+        assert updated_summary_in_response == 'updated solution summary value', "solution Summary does not match with updated solution summary"
+        print("solution Updated ")    
+        
+    #TC#20 Test to update summary and detail of Problem.
+    def test_update_problem(problem_desc,problem_long_desc):
+        response_code=create_problem(problem_desc,problem_long_desc)
+        assert response_code == 201, f"Failed to create SR, got status code {response_code}"
+        ref_code = get_problem_info(problem_desc)
+        
+        update_payload = {
+            "spi:description": "updated Problem summary value123",
+            "spi:description_longdescription": "updated Problem Details123",
+        }
+        
+        # Sending a POST request to update the problem summary and details
+        response = requests.post(
+            url=f"{MANAGE_URL}api/os/cduiproblem/{ref_code}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=False
+        )    
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+        # getting updated problem summary and long description in response
+        response_body = response.json()
+        updated_summary_in_response = response_body['spi:description']
+        updated_long_description_in_response = response_body['spi:description_longdescription']
+        assert updated_summary_in_response == 'updated Problem summary value123', "Problem Summary does not match with updated problem summary"
+        assert updated_long_description_in_response == 'updated Problem Details123', "Long desc does not match with the updated problem long desc"
+        print("Problem Updated")
+        
+    #TC#21 Test to get all incidents.
+    def test_get_all_incidents():
+        response = requests.get(MANAGE_URL + 'api/os/cduiincident?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch incidents."    
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Incidents List is not present in json response." 
+        print("Incidents details present in json response." )
+        
+     TC#22 Test fetching all ticket templates.
+    def test_get_all_tk_templates():
+        response = response = requests.get(MANAGE_URL + 'api/os/CDUITKTEMPLATE?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch ticket templates." 
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "ticket templates List is not present in json response."  
+        print("ticket templates details present in json response." )  
+        
+    #TC#23 Test fetching all problems.
+    def test_get_all_problems():
+        response = requests.get(MANAGE_URL + 'api/os/cduiproblem?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch problems." 
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Problems List is not present in json response."   
+        print("Problems details present in json response." ) 
+        
+    #TC#24 Test fetching all assets.
+    def test_get_all_assets():
+        response = requests.get(MANAGE_URL + 'api/os/cduiasset?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch Assets." 
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Assets List is notpresent in json response."  
+        print("Assets details present in json response." )  
+        
+    #TC#25 Test fetching all service request.
+    def test_get_all_service_request():
+        response = requests.get(MANAGE_URL + 'api/os/cduisr?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch service request."    
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "SR List is not present in json response." 
+        print("SR details present in json response." ) 
+
+    #TC#26 Test fetching all Offerings.
+    def test_get_all_offering():
+        response = requests.get(MANAGE_URL + 'api/os/CDUISRMOFFERING?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch offerings."  
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Offering List is not present in json response."  
+        print("Offering details present in json response." )    
+        
+    #TC#27 Test fetching all solutions.
+    def test_get_all_solution():
+        response = requests.get(MANAGE_URL + 'api/os/CDUISRMSOLUTION?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch Solutions."  
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Solutions List is not present in json response."   
+        print("Solutions details present in json response." )  
+        
+    #TC#28 Test fetching all change request.
+    def test_get_all_changes():
+        response = requests.get(MANAGE_URL + 'api/os/cduiwochange?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch Change Requests."    
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Changes List is not present in json response."   
+        print("Changes details present in json response." )
+        
+    #TC#29 Test fetching all Bulletin Board Message.
+    def test_get_all_bulletin_msg():
+        response = requests.get(MANAGE_URL + 'api/os/CDUISRMBULLETIN?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch Bulletin Board Messages." 
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Bulletin Message List is not present in json response."  
+        print("Changes details present in json response." )      
+        
+        
+    #TC#30 Create a new service and validate its creation.
+    def test_create_and_validate_service():
+       
+        service_name=create_service()
+        # Validate the service creation
+        res = requests.get(
+        MANAGE_URL + 'api/os/cduiserviceview?oslc.select=*&oslc.where=service_name="' + service_name + '"',
+        headers=HEADERS,
+        verify=False)
+        response_data = res.json()
+
+        assert response_data['rdfs:member'], "No service found with the given name."
+        res_service_name = response_data['rdfs:member'][0]['spi:service_name']
+        print("Response Service Name generated is:", res_service_name)
+        assert res_service_name == service_name, "Service name does not match the expected name."
+        print("Service created with the same name.")
+        
+        
+    #TC#31 Test to check error message when editing service name    
+    def test_error_update_service_name():
+        service_name=create_service()
+        last_segment, service_view_id = get_service_info(service_name)
+        
+        update_payload = {
+            "spi:service_name": "new_value"
+        }
+        
+        # Sending a POST request to update the service name
+        response = requests.post(
+            url=f"{MANAGE_URL}api/os/cduiserviceview/{last_segment}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=False
+        )
+        
+        # Check for a 400 status code
+        assert response.status_code == 400, "Expected status code to be 400"
+
+        # Check error message
+        response_body = response.json()
+        expected_error_message = "SERVICE_NAME cannot be modified"
+
+        assert 'oslc:Error' in response_body, "Response should contain 'oslc:Error'"
+        error = response_body['oslc:Error']
+        
+        assert 'oslc:message' in error, "Error should contain 'oslc:message'"
+        assert error['oslc:message'] == expected_error_message, "Error message does not match expected value"
+
+        print('Response Error Message:', error['oslc:message'])
+        print('Expected Error Message:', expected_error_message)
+        
+        
+    #TC#32 To test error message displayed when updating service with blank Service Name.
+    def test_error_with_blank_service_name():
+        service_name=create_service()
+        last_segment, service_view_id = get_service_info(service_name)
+          
+        update_payload = {
+            "spi:service_name": ""
+        }
+        
+        # Sending a POST request to update the service name with blank service name
+        response = requests.post(
+            url=f"{MANAGE_URL}api/os/cduiserviceview/{last_segment}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=False
+        )
+        print("Status Code:",response.status_code)
+        # Check for a 400 status code
+        assert response.status_code == 400, "Expected status code to be 400"
+
+        # Check error message
+        response_body = response.json()
+        expected_error_message = "BMXAA4195E - A value is required for the Service Name field on the SERVICE_VIEW object."
+
+        assert 'oslc:Error' in response_body, "Response should contain 'oslc:Error'"
+        error = response_body['oslc:Error']
+        
+        assert 'oslc:message' in error, "Error should contain 'oslc:message'"
+        
+        assert error['oslc:message'] == expected_error_message, "Error message does not match expected value"
+
+        print('Response Error Message:', error['oslc:message'])
+        print('Expected Error Message:', expected_error_message)
+        
+    #TC#33 Test to update service status as Draft.   
+    def test_update_service_status():
+        service_name=create_service()
+        last_segment, service_view_id = get_service_info(service_name)
+        
+        update_payload = {
+            "spi:status": "DRAFT"
+        }
+        
+        # Sending a POST request to update the service status
+        response = requests.post(
+            url=f"{MANAGE_URL}api/os/cduiserviceview/{last_segment}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=False
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated service status in response
+        response_body = response.json()
+        
+        updated_status_in_response = response_body['spi:status']
+        print('Response updated status:', updated_status_in_response)
+        print('Expected updated status:', "DRAFT")
+        assert updated_status_in_response == 'DRAFT', "service status does not match with updated service status"
+        
+    #TC#34 Test to update description of service.
+    def test_update_service_description():
+        service_name=create_service()
+        last_segment, service_view_id = get_service_info(service_name)
+        
+        update_payload = {
+            "spi:description": "updated service desc value"
+        }
+        
+        # Sending a POST request to update the service description
+        response = requests.post(
+            url=f"{MANAGE_URL}api/os/cduiserviceview/{last_segment}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=False
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated service description in response
+        response_body = response.json()
+        
+        updated_description_in_response = response_body['spi:description']
+        assert updated_description_in_response == 'updated service desc value', "service description does not match with updated service description"
+
+        print('Response updated desc:', updated_description_in_response)
+        print('Expected updated desc:', "updated service desc value")
+            
+
+    #TC#35 Test fetching all services.
+    def test_get_all_services():
+        response = requests.get(MANAGE_URL + 'api/os/cduiserviceview?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch services." 
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Service List is not present in json response."
+        print("Service details present in json response." )   
+
+    #TC#36 Test filter service by service name. 
+    def test_get_all_services_as_per_filter_service_name():      
+        service_name=create_service()
+        fetch_all_services_based_on_filter('service_name',service_name)  
+
+    #TC#37 Test filter service by service description.  
+    def test_get_all_services_as_per_filter_service_description(): 
+        fetch_all_services_based_on_filter('description',"Python_service_description")     
+
+    #TC#38 Test filter service by service status active.           
+    def test_get_all_services_as_per_filter_service_status_active(): 
+        fetch_all_services_based_on_filter("status","ACTIVE") 
+                 
+    #TC#39 Test filter service by service status draft.  
+    def test_get_all_services_as_per_filter_service_status_draft():   
+        fetch_all_services_based_on_filter("status","DRAFT")         
+
+    #TC#40 Test filter service by service provision Inhouse.
+    def test_get_all_services_as_per_filter_service_provision_Inhouse():      
+        fetch_all_services_based_on_filter("service_provision","In-house")            
+
+    #TC#41 Test filter service by service owned by.
+    def test_get_all_services_as_per_filter_owned_by(): 
+        fetch_all_services_based_on_filter("owned_by",owned_by)  
+        
+    #********Self Serve TestCases*******
+     
+    #TC#42 Fetch all Assets in self serve My Assest
+    def test_ss_asset_list():
+        response = requests.get(f'{MANAGE_URL}api/os/srm_asset?_fd=SRM_ASSET&oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Asset List not fetched"
+        assetinfo = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(assetinfo.get('rdfs:member', [])) > 0, "Assets List is not present in json response." 
+        print("Asset list fetched successfully" )
+        assetcount = assetinfo['oslc:responseInfo']['oslc:totalCount']
+        print("Asset count are", assetcount)
+
+    #TC#43 Create a Ticket and validate its creation
+    def test_ss_create_and_validate_ticket(ticket_desc):
+        ticket_descrip = create_ticket(ticket_desc)
+        # Validate the ticket creation
+        res = requests.get(
+            f'{MANAGE_URL}api/os/cduimyticket?oslc.select=*&oslc.where=spi:description="{ticket_desc}"',
+            headers=HEADERS,
+            verify=False)
+        if res.status_code == 200:
+            response_data = res.json()
+            if response_data.get('rdfs:member'):
+                res_ticket = response_data['rdfs:member'][0].get('spi:description')
+                print("Ticket from Get request:", res_ticket)
+                if res_ticket == ticket_descrip:
+                    print("Ticket created successfully and verified.")
+                else:
+                    print("Ticket not created.")
+            else:
+                print("No Ticket found.")
+        else:
+            print("Failed to retrieve Ticket:", res.status_code, res.text)
+
+    #TC#44 Get the list of tickets displayed in My Items View More
+    def test_ss_get_ticket_list_in_my_items():
+        response = requests.get(f'{MANAGE_URL}api/os/cduimyticket?oslc.select=*', headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Ticket list not found in the response."
+        print("Ticket list is fetched with status code.", response.status_code)
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Tickets List is not present in json response." 
+        print("Tickets details present in json response." )
+        data = response.json()
+        data.get('oslc:responseInfo')
+        total_ticket_count = data['oslc:responseInfo']['oslc:totalCount']
+        print("Ticket count is", total_ticket_count)
+
+    #TC#45 Request Update on the ticket in MyItems in self serve
+    def test_ss_request_update(ticket_desc):
+        Get the ticketid from API
+        res = requests.get(
+            f'{MANAGE_URL}api/os/cduimyticket?oslc.select=*&oslc.where=spi:description="{ticket_desc}"',
+            headers=HEADERS,
+            verify=False
+        )
+        json_data = res.json()
+        if json_data.get('oslc:responseInfo'):
+            ticketcount=  json_data['oslc:responseInfo']['oslc:totalCount']
+            if ticketcount == 1:
+                ticketid = json_data['rdfs:member'][0].get('spi:ticketid')
+                recordkey = ticketid
+
+                requestupdate_payload = {
+                "spi:class": "SR",
+                "spi:description": f"Reporting user MAXADMIN requested a ticket update for the following reason: TestUpdate{random_string}",
+                "spi:logtype": "UPDATE",
+                "spi:modifyby": "MAXADMIN",
+                "spi:createby": "MAXADMIN",
+                "spi:recordkey": recordkey
+                }
+
+                response = requests.post(f'{MANAGE_URL}api/os/cduimyworklog?oslc.select=*', json=requestupdate_payload,
+                                         headers=HEADERS, verify=False)
+                assert response.status_code == 201, "Request not updated"
+                print(f"RequestUpdated with message : TestUpdate{random_string}")
+
+    #TC#46 Adding comment in Ticket from My Items
+    def test_ss_add_comment_on_ticket():
+        ###To fetch Ticket id from the API
+        res = requests.get(f'{MANAGE_URL}api/os/cduimyticket?oslc.select=*&oslc.where=spi:description="{ticket_desc}"',headers=HEADERS,verify=False)
+        json_data = res.json()
+        if json_data.get('oslc:responseInfo'):
+            ticketcount=  json_data['oslc:responseInfo']['oslc:totalCount']
+            if ticketcount == 1:
+                ticketid = json_data['rdfs:member'][0].get('spi:ticketid')
+                recordkey = ticketid
+                comment_payload = {
+                    "spi:class": "SR",
+                    "spi:description": f"Testcomment{random_string}...",
+                    "spi:description_longdescription": f"Testcomment{random_string}",
+                    "spi:logtype": "CLIENTNOTE",
+                    "spi:modifyby": "MAXADMIN",
+                    "spi:recordkey": recordkey
+                 }
+                #Add comment on ticket with from my items in Self serve
+                response = requests.post(f'{MANAGE_URL}api/os/cduimyworklog?oslc.select=*', json=comment_payload, headers=HEADERS, verify=False)
+                assert response.status_code == 201, "Comment not added"
+                print('Comment added on ticket is :', "Testcomment" + random_string)
+
+
+    #TC#47 Get all the current Update On self serve
+    def test_get_all_currentupdates():
+        objstr = ['CDUISRMOFFERING', 'CDUISRMSOLUTION', 'CDUISRMBULLETIN']
+        for obj in objstr:
+            response = requests.get(
+                f'{MANAGE_URL}api/os/{obj}?oslc.select=*',
+                headers=HEADERS,
+                verify=False
+            )
+            assert response.status_code == 200, f"Failed to fetch {obj}."
+            count = response.json()['oslc:responseInfo']['oslc:totalCount']
+            assert count > 0, "Tickets List is not present in json response."
+            print(f"Total {obj} count:", count)
+
+    #TC#48 Check Request new service on Self Serve
+    def test_ss_request_new_service():
+        response= requests.get(f'{MANAGE_URL}api/os/CDUIOFFLIST?oslc.select=*' , headers=HEADERS, verify=False)
+        assert response.status_code == 200, "Failed to fetch services."
+        services_jsondata = response.json()
+        services_jsondata.get('oslc:responseInfo')
+        services_count = services_jsondata['oslc:responseInfo']['oslc:totalCount']
+        assert services_count > 0,"List of Request Services fetched successfully."
+        print("Total Service count :", services_count)
+
+    #TC#49 Search offering using string from search box
+    def test_ss_search_string_in_request_service():
+        response =  requests.get(f'{MANAGE_URL}api/os/CDUISRMOFFERING?oslc.select=*&savedQuery=search&sqp:text=offering', headers=HEADERS, verify=False)
+        response.status_code ==200,
+        print("Offerings are searchable")
+        jsondata= response.json()
+        jsondata.get('oslc:responseInfo')
+        offering_count = jsondata['oslc:responseInfo']['oslc:totalCount']
+        assert offering_count > 0,"Offering found in Search Results"
+        print("Total Offering count :", offering_count)
+        # iterate through the offering list
+        offeringlist= []
+        for i in range(offering_count):
+            offeringname = jsondata['rdfs:member'][i].get('spi:description')
+            offeringlist.append(offeringname)
+        print("List of all searched offering are", offeringlist)   
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "604"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_name }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      imagePullSecrets: []
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+            - name: MAS_WORKSPACE_ID
+              value: "{{ .Values.mas_workspace_id }}"
+            - name: MAS_NAMESPACE
+              value: "{{ .Values.mas_app_namespace }}"
+          volumeMounts:
+            - name: tests
+              mountPath: /tmp/tests
+          command:
+            - /bin/sh
+            - -c
+            - |
+              pip install --user -r /tmp/tests/requirements.txt
+              pytest -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py 
+      restartPolicy: Never
+      serviceAccountName: {{ $sa_name }}
+      volumes:
+        - name: tests
+          configMap:
+            name: {{ $tests_cm_name }}
+            items:
+              - key: requirements.txt
+                path: requirements.txt
+              - key: tests.py
+                path: tests.py
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ $record_cm_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "605"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+  labels:
+    type: mas-app-verification-record
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+immutable: false
+data:
+  mas_app: "manage"
+  mas_catalog_version: "{{ .Values.mas_catalog_version }}"
+
+{{- end }}

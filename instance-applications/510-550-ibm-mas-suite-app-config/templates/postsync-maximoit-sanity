@@ -228,55 +228,6 @@ data:
       except KeyError as e:
         assert False, f"Unable to determine Manage host; spec.host key not present in {manage_route_name}/{manage_namespace}: {manage_route}. Error details: {e}"
 
-    # Obtain Manage Details
-    @pytest.fixture(scope="session")
-    def getManageComponents():
-      instanceId = os.getenv("MAS_INSTANCE_ID")
-      workspaceId = os.getenv("MAS_WORKSPACE_ID")
-      manage_namespace = f"mas-{mas_instance_id}-manage"
-        
-      k8sUtil = KubernetesUtil()
-      manageWorkspaces = k8sUtil.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
-      try:
-          manageWorkspaceInstance = manageWorkspaces.get(name=f'{instanceId}-{workspaceId}', namespace=manage_namespace)
-      except ApiException:
-          print(f'ApiException: Failed to retrieve {instanceId}-{workspaceId} instance of ManageWorkspace in namespace {manage_namespace}')
-      manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
-      print(f'{manageComponentListInStr}') # like this: base,health,nuclear
-
-    @pytest.fixture(scope="session")
-    def getClusterInfo():
-      instanceId = os.getenv("MAS_INSTANCE_ID")
-      workspaceId = os.getenv("MAS_WORKSPACE_ID")
-      manage_namespace = f"mas-{mas_instance_id}-manage"
-      manageDBCredential = f'jdbc-mas-{instanceId}-{workspaceId}-manage-credentials'
-
-      k8sUtil = KubernetesUtil()
-
-      # -------------------------------
-      # Obtain ManageWorkspace CR
-      # - Used to obtain other data bwlow
-      # -------------------------------
-      manageWorkspaceCR = None
-      try:
-          manageWorkspaceCRD = k8sUtil.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
-          manageWorkspaceCR = manageWorkspaceCRD.get(name=f'{instanceId}-{workspaceId}', namespace=manage_namespace)
-      except ApiException as ex:
-          print("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
-
-      # -------------------------------
-      # Obtain DB Driver
-      # -------------------------------
-
-      manageDeployments = k8sUtil.dynClient.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageDeployment')
-      try:
-          manageDeploymentInstance = manageDeployments.get(name=f'manage-maxinst', namespace=manage_namespace)
-          dbDriver = (manageDeploymentInstance['spec']['db']['maximoDBdriver'])
-          dbSchema = (manageDeploymentInstance['spec']['db']['maximoDBschema'])
-
-      except ApiException:
-          print(f'ApiException: Failed to retrieve manage-maxinst instance of ManageWorkspace in namespace {manage_namespace}')   
-
       # -------------------------------
       # Obtain MAS URL
       # -------------------------------
@@ -296,31 +247,7 @@ data:
           if e.status == 404:
               print(f"Unable to find route {instanceId}-manage-{workspaceId} in {manage_namespace}")
 
-      # -------------------------------
-      # Obtain JDBC credentials
-      # -------------------------------
-      try:
-          jdbcCfgDetails = k8sUtil.dynClient.resources.get(api_version='config.mas.ibm.com/v1', kind='JdbcCfg')
-          bindingManage = manageWorkspaceCR.spec.bindings.jdbc
-      except ApiException as ex:
-          print("######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
       
-      print(f"ManageWorkspace has jdbc binding set to {bindingManage}")
-
-      if "system" in bindingManage:
-          jdbcCfgInstName = f'{instanceId}-jdbc-system'
-      elif "workspace-application" in bindingManage:
-          jdbcCfgInstName = f'{instanceId}-jdbc-wsapp-{workspaceId}-manage'
-      else:
-          print("######### WARN: Unknown jdbc binding found in ManageWorkspace")
-
-      try:
-          jdbcCfg = jdbcCfgDetails.get(name=jdbcCfgInstName, namespace=masNamespace)
-          credentialsSecret = jdbcCfg.spec.config.credentials.secretName
-          credentials = k8sUtil.getSecret(credentialsSecret, masNamespace)
-      except ApiException:
-          print("ApiException: Failed to retrieve Manage database details. Check ManageWorkspace jdbc binding spec")
-
       # -------------------------------
       # Obtain Superuser credentials
       # -------------------------------
@@ -353,88 +280,7 @@ data:
       MANAGE_JDBC_DRIVER={dbDriver}
       MANAGE_JDBC_SCHEMA={dbSchema}
 
-    # Manage db configuration
-    @pytest.fixture(scope="session")
-    def manage_db_connection():
-        import ibm_db
-        url = os.getenv("MANAGE_JDBC_URL", None).replace("jdbc:", "")
-        jdbcDetails = urlparse(url)
-
-        db_config = {
-            "database": jdbcDetails.path.replace("/", "").split(":")[0],
-            "hostname": jdbcDetails.hostname,
-            "port": jdbcDetails.port,
-            "protocol": "TCPIP",
-            "user": os.getenv("MANAGE_JDBC_USERNAME", None),
-            "password": os.getenv("MANAGE_JDBC_PASSWORD", None),
-            "cert": os.getenv("MANAGE_JDBC_CERT", None),
-            "driver": os.getenv("MANAGE_JDBC_DRIVER", None),
-        }
-        
-        # Check database type
-        # -----------------------------------------------------------------------------
-        # DB2 - with and without certification
-        if "DB2" in db_config["driver"]:
-            logger.info("=== DB2 Database -- Setting up connection ===")
-
-            # Validate if certification is not empty
-            ValidCert = False
-            cert_path = os.getenv("MANAGE_JDBC_CERT")
-            if cert_path is not None:
-                cert_file = Path(cert_path)
-                logger.info(f"Certificate location:{cert_path}")
-                if cert_file.exists():
-                    file = open(os.getenv("MANAGE_JDBC_CERT"), "r")
-                    for line in file:
-                        if re.search("CERTIFICATE", line):
-                            ValidCert = True
-
-            conn_str = (
-                f"DATABASE={db_config['database']};HOSTNAME={db_config['hostname']};PORT={db_config['port']};PROTOCOL={db_config['protocol']};UID={db_config['user']};PWD={db_config['password']};"
-                + (
-                    f"SECURITY=SSL;SSLServerCertificate={db_config['cert']};"
-                    if ValidCert
-                    else f""
-                )
-            )
-            connection = ibm_db.connect(conn_str, "", "")
-            yield connection
-            ibm_db.close(connection)
-
-    @pytest.fixture(scope="session")
-    def updateMaxadminGroup(manage_db_connection):
-        nextval = ("NEXT VALUE" if "dbo" in os.getenv("MANAGE_JDBC_SCHEMA") else "NEXTVAL")
-        schema = ("" if "dbo" in os.getenv("MANAGE_JDBC_SCHEMA") else (os.getenv("MANAGE_JDBC_SCHEMA")+"."))
-        os_query = fselect app from {schema}applicationauth
-        where app in ('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET','MXEXTSYSTEM', 'INTOBJECT', 'MXAPIINTOBJECT', 'MXAPIMAXAPP','MXAPIPERUSER') 
-        and groupname='MAXADMIN';
-        
-        result_set = fetchBoth(manage_db_connection,os_query)
-        if result_set:
-            logger.info("Some object structure is already there as %s", result_set)
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIPERSONGROUP', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIPROP', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIGROUP', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXASSET', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXEXTSYSTEM', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'INTOBJECT', 'MAXADMIN')        
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIINTOBJECT', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIMAXAPP', 'MAXADMIN')
-            updateSpecificPermissionToGroup(manage_db_connection, 'MXAPIPERUSER', 'MAXADMIN')
-        else:
-            logger.info(
-                "No required object structure is present in MAXADMIN. Hence, updating MAXADMIN group."
-            )
-            update_query = (
-                finsert into {schema}applicationauth 
-                (groupname, app, optionname, applicationauthid) select 'MAXADMIN', app, optionname, 
-                {nextval} for {schema}applicationauthseq from {schema}sigoption where app in 
-                ('MXAPIPERSONGROUP','MXAPIPROP','MXAPIGROUP','MXASSET',
-                'MXEXTSYSTEM', 'INTOBJECT', 'MXAPIINTOBJECT', 'MXAPIMAXAPP','MXAPIPERUSER');"""
-            )
-            executeQuery(manage_db_connection, update_query)
-            logger.info("Object Structure permission successfully granted to MAXADMIN")
-
+    
     @pytest.fixture(scope="session")
     def test_generatekey():
         global apikey
@@ -464,7 +310,7 @@ data:
     
     @pytest.fixture
     def incident_desc(random_string):
-        return 'Incident_kwntv'
+        return 'Incident_' + random_string
 
     @pytest.fixture
     def incident_long_desc(random_string):
@@ -476,14 +322,14 @@ data:
     
     @pytest.fixture    
     def service_desc(random_string):
-        return 'SERVICE_74R03'
+        return 'SERVICE_' + random_string
 
     service_provision= "In-house"
     owned_by= "MAXADMIN"
 
     @pytest.fixture
     def problem_desc(random_string):
-        return 'Problem_3ahd5'
+        return 'Problem_' + random_string
     
     @pytest.fixture
     def problem_long_desc(random_string):
@@ -495,11 +341,11 @@ data:
         
     @pytest.fixture
     def sr_long_desc(random_string):
-        return 'ServiceRequest_vjia6'
+        return 'ServiceRequest_' + random_string
         
     @pytest.fixture
     def bb_subject(random_string):
-        return 'BulletinBoard_ztnjv'
+        return 'BulletinBoard_' + random_string
         
     @pytest.fixture
     def bb_message(random_string):
@@ -528,7 +374,7 @@ data:
         
     @pytest.fixture
     def solution_desc(random_string):
-        return 'Solution_kbkvb'
+        return 'Solution_' + random_string
         
     @pytest.fixture
     def tk_template_desc(random_string):

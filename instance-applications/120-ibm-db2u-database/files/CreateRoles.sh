@@ -27,7 +27,7 @@ DATETIME=`date +%Y%m%d_%H%M%S`;
 ROLES=`db2 -x "select char(ROLENAME,30) as ROLENAME from syscat.roles"`
 ROLE="${SCHEMANAME}_read"
 echo "" > temp
-if grep -qw "${ROLE}" <<< "${ROLES}" ; then
+if ! grep -iqw "${ROLE}" <<< "${ROLES}" ; then
     echo "create role ${SCHEMANAME}_read;"  > temp
 fi
 USER=${SCHEMANAME}_READ
@@ -59,7 +59,7 @@ db2 -tvf ${USER}.sql > ${USER}_${DATETIME}.out
 
 echo "" > temp
 ROLE="${SCHEMANAME}_write"
-if grep -qw "${ROLE}" <<< "${ROLES}" ; then
+if ! grep -iqw "${ROLE}" <<< "${ROLES}" ; then
     echo "create role ${SCHEMANAME}_write;"  > temp
 fi
 echo "grant updatein on schema MAXIMO to role MAXIMO_WRITE;" >> temp
@@ -84,7 +84,7 @@ echo "GRANT CONNECT ON DATABASE TO ROLE ${USER};" >>${WRITE}.sql
 
 echo "" > temp
 ROLE="${SCHEMANAME}_SEQ"
-if grep -qw "${ROLE}" <<< "${ROLES}" ; then
+if ! grep -iqw "${ROLE}" <<< "${ROLES}" ; then
     echo "create role ${SCHEMANAME}_SEQ;"  > temp
 fi
 USER=${SCHEMANAME}_SEQ
@@ -112,7 +112,7 @@ db2 "grant selectin on schema MAXIMO to role MAXIMO_WRITE"
 
 echo "Creating the EXPLAIN ROLE"
 ROLE="EXPLAIN"
-if grep -qw "${ROLE}" <<< "${ROLES}" ; then
+if grep -iqw "${ROLE}" <<< "${ROLES}" ; then
 
     echo "${ROLE} is already present in the database ${DBNAME}"; 
     exit 1;

@@ -1,0 +1,91 @@
+## https://kuboard.cn/learning/k8s-intermediate/workload/wl-cronjob/run.html#starting-deadline
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: instana-agent-health-check-cronjob
+  namespace: "{{ .Values.instana_namespace }}"
+spec:
+  schedule: "{{ .Values.instana_healthcheck_cron_schedule }}"
+  startingDeadlineSeconds: 300
+  concurrencyPolicy: Forbid
+  timeZone: 'Etc/UTC'
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 1
+  suspend: false
+  jobTemplate:
+    spec: 
+      backoffLimit: 1
+      template:       
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: cronjob
+          schedulerName: default-scheduler
+          terminationGracePeriodSeconds: 30                    
+          securityContext: {}
+          containers:
+            - name: healthcheck
+              image: "{{ .Values.instana_sre_ansible_image }}"
+              args:
+                - /bin/sh
+                - '-c'
+                - >-                  
+                  echo -e "\n----- Print job start date time -----\n";  date; 
+
+                  echo -e  "\n----- Print current user -----\n";  whoami;
+
+                  echo -e "\n----- Current folder:  -----\n";  current_path=$(pwd); echo $current_path
+                  
+                  echo -e "\n----- Gather public ssh key for github.ibm.com -----\n";
+                  mkdir /root/.ssh/;
+                  ssh-keyscan -t rsa,dsa,ecdsa,ed25519,ecdsa-sha2-nistp256 github.ibm.com >> /root/.ssh/known_hosts;
+
+                  echo -e "\n----- Clone Monitor health check code from GitHub -----\n";
+                  cd $current_path;
+                  GIT_SSH_COMMAND="ssh -i /opt/id_rsa_custom" git clone -b dev {{ .Values.instana_healthcheck_git_url }} healthcheck_dir;
+
+                  echo -e "\n----- Run Monitor health check code to check monitor gap -----\n";
+                  cd healthcheck_dir;
+                  ANSIBLE_CONFIG="./ansible.cfg";
+                  ansible-playbook {{ .Values.instana_healthcheck_playbook_path }} -e target_dir="/tmp";
+                  rt_code=$?;
+                  echo -e "\nrt_code=$rt_code";
+                  echo -e "\n----- Complete monitor health check. -----\n";
+
+                  echo -e "\n----- Print content of check report -----\n";
+                  ls -rtl /tmp;
+                  echo -e "\nCheck result: \n";
+                  cat /tmp/hc_report_*.yml;
+                  
+                  content=$(ls -Art /tmp/hc_report_*.yml | tail -n 1 | xargs cat | sed -re 's/^[[:blank:]]+|[[:blank:]]+$//g' 2>/dev/null);
+                  if [ "$content" != "{}" ] && [ "$content" != "" ]; then \
+                    echo -e "\n----- Clone Monitor agent installation code from GitHub -----\n"; \
+                    cd $current_path; \
+                    GIT_SSH_COMMAND="ssh -i /opt/id_rsa_custom" git clone -b helm_install {{ .Values.instana_monitor_git_url }} monitor_dir; \
+                    cd monitor_dir; ls -al; ANSIBLE_CONFIG="./ansible.cfg"; \
+                    echo -e "\n----- Run Monitor agent installation code to install Instana agent -----\n";
+                    ansible-playbook {{ .Values.instana_monitor_playbook_path }} -e scratch_install=false -e vault_secret_namespace="monitor-pipelines" -e vault_secret_name="vault-secret" -vvv;                   
+                    rt_code=$?
+                    echo -e "\nrt_code=$rt_code";
+                    echo -e "\n----- Complete monitor agent installation. -----\n";              
+                  else
+                    echo -e "\n----- There is no gap for the monitoring configuration. -----\n";
+                  fi
+
+                  echo -e "\n----- Print job complete date time -----\n";  date; echo -e "\n"
+       
+              resources: {}
+              volumeMounts:
+                - name: ssh-key
+                  mountPath: /opt/id_rsa_custom
+                  subPath: ssh-privatekey
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
+              imagePullPolicy: IfNotPresent
+          serviceAccount: cronjob
+          volumes:
+            - name: ssh-key
+              secret:
+                secretName: git-secret
+                defaultMode: 0600
+          dnsPolicy: ClusterFirst
+  

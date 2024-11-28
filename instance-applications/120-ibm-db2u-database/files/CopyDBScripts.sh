@@ -35,11 +35,7 @@ cp -rp extract_authorization.sh  ${INSTHOME}/bin
 cp -rp HADRMON.sh ${INSTHOME}/bin
 
 echo -e "\nCopying the file to bin/ITCS104 directory under Instance Home . . ."
-# cp -rp db2shc ${INSTHOME}/bin/ITCS104/
-cp -rp db2shc.cfg ${INSTHOME}/bin/ITCS104/
 cp -rp FixInvalidObjects.sh ${INSTHOME}/bin/ITCS104/
-cp -rp Build_remediat_Script.sh ${INSTHOME}/bin/ITCS104/
-cp -rp RunCompliance.sh ${INSTHOME}/bin/ITCS104/
 
 echo -e "\nCopying files to /mnt/backup/bin directory . . .";
 sudo cp -rp cronRunBKP.sh  /mnt/backup/bin/

@@ -12,7 +12,7 @@ IDT=`db2 -x "select rtrim(DATATYPE) from SYSCAT.TABLESPACES where TBSPACE='MAXIN
 
 if [[ "${DDT}" != "L" && "${IDT}" != "L" ]];  then
 
-    echo "Converting MAXDATA and MAXINDEX from Regular to Large "
+    echo "Converting MAXDATA and MAXINDEX from Regular to Large"
     db2 "SELECT char(TBSPACE,20) TBSPACE, case DATATYPE when 'A' then 'Regular' when 'L' then 'Large' end as DATATYPE FROM SYSCAT.TABLESPACES WHERE TBSPACE in ('MAXDATA','MAXINDEX')"
 
     db2 alter tablespace MAXDATA convert to large

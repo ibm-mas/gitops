@@ -13,9 +13,11 @@ metadata:
 data:
   aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
-  parm1: {{ .Values.db2_backup_bucket_access_key | b64enc }}
-  parm2: {{ .Values.db2_backup_bucket_secret_key | b64enc }}
+{{- if .Values.db2_backup_bucket_name }}
+  db2_backup_bucket_access_key: {{ .Values.db2_backup_bucket_access_key | b64enc }}
+  db2_backup_bucket_secret_key: {{ .Values.db2_backup_bucket_secret_key | b64enc }}
   icd_auth_key: {{ .Values.db2_backup_icd_auth_key | b64enc }}
+{{- end }}
 type: Opaque
 
 ---
@@ -154,14 +156,16 @@ spec:
               value: "{{ .Values.db2_dbname }}"
             - name: DB2_TLS_VERSION
               value: "{{ .Values.db2_tls_version }}"
+            - name: DB2_INSTANCE_HOME_PATH
+              value: "{{ .Values.db2_instance_home_path }}"
+{{- if .Values.db2_backup_bucket_name }}
             - name: BUCKET_NAME
               value: "{{ .Values.db2_backup_bucket_name }}"
             - name: COS_SERVER
               value: "{{ .Values.db2_backup_bucket_endpoint }}"
-            - name: DB2_INSTANCE_HOME_PATH
-              value: "{{ .Values.db2_instance_home_path }}"
             - name: SLACKURL
               value: "{{ .Values.db2_backup_notify_slack_url }}"
+{{- end }}
 
           volumeMounts:
             - name: aws
@@ -263,9 +267,11 @@ spec:
               export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               export SM_AWS_REGION=${REGION_ID}
 
-              export PARM1=$(cat /etc/mas/creds/aws/parm1)
-              export PARM2=$(cat /etc/mas/creds/aws/parm2)
-              export ICD_AUTH_KEY=$(cat /etc/mas/creds/aws/icd_auth_key)
+              if [[ -n $BUCKET_NAME ]]; then
+                export DB2_BACKUP_BUCKET_ACCESS_KEY=$(cat /etc/mas/creds/aws/db2_backup_bucket_access_key)
+                export DB2_BACKUP_BUCKET_SECRET_KEY=$(cat /etc/mas/creds/aws/db2_backup_bucket_secret_key)
+                export ICD_AUTH_KEY=$(cat /etc/mas/creds/aws/icd_auth_key)
+              fi
              
               echo ""
               echo "================================================================================"
@@ -438,13 +444,15 @@ spec:
 
                   if [[ "\$maxd_bpf" -eq  "0" && "\$maxi_bpf" -eq  "0" && "\$maxtmp_bpf" -eq "0"  && "\$maxd_tbsp" -eq  "0" && "\$maxi_tbsp" -eq "0" && "\$maxtmp_tbsp" -eq "0" && -f "\$TBSP_SQL" ]]; then
                       db2 -tvf \$TBSP_SQL
+                      if grep -qw 'CREATE' \$TBSP_SQL; then
+                        db2 connect reset
+                        db2stop force
+                        ipclean
+                        db2start
+                        db2 connect to ${DB2_DBNAME}
+                        sleep 30
+                      fi
                       rm \$TBSP_SQL
-                      db2 connect reset
-                      db2stop force
-                      ipclean
-                      db2start
-                      db2 connect to ${DB2_DBNAME}
-                      sleep 30
                   else
                       echo "Error detected."
                       exit 1
@@ -639,54 +647,56 @@ spec:
               echo "--------------------------------------------------------------------------------"
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${LARGE_TBSP_SH_PATH} | tee /tmp/regLargeTbsp.log" db2inst1 || exit $?
 
-              PROPS_FILE_NAME=".PROPS"
-              echo ""
-              echo "Creating .PROPS file"
-              echo "--------------------------------------------------------------------------------"
+              if [[ -n "$BUCKET_NAME" ]]; then
+                PROPS_FILE_NAME=".PROPS"
+                echo ""
+                echo "Creating .PROPS file"
+                echo "--------------------------------------------------------------------------------"
 
-              echo "PARM1=${PARM1}" > /tmp/${PROPS_FILE_NAME}
-              echo "PARM2=${PARM2}" >> /tmp/${PROPS_FILE_NAME}
-              echo "CONTAINER=${BUCKET_NAME}" >> /tmp/${PROPS_FILE_NAME}
-              echo "SERVER=${COS_SERVER}" >> /tmp/${PROPS_FILE_NAME}
-              echo "SLACKURL=${SLACKURL}" >> /tmp/${PROPS_FILE_NAME}
-              echo "DAYOFFULL=Sat" >> /tmp/${PROPS_FILE_NAME}
-              echo "NUMOFBKUPTOKEEP=60" >> /tmp/${PROPS_FILE_NAME}
-              echo "ICD_AUTH_KEY=${ICD_AUTH_KEY}" >> /tmp/${PROPS_FILE_NAME}
+                echo "PARM1=${DB2_BACKUP_BUCKET_ACCESS_KEY}" > /tmp/${PROPS_FILE_NAME}
+                echo "PARM2=${DB2_BACKUP_BUCKET_SECRET_KEY}" >> /tmp/${PROPS_FILE_NAME}
+                echo "CONTAINER=${BUCKET_NAME}" >> /tmp/${PROPS_FILE_NAME}
+                echo "SERVER=${COS_SERVER}" >> /tmp/${PROPS_FILE_NAME}
+                echo "SLACKURL=${SLACKURL}" >> /tmp/${PROPS_FILE_NAME}
+                echo "DAYOFFULL=Sat" >> /tmp/${PROPS_FILE_NAME}
+                echo "NUMOFBKUPTOKEEP=60" >> /tmp/${PROPS_FILE_NAME}
+                echo "ICD_AUTH_KEY=${ICD_AUTH_KEY}" >> /tmp/${PROPS_FILE_NAME}
 
-              echo ""
-              echo "Copy ${PROPS_FILE_NAME} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc cp /tmp/${PROPS_FILE_NAME} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${PROPS_FILE_NAME} -c db2u || exit $?
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "sudo mv /tmp/${PROPS_FILE_NAME} /mnt/backup/bin/${PROPS_FILE_NAME}" db2inst1 || exit $?
+                echo ""
+                echo "Copy ${PROPS_FILE_NAME} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc cp /tmp/${PROPS_FILE_NAME} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${PROPS_FILE_NAME} -c db2u || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "sudo mv /tmp/${PROPS_FILE_NAME} /mnt/backup/bin/${PROPS_FILE_NAME}" db2inst1 || exit $?
 
-              SET_COS_STORAGE_SH_PATH="${INSTHOME}/Managed/Set_DB_COS_Storage.sh"
+                SET_COS_STORAGE_SH_PATH="${INSTHOME}/Managed/Set_DB_COS_Storage.sh"
 
-              echo ""
-              echo "Executing ${SET_COS_STORAGE_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SET_COS_STORAGE_SH_PATH} | tee /tmp/setcosstorage.log" db2inst1 || exit $?
+                echo ""
+                echo "Executing ${SET_COS_STORAGE_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SET_COS_STORAGE_SH_PATH} | tee /tmp/setcosstorage.log" db2inst1 || exit $?
 
-              CHECK_COS_STORAGE_SH_PATH="CheckCOS.sh"
-              echo ""
-              echo "Executing ${INSTHOME}/bin/CheckCOS.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | tee /tmp/checkcos.log" db2inst1 || exit $?
+                CHECK_COS_STORAGE_SH_PATH="CheckCOS.sh"
+                echo ""
+                echo "Executing ${INSTHOME}/bin/CheckCOS.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | tee /tmp/checkcos.log" db2inst1 || exit $?
 
-              echo ""
-              echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+                echo ""
+                echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
 
-              DROP_TEMPTS="/tmp/db2-scripts/dropTempts.sh"
-              echo ""
-              echo "Executing  file ${DROP_TEMPTS} on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${DROP_TEMPTS} | tee /tmp/dropTempts.log" db2inst1 || exit $?
+                DROP_TEMPTS="/tmp/db2-scripts/dropTempts.sh"
+                echo ""
+                echo "Executing  file ${DROP_TEMPTS} on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${DROP_TEMPTS} | tee /tmp/dropTempts.log" db2inst1 || exit $?
 
-              echo ""
-              echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+                echo ""
+                echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+              fi
 
       restartPolicy: Never
 

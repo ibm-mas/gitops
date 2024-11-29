@@ -102,7 +102,7 @@ kind: Job
 metadata:
   # Suffix the Job name with a hash of all chart values
   # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes in the DB2 config
-  name: postsync-setup-db2-{{ .Values.db2_instance_name }}-v4-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: postsync-setup-db2-{{ .Values.db2_instance_name }}-v5-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
   namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "129"
@@ -206,6 +206,12 @@ spec:
               function db2apply {
                 RETRIES=${1:-5}
                 RETRY_DELAY_SECONDS=${2:-30}
+
+                mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
+                if [[ "$rc" == "0" ]]; then
+                  echo "... db2 config already matches expected config, returning without calling apply-db2cfg-settings"
+                  return 0
+                fi
 
                 for (( c=1; c<="${RETRIES}"; c++ )); do
                   echo ""

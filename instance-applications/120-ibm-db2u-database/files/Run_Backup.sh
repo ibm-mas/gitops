@@ -63,7 +63,9 @@ do
    longdes="Failure to start the Backup job ${DATETIME} CUST=${CUSTNAME}      ${RC}"
   ##  Send Failure notification to a slack channel  ##
   cat << ! >.curl_${DBNAME}_RUN.sh
-  curl -X POST -H 'Content-type: application/json' --data '{"text":"$longdes"}' $SLACKURL
+  if [[ -n "${SLACKURL}" ]]; then
+    curl -X POST -H 'Content-type: application/json' --data '{"text":"$longdes"}' $SLACKURL
+  fi
 !
 /bin/bash .curl_${DBNAME}_RUN.sh > .curl_${DBNAME}_RUN.out 2>&1
 
@@ -97,7 +99,9 @@ cat << ! >.curl_${DBNAME}_ICD.sh
   "hstype":"BACKUP"
   }'
 !
-/bin/bash .curl_${DBNAME}_ICD.sh > .curl_${DBNAME}_ICD.out 2>&1
+if [[ -n "${ICD_AUTH_KEY}" ]]; then
+  /bin/bash .curl_${DBNAME}_ICD.sh > .curl_${DBNAME}_ICD.out 2>&1
+fi
 
 fi   
 done

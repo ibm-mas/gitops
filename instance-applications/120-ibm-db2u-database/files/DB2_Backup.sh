@@ -56,7 +56,9 @@ SLACK_NOTIFY()
 cat << ! >.curl_$database.sh
 	curl -X POST -H 'Content-type: application/json' --data '{"text":"$slackdes"}' ${SLACKURL}
 !
+if [[ -n "${SLACKURL}" ]]; then
 	/bin/bash .curl_$database.sh > .curl_$database.out 2>&1
+fi
 
 	  #####   Create ICD Incident  ####
 	  #######   If Backup fails  ###
@@ -86,7 +88,9 @@ cat << ! >.curl_${database}_ICD.sh
 	  "hstype":"BACKUP"
 	  }'
 !
+if [[ -n "${ICD_AUTH_KEY}" ]]; then
 	/bin/bash .curl_${database}_ICD.sh > .curl_${database}_ICD.out 2>&1
+fi
 
 }
 
@@ -293,7 +297,7 @@ echo "BACKUP End time : ${DATETIME}" >> $BACK_LOG
 if [[ ${BKUP_STATUS} -gt 0 ]]
 then
 	###  Send error alert
-	SLACK_NOTIFY	
+	SLACK_NOTIFY
 fi
 
 ###  Copy the current backup log to the Backup log history file 	

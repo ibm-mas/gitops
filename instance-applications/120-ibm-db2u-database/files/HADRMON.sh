@@ -61,7 +61,9 @@ SLACK_NOTIFY()
 cat << ! >.curl_$database.sh
 curl -X POST -H 'Content-type: application/json' --data '{"text":"$longdes"}' $SLACKURL
 !
+  if [[ -n "${SLACKURL}" ]]; then
 /bin/bash .curl_$database.sh > .curl_$database.out 2>&1
+  fi
 }
 
 
@@ -160,6 +162,7 @@ cat << ! >curl.sh
   }'
 !
 SLACK_NOTIFY
+if [[ -n "${ICD_AUTH_KEY}" ]]; then
     /bin/bash curl.sh > .curl_$database.out 2>&1   
     grep -v Received .curl.out | grep -v Dload | grep -v "\-\-:\-\-:\-\-" >$Maillog
     if [ -s $Maillog  ]; then
@@ -167,6 +170,11 @@ SLACK_NOTIFY
       echo $longdes >>$Maillog
       mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
     fi    
+else
+  echo "###################################################" >>$Maillog
+  echo $longdes >>$Maillog
+  mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
+fi    
     echo "                              -----------------                  " >>$For_audit 
     echo "HADR is not active at ${DATETIME}"           >> $For_audit
     touch ${HOME}/.NOSEND_$instance       
@@ -219,6 +227,7 @@ cat << ! >curl.sh
   "hstype":"HADR"
   }'
 !
+if [[ -n "${ICD_AUTH_KEY}" ]]; then
       /bin/bash curl.sh > .curl.out 2>&1   
       grep -v Received .curl.out | grep -v Dload | grep -v "\-\-:\-\-:\-\-" >$Maillog
       if [ -s $Maillog  ]; then
@@ -226,6 +235,11 @@ cat << ! >curl.sh
         echo $longdes >>$Maillog
         mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
       fi         
+else
+  echo "###################################################" >>$Maillog
+  echo $longdes >>$Maillog
+  mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
+fi      
       touch ${HOME}/.NOSEND_$i        
       if echo $i | grep -Ei "maxdb|tridb|bludb" >/dev/null
       then
@@ -307,6 +321,7 @@ cat << ! >curl.sh
   "hstype":"HADR"
   }'
 !
+if [[ -n "${ICD_AUTH_KEY}" ]]; then
           /bin/bash curl.sh > .curl.out 2>&1   
           grep -v Received .curl.out | grep -v Dload | grep -v "\-\-:\-\-:\-\-" >$Maillog
           if [ -s $Maillog  ]; then
@@ -314,6 +329,11 @@ cat << ! >curl.sh
             echo $longdes >>$Maillog
             mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
           fi         
+else
+  echo "###################################################" >>$Maillog
+  echo $longdes >>$Maillog
+  mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
+fi          
           touch ${HOME}/.NOSEND_sdb_$i 
         fi          
     fi 
@@ -352,6 +372,7 @@ cat << ! >curl.sh
   "hstype":"HADR"
   }'
 !
+if [[ -n "${ICD_AUTH_KEY}" ]]; then
           /bin/bash curl.sh > .curl.out 2>&1   
           grep -v Received .curl.out | grep -v Dload | grep -v "\-\-:\-\-:\-\-" >$Maillog
           if [ -s $Maillog  ]; then
@@ -359,6 +380,11 @@ cat << ! >curl.sh
             echo $longdes >>$Maillog
             mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
           fi                  
+else
+  echo "###################################################" >>$Maillog
+  echo $longdes >>$Maillog
+  mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
+fi          
           touch ${HOME}/.NOSEND_ddb_$i 
         fi
         #continue
@@ -400,6 +426,7 @@ cat << ! >curl.sh
   "hstype":"HADR"
   }'
 !
+if [[ -n "${ICD_AUTH_KEY}" ]]; then
         /bin/bash curl.sh > .curl.out 2>&1   
         grep -v Received .curl.out | grep -v Dload | grep -v "\-\-:\-\-:\-\-" >$Maillog
         if [ -s $Maillog  ]; then
@@ -407,6 +434,11 @@ cat << ! >curl.sh
           echo $longdes >>$Maillog
           mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
         fi                
+else
+  echo "###################################################" >>$Maillog
+  echo $longdes >>$Maillog
+  mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
+fi        
         touch ${HOME}/.NOSEND_sdb_$i 
       fi       
     fi                         
@@ -446,6 +478,7 @@ cat << ! >curl.sh
   "hstype":"HADR"
   }'
 !
+if [[ -n "${ICD_AUTH_KEY}" ]]; then
         /bin/bash curl.sh > .curl.out 2>&1   
         grep -v Received .curl.out | grep -v Dload | grep -v "\-\-:\-\-:\-\-" >$Maillog
         if [ -s $Maillog  ]; then
@@ -453,6 +486,11 @@ cat << ! >curl.sh
           echo $longdes >>$Maillog
           mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
         fi             
+else
+  echo "###################################################" >>$Maillog
+  echo $longdes >>$Maillog
+  mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
+fi        
         touch ${HOME}/.NOSEND_ddb_$i   
       fi             
     fi                              
@@ -509,6 +547,7 @@ cat << ! >curl.sh
   "hstype":"HADR"
   }'
 !
+if [[ -n "${ICD_AUTH_KEY}" ]]; then
   #        /bin/bash curl.sh > .curl.out 2>&1   
           grep -v Received .curl.out | grep -v Dload | grep -v "\-\-:\-\-:\-\-" >$Maillog
           if [ -s $Maillog  ]; then
@@ -516,6 +555,10 @@ cat << ! >curl.sh
             echo $longdes >>$Maillog
    #         mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
           fi               
+else
+  echo "###################################################" >>$Maillog
+  echo $longdes >>$Maillog
+fi          
           touch ${HOME}/.NOSEND_$i
         fi  
         #continue
@@ -559,6 +602,7 @@ cat << ! >curl.sh
   "hstype":"HADR"
   }'
 !
+if [[ -n "${ICD_AUTH_KEY}" ]]; then
         /bin/bash curl.sh > .curl.out 2>&1   
         grep -v Received .curl.out | grep -v Dload | grep -v "\-\-:\-\-:\-\-" >$Maillog
         if [ -s $Maillog  ]; then
@@ -566,6 +610,11 @@ cat << ! >curl.sh
           echo $longdes >>$Maillog
           mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
         fi        
+else
+  echo "###################################################" >>$Maillog
+  echo $longdes >>$Maillog
+  mail -s "$Server HADR error, but failed to create task through OSLC API" `cat $Mail_recp` < $Maillog
+fi        
         touch ${HOME}/.NOSEND_$i
       fi              
     fi   

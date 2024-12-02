@@ -334,15 +334,17 @@ spec:
               echo "--------------------------------------------------------------------------------"
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/maintenance" db2inst1 || exit $?
 
-              echo ""
-              echo "Copying all the required DB2 scripts in c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /tmp/db2-scripts/" db2inst1 || exit $?
-              cd /tmp
-              zip -r db2-scripts.zip db2-scripts/
-              oc cp /tmp/db2-scripts.zip ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2-scripts.zip -c db2u || exit $?
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cd /tmp; unzip -o db2-scripts.zip; chmod -R +x /tmp/db2-scripts" db2inst1 || exit $?
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "/tmp/db2-scripts/CopyDBScripts.sh | tee /tmp/copydbscripts.log" db2inst1 || exit $?
+              if [[ -n $BUCKET_NAME ]]; then
+                echo ""
+                echo "Copying all the required DB2 scripts in c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /tmp/db2-scripts/" db2inst1 || exit $?
+                cd /tmp
+                zip -r db2-scripts.zip db2-scripts/
+                oc cp /tmp/db2-scripts.zip ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2-scripts.zip -c db2u || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cd /tmp; unzip -o db2-scripts.zip; chmod -R +x /tmp/db2-scripts" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "/tmp/db2-scripts/CopyDBScripts.sh | tee /tmp/copydbscripts.log" db2inst1 || exit $?
+              fi
 
               if [[ "$MAS_APP_ID" == "manage" ]]; then
                 echo ""
@@ -472,20 +474,24 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1 || exit $?
 
-                CREATE_ROLES_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/CreateRoles.sh"
-                echo ""
-                echo "Executing ${CREATE_ROLES_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd ${DB2_INSTANCE_HOME_PATH}/bin; ${CREATE_ROLES_SH_PATH} | tee /tmp/createroles.log" db2inst1 || exit $?
+                if [[ -n $BUCKET_NAME ]]; then
+                  CREATE_ROLES_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/CreateRoles.sh"
+                  echo ""
+                  echo "Executing ${CREATE_ROLES_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd ${DB2_INSTANCE_HOME_PATH}/bin; ${CREATE_ROLES_SH_PATH} | tee /tmp/createroles.log" db2inst1 || exit $?
+                fi
 
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
 
-              POST_BACKFLOW_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/PostBackFlow.sh"
-              echo ""
-              echo "Executing ${POST_BACKFLOW_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${POST_BACKFLOW_SH_PATH} | tee /tmp/postbackflowscriptcreation.log" db2inst1 || exit $?
+              if [[ -n $BUCKET_NAME ]]; then
+                POST_BACKFLOW_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/PostBackFlow.sh"
+                echo ""
+                echo "Executing ${POST_BACKFLOW_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${POST_BACKFLOW_SH_PATH} | tee /tmp/postbackflowscriptcreation.log" db2inst1 || exit $?
+              fi
 
               echo ""
               echo "================================================================================"
@@ -623,31 +629,31 @@ spec:
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-setup-db2\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret ${DB2_CONFIG_SECRET} "{ \"jdbc_connection_url\": \"${JDBC_CONNECTION_URL}\", \"jdbc_instance_name\": \"${DB2_INSTANCE_NAME}\", \"ca_b64\": \"${DB2_CA_PEM}\", \"db2_dbname\": \"${DB2_DBNAME}\", \"db2_namespace\": \"${DB2_NAMESPACE}\" }" "${TAGS}" || exit $?
 
-              echo ""
-              echo "================================================================================"
-              echo "Invoke Fix invalid objects for Manage"
-              echo "================================================================================"
+              if [[ -n $BUCKET_NAME ]]; then
+                echo ""
+                echo "================================================================================"
+                echo "Invoke Fix invalid objects for Manage"
+                echo "================================================================================"
 
-              FIX_INVALID_OBJECTS_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/ITCS104/FixInvalidObjects.sh"
+                FIX_INVALID_OBJECTS_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/ITCS104/FixInvalidObjects.sh"
 
-              echo ""
-              echo "Executing ${FIX_INVALID_OBJECTS_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${FIX_INVALID_OBJECTS_SH_PATH} | tee /tmp/fixInvalidObjects.log" db2inst1 || exit $?
+                echo ""
+                echo "Executing ${FIX_INVALID_OBJECTS_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${FIX_INVALID_OBJECTS_SH_PATH} | tee /tmp/fixInvalidObjects.log" db2inst1 || exit $?
 
-              echo ""
-              echo "================================================================================"
-              echo "Invoke Tablespace alter script for DB2"
-              echo "================================================================================"
+                echo ""
+                echo "================================================================================"
+                echo "Invoke Tablespace alter script for DB2"
+                echo "================================================================================"
 
-              LARGE_TBSP_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/Reg-Large_TBSP.sh"
+                LARGE_TBSP_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/Reg-Large_TBSP.sh"
 
-              echo ""
-              echo "Executing ${LARGE_TBSP_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${LARGE_TBSP_SH_PATH} | tee /tmp/regLargeTbsp.log" db2inst1 || exit $?
+                echo ""
+                echo "Executing ${LARGE_TBSP_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${LARGE_TBSP_SH_PATH} | tee /tmp/regLargeTbsp.log" db2inst1 || exit $?
 
-              if [[ -n "$BUCKET_NAME" ]]; then
                 PROPS_FILE_NAME=".PROPS"
                 echo ""
                 echo "Creating .PROPS file"

@@ -107,7 +107,7 @@ kind: Job
 metadata:
   # Suffix the Job name with a hash of all chart values
   # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes in the DB2 config
-  name: postsync-setup-db2-{{ .Values.db2_instance_name }}-v5-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: postsync-setup-db2-{{ .Values.db2_instance_name }}-v6-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
   namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "129"
@@ -657,10 +657,16 @@ spec:
 
                 LARGE_TBSP_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/Reg-Large_TBSP.sh"
 
-                echo ""
-                echo "Executing ${LARGE_TBSP_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${LARGE_TBSP_SH_PATH} | tee /tmp/regLargeTbsp.log" db2inst1 || exit $?
+                SQL_FILES_AVAILABLE=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "find ${INSTHOME} -name \"ALL_*.sql\"" db2inst1 || exit $?`
+
+                if [[ -z $SQL_FILES_AVAILABLE ]]; then
+
+                  echo ""
+                  echo "Executing ${LARGE_TBSP_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${LARGE_TBSP_SH_PATH} | tee /tmp/regLargeTbsp.log" db2inst1 || exit $?
+
+                fi
 
                 PROPS_FILE_NAME=".PROPS"
                 echo ""

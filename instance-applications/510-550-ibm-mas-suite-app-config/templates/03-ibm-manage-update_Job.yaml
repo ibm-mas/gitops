@@ -154,12 +154,12 @@ spec:
                   echo
 
                   ONLINE_UPDATE_DONE_MSG="Database online upgrade portion is done, waiting for offline request."
-                  MANAGE_DBREADY_MSG=$(oc get ManageWorkspace -n ${MAS_APP_NAMESPACE} ${MAS_INSTANCE_ID}-${MAS_WORKSPACE_ID} -o=jsonpath="{.status.conditions[?(@.type=='DBReady')].message}")
-                  if [[ $MANAGE_DBREADY_MSG == *"$ONLINE_UPDATE_DONE_MSG"* ]]; then
-                    echo "ManageWorkspace indicates it is ready for offline upgrade: ${MANAGE_DBREADY_MSG}"
+                  MANAGE_DEPLOYMENTREADY_MSG=$(oc get ManageWorkspace -n ${MAS_APP_NAMESPACE} ${MAS_INSTANCE_ID}-${MAS_WORKSPACE_ID} -o=jsonpath="{.status.conditions[?(@.type=='DeploymentReady')].message}")
+                  if [[ $MANAGE_DEPLOYMENTREADY_MSG == *"$ONLINE_UPDATE_DONE_MSG"* ]]; then
+                    echo "ManageWorkspace indicates it is ready for offline upgrade: ${MANAGE_DEPLOYMENTREADY_MSG}"
                     oc patch -n ${MAS_APP_NAMESPACE} manageofflineupgraderequests.apps.mas.ibm.com manageofflineupgraderequest-${MAS_WORKSPACE_ID} -p '{"spec":{"stage":"requested"}}'
                   else
-                    echo "The ManageWorkspace does not indicate it is ready for offlineupgrade, so do nothing : ${MANAGE_DBREADY_MSG}"
+                    echo "The ManageWorkspace does not indicate it is ready for offlineupgrade, so do nothing : ${MANAGE_DEPLOYMENTREADY_MSG}"
                   fi
                   
 

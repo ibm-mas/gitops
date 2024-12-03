@@ -3,11 +3,12 @@
 {{- if (eq .Values.mas_appws_spec.settings.db.upgrade.upgradeType "onlineUpgrade") }}
 
 {{ $ns        :=  .Values.mas_app_namespace }}
-{{ $np_name   :=  "mas-manage-update-np" }}
-{{ $role_name :=  "mas-manage-update-role" }}
-{{ $sa_name   :=  "mas-manage-update-sa" }}
-{{ $rb_name   :=  "mas-manage-update-rb" }}
-{{ $job_label :=  "mas-manage-update-job" }}
+{{ $prefix := printf "%s-manage-update" .Values.mas_workspace_id}}
+{{ $np_name   := printf "%s-np" $prefix }}
+{{ $role_name :=  printf "%s-role" $prefix }}
+{{ $sa_name   :=  printf "%s-sa" $prefix }}
+{{ $rb_name   :=  printf "%s-rb" $prefix }}
+{{ $job_label :=  printf "%s-job" $prefix }}
 
 ---
 # Permit outbound communication by the Job pods
@@ -95,7 +96,7 @@ roleRef:
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: mas-manage-update-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: {{ .Values.mas_workspace_id }}-manage-update-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "604"
@@ -116,6 +117,9 @@ spec:
 {{- end }}
     spec:
       template:
+        metadata:
+          labels:
+            app: {{ $job_label }}
         spec:
           containers:
             - name: run

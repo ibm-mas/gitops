@@ -115,51 +115,52 @@ spec:
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
-      containers:
-        - name: run
-          image: quay.io/ibmmas/cli:latest
-          imagePullPolicy: IfNotPresent
-          resources:
-            limits:
-              cpu: 200m
-              memory: 512Mi
-            requests:
-              cpu: 10m
-              memory: 64Mi
-          env:
-            - name: MAS_APP_NAMESPACE
-              value: {{ .Values.mas_app_namespace }}
-            - name: MAS_APP_ID
-              value: {{ .Values.mas_app_id }}
-            - name: MAS_INSTANCE_ID
-              value: {{ .Values.instance_id }}
-            - name: MAS_WORKSPACE_ID
-              value: {{ .Values.mas_workspace_id }}
-          command:
-            - /bin/sh
-            - -c
-            - |
+      template:
+        spec:
+          containers:
+            - name: run
+              image: quay.io/ibmmas/cli:latest
+              imagePullPolicy: IfNotPresent
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 512Mi
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+              env:
+                - name: MAS_APP_NAMESPACE
+                  value: {{ .Values.mas_app_namespace }}
+                - name: MAS_APP_ID
+                  value: {{ .Values.mas_app_id }}
+                - name: MAS_INSTANCE_ID
+                  value: {{ .Values.instance_id }}
+                - name: MAS_WORKSPACE_ID
+                  value: {{ .Values.mas_workspace_id }}
+              command:
+                - /bin/sh
+                - -c
+                - |
 
-              set -e
-              echo
-              echo "================================================================================"
-              echo "Check if we need to set the ManageOfflineUpgradeRequest stage to Requested"
-              echo "================================================================================"
-              echo
+                  set -e
+                  echo
+                  echo "================================================================================"
+                  echo "Check if we need to set the ManageOfflineUpgradeRequest stage to Requested"
+                  echo "================================================================================"
+                  echo
 
-              ONLINE_UPDATE_DONE_MSG="Database online upgrade portion is done, waiting for offline request."
-              MANAGE_DBREADY_MSG=$(oc get ManageWorkspace -n ${MAS_APP_NAMESPACE} ${MAS_INSTANCE_ID}-${MAS_WORKSPACE_ID}" -o=jsonpath="{.status.conditions[?(@.type=='DBReady')].message}")
-              if [[ $MANAGE_DBREADY_MSG == *"$ONLINE_UPDATE_DONE_MSG"* ]]; then
-                echo "ManageWorkspace indicates it is ready for offline upgrade: ${MANAGE_DBREADY_MSG}"
-                oc patch -n ${MAS_APP_NAMESPACE} manageofflineupgraderequests.apps.mas.ibm.com manageofflineupgraderequest-${MAS_WORKSPACE_ID} -p '{"spec":{"stage":"requested"}}'
-              else
-                echo "The ManageWorkspace does not indicate it is ready for offlineupgrade, so do nothing : ${MANAGE_DBREADY_MSG}"
-              fi
-              
+                  ONLINE_UPDATE_DONE_MSG="Database online upgrade portion is done, waiting for offline request."
+                  MANAGE_DBREADY_MSG=$(oc get ManageWorkspace -n ${MAS_APP_NAMESPACE} ${MAS_INSTANCE_ID}-${MAS_WORKSPACE_ID}" -o=jsonpath="{.status.conditions[?(@.type=='DBReady')].message}")
+                  if [[ $MANAGE_DBREADY_MSG == *"$ONLINE_UPDATE_DONE_MSG"* ]]; then
+                    echo "ManageWorkspace indicates it is ready for offline upgrade: ${MANAGE_DBREADY_MSG}"
+                    oc patch -n ${MAS_APP_NAMESPACE} manageofflineupgraderequests.apps.mas.ibm.com manageofflineupgraderequest-${MAS_WORKSPACE_ID} -p '{"spec":{"stage":"requested"}}'
+                  else
+                    echo "The ManageWorkspace does not indicate it is ready for offlineupgrade, so do nothing : ${MANAGE_DBREADY_MSG}"
+                  fi
+                  
 
-      restartPolicy: Never
-      serviceAccountName: {{ $sa_name }}
-  backoffLimit: 4
+          restartPolicy: Never
+          serviceAccountName: {{ $sa_name }}
 
 
 {{- end }}

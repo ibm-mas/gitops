@@ -1,0 +1,32 @@
+####   Fix invalid object owners
+
+if [ ! -d /mnt/backup/bin/SQL ] ; then
+   mkdir -p /mnt/backup/bin/SQL 
+     echo "${DATETIME}:Creating directory /mnt/backup/bin/SQL"     
+   if [ $? != "0" ] ; then
+     echo "${DATETIME}: ERROR: Unable to create directory /mnt/backup/bin/SQL"  
+      exit 1
+   fi
+fi
+
+
+
+
+
+
+USER=MAXIMO
+db2 "select 'transfer ownership of table MAXIMO.' || tabname || ' to user ${USER} PRESERVE PRIVILEGES;' from syscat.tables where tabschema = 'MAXIMO' and owner != 'MAXIMO'" | grep transfer  > ./SQL/Table_ownership.sql
+
+db2 "select 'transfer ownership of procedure maximo.' || PROCNAME || ' to user ${USER} PRESERVE PRIVILEGES;' from syscat.procedures where procschema = 'MAXIMO' and definer != 'MAXIMO'" | grep transfer  > ./SQL/Proc_ownership.sql
+ 
+db2 "select 'transfer ownership of trigger maximo.' || trigname || ' to user ${USER} PRESERVE PRIVILEGES;' from syscat.triggers where trigschema = 'MAXIMO' and owner != 'MAXIMO' or definer != 'MAXIMO'" | grep transfer  > ./SQL/Trigger_ownership.sql
+
+db2 "select 'transfer ownership of sequence maximo.' || seqname || ' to user ${USER} PRESERVE PRIVILEGES;' from syscat.sequences where seqschema = 'MAXIMO' and owner != 'MAXIMO'" | grep transfer  >  ./SQL/Seq_ownership.sql
+
+db2 "select 'transfer ownership of view maximo.' || viewname || ' to user maximo;' from syscat.views  where viewschema = 'MAXIMO' and owner != 'MAXIMO'"  | grep transfer > ./SQL/View_ownership.sql
+
+for x in `ls -1 ./SQL`
+ do
+db2 -tvf ./SQL/${x} | tee ./SQL/${x}.OUT
+done
+

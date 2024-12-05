@@ -1,0 +1,36 @@
+{{- if .Values.db2_backup_bucket_name }}
+#apiVersion: batch/v1beta1
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: "db2-backup-job-v1-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  labels:
+    parent: cronjob
+    cosBucket: "{{ .Values.db2_backup_bucket_name }}"
+    db2pod: "c-{{ .Values.db2_instance_name }}-db2u-0"
+spec:
+  schedule: '0 2 * * *'
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            parent: cronjob
+        spec:
+          containers:
+            - name: "db2-backup-job-v1-{{ .Values.db2_instance_name }}"
+              image: quay.io/ibmmas/cli:latest
+              command:
+                - oc
+                - rsh
+                - "c-{{ .Values.db2_instance_name }}-db2u-0"
+                - /mnt/backup/bin/cronRunBKP.sh
+                - "{{ .Values.db2_backup_bucket_name }}"
+              imagePullPolicy: IfNotPresent
+          restartPolicy: OnFailure
+          serviceAccountName: "account-{{ .Values.db2_namespace }}-{{ .Values.db2_instance_name }}"
+  successfulJobsHistoryLimit: 30
+  failedJobsHistoryLimit: 10
+{{- end }}

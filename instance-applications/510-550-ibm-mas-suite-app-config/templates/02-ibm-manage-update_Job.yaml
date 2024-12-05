@@ -69,6 +69,7 @@ rules:
     resources:
       - manageworkspaces
       - manageofflineupgraderequests
+      - manageofflineupgraderequests/status
 
 ---
 kind: RoleBinding
@@ -155,7 +156,8 @@ spec:
                   MANAGE_DEPLOYMENTREADY_MSG=$(oc get ManageWorkspace -n ${MAS_APP_NAMESPACE} ${MAS_INSTANCE_ID}-${MAS_WORKSPACE_ID} -o=jsonpath="{.status.conditions[?(@.type=='DeploymentReady')].message}")
                   if [[ $MANAGE_DEPLOYMENTREADY_MSG == *"$ONLINE_UPDATE_DONE_MSG"* ]]; then
                     echo "Status found is: ${MANAGE_DEPLOYMENTREADY_MSG}"
-                    echo "ManageWorkspace indicates it is ready for offline upgrade, patching manageofflineupgraderequest-${MAS_WORKSPACE_ID} to requested"
+                    echo "ManageWorkspace indicates it is ready for offline upgrade, patching manageofflineupgraderequest-${MAS_WORKSPACE_ID} to requested, and removing old status"
+                    oc patch -n ${MAS_APP_NAMESPACE} manageofflineupgraderequest.apps.mas.ibm.com manageofflineupgraderequest-${MAS_WORKSPACE_ID} --subresource status --type=json -p="[{'op': 'remove', 'path': '/status'}]"
                     oc patch -n ${MAS_APP_NAMESPACE} manageofflineupgraderequests.apps.mas.ibm.com manageofflineupgraderequest-${MAS_WORKSPACE_ID} --type merge -p $'spec:\n stage: requested'
                     echo "Patch complete"
                   else

@@ -1,12 +1,10 @@
 {{ $aws_secret := "aws"}}
 {{ $sa_name    :=  "postsync-custom-sa-update-sm-sa" }}
-{{ $secret_name := "test-secret" }}
-# {{- range $custom_sa_name, $custom_sa_role := $.Values.custom_sa_details }}
-# List secrets from the custom sa namespace
-# {{- range $index, $secret := (lookup "v1" "Secret" $.Values.custom_sa_namespace "").items }}
-# The secret name has a prefix of the service account name - use this to get the secret name
-# {{ $prefix := printf "%s-token" $custom_sa_name }}
-# {{- if (hasPrefix $secret_name $prefix) }}
+
+{{- range $custom_sa_name, $custom_sa_role := $.Values.custom_sa_details }}
+{{- $prefix := printf "%s-token" $custom_sa_name }}
+{{- range $index, $secret := (lookup "v1" "Secret" $.Values.custom_sa_namespace "").items }}
+{{- if (hasPrefix $prefix $secret.metadata.name) }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -54,15 +52,15 @@ spec:
             - name: CUSTOM_SA_NAME
               value: {{ $custom_sa_name }}
             - name: CUSTOM_SA_SECRET_NAME
-              value: {{ $secret_name }}
+              value: {{ $secret.metadata.name }}
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
-            - name: {{ $secret_name }}
-              mountPath: "/etc/mas/creds/{{ $secret_name }}"
+            - name: {{ $secret.metadata.name }}
+              mountPath: "/etc/mas/creds/{{ $secret.metadata.name }}"
           command:
             - /bin/sh
             - -c
@@ -107,20 +105,19 @@ spec:
               sm_update_secret ${SM_SECRET_NAME} "{\"cluster\": \"${CLUSTER_ID}\",\"apiurl\":\"https://${CLUSTER_API_URL}\",\"token\":\"${CUSTOM_SA_SECRET_TOKEN}\"}" "${TAGS}"
 
       restartPolicy: Never
-      # serviceAccountName: {{ $sa_name }}
-      serviceAccountName: massaas-ssp-sa
+      serviceAccountName: {{ $sa_name }}
       volumes:
         - name: aws
           secret:
             secretName: {{ $aws_secret }}
             defaultMode: 420
             optional: false
-        - name: {{ $secret_name }}
+        - name: {{ $secret.metadata.name }}
           secret:
-            secretName: {{ $secret_name }}
+            secretName: {{ $secret.metadata.name }}
             defaultMode: 420
             optional: false
   backoffLimit: 4
-# {{- end }}
-# {{- end }}
-# {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

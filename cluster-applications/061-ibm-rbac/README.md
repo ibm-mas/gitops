@@ -1,3 +1,3 @@
 IBM Resource-Based Access Control (RBAC)
 ===============================================================================
-Installs the IBM RBAC groups, together with the necessary roles and role bindings.
+Installs the IBM RBAC roles and role bindings. Groups are managed by the Group Sync Operator.

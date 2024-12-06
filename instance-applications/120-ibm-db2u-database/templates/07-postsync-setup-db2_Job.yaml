@@ -13,6 +13,11 @@ metadata:
 data:
   aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+{{- if .Values.db2_backup_bucket_name }}
+  db2_backup_bucket_access_key: {{ .Values.db2_backup_bucket_access_key | b64enc }}
+  db2_backup_bucket_secret_key: {{ .Values.db2_backup_bucket_secret_key | b64enc }}
+  icd_auth_key: {{ .Values.db2_backup_icd_auth_key | b64enc }}
+{{- end }}
 type: Opaque
 
 ---
@@ -102,7 +107,7 @@ kind: Job
 metadata:
   # Suffix the Job name with a hash of all chart values
   # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes in the DB2 config
-  name: postsync-setup-db2-{{ .Values.db2_instance_name }}-v4-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: postsync-setup-db2-{{ .Values.db2_instance_name }}-v6-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
   namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "129"
@@ -151,12 +156,26 @@ spec:
               value: "{{ .Values.db2_dbname }}"
             - name: DB2_TLS_VERSION
               value: "{{ .Values.db2_tls_version }}"
+            - name: DB2_INSTANCE_HOME_PATH
+              value: "{{ .Values.db2_instance_home_path }}"
+{{- if .Values.db2_backup_bucket_name }}
+            - name: BUCKET_NAME
+              value: "{{ .Values.db2_backup_bucket_name }}"
+            - name: COS_SERVER
+              value: "{{ .Values.db2_backup_bucket_endpoint }}"
+            - name: SLACKURL
+              value: "{{ .Values.db2_backup_notify_slack_url }}"
+{{- end }}
 
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
             - name: db2u-certificate
               mountPath: /etc/mas/creds/db2u-certificate
+{{- if .Values.db2_backup_bucket_name }}
+            - name: db2-scripts
+              mountPath: "/tmp/db2-scripts/"
+{{- end }}
           command:
             - /bin/sh
             - -c
@@ -207,6 +226,12 @@ spec:
                 RETRIES=${1:-5}
                 RETRY_DELAY_SECONDS=${2:-30}
 
+                mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
+                if [[ "$rc" == "0" ]]; then
+                  echo "... db2 config already matches expected config, returning without calling apply-db2cfg-settings"
+                  return 0
+                fi
+
                 for (( c=1; c<="${RETRIES}"; c++ )); do
                   echo ""
                   echo "... attempt ${c} of ${RETRIES}"
@@ -249,6 +274,12 @@ spec:
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               export SM_AWS_REGION=${REGION_ID}
+
+              if [[ -n $BUCKET_NAME ]]; then
+                export DB2_BACKUP_BUCKET_ACCESS_KEY=$(cat /etc/mas/creds/aws/db2_backup_bucket_access_key)
+                export DB2_BACKUP_BUCKET_SECRET_KEY=$(cat /etc/mas/creds/aws/db2_backup_bucket_secret_key)
+                export ICD_AUTH_KEY=$(cat /etc/mas/creds/aws/icd_auth_key)
+              fi
              
               echo ""
               echo "================================================================================"
@@ -267,6 +298,61 @@ spec:
               echo "Waiting for service c-${DB2_INSTANCE_NAME}-db2u-engn-svc to be present before continuing (timeout 300s)"
               echo "================================================================================"
               wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
+
+              echo ""
+              echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating /mnt/backup/staging in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating /mnt/backup/bin in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/bin" db2inst1 || exit $?
+
+              echo ""
+              echo "Getting Instance owner and home directory in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              INSTOWNER='db2inst1'
+              echo "Instance owner is ${INSTOWNER}"
+              INSTHOME=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cat /etc/passwd | grep ${INSTOWNER} | cut -d: -f6" db2inst1`
+              echo "Instance home directory is ${INSTHOME}"
+
+              echo ""
+              echo "Creating ${INSTHOME}/bin in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/bin" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating ${INSTHOME}/bin/ITCS104 in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/bin/ITCS104" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating ${INSTHOME}/Managed in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/Managed" db2inst1 || exit $?
+
+              echo ""
+              echo "Creating ${INSTHOME}/maintenance in c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p ${INSTHOME}/maintenance" db2inst1 || exit $?
+
+              if [[ -n $BUCKET_NAME ]]; then
+                echo ""
+                echo "Copying all the required DB2 scripts in c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /tmp/db2-scripts/" db2inst1 || exit $?
+                cd /tmp
+                zip -r db2-scripts.zip db2-scripts/
+                oc cp /tmp/db2-scripts.zip ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2-scripts.zip -c db2u || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cd /tmp; unzip -o db2-scripts.zip; chmod -R +x /tmp/db2-scripts" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "/tmp/db2-scripts/CopyDBScripts.sh | tee /tmp/copydbscripts.log" db2inst1 || exit $?
+              fi
 
               if [[ "$MAS_APP_ID" == "manage" ]]; then
                 echo ""
@@ -368,6 +454,14 @@ spec:
 
                   if [[ "\$maxd_bpf" -eq  "0" && "\$maxi_bpf" -eq  "0" && "\$maxtmp_bpf" -eq "0"  && "\$maxd_tbsp" -eq  "0" && "\$maxi_tbsp" -eq "0" && "\$maxtmp_tbsp" -eq "0" && -f "\$TBSP_SQL" ]]; then
                       db2 -tvf \$TBSP_SQL
+                      if grep -qw 'CREATE' \$TBSP_SQL; then
+                        db2 connect reset
+                        db2stop force
+                        ipclean
+                        db2start
+                        db2 connect to ${DB2_DBNAME}
+                        sleep 30
+                      fi
                       rm \$TBSP_SQL
                   else
                       echo "Error detected."
@@ -388,18 +482,24 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1 || exit $?
 
-                echo ""
-                echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1 || exit $?
-
-                echo ""
-                echo "Creating /mnt/backup/staging in c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/staging" db2inst1 || exit $?
+                if [[ -n $BUCKET_NAME ]]; then
+                  CREATE_ROLES_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/CreateRoles.sh"
+                  echo ""
+                  echo "Executing ${CREATE_ROLES_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd ${DB2_INSTANCE_HOME_PATH}/bin; ${CREATE_ROLES_SH_PATH} | tee /tmp/createroles.log" db2inst1 || exit $?
+                fi
 
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
+
+              if [[ -n $BUCKET_NAME ]]; then
+                POST_BACKFLOW_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/PostBackFlow.sh"
+                echo ""
+                echo "Executing ${POST_BACKFLOW_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${POST_BACKFLOW_SH_PATH} | tee /tmp/postbackflowscriptcreation.log" db2inst1 || exit $?
+              fi
 
               echo ""
               echo "================================================================================"
@@ -537,6 +637,86 @@ spec:
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-setup-db2\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret ${DB2_CONFIG_SECRET} "{ \"jdbc_connection_url\": \"${JDBC_CONNECTION_URL}\", \"jdbc_instance_name\": \"${DB2_INSTANCE_NAME}\", \"ca_b64\": \"${DB2_CA_PEM}\", \"db2_dbname\": \"${DB2_DBNAME}\", \"db2_namespace\": \"${DB2_NAMESPACE}\" }" "${TAGS}" || exit $?
 
+              if [[ -n $BUCKET_NAME ]]; then
+                echo ""
+                echo "================================================================================"
+                echo "Invoke Fix invalid objects for Manage"
+                echo "================================================================================"
+
+                FIX_INVALID_OBJECTS_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/ITCS104/FixInvalidObjects.sh"
+
+                echo ""
+                echo "Executing ${FIX_INVALID_OBJECTS_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${FIX_INVALID_OBJECTS_SH_PATH} | tee /tmp/fixInvalidObjects.log" db2inst1 || exit $?
+
+                SQL_FILES_AVAILABLE=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "find ${INSTHOME} -name \"ALL_*.sql\"" db2inst1 || exit $?`
+
+                if [[ -z $SQL_FILES_AVAILABLE ]]; then
+
+                  echo ""
+                  echo "================================================================================"
+                  echo "Invoke Tablespace alter script for DB2"
+                  echo "================================================================================"
+
+                  LARGE_TBSP_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/Reg-Large_TBSP.sh"
+
+                  echo ""
+                  echo "Executing ${LARGE_TBSP_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${LARGE_TBSP_SH_PATH} | tee /tmp/regLargeTbsp.log" db2inst1 || exit $?
+
+                fi
+
+                PROPS_FILE_NAME=".PROPS"
+                echo ""
+                echo "Creating .PROPS file"
+                echo "--------------------------------------------------------------------------------"
+
+                echo "PARM1=${DB2_BACKUP_BUCKET_ACCESS_KEY}" > /tmp/${PROPS_FILE_NAME}
+                echo "PARM2=${DB2_BACKUP_BUCKET_SECRET_KEY}" >> /tmp/${PROPS_FILE_NAME}
+                echo "CONTAINER=${BUCKET_NAME}" >> /tmp/${PROPS_FILE_NAME}
+                echo "SERVER=${COS_SERVER}" >> /tmp/${PROPS_FILE_NAME}
+                echo "SLACKURL=${SLACKURL}" >> /tmp/${PROPS_FILE_NAME}
+                echo "DAYOFFULL=Sat" >> /tmp/${PROPS_FILE_NAME}
+                echo "NUMOFBKUPTOKEEP=60" >> /tmp/${PROPS_FILE_NAME}
+                echo "ICD_AUTH_KEY=${ICD_AUTH_KEY}" >> /tmp/${PROPS_FILE_NAME}
+
+                echo ""
+                echo "Copy ${PROPS_FILE_NAME} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc cp /tmp/${PROPS_FILE_NAME} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${PROPS_FILE_NAME} -c db2u || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "sudo mv /tmp/${PROPS_FILE_NAME} /mnt/backup/bin/${PROPS_FILE_NAME}" db2inst1 || exit $?
+
+                SET_COS_STORAGE_SH_PATH="${INSTHOME}/Managed/Set_DB_COS_Storage.sh"
+
+                echo ""
+                echo "Executing ${SET_COS_STORAGE_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SET_COS_STORAGE_SH_PATH} | tee /tmp/setcosstorage.log" db2inst1 || exit $?
+
+                CHECK_COS_STORAGE_SH_PATH="CheckCOS.sh"
+                echo ""
+                echo "Executing ${INSTHOME}/bin/CheckCOS.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | tee /tmp/checkcos.log" db2inst1 || exit $?
+
+                echo ""
+                echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+
+                DROP_TEMPTS="/tmp/db2-scripts/dropTempts.sh"
+                echo ""
+                echo "Executing  file ${DROP_TEMPTS} on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${DROP_TEMPTS} | tee /tmp/dropTempts.log" db2inst1 || exit $?
+
+                echo ""
+                echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+              fi
 
       restartPolicy: Never
 
@@ -552,4 +732,9 @@ spec:
             secretName: "db2u-certificate-{{ .Values.db2_instance_name }}"
             defaultMode: 420
             optional: false
+{{- if .Values.db2_backup_bucket_name }}
+        - name: db2-scripts
+          configMap:
+            name: db2u-scripts-{{ .Values.db2_instance_name }}-configmap
+{{- end }}
   backoffLimit: 4

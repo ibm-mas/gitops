@@ -1,0 +1,122 @@
+{{ $aws_secret := "aws"}}
+{{ $sa_name    :=  "postsync-custom-sa-update-sm-sa" }}
+{{- range $custom_sa_name, $custom_sa_role := $.Values.custom_sa_details }}
+{{- $prefix := printf "%s-token" $custom_sa_name }}
+{{- range $index, $secret := (lookup "v1" "Secret" $.Values.custom_sa_namespace "").items }}
+{{- if (hasPrefix $prefix $secret.metadata.name) }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Generate the job name by suffixing with a hash of all chart values
+  # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes
+  # Any change to cluster config will trigger a rerun of the job.
+  # The job is idempotent and quick so no real harm in running it when we don't actually need to.
+  # The v1 in the name allows use to change this if there is a modification needed that is not in the yaml
+  name: postsync-custom-sa-update-sm-job-v1-{{ $custom_sa_name }}-{{ omit $.Values "junitreporter" | toYaml | adler32sum }}
+  namespace: {{ $.Values.custom_sa_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "066"
+{{- if $.Values.custom_labels }}
+  labels:
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if $.Values.custom_labels }}
+    metadata:
+      labels:
+{{ $.Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      ttlSecondsAfterFinished: null
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ $.Values.account_id }}
+            - name: REGION_ID
+              value: {{ $.Values.region_id }}
+            - name: CLUSTER_ID
+              value: {{ $.Values.cluster_id }}
+            - name: CUSTOM_SA_NAME
+              value: {{ $custom_sa_name }}
+            - name: CUSTOM_SA_SECRET_NAME
+              value: {{ $secret.metadata.name }}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+            - name: {{ $secret.metadata.name }}
+              mountPath: "/etc/mas/creds/{{ $secret.metadata.name }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
+              source /mascli/functions/gitops_utils
+
+              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              echo "Fetching token from ${CUSTOM_SA_SECRET_NAME} Secret for Service Account ${CUSTOM_SA_NAME}"
+              export CUSTOM_SA_SECRET_TOKEN=$(cat /etc/mas/creds/${CUSTOM_SA_SECRET_NAME}/token)
+              if [[ -z "${CUSTOM_SA_SECRET_TOKEN}" ]]; then
+                echo "Failed to fetch token"
+                exit 1
+              fi
+              
+              echo "Fetching cluster API URL for cluster ${CLUSTER_ID}"
+              rc=0
+              CLUSTER_API_URL=$(oc cluster-info | grep https | cut -d'/' -f3 > /tmp/${CLUSTER_ID}; cat -A /tmp/${CLUSTER_ID} | cut -d'^' -f1)
+              if [[ -z "${CLUSTER_API_URL}" ]]; then
+                echo "Failed to fetch cluster API URL"
+                exit 1
+              fi
+
+              # aws configure set aws_access_key_id $SM_AWS_ACCESS_KEY_ID
+              # aws configure set aws_secret_access_key $SM_AWS_SECRET_ACCESS_KEY
+              # aws configure set default.region $REGION_ID
+              # aws configure list
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+              # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}" --tags "${SECRET_TAGS}"
+              SM_SECRET_NAME=${ACCOUNT_ID}/${CLUSTER_ID}/${CUSTOM_SA_NAME}
+              TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-custom-sa-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
+              sm_update_secret ${SM_SECRET_NAME} "{\"cluster\": \"${CLUSTER_ID}\",\"apiurl\":\"https://${CLUSTER_API_URL}\",\"token\":\"${CUSTOM_SA_SECRET_TOKEN}\"}" "${TAGS}"
+
+      restartPolicy: Never
+      serviceAccountName: {{ $sa_name }}
+      volumes:
+        - name: aws
+          secret:
+            secretName: {{ $aws_secret }}
+            defaultMode: 420
+            optional: false
+        - name: {{ $secret.metadata.name }}
+          secret:
+            secretName: {{ $secret.metadata.name }}
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+{{- end }}
+{{- end }}
+{{- end }}

@@ -73,9 +73,13 @@ roleRef:
 
 {{- range $custom_sa_name, $custom_sa_role := $.Values.custom_sa_details }}
 # List secrets from the custom sa namespace
-{{- range $index, $secret := (lookup "v1" "Secret" "" $.Values.custom_sa_namespace).items }}
+{{- range $index, $secret := (lookup "v1" "Secret" $.Values.custom_sa_namespace "").items }}
+{{- printf "Debug: Secret json %s\n" $secret }}
+{{- printf "Debug: Secret name %s\n" $secret.metadata.name }}
 # The secret name has a prefix of the service account name - use this to get the secret name
-{{- if (hasPrefix $secret.metadata.name $custom_sa_name) }}
+{{ $prefix := printf "%s-token" $custom_sa_name }}
+{{- printf "Debug: Prefix is %s\n" $prefix }}
+{{- if (hasPrefix $secret.metadata.name $prefix) }}
 ---
 apiVersion: batch/v1
 kind: Job

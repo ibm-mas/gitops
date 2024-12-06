@@ -1,85 +1,9 @@
-# How to set postsync?
-{{ $aws_secret := "aws"}}
-{{ $role_name  :=  "postsync-custom-sa-update-sm-r" }}
-{{ $sa_name    :=  "postsync-custom-sa-update-sm-sa" }}
-{{ $rb_name    :=  "postsync-custom-sa-update-sm-rb" }}
----
-kind: Secret
-apiVersion: v1
-metadata:
-  name: {{ $aws_secret }}
-  namespace: {{ $.Values.custom_sa_namespace }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "063"
-{{- if $.Values.custom_labels }}
-  labels:
-{{ $.Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-stringData:
-  aws_access_key_id: {{ $.Values.sm_aws_access_key_id | b64enc }}
-  aws_secret_access_key: {{ $.Values.sm_aws_secret_access_key | b64enc }}
-type: Opaque
-
----
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: {{ $sa_name }}
-  namespace: {{ $.Values.custom_sa_namespace }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "063"
-{{- if $.Values.custom_labels }}
-  labels:
-{{ $.Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-
----
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $role_name }}
-  namespace: {{ $.Values.custom_sa_namespace }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "063"
-{{- if $.Values.custom_labels }}
-  labels:
-{{ $.Values.custom_labels | toYaml | indent 4 }}
-{{- end }}    
-rules:
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "watch", "list"]
-
----
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $rb_name }}
-  namespace: {{ $.Values.custom_sa_namespace }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "064"
-{{- if $.Values.custom_labels }}
-  labels:
-{{ $.Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: {{ $sa_name }}
-    namespace: {{ $.Values.custom_sa_namespace }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: {{ $role_name }}
-
 {{- range $custom_sa_name, $custom_sa_role := $.Values.custom_sa_details }}
 # List secrets from the custom sa namespace
 {{- range $index, $secret := (lookup "v1" "Secret" $.Values.custom_sa_namespace "").items }}
-{{- printf "Debug: Secret json %s\n" $secret }}
-{{- printf "Debug: Secret name %s\n" $secret.metadata.name }}
 # The secret name has a prefix of the service account name - use this to get the secret name
-{{ $prefix := printf "%s-token" $custom_sa_name }}
-{{- printf "Debug: Prefix is %s\n" $prefix }}
-{{- if (hasPrefix $secret.metadata.name $prefix) }}
+# {{ $prefix := printf "%s-token" $custom_sa_name }}
+# {{- if (hasPrefix $secret.metadata.name $prefix) }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -92,7 +16,7 @@ metadata:
   name: postsync-custom-sa-update-sm-job-v1-{{ $custom_sa_name }}-{{ omit $.Values "junitreporter" | toYaml | adler32sum }}
   namespace: {{ $.Values.custom_sa_namespace }}
   annotations:
-    argocd.argoproj.io/sync-wave: "065"
+    argocd.argoproj.io/sync-wave: "066"
 {{- if $.Values.custom_labels }}
   labels:
 {{ $.Values.custom_labels | toYaml | indent 4 }}
@@ -105,6 +29,7 @@ spec:
 {{ $.Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
+      ttlSecondsAfterFinished: null
       containers:
         - name: run
           image: quay.io/ibmmas/cli:latest
@@ -178,7 +103,6 @@ spec:
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-custom-sa-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret ${SM_SECRET_NAME} "{\"cluster\": \"${CLUSTER_ID}\",\"apiurl\":\"https://${CLUSTER_API_URL}\",\"token\":\"${CUSTOM_SA_SECRET_TOKEN}\"}" "${TAGS}"
 
-
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}
       volumes:
@@ -193,6 +117,6 @@ spec:
             defaultMode: 420
             optional: false
   backoffLimit: 4
-{{- end }}
+# {{- end }}
 {{- end }}
 {{- end }}

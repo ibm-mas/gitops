@@ -1,0 +1,176 @@
+{{- if (eq .Values.mas_app_id "manage") }}
+{{- if and (.Values.mas_appws_spec.settings.db.upgrade) (.Values.mas_appws_spec.settings.db.upgrade.upgradeType) }}
+{{- if (eq .Values.mas_appws_spec.settings.db.upgrade.upgradeType "onlineUpgrade") }}
+
+{{ $ns        :=  .Values.mas_app_namespace }}
+{{ $prefix := printf "%s-manage-update" .Values.mas_workspace_id}}
+{{ $np_name   := printf "%s-np" $prefix }}
+{{ $role_name :=  printf "%s-role" $prefix }}
+{{ $sa_name   :=  printf "%s-sa" $prefix }}
+{{ $rb_name   :=  printf "%s-rb" $prefix }}
+{{ $job_label :=  printf "%s-job" $prefix }}
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - patch
+    apiGroups:
+      - "apps.mas.ibm.com"
+    resources:
+      - manageworkspaces
+      - manageofflineupgraderequests
+      - manageofflineupgraderequests/status
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "601"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.mas_workspace_id }}-manage-update-v1
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "602"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  schedule: {{ .Values.manage_update_schedule | default "0 0 * * *" }}
+  concurrencyPolicy: Replace
+  suspend: false
+  jobTemplate:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      template:
+        metadata:
+          labels:
+            app: {{ $job_label }}
+        spec:
+          containers:
+            - name: run
+              image: quay.io/ibmmas/cli:latest
+              imagePullPolicy: IfNotPresent
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 512Mi
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+              env:
+                - name: MAS_APP_NAMESPACE
+                  value: {{ .Values.mas_app_namespace }}
+                - name: MAS_INSTANCE_ID
+                  value: {{ .Values.instance_id }}
+                - name: MAS_WORKSPACE_ID
+                  value: {{ .Values.mas_workspace_id }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+
+                  set -e
+                  echo
+                  echo "================================================================================"
+                  echo "Check if we need to set the ManageOfflineUpgradeRequest stage to Requested"
+                  echo "================================================================================"
+                  echo
+
+                  ONLINE_UPDATE_DONE_MSG="Database online upgrade portion is done, waiting for offline request."
+                  MANAGE_DEPLOYMENTREADY_MSG=$(oc get ManageWorkspace -n ${MAS_APP_NAMESPACE} ${MAS_INSTANCE_ID}-${MAS_WORKSPACE_ID} -o=jsonpath="{.status.conditions[?(@.type=='DeploymentReady')].message}")
+                  if [[ $MANAGE_DEPLOYMENTREADY_MSG == *"$ONLINE_UPDATE_DONE_MSG"* ]]; then
+                    echo "Status found is: ${MANAGE_DEPLOYMENTREADY_MSG}"
+                    echo "ManageWorkspace indicates it is ready for offline upgrade, patching manageofflineupgraderequest-${MAS_WORKSPACE_ID} to requested, and removing old status if present"
+                    UPGRADE_REQUEST_STATUS=$(oc get -n ${MAS_APP_NAMESPACE} manageofflineupgraderequest.apps.mas.ibm.com manageofflineupgraderequest-${MAS_WORKSPACE_ID} -o=jsonpath="{.status}")
+                    if [[ -n $UPGRADE_REQUEST_STATUS ]]; then 
+                      oc patch -n ${MAS_APP_NAMESPACE} manageofflineupgraderequest.apps.mas.ibm.com manageofflineupgraderequest-${MAS_WORKSPACE_ID} --subresource status --type=json -p="[{'op': 'remove', 'path': '/status'}]"
+                    fi
+                    oc patch -n ${MAS_APP_NAMESPACE} manageofflineupgraderequests.apps.mas.ibm.com manageofflineupgraderequest-${MAS_WORKSPACE_ID} --type merge -p $'spec:\n stage: requested'
+                    echo "Patch complete"
+                  else
+                    echo "Status found is: ${MANAGE_DEPLOYMENTREADY_MSG}"
+                    echo "The ManageWorkspace Status does not indicate it is ready for offlineupgrade, so do nothing"
+                  fi
+          restartPolicy: Never
+          serviceAccountName: {{ $sa_name }}
+
+
+{{- end }}
+{{- end }}
+{{- end }}

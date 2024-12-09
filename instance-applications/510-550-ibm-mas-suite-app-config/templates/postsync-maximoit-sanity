@@ -5,15 +5,13 @@
 # The control over if these tests run or not is controlled by the `run_sanity_test` boolean in the values
 
 {{ $ns               :=  .Values.mas_app_namespace }}
-{{ $np_name          :=  "postsync-sanity-manage-np" }}
-{{ $role_name        :=  "postsync-sanity-manage-role" }}
-{{ $crole_name       :=  "postsync-verify-manage-crole" }}
-{{ $sa_name          :=  "postsync-sanity-manage-sa" }}
-{{ $rb_name          :=  "postsync-sanity-manage-rb" }}
-{{ $crb_name         :=  "postsync-verify-manage-crb" }}
-{{ $tests_cm_name    :=  "postsync-sanity-tests-manage-cm" }}
-{{ $record_cm_name   :=  "postsync-sanity-tests-manage-record-cm" }}
-{{ $job_name         :=  "postsync-sanity-manage-job" }}
+{{ $np_name          :=  "postsync-sanity-maximoit-np" }}
+{{ $role_name        :=  "postsync-sanity-maximoit-role" }}
+{{ $sa_name          :=  "postsync-sanity-maximoit-sa" }}
+{{ $rb_name          :=  "postsync-sanity-maximoit-rb" }}
+{{ $tests_cm_name    :=  "postsync-sanity-tests-maximoit-cm" }}
+{{ $record_cm_name   :=  "postsync-sanity-tests-maximoit-record-cm" }}
+{{ $job_name         :=  "postsync-sanity-maximoit-job" }}
 
 
 
@@ -119,63 +117,6 @@ roleRef:
 # -------------------------------------
 
 ---
-# -------------------------------------
-# Manage Verification tests need to be able to get jdbc and superuser credentials from Core
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $crole_name }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "600"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-  - verbs:
-      - get
-      - list
-    apiGroups:
-      - "apps.mas.ibm.com"
-      - "route.openshift.io"
-      - "config.mas.ibm.com"
-      - "core.mas.ibm.com"
-      - ""
-    resources:
-      - manageworkspace
-      - manageapp
-      - manageworkspaces
-      - manageapps
-      - secrets
-      - routes
-      - suites
-
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $crb_name }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "601"
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: {{ $sa_name }}
-    namespace: {{ $ns }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ $crole_name }}
-# -------------------------------------
-
----
 kind: ConfigMap
 apiVersion: v1
 metadata:
@@ -201,1943 +142,1938 @@ data:
     urllib3==1.26.18
   tests.py: |-
 
-from kubernetes import client,config
-from kubernetes.client import Configuration
-from openshift.dynamic import DynamicClient
-import pytest
-import os
-import urllib3
-import requests
-import certifi
-import random
-import logging
-import tempfile
-import base64
-from assertpy import assert_that
-import time
-import string
+    from kubernetes import client,config
+    from kubernetes.client import Configuration
+    from openshift.dynamic import DynamicClient
+    import pytest
+    import os
+    import urllib3
+    import requests
+    import certifi
+    import random
+    import logging
+    import tempfile
+    import base64
+    from assertpy import assert_that
+    import time
+    import string
 
 
-logger = logging.getLogger()
-authToken=""
-MANAGE_URL = ""
-MAS_URL = ""
-MAS_APIURL = ""
-MAS_ADMIN_USERNAME = "" 
-MAS_ADMIN_PASSWORD = ""
-admin_api_key = ""
-user_api_key = ""
-user_id="maxadmin"  #admin user
-nextval = ""
-schema = ""
-manage_user="saasuser"+str(random.randint(0,10000))
-manage_user_password=manage_user+str(random.randint(0,100))
-asset="sanity"+str(random.randint(0,1000))
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-session = requests.Session()
+    logger = logging.getLogger()
+    authToken=""
+    MANAGE_URL = ""
+    admin_api_key = ""
+    user_api_key = ""
+    user_id="maxadmin"  #admin user
+    nextval = ""
+    schema = ""
+    manage_user="saasuser"+str(random.randint(0,10000))
+    manage_user_password=manage_user+str(random.randint(0,100))
+    asset="sanity"+str(random.randint(0,1000))
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    session = requests.Session()
 
-mas_instance_id = os.getenv("MAS_INSTANCE_ID")
-if mas_instance_id is None:
-    raise Exception(f"Required MAS_INSTANCE_ID environment variable is not set")
+    mas_instance_id = os.getenv("MAS_INSTANCE_ID")
+    if mas_instance_id is None:
+        raise Exception(f"Required MAS_INSTANCE_ID environment variable is not set")
 
-# e.g. "masdev"
-mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
-if mas_workspace_id is None:
-    raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
+    # e.g. "masdev"
+    mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
+    if mas_workspace_id is None:
+        raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
 
-manageNamespace = f"mas-{mas_instance_id}-manage"
-masNamespace = f"mas-{mas_instance_id}-core"
-manage_route_name = f"{mas_instance_id}-manage-{mas_workspace_id}"
+    manageNamespace = f"mas-{mas_instance_id}-manage"
+    masNamespace = f"mas-{mas_instance_id}-core"
+    manage_route_name = f"{mas_instance_id}-manage-{mas_workspace_id}"
 
-@pytest.fixture(scope="session")
-def dyn_client():
-    if "KUBERNETES_SERVICE_HOST" in os.environ:
-        config.load_incluster_config()
-        k8s_config = Configuration.get_default_copy()
-        k8s_client = client.ApiClient(configuration=k8s_config)
-    else:
-        k8s_client = config.new_client_from_config()
-
-    dyn_client = DynamicClient(k8s_client)
-    dyn_client.namespace = manageNamespace
-    yield dyn_client
-
-@pytest.fixture(scope="session")
-def dyn_client_mas_core():
-    if "KUBERNETES_SERVICE_HOST" in os.environ:
-        config.load_incluster_config()
-        k8s_config = Configuration.get_default_copy()
-        k8s_client = client.ApiClient(configuration=k8s_config)
-    else:
-        k8s_client = config.new_client_from_config()
-
-    dyn_client = DynamicClient(k8s_client)
-    dyn_client.namespace = masNamespace
-    yield dyn_client
-
-@pytest.fixture(scope="session")
-def v1_manageworkspace(dyn_client):
-    yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
-
-@pytest.fixture(scope="session")
-def v1_manageapp(dyn_client):
-    yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageApp')
-
-@pytest.fixture(scope="session")
-def mange_workspace_reconciled_version(mange_workspace_cr):
-    try:
-        yield mange_workspace_cr['status']['versions']['reconciled']
-    except KeyError as e:
-        assert False, f"Unable to determine ManageWorkspace reconciled version. Error details: {e}"
-
-@pytest.fixture(scope="session")
-def manage_version(mange_app_cr):
-    try:
-        yield mange_app_cr['status']['components']['manage']['version']
-    except KeyError as e:
-        assert False, f"Unable to determine ManageApp component version. Error details: {e}"
-
-@pytest.fixture(scope="session")
-def mange_workspace_cr(v1_manageworkspace):
-    yield v1_manageworkspace.get(namespace=manageNamespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
-
-@pytest.fixture(scope="session")
-def mange_app_cr(v1_manageapp):
-    yield v1_manageapp.get(namespace=manageNamespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
-
-@pytest.fixture(scope="session")
-def v1_secrets(dyn_client):
-    yield dyn_client.resources.get(api_version='v1', kind='Secret')
-
-@pytest.fixture(scope="session")
-def v1_routes(dyn_client):
-    yield dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
-
-@pytest.fixture(scope="session")
-def manage_route(v1_routes):
-    yield v1_routes.get(name=manage_route_name, namespace=manageNamespace)
-
-@pytest.fixture(scope="session")
-def manage_host(manage_route):
-    try:
-        yield manage_route['spec']['host']
-    except KeyError as e:
-        assert False, f"Unable to determine Manage host; spec.host key not present in {manage_route_name}/{manageNamespace}: {manage_route}. Error details: {e}"
-
-@pytest.fixture(scope="session")
-def manage_host_ca_filepath(manage_route):
-
-  # Read the certificate field from the Manage Route. 
-  # This may include CA certificates that we need in order to trust the certificates presented by the external Manage endpoint.
-  try:
-    manage_route_certificate = manage_route['spec']['tls']['certificate']
-  except KeyError as e:
-    pass
-
-  # Read the caCertificate field from the Manage Route. 
-  # This may include CA certificates that we need in order to trust the certificates presented by the external Manage endpoint.
-  try:
-    manage_route_caCertificate = manage_route['spec']['tls']['caCertificate']
-  except KeyError as e:
-    pass
-
-  # Read the destinationCACertificate field from the Manage Route. 
-  # This may include CA certificates that we need in order to trust the certificates presented by the internal Manage services.
-  try:
-    manage_route_destinationCACertificate = manage_route['spec']['tls']['destinationCACertificate']
-  except KeyError as e:
-    pass
-
-  # Load default CA bundle. This will include certs for well-known CAs. This ensures that we will
-  # trust the certificates presented by the external Manage endpoints when MAS is configured to use
-  # an external frontend like CIS.
-  with open(certifi.where(), 'rb') as default_ca:
-    default_ca_content = default_ca.read()
-
-  # Combine all of the above into a single .pem file that we can use when issuing HTTP requests
-  chain_file = tempfile.NamedTemporaryFile(delete=False)
-  try:
-    
-    if manage_route_certificate:
-      chain_file.write(manage_route_certificate.encode())
-    
-    if manage_route_caCertificate:
-      chain_file.write(manage_route_certificate.encode())
-
-    if manage_route_destinationCACertificate:
-      chain_file.write(manage_route_destinationCACertificate.encode())
-
-    chain_file.write(default_ca_content)
-
-    chain_file.flush()
-    chain_file.close()
-
-    yield chain_file.name
-
-  finally:
-    os.remove(chain_file.name)
-
-
-# Obtain Manage Details
-def test_getManageComponents(dyn_client):
-    manageWorkspaces = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
-    try:
-        manageWorkspaceInstance = manageWorkspaces.get(name=f'{mas_instance_id}-{mas_workspace_id}', namespace=manageNamespace)
-    except Exception:
-        logger.info(f'ApiException: Failed to retrieve {mas_instance_id}-{mas_workspace_id} instance of ManageWorkspace in namespace {manageNamespace}')
-    manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
-    logger.info(f'{manageComponentListInStr}') # like this: base,health,nuclear
-
-def test_getClusterInfo(dyn_client,dyn_client_mas_core):
-
-    # Manage Workspace and Credentials
-    manageDBCredential = f'jdbc-mas-{mas_instance_id}-{mas_workspace_id}-manage-credentials'
-    manageWorkspaceCR = None
-
-    # -------------------------------
-    # Manage Workspace CR
-    # -------------------------------
-    try:
-        manageWorkspaceCRD = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
-        manageWorkspaceCR = manageWorkspaceCRD.get(name=f'{mas_instance_id}-{mas_workspace_id}', namespace=manageNamespace)
-    except Exception as ex:
-        logger.info(f"######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
-
-    # -------------------------------
-    # Manage Deployment DB Info
-    # -------------------------------
-    try:
-        manageDeployments = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageDeployment')
-        manageDeploymentInstance = manageDeployments.get(name='manage-maxinst', namespace=manageNamespace)
-        dbDriver = manageDeploymentInstance['spec']['db']['maximoDBdriver']
-        dbSchema = manageDeploymentInstance['spec']['db']['maximoDBschema']
-    except Exception as ex:
-        logger.info(f"ApiException: Failed to retrieve manage-maxinst instance in namespace {manageNamespace}: {str(ex)}")
-
-    # -------------------------------
-    # Obtain MAS URL
-    # -------------------------------
-    masRouteDetails = dyn_client_mas_core.resources.get(api_version='route.openshift.io/v1', kind='Route')
-    masUrl = masRouteDetails.get(name=f'{mas_instance_id}-admin', namespace=masNamespace)
-    masapiUrl = masRouteDetails.get(name=f'{mas_instance_id}-api', namespace=masNamespace)
-    # -------------------------------
-    # Manage URL (OpenShift Route)
-    # -------------------------------
-    try:
-        manageRouteObject = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
-        manageRouteDetails = manageRouteObject.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=manageNamespace)
-        manageUrl = manageRouteDetails.spec.host
-    except Exception as e:
-        if e.status == 404:
-            logger.info(f"Unable to find route {mas_instance_id}-manage-{mas_workspace_id} in {manageNamespace}")
+    @pytest.fixture(scope="session")
+    def dyn_client():
+        if "KUBERNETES_SERVICE_HOST" in os.environ:
+            config.load_incluster_config()
+            k8s_config = Configuration.get_default_copy()
+            k8s_client = client.ApiClient(configuration=k8s_config)
         else:
-            logger.info(f"Error retrieving route: {str(e)}")
+            k8s_client = config.new_client_from_config()
 
-    global MAS_ADMIN_USERNAME, MAS_ADMIN_PASSWORD, MANAGE_URL, MAS_URL, MAS_APIURL
-    MAS_URL=f"https://{masUrl.spec.host}{masUrl.spec.path}"
-    MAS_APIURL=f"https://{masapiUrl.spec.host}{masapiUrl.spec.path}"
-    if manageUrl:
-        #MANAGE_URL = f"https://{manageUrl}"
-        #MANAGE_URL="https://127.0.0.1:9080"    # Use when run from Local. Do port forwarding...
-        MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'  # Use for cluster
-        
-    #global MANAGE_JDBC_URL, MANAGE_JDBC_USERNAME, MANAGE_JDBC_PASSWORD, MANAGE_JDBC_DRIVER, MANAGE_JDBC_SCHEMA, MANAGE_JDBC_CERT
+        dyn_client = DynamicClient(k8s_client)
+        dyn_client.namespace = manageNamespace
+        yield dyn_client
 
-    # -------------------------------
-    # Obtain Superuser credentials
-    # -------------------------------
-    secrets = dyn_client_mas_core.resources.get(api_version='v1', kind='Secret')
-    superuserCredentials = secrets.get(mas_instance_id+'-credentials-superuser', masNamespace)
-    MAS_ADMIN_USERNAME_ENCODE = superuserCredentials.data.username
-    MAS_ADMIN_USERNAME_BYTE = base64.b64decode(str(MAS_ADMIN_USERNAME_ENCODE))
-    MAS_ADMIN_USERNAME = MAS_ADMIN_USERNAME_BYTE.decode("utf-8")
-    MAS_ADMIN_PASSWORD_DECODE = superuserCredentials.data.password
-    MAS_ADMIN_PASSWORD_BYTE = base64.b64decode(str(MAS_ADMIN_PASSWORD_DECODE))
-    MAS_ADMIN_PASSWORD = MAS_ADMIN_PASSWORD_BYTE.decode("utf-8")
+    @pytest.fixture(scope="session")
+    def v1_manageworkspace(dyn_client):
+        yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
 
+    @pytest.fixture(scope="session")
+    def v1_manageapp(dyn_client):
+        yield dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageApp')
 
-
-@pytest.fixture(scope="session")
-def client_cert(dyn_client):
-    certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
-    certSecret = certSecretObj.get(
-        f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
-    )
-    internal_cert = certSecret.data["tls.crt"]
-    internal_key = certSecret.data["tls.key"]
-    decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
-    decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
-
-    with open("internal.crt", "w") as f:
-        f.write(decoded_internal_cert)
-    with open("internal.key", "w") as f:
-        f.write(decoded_internal_key)
-    client_cert = ("internal.crt", "internal.key")
-    
-    with open("internal.crt", "r") as f:
-        cert_content = f.read()
-        logger.info("Contents of cert:")
-        logger.info(cert_content)
-    with open("internal.key", "r") as f:
-        cert_content = f.read()
-        logger.info("Contents of cert:")
-        logger.info(cert_content)
-    return client_cert
-
-def test_generate_api_key_for_new_added_user(client_cert, manage_host_ca_filepath):
-    user_id="maxadmin"
-    global user_api_key
-    #user_id=manage_user
-    api_key = get_api_key(user_id, client_cert, session, manage_host_ca_filepath)
-    if api_key is None:
-        url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
-        logger.info("generate_api_key_URL: " + url)
-        logger.info("generate_api_key_CERT" + str(client_cert))
-        resp = ""
+    @pytest.fixture(scope="session")
+    def mange_workspace_reconciled_version(mange_workspace_cr):
         try:
-            # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert, verify=manage_host_ca_filepath)
-            headers = {'content-type': 'application/json'}
-            payload = {'expiration': '-1', 'userid': user_id}
-            resp = session.post(url, headers=headers,
-                                json=payload, cert=client_cert, timeout=600, verify=manage_host_ca_filepath)
-            if resp.status_code <= 201:
-                api_key = get_api_key(user_id, client_cert, session, manage_host_ca_filepath)
-                logger.info(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
-                user_api_key = api_key
-                return api_key
+            yield mange_workspace_cr['status']['versions']['reconciled']
+        except KeyError as e:
+            assert False, f"Unable to determine ManageWorkspace reconciled version. Error details: {e}"
+
+    @pytest.fixture(scope="session")
+    def manage_version(mange_app_cr):
+        try:
+            yield mange_app_cr['status']['components']['manage']['version']
+        except KeyError as e:
+            assert False, f"Unable to determine ManageApp component version. Error details: {e}"
+
+    @pytest.fixture(scope="session")
+    def mange_workspace_cr(v1_manageworkspace):
+        yield v1_manageworkspace.get(namespace=manageNamespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}, mas.ibm.com/workspaceId={mas_workspace_id}").items[0]
+
+    @pytest.fixture(scope="session")
+    def mange_app_cr(v1_manageapp):
+        yield v1_manageapp.get(namespace=manageNamespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
+
+    @pytest.fixture(scope="session")
+    def v1_secrets(dyn_client):
+        yield dyn_client.resources.get(api_version='v1', kind='Secret')
+
+    @pytest.fixture(scope="session")
+    def v1_routes(dyn_client):
+        yield dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+
+    @pytest.fixture(scope="session")
+    def manage_route(v1_routes):
+        yield v1_routes.get(name=manage_route_name, namespace=manageNamespace)
+
+    @pytest.fixture(scope="session")
+    def manage_host(manage_route):
+        try:
+            yield manage_route['spec']['host']
+        except KeyError as e:
+            assert False, f"Unable to determine Manage host; spec.host key not present in {manage_route_name}/{manageNamespace}: {manage_route}. Error details: {e}"
+
+    @pytest.fixture(scope="session")
+    def manage_host_ca_filepath(manage_route):
+
+      # Read the certificate field from the Manage Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the external Manage endpoint.
+      try:
+        manage_route_certificate = manage_route['spec']['tls']['certificate']
+      except KeyError as e:
+        pass
+
+      # Read the caCertificate field from the Manage Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the external Manage endpoint.
+      try:
+        manage_route_caCertificate = manage_route['spec']['tls']['caCertificate']
+      except KeyError as e:
+        pass
+
+      # Read the destinationCACertificate field from the Manage Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the internal Manage services.
+      try:
+        manage_route_destinationCACertificate = manage_route['spec']['tls']['destinationCACertificate']
+      except KeyError as e:
+        pass
+
+      # Load default CA bundle. This will include certs for well-known CAs. This ensures that we will
+      # trust the certificates presented by the external Manage endpoints when MAS is configured to use
+      # an external frontend like CIS.
+      with open(certifi.where(), 'rb') as default_ca:
+        default_ca_content = default_ca.read()
+
+      # Combine all of the above into a single .pem file that we can use when issuing HTTP requests
+      chain_file = tempfile.NamedTemporaryFile(delete=False)
+      try:
+        
+        if manage_route_certificate:
+          chain_file.write(manage_route_certificate.encode())
+        
+        if manage_route_caCertificate:
+          chain_file.write(manage_route_certificate.encode())
+
+        if manage_route_destinationCACertificate:
+          chain_file.write(manage_route_destinationCACertificate.encode())
+
+        chain_file.write(default_ca_content)
+
+        chain_file.flush()
+        chain_file.close()
+
+        yield chain_file.name
+
+      finally:
+        os.remove(chain_file.name)
+
+
+    # Obtain Manage Details
+    def test_getManageComponents(dyn_client):
+        manageWorkspaces = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+        try:
+            manageWorkspaceInstance = manageWorkspaces.get(name=f'{mas_instance_id}-{mas_workspace_id}', namespace=manageNamespace)
+        except Exception:
+            logger.info(f'ApiException: Failed to retrieve {mas_instance_id}-{mas_workspace_id} instance of ManageWorkspace in namespace {manageNamespace}')
+        manageComponentListInStr = ",".join(list(manageWorkspaceInstance['spec']['components'].keys()))
+        logger.info(f'{manageComponentListInStr}') # like this: base,health,nuclear
+
+    def test_getClusterInfo(dyn_client,dyn_client_mas_core):
+
+        # Manage Workspace and Credentials
+        manageDBCredential = f'jdbc-mas-{mas_instance_id}-{mas_workspace_id}-manage-credentials'
+        manageWorkspaceCR = None
+
+        # -------------------------------
+        # Manage Workspace CR
+        # -------------------------------
+        try:
+            manageWorkspaceCRD = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageWorkspace')
+            manageWorkspaceCR = manageWorkspaceCRD.get(name=f'{mas_instance_id}-{mas_workspace_id}', namespace=manageNamespace)
+        except Exception as ex:
+            logger.info(f"######### ApiException: ManageWorkspace is not available or was not found. Check it out: {str(ex)}")
+
+        # -------------------------------
+        # Manage Deployment DB Info
+        # -------------------------------
+        try:
+            manageDeployments = dyn_client.resources.get(api_version='apps.mas.ibm.com/v1', kind='ManageDeployment')
+            manageDeploymentInstance = manageDeployments.get(name='manage-maxinst', namespace=manageNamespace)
+            dbDriver = manageDeploymentInstance['spec']['db']['maximoDBdriver']
+            dbSchema = manageDeploymentInstance['spec']['db']['maximoDBschema']
+        except Exception as ex:
+            logger.info(f"ApiException: Failed to retrieve manage-maxinst instance in namespace {manageNamespace}: {str(ex)}")
+
+        # -------------------------------
+        # Manage URL (OpenShift Route)
+        # -------------------------------
+        try:
+            manageRouteObject = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+            manageRouteDetails = manageRouteObject.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=manageNamespace)
+            manageUrl = manageRouteDetails.spec.host
+        except Exception as e:
+            if e.status == 404:
+                logger.info(f"Unable to find route {mas_instance_id}-manage-{mas_workspace_id} in {manageNamespace}")
             else:
-                logger.info("Failed to Create APIKEY: " + user_id)
+                logger.info(f"Error retrieving route: {str(e)}")
+
+        global MANAGE_URL
+        if manageUrl:
+            MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'  # Use for cluster
+            
+        
+    @pytest.fixture(scope="session")
+    def client_cert(dyn_client):
+        certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
+        certSecret = certSecretObj.get(
+            f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
+        )
+        internal_cert = certSecret.data["tls.crt"]
+        internal_key = certSecret.data["tls.key"]
+        decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
+        decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
+
+        with open("internal.crt", "w") as f:
+            f.write(decoded_internal_cert)
+        with open("internal.key", "w") as f:
+            f.write(decoded_internal_key)
+        client_cert = ("internal.crt", "internal.key")
+        
+        with open("internal.crt", "r") as f:
+            cert_content = f.read()
+            logger.info("Contents of cert:")
+            logger.info(cert_content)
+        with open("internal.key", "r") as f:
+            cert_content = f.read()
+            logger.info("Contents of cert:")
+            logger.info(cert_content)
+        return client_cert
+
+    def test_generate_api_key_for_new_added_user(client_cert, manage_host_ca_filepath):
+        user_id="maxadmin"
+        global user_api_key
+        #user_id=manage_user
+        api_key = get_api_key(user_id, client_cert, session, manage_host_ca_filepath)
+        if api_key is None:
+            url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
+            logger.info("generate_api_key_URL: " + url)
+            logger.info("generate_api_key_CERT" + str(client_cert))
+            resp = ""
+            try:
+                # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert, verify=manage_host_ca_filepath)
+                headers = {'content-type': 'application/json'}
+                payload = {'expiration': '-1', 'userid': user_id}
+                resp = session.post(url, headers=headers,
+                                    json=payload, cert=client_cert, timeout=600, verify=manage_host_ca_filepath)
+                if resp.status_code <= 201:
+                    api_key = get_api_key(user_id, client_cert, session, manage_host_ca_filepath)
+                    logger.info(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
+                    user_api_key = api_key
+                    return api_key
+                else:
+                    logger.info("Failed to Create APIKEY: " + user_id)
+                    logger.info(resp.status_code)
+                    logger.info(resp.text)
+                    return None
+
+            except Exception as ex:
+                logger.info("Something wrong here")
+                logger.info(ex)
+        else:
+            logger.info(f"RETRIEVED MXAPIKEY for {user_id} is: " + api_key)
+            user_api_key = api_key
+            return api_key
+        
+    def test_get_api_key_for_admin(client_cert, manage_host_ca_filepath):
+        global admin_api_key
+        api_key = get_api_key(user_id, client_cert, session, manage_host_ca_filepath)
+        if api_key is None:
+            url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
+            logger.info("generate_api_key_URL: " + url)
+            logger.info("generate_api_key_CERT" + str(client_cert))
+            resp = ""
+            try:
+                # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert, verify=manage_host_ca_filepath)
+                headers = {'content-type': 'application/json'}
+                payload = {'expiration': '-1', 'userid': user_id}
+                resp = session.post(url, headers=headers,
+                                    json=payload, cert=client_cert, timeout=600, verify=manage_host_ca_filepath)
+                if resp.status_code <= 201:
+                    api_key = get_api_key(user_id, client_cert, session, manage_host_ca_filepath)
+                    logger.info(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
+                    admin_api_key = api_key
+                    return api_key
+                else:
+                    logger.info("Failed to Create APIKEY: " + user_id)
+                    logger.info(resp.status_code)
+                    logger.info(resp.text)
+                    return None
+
+            except Exception as ex:
+                logger.info("Something wrong here")
+                logger.info(ex)
+        else:
+            logger.info(f"RETRIVED MXAPIKEY for {user_id} is: " + api_key)
+            admin_api_key = api_key
+            return api_key
+
+
+    def get_api_key(user_id, client_cert, session, manage_host_ca_filepath):
+        api_key = None
+        try:
+            get_api_key_url=f'''{MANAGE_URL}/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22{user_id}%22'''
+            logger.info("get APIKEY URL: " + get_api_key_url)
+            resp = session.get(get_api_key_url, cert=client_cert, timeout=600, verify=manage_host_ca_filepath)
+            if resp.status_code == 200:
+                data = resp.json()
+                api_key = data['member'][0]['apikey']
+            else:
+                logger.info("Failed to Get APIKEY for: " + user_id)
                 logger.info(resp.status_code)
                 logger.info(resp.text)
-                return None
-
         except Exception as ex:
-            logger.info("Something wrong here")
             logger.info(ex)
-    else:
-        logger.info(f"RETRIEVED MXAPIKEY for {user_id} is: " + api_key)
-        user_api_key = api_key
-        return api_key
-    
-def test_get_api_key_for_admin(client_cert, manage_host_ca_filepath):
-    global admin_api_key
-    api_key = get_api_key(user_id, client_cert, session, manage_host_ca_filepath)
-    if api_key is None:
-        url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
-        logger.info("generate_api_key_URL: " + url)
-        logger.info("generate_api_key_CERT" + str(client_cert))
-        resp = ""
-        try:
-            # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert, verify=manage_host_ca_filepath)
-            headers = {'content-type': 'application/json'}
-            payload = {'expiration': '-1', 'userid': user_id}
-            resp = session.post(url, headers=headers,
-                                json=payload, cert=client_cert, timeout=600, verify=manage_host_ca_filepath)
-            if resp.status_code <= 201:
-                api_key = get_api_key(user_id, client_cert, session, manage_host_ca_filepath)
-                logger.info(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
-                admin_api_key = api_key
-                return api_key
-            else:
-                logger.info("Failed to Create APIKEY: " + user_id)
-                logger.info(resp.status_code)
-                logger.info(resp.text)
-                return None
-
-        except Exception as ex:
-            logger.info("Something wrong here")
-            logger.info(ex)
-    else:
-        logger.info(f"RETRIVED MXAPIKEY for {user_id} is: " + api_key)
-        admin_api_key = api_key
         return api_key
 
+       #Variables   
+    @pytest.fixture
+    def random_string():
+        return ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
 
-def get_api_key(user_id, client_cert, session, manage_host_ca_filepath):
-    api_key = None
-    try:
-        get_api_key_url=f'''{MANAGE_URL}/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22{user_id}%22'''
-        logger.info("get APIKEY URL: " + get_api_key_url)
-        resp = session.get(get_api_key_url, cert=client_cert, timeout=600, verify=manage_host_ca_filepath)
-        if resp.status_code == 200:
-            data = resp.json()
-            api_key = data['member'][0]['apikey']
+    @pytest.fixture
+    def fetch_system_info():
+        response = requests.get(MANAGE_URL + '/maximo/api/systeminfo', headers=HEADERS, verify=manage_host_ca_filepath)
+        return response
+
+    @pytest.fixture
+    def incident_desc(random_string):
+        return 'Incident_' + random_string
+
+    @pytest.fixture
+    def incident_long_desc(random_string):
+        return 'Incident_longdesc_' + random_string   
+
+    @pytest.fixture    
+    def service_name(random_string):
+        return 'Service_'+ random_string
+
+    @pytest.fixture    
+    def service_desc(random_string):
+        return 'SERVICE_' + random_string
+
+    service_provision= "In-house"
+    owned_by= "MAXADMIN"
+
+    @pytest.fixture
+    def problem_desc(random_string):
+        return 'Problem_' + random_string
+
+    @pytest.fixture
+    def problem_long_desc(random_string):
+        return 'Problem_longdesc_'+ random_string
+
+    @pytest.fixture
+    def sr_desc(random_string):
+        return 'ServiceRequest_' + random_string
+        
+    @pytest.fixture
+    def sr_long_desc(random_string):
+        return 'ServiceRequest_' + random_string
+        
+    @pytest.fixture
+    def bb_subject(random_string):
+        return 'BulletinBoard_' + random_string
+        
+    @pytest.fixture
+    def bb_message(random_string):
+        return 'BulletinBoardMessage_' + random_string
+        
+    @pytest.fixture
+    def bb_expiredate():
+        return "2030-10-30T05:11:19-07:00"
+        
+    @pytest.fixture
+    def assetnum(random_string):
+        return 'Asset_' + random_string
+        
+    @pytest.fixture
+    def asset_desc(random_string):
+        return 'Asset_Desc_' + random_string
+        
+    siteid="BEDFORD"
+    @pytest.fixture
+    def change_request_desc(random_string):
+        return 'Change_'+ random_string
+        
+    @pytest.fixture
+    def change_request_long_desc(random_string):
+        return 'Change_longdesc_'+ random_string
+        
+    @pytest.fixture
+    def solution_desc(random_string):
+        return 'Solution_' + random_string
+        
+    @pytest.fixture
+    def tk_template_desc(random_string):
+        return 'TK_Template_'+ random_string   
+        
+    # Self Serve Variables
+    @pytest.fixture
+    def ticket_desc(random_string):
+        return 'Ticket_'+ random_string 
+
+    # Headers for Create Service API requests
+    HEADERS = {
+        'Accept': 'application/json',
+        'apikey': user_api_key
+    }
+
+    # Headers for API Update requests
+    HEADERS_UPDATE = {
+        'Accept': 'application/json',
+        'apikey': user_api_key,
+        'properties': '*',
+        'x-method-override': 'PATCH',
+        'patchtype': 'MERGE',
+        'Content-Type': 'application/json'
+        
+    }
+
+    #**************Function Used*******************
+    #Generate a random service name using lowercase letters.
+    def generate_service_name(length=20):
+        random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
+        service_name = f"Service_{random_suffix}".upper() 
+        print("ServiceName:",service_name)
+        return service_name
+            
+    def create_service(manage_host_ca_filepath):
+        service_name=generate_service_name()
+        payload = {
+            "spi:service_name": service_name,
+            "spi:description": "Python_service_description",
+            "spi:service_provision": "In-house",
+            "spi:status": "ACTIVE"
+        }      
+        # Create the service
+        response = requests.post(f"{MANAGE_URL}/maximo/api/os/cduiserviceview", json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
+        print("Response Code in service Craete function",response.status_code)
+        assert response.status_code == 201, "Failed to create service."
+        print("Service created successfully.")
+        return service_name 
+        
+    def get_service_info(service_name,manage_host_ca_filepath):
+        # Validate the service creation
+        res = requests.get(
+            f"{MANAGE_URL}/maximo/api/os/cduiserviceview?oslc.select=*&oslc.where=service_name=\"{service_name}\"",
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )    
+        response_data = res.json()    
+        assert response_data['rdfs:member'], "No service found with the given name."
+        res_service_name = response_data['rdfs:member'][0]['spi:service_name']
+        print("Response Service Name after service creation:", res_service_name)
+        assert res_service_name == service_name.upper(), "Service name does not match the expected name."
+        print("Service created with the same name.")
+        
+        # Extracting the value from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0]['rdf:about']
+        last_segment = rdf_about_url.split('/')[-1]  # Get the last segment of the URL
+        print('Value extracted from "rdf:about":', last_segment)
+        
+        # Extract SVID of Service
+        member = response_data["rdfs:member"][0]
+        serviceViewId = member["spi:svid"]
+        print("Service View ID:", serviceViewId)
+        
+        # Return the last segment and service view ID
+        return last_segment, serviceViewId 
+        
+    # Function to create incident
+    def create_incident(incident_desc, incident_long_desc,manage_host_ca_filepath):
+        payload = {
+            "spi:status": "NEW",
+            "spi:class": "INCIDENT",
+            "spi:description": incident_desc,
+            "spi:description_longdescription": incident_long_desc,
+            "spi:class_description": "Incident"
+        }
+
+        # Create the incident via API POST request
+        response = requests.post(MANAGE_URL + '/maximo/api/os/cduiincident?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
+        # Assert that the response status code is as expected (201 for success)
+        assert response.status_code == 201, f"Expected status code 201, but got {response.status_code}. Response: {response.text}"
+        
+        if response.status_code == 201:
+            print("Incident created successfully.")
         else:
-            logger.info("Failed to Get APIKEY for: " + user_id)
-            logger.info(resp.status_code)
-            logger.info(resp.text)
-    except Exception as ex:
-        logger.info(ex)
-    return api_key
-
-   #Variables   
-@pytest.fixture
-def random_string():
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
-
-@pytest.fixture
-def fetch_system_info():
-    response = requests.get(MANAGE_URL + '/maximo/api/systeminfo', headers=HEADERS, verify=manage_host_ca_filepath)
-    return response
-
-@pytest.fixture
-def incident_desc(random_string):
-    return 'Incident_' + random_string
-
-@pytest.fixture
-def incident_long_desc(random_string):
-    return 'Incident_longdesc_' + random_string   
-
-@pytest.fixture    
-def service_name(random_string):
-    return 'Service_'+ random_string
-
-@pytest.fixture    
-def service_desc(random_string):
-    return 'SERVICE_' + random_string
-
-service_provision= "In-house"
-owned_by= "MAXADMIN"
-
-@pytest.fixture
-def problem_desc(random_string):
-    return 'Problem_' + random_string
-
-@pytest.fixture
-def problem_long_desc(random_string):
-    return 'Problem_longdesc_'+ random_string
-
-@pytest.fixture
-def sr_desc(random_string):
-    return 'ServiceRequest_' + random_string
-    
-@pytest.fixture
-def sr_long_desc(random_string):
-    return 'ServiceRequest_' + random_string
-    
-@pytest.fixture
-def bb_subject(random_string):
-    return 'BulletinBoard_' + random_string
-    
-@pytest.fixture
-def bb_message(random_string):
-    return 'BulletinBoardMessage_' + random_string
-    
-@pytest.fixture
-def bb_expiredate():
-    return "2030-10-30T05:11:19-07:00"
-    
-@pytest.fixture
-def assetnum(random_string):
-    return 'Asset_' + random_string
-    
-@pytest.fixture
-def asset_desc(random_string):
-    return 'Asset_Desc_' + random_string
-    
-siteid="BEDFORD"
-@pytest.fixture
-def change_request_desc(random_string):
-    return 'Change_'+ random_string
-    
-@pytest.fixture
-def change_request_long_desc(random_string):
-    return 'Change_longdesc_'+ random_string
-    
-@pytest.fixture
-def solution_desc(random_string):
-    return 'Solution_' + random_string
-    
-@pytest.fixture
-def tk_template_desc(random_string):
-    return 'TK_Template_'+ random_string   
-    
-# Self Serve Variables
-@pytest.fixture
-def ticket_desc(random_string):
-    return 'Ticket_'+ random_string 
-
-# Headers for Create Service API requests
-HEADERS = {
-    'Accept': 'application/json',
-    'apikey': user_api_key
-}
-
-# Headers for API Update requests
-HEADERS_UPDATE = {
-    'Accept': 'application/json',
-    'apikey': user_api_key,
-    'properties': '*',
-    'x-method-override': 'PATCH',
-    'patchtype': 'MERGE',
-    'Content-Type': 'application/json'
-    
-}
-
-#**************Function Used*******************
-#Generate a random service name using lowercase letters.
-def generate_service_name(length=20):
-    random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
-    service_name = f"Service_{random_suffix}".upper() 
-    print("ServiceName:",service_name)
-    return service_name
+            print("Failed to create incident:", response.status_code, response.text)
         
-def create_service(manage_host_ca_filepath):
-    service_name=generate_service_name()
-    payload = {
-        "spi:service_name": service_name,
-        "spi:description": "Python_service_description",
-        "spi:service_provision": "In-house",
-        "spi:status": "ACTIVE"
-    }      
-    # Create the service
-    response = requests.post(f"{MANAGE_URL}/maximo/api/os/cduiserviceview", json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
-    print("Response Code in service Craete function",response.status_code)
-    assert response.status_code == 201, "Failed to create service."
-    print("Service created successfully.")
-    return service_name 
-    
-def get_service_info(service_name,manage_host_ca_filepath):
-    # Validate the service creation
-    res = requests.get(
-        f"{MANAGE_URL}/maximo/api/os/cduiserviceview?oslc.select=*&oslc.where=service_name=\"{service_name}\"",
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )    
-    response_data = res.json()    
-    assert response_data['rdfs:member'], "No service found with the given name."
-    res_service_name = response_data['rdfs:member'][0]['spi:service_name']
-    print("Response Service Name after service creation:", res_service_name)
-    assert res_service_name == service_name.upper(), "Service name does not match the expected name."
-    print("Service created with the same name.")
-    
-    # Extracting the value from "rdf:about"
-    rdf_about_url = response_data['rdfs:member'][0]['rdf:about']
-    last_segment = rdf_about_url.split('/')[-1]  # Get the last segment of the URL
-    print('Value extracted from "rdf:about":', last_segment)
-    
-    # Extract SVID of Service
-    member = response_data["rdfs:member"][0]
-    serviceViewId = member["spi:svid"]
-    print("Service View ID:", serviceViewId)
-    
-    # Return the last segment and service view ID
-    return last_segment, serviceViewId 
-    
-# Function to create incident
-def create_incident(incident_desc, incident_long_desc,manage_host_ca_filepath):
-    payload = {
-        "spi:status": "NEW",
-        "spi:class": "INCIDENT",
-        "spi:description": incident_desc,
-        "spi:description_longdescription": incident_long_desc,
-        "spi:class_description": "Incident"
-    }
-
-    # Create the incident via API POST request
-    response = requests.post(MANAGE_URL + '/maximo/api/os/cduiincident?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
-
-    if response.status_code == 201:
-        print("Incident created successfully.")
-    else:
-        print("Failed to create incident:", response.status_code, response.text)
-    
-    return response.status_code  # Return the status code
-    
-#Create Ticket Template   
-def create_ticket_template(tk_template_desc,manage_host_ca_filepath):
-    payload = {
-        "spi:status": "ACTIVE",
-        "spi:class": "SR",
-        "spi:description": tk_template_desc         
-    }
-
-    # Create the template
-    response = requests.post(MANAGE_URL+'/maximo/api/os/CDUITKTEMPLATE?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
-
-    if response.status_code == 201:
-        print("Ticket Template created successfully.")
-    else:
-        print("Failed to create ticket template:", response.status_code, response.text)
-    
-    return response.status_code            
-
-#Create Asset    
-def create_asset(assetnum, asset_desc,manage_host_ca_filepath):
-    payload = {
-                                   
-            "spi:status": "OPERATING",
-            "spi:assetnum": assetnum,
-            "spi:description": asset_desc,
-            "spi:siteid": siteid     
-           
-         }
-    # Create the asset
-    response = requests.post(MANAGE_URL+'/maximo/api/os/cduiasset?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
-
-    if response.status_code == 201:
-        print("Asset created successfully.")
-    else:
-        print("Failed to create Asset:", response.status_code, response.text)
-    
-    return response.status_code  
-    
-#Create Change Request   
-def create_changes(change_request_desc,change_request_long_desc,manage_host_ca_filepath):
-    payload = {
-                
-            "spi:status": "ASSESS",
-            "spi:description": change_request_desc,
-            "spi:description_longdescription": change_request_long_desc,
-            "spi:siteid": siteid
-           
-         }
-
-    # Create the CR
-    response = requests.post(MANAGE_URL+'/maximo/api/os/cduiwochange?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
-
-    if response.status_code == 201:
-        print("CR created successfully.")
-    else:
-        print("Failed to create CR:", response.status_code, response.text)
-    
-    return response.status_code  
-    
-#Create Service Request    
-def create_sr(sr_desc,sr_long_desc,manage_host_ca_filepath):
-    payload = {
-        "spi:status": "NEW",
-        "spi:class": "SR",
-        "spi:description": sr_desc,
-        "spi:description_longdescription": sr_long_desc,
-        "spi:class_description": "Service Request"           
-    }
-
-    # Create the SR
-    response = requests.post(MANAGE_URL+'/maximo/api/os/cduisr?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
-
-    if response.status_code == 201:
-        print("SR created successfully.")
-    else:
-        print("Failed to create SR:", response.status_code, response.text)
-    
-    return response.status_code  
-    
-#Create Solution   
-def create_solution(solution_desc,manage_host_ca_filepath):
-    payload = {
-        "spi:status": "ACTIVE",        
-        "spi:description": solution_desc             
-    }
-
-    # Create the Solution
-    response = requests.post(MANAGE_URL+'/maximo/api/os/CDUISRMSOLUTION?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
-
-    if response.status_code == 201:
-        print("Solution created successfully.")
-    else:
-        print("Failed to create Solution:", response.status_code, response.text)
-    
-    return response.status_code    
-
-
-#Create Problem    
-def create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath):
-    payload = {
-        "spi:status": "NEW",
-        "spi:class": "PROBLEM",
-        "spi:description": problem_desc,
-        "spi:description_longdescription": problem_long_desc,
-        "spi:class_description": "Problem"           
-    }
-
-    # Create the problem
-    response = requests.post(MANAGE_URL+'/maximo/api/os/cduiproblem?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
-
-    if response.status_code == 201:
-        print("Problem created successfully.")
-    else:
-        print("Failed to create problem:", response.status_code, response.text)
-    
-    return response.status_code      
-
-#Create Bulletin Board   
-def create_bulletin_board_msg(bb_subject,bb_message,bb_expiredate,manage_host_ca_filepath):
-    payload = {
-        "spi:status": "APPROVED",        
-        "spi:subject": bb_subject,
-        "spi:message": bb_message,
-        "spi:expiredate":bb_expiredate         
-    }
-
-    # Create the Bulletin Board Message
-    response = requests.post(MANAGE_URL+'/maximo/api/os/CDUISRMBULLETIN?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
-
-    if response.status_code == 201:
-        print("Bulletin Board created successfully.")
-    else:
-        print("Failed to create Bulletin Board:", response.status_code, response.text)
-    
-    return response.status_code  
-
-# Get Incident Reference code    
-def get_incident_info(incident_summary,manage_host_ca_filepath):
-    # Validate the incident creation
-    url = f"{MANAGE_URL}/maximo/api/os/cduiincident?oslc.select=*&oslc.where=description=\"{incident_summary}\""
-    print("URL:", url)
-
-    try:
-        res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
-        res.raise_for_status()  # Raise an error for bad responses
-    except requests.exceptions.RequestException as e:
-        print("Error during requests to Maximo API:", e)
-        return None
-
-    response_data = res.json()
-    print("Response Data:", response_data)
-
-    # Validate that incidents were found
-    assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No Incident found with the given description."
-    
-    # Get the incident summary from the response
-    res_incident_summary = response_data['rdfs:member'][0].get('spi:description')
-
-    if res_incident_summary is None:
-        print('No incident description found in the response.')
-        return None
-    
-    assert res_incident_summary.upper() == incident_summary.upper(), "Incident created is not as expected."
-
-    # Extract the value of reference code from "rdf:about"
-    rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
-
-    if not rdf_about_url:
-        print('No "rdf:about" found in the response.')
-        return None
-
-    inc_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
-    print('Value extracted from "rdf:about":', inc_ref_code)
-    
-    # Return the incident reference code
-    return inc_ref_code
+        return response.status_code  # Return the status code
         
-# Get Problem Reference code    
-def get_problem_info(problem_summary,manage_host_ca_filepath):
-    # Validate the problem creation
-    url = f"{MANAGE_URL}/maximo/api/os/cduiproblem?oslc.select=*&oslc.where=description=\"{problem_summary}\""
-    print("URL:", url)
+    #Create Ticket Template   
+    def create_ticket_template(tk_template_desc,manage_host_ca_filepath):
+        payload = {
+            "spi:status": "ACTIVE",
+            "spi:class": "SR",
+            "spi:description": tk_template_desc         
+        }
 
-    try:
-        res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
-        res.raise_for_status()  # Raise an error for bad responses
-    except requests.exceptions.RequestException as e:
-        print("Error during requests to Maximo API:", e)
-        return None
+        # Create the template
+        response = requests.post(MANAGE_URL+'/maximo/api/os/CDUITKTEMPLATE?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
 
-    response_data = res.json()
-    print("Response Data:", response_data)
+        assert response.status_code == 201, f"Expected status code 201, but got {response.status_code}. Response: {response.text}"
+        
+        if response.status_code == 201:
+            print("Ticket Template created successfully.")
+        else:
+            print("Failed to create ticket template:", response.status_code, response.text)
+        
+        return response.status_code  # Return the status code           
 
-    # Validate that problems were found
-    assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No Problem found with the given description."
-    
-    # Get the problem summary from the response
-    res_problem_summary = response_data['rdfs:member'][0].get('spi:description')
+    #Create Asset    
+    def create_asset(assetnum, asset_desc,manage_host_ca_filepath):
+        payload = {
+                                       
+                "spi:status": "OPERATING",
+                "spi:assetnum": assetnum,
+                "spi:description": asset_desc,
+                "spi:siteid": siteid     
+               
+             }
+        # Create the asset
+        response = requests.post(MANAGE_URL+'/maximo/api/os/cduiasset?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 201, f"Expected status code 201, but got {response.status_code}. Response: {response.text}"
+        if response.status_code == 201:
+            print("Asset created successfully.")
+        else:
+            print("Failed to create Asset:", response.status_code, response.text)
+        
+        return response.status_code  
+        
+    #Create Change Request   
+    def create_changes(change_request_desc,change_request_long_desc,manage_host_ca_filepath):
+        payload = {
+                    
+                "spi:status": "ASSESS",
+                "spi:description": change_request_desc,
+                "spi:description_longdescription": change_request_long_desc,
+                "spi:siteid": siteid
+               
+             }
 
-    if res_problem_summary is None:
-        print('No problem description found in the response.')
-        return None
-    
-    assert res_problem_summary.upper() == problem_summary.upper(), "Problem created is not as expected."
+        # Create the CR
+        response = requests.post(MANAGE_URL+'/maximo/api/os/cduiwochange?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 201, f"Expected status code 201, but got {response.status_code}. Response: {response.text}"
+        if response.status_code == 201:
+            print("CR created successfully.")
+        else:
+            print("Failed to create CR:", response.status_code, response.text)
+        
+        return response.status_code  
+        
+    #Create Service Request    
+    def create_sr(sr_desc,sr_long_desc,manage_host_ca_filepath):
+        payload = {
+            "spi:status": "NEW",
+            "spi:class": "SR",
+            "spi:description": sr_desc,
+            "spi:description_longdescription": sr_long_desc,
+            "spi:class_description": "Service Request"           
+        }
 
-    # Extract the value of reference code from "rdf:about"
-    rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+        # Create the SR
+        response = requests.post(MANAGE_URL+'/maximo/api/os/cduisr?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 201, f"Expected status code 201, but got {response.status_code}. Response: {response.text}"
+        if response.status_code == 201:
+            print("SR created successfully.")
+        else:
+            print("Failed to create SR:", response.status_code, response.text)
+        
+        return response.status_code  
+        
+    #Create Solution   
+    def create_solution(solution_desc,manage_host_ca_filepath):
+        payload = {
+            "spi:status": "ACTIVE",        
+            "spi:description": solution_desc             
+        }
 
-    if not rdf_about_url:
-        print('No "rdf:about" found in the response.')
-        return None
+        # Create the Solution
+        response = requests.post(MANAGE_URL+'/maximo/api/os/CDUISRMSOLUTION?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 201, f"Expected status code 201, but got {response.status_code}. Response: {response.text}"
+        if response.status_code == 201:
+            print("Solution created successfully.")
+        else:
+            print("Failed to create Solution:", response.status_code, response.text)
+        
+        return response.status_code    
 
-    prb_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
-    print('Value extracted from "rdf:about":', prb_ref_code)
-    
-    # Return the incident reference code
-    return prb_ref_code
-    
-# Get SR Reference code    
-def get_sr_info(sr_summary,manage_host_ca_filepath):
-    # Validate the SR creation
-    url = f"{MANAGE_URL}/maximo/api/os/cduisr?oslc.select=*&oslc.where=description=\"{sr_summary}\""
-    print("URL:", url)
 
-    try:
-        res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
-        res.raise_for_status()  # Raise an error for bad responses
-    except requests.exceptions.RequestException as e:
-        print("Error during requests to Maximo API:", e)
-        return None
+    #Create Problem    
+    def create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath):
+        payload = {
+            "spi:status": "NEW",
+            "spi:class": "PROBLEM",
+            "spi:description": problem_desc,
+            "spi:description_longdescription": problem_long_desc,
+            "spi:class_description": "Problem"           
+        }
 
-    response_data = res.json()
-    print("Response Data:", response_data)
+        # Create the problem
+        response = requests.post(MANAGE_URL+'/maximo/api/os/cduiproblem?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 201, f"Expected status code 201, but got {response.status_code}. Response: {response.text}"
+        if response.status_code == 201:
+            print("Problem created successfully.")
+        else:
+            print("Failed to create problem:", response.status_code, response.text)
+        
+        return response.status_code      
 
-    # Validate that SR is present in response
-    assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No SR found with the given Summary."
-    
-    # Get the SR summary from the response
-    res_sr_summary = response_data['rdfs:member'][0].get('spi:description')
+    #Create Bulletin Board   
+    def create_bulletin_board_msg(bb_subject,bb_message,bb_expiredate,manage_host_ca_filepath):
+        payload = {
+            "spi:status": "APPROVED",        
+            "spi:subject": bb_subject,
+            "spi:message": bb_message,
+            "spi:expiredate":bb_expiredate         
+        }
 
-    if res_sr_summary is None:
-        print('No such SR summary found in the response.')
-        return None
-    
-    assert res_sr_summary.upper() == sr_summary.upper(), "SR created is not as expected."
+        # Create the Bulletin Board Message
+        response = requests.post(MANAGE_URL+'/maximo/api/os/CDUISRMBULLETIN?oslc.select=*&oslc', json=payload, headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 201, f"Expected status code 201, but got {response.status_code}. Response: {response.text}"
+        if response.status_code == 201:
+            print("Bulletin Board created successfully.")
+        else:
+            print("Failed to create Bulletin Board:", response.status_code, response.text)
+        
+        return response.status_code  
 
-    # Extract the value of reference code from "rdf:about"
-    rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+    # Get Incident Reference code    
+    def get_incident_info(incident_summary,manage_host_ca_filepath):
+        # Validate the incident creation
+        url = f"{MANAGE_URL}/maximo/api/os/cduiincident?oslc.select=*&oslc.where=description=\"{incident_summary}\""
+        print("URL:", url)
 
-    if not rdf_about_url:
-        print('No "rdf:about" found in the response.')
-        return None
+        try:
+            res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
 
-    sr_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
-    print('Value extracted from "rdf:about":', sr_ref_code)
-    
-    # Return the SR reference code
-    return sr_ref_code
+        response_data = res.json()
+        print("Response Data:", response_data)
 
-# Get CR Reference code    
-def get_cr_info(change_request_desc,manage_host_ca_filepath):
-    # Validate the CR creation
-    url = f"{MANAGE_URL}/maximo/api/os/cduiwochange?oslc.select=*&oslc.where=description=\"{change_request_desc}\""
-    print("URL:", url)
+        # Validate that incidents were found
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No Incident found with the given description."
+        
+        # Get the incident summary from the response
+        res_incident_summary = response_data['rdfs:member'][0].get('spi:description')
 
-    try:
-        res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
-        res.raise_for_status()  # Raise an error for bad responses
-    except requests.exceptions.RequestException as e:
-        print("Error during requests to Maximo API:", e)
-        return None
+        if res_incident_summary is None:
+            print('No incident description found in the response.')
+            return None
+        
+        assert res_incident_summary.upper() == incident_summary.upper(), "Incident created is not as expected."
 
-    response_data = res.json()
-    print("Response Data:", response_data)
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
 
-    # Validate that CR is present in response
-    assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No CR found with the given Summary."
-    
-    # Get the CR summary from the response
-    res_cr_summary = response_data['rdfs:member'][0].get('spi:description')
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
 
-    if res_cr_summary is None:
-        print('No such CR summary found in the response.')
-        return None
-    
-    assert res_cr_summary.upper() == change_request_desc.upper(), "CR created is not as expected."
+        inc_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', inc_ref_code)
+        
+        # Return the incident reference code
+        return inc_ref_code
+            
+    # Get Problem Reference code    
+    def get_problem_info(problem_summary,manage_host_ca_filepath):
+        # Validate the problem creation
+        url = f"{MANAGE_URL}/maximo/api/os/cduiproblem?oslc.select=*&oslc.where=description=\"{problem_summary}\""
+        print("URL:", url)
 
-    # Extract the value of reference code from "rdf:about"
-    rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+        try:
+            res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
 
-    if not rdf_about_url:
-        print('No "rdf:about" found in the response.')
-        return None
+        response_data = res.json()
+        print("Response Data:", response_data)
 
-    cr_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
-    print('Value extracted from "rdf:about":', cr_ref_code)
-    
-    # Return the CR reference code
-    return cr_ref_code        
-    
-# Get Solution Reference code    
-def get_solution_info(solution_summary,manage_host_ca_filepath):
-    # Validate the solution creation
-    url = f"{MANAGE_URL}/maximo/api/os/CDUISRMSOLUTION?oslc.select=*&oslc.where=description=\"{solution_summary}\""
-    print("URL:", url)
+        # Validate that problems were found
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No Problem found with the given description."
+        
+        # Get the problem summary from the response
+        res_problem_summary = response_data['rdfs:member'][0].get('spi:description')
 
-    try:
-        res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
-        res.raise_for_status()  # Raise an error for bad responses
-    except requests.exceptions.RequestException as e:
-        print("Error during requests to Maximo API:", e)
-        return None
+        if res_problem_summary is None:
+            print('No problem description found in the response.')
+            return None
+        
+        assert res_problem_summary.upper() == problem_summary.upper(), "Problem created is not as expected."
 
-    response_data = res.json()
-    print("Response Data:", response_data)
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
 
-    # Validate that solutions were found
-    assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No solution found with the given description."
-    
-    # Get the solution summary from the response
-    res_solution_summary = response_data['rdfs:member'][0].get('spi:description')
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
 
-    if res_solution_summary is None:
-        print('No solution description found in the response.')
-        return None
-    
-    assert res_solution_summary.upper() == solution_summary.upper(), "solution created is not as expected."
+        prb_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', prb_ref_code)
+        
+        # Return the incident reference code
+        return prb_ref_code
+        
+    # Get SR Reference code    
+    def get_sr_info(sr_summary,manage_host_ca_filepath):
+        # Validate the SR creation
+        url = f"{MANAGE_URL}/maximo/api/os/cduisr?oslc.select=*&oslc.where=description=\"{sr_summary}\""
+        print("URL:", url)
 
-    # Extract the value of reference code from "rdf:about"
-    rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+        try:
+            res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
 
-    if not rdf_about_url:
-        print('No "rdf:about" found in the response.')
-        return None
+        response_data = res.json()
+        print("Response Data:", response_data)
 
-    prb_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
-    print('Value extracted from "rdf:about":', prb_ref_code)
-    
-    # Return the incident reference code
-    return prb_ref_code
+        # Validate that SR is present in response
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No SR found with the given Summary."
+        
+        # Get the SR summary from the response
+        res_sr_summary = response_data['rdfs:member'][0].get('spi:description')
+
+        if res_sr_summary is None:
+            print('No such SR summary found in the response.')
+            return None
+        
+        assert res_sr_summary.upper() == sr_summary.upper(), "SR created is not as expected."
+
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
+
+        sr_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', sr_ref_code)
+        
+        # Return the SR reference code
+        return sr_ref_code
+
+    # Get CR Reference code    
+    def get_cr_info(change_request_desc,manage_host_ca_filepath):
+        # Validate the CR creation
+        url = f"{MANAGE_URL}/maximo/api/os/cduiwochange?oslc.select=*&oslc.where=description=\"{change_request_desc}\""
+        print("URL:", url)
+
+        try:
+            res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
+
+        response_data = res.json()
+        print("Response Data:", response_data)
+
+        # Validate that CR is present in response
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No CR found with the given Summary."
+        
+        # Get the CR summary from the response
+        res_cr_summary = response_data['rdfs:member'][0].get('spi:description')
+
+        if res_cr_summary is None:
+            print('No such CR summary found in the response.')
+            return None
+        
+        assert res_cr_summary.upper() == change_request_desc.upper(), "CR created is not as expected."
+
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
+
+        cr_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', cr_ref_code)
+        
+        # Return the CR reference code
+        return cr_ref_code        
+        
+    # Get Solution Reference code    
+    def get_solution_info(solution_summary,manage_host_ca_filepath):
+        # Validate the solution creation
+        url = f"{MANAGE_URL}/maximo/api/os/CDUISRMSOLUTION?oslc.select=*&oslc.where=description=\"{solution_summary}\""
+        print("URL:", url)
+
+        try:
+            res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
+
+        response_data = res.json()
+        print("Response Data:", response_data)
+
+        # Validate that solutions were found
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No solution found with the given description."
+        
+        # Get the solution summary from the response
+        res_solution_summary = response_data['rdfs:member'][0].get('spi:description')
+
+        if res_solution_summary is None:
+            print('No solution description found in the response.')
+            return None
+        
+        assert res_solution_summary.upper() == solution_summary.upper(), "solution created is not as expected."
+
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
+
+        prb_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', prb_ref_code)
+        
+        # Return the incident reference code
+        return prb_ref_code
+           
+        
+    # Get Problem Reference code    
+    def get_problem_info(prb_summary,manage_host_ca_filepath):
+        # Validate the Problem creation
+        url = f"{MANAGE_URL}/maximo/api/os/cduiproblem?oslc.select=*&oslc.where=description=\"{prb_summary}\""
+        print("URL:", url)
+
+        try:
+            res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
+            res.raise_for_status()  # Raise an error for bad responses
+        except requests.exceptions.RequestException as e:
+            print("Error during requests to Maximo API:", e)
+            return None
+
+        response_data = res.json()
+        print("Response Data:", response_data)
+
+        # Validate that problem is present in response
+        assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No Problem found with the given Summary."
+        
+        # Get the problem summary from the response
+        res_problem_summary = response_data['rdfs:member'][0].get('spi:description')
+
+        if res_problem_summary is None:
+            print('No such problem summary found in the response.')
+            return None
+        
+        assert res_problem_summary.upper() == prb_summary.upper(), "Problem created is not as expected."
+
+        # Extract the value of reference code from "rdf:about"
+        rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+
+        if not rdf_about_url:
+            print('No "rdf:about" found in the response.')
+            return None
+
+        problem_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
+        print('Value extracted from "rdf:about":', problem_ref_code)
+        
+        # Return the SR reference code
+        return problem_ref_code
+        
+    #fetch services based on filter criteria.
+    def fetch_all_services_based_on_filter(filter_by, filter_value,manage_host_ca_filepath):
        
-    
-# Get Problem Reference code    
-def get_problem_info(prb_summary,manage_host_ca_filepath):
-    # Validate the Problem creation
-    url = f"{MANAGE_URL}/maximo/api/os/cduiproblem?oslc.select=*&oslc.where=description=\"{prb_summary}\""
-    print("URL:", url)
+            response = requests.get(
+                #f"{MANAGE_URL}/maximo/api/os/cduiserviceview?oslc.select=*&oslc.where={filter_by}=\"{filter_value}\"",
+                f"{MANAGE_URL}/maximo/api/os/cduiserviceview?oslc.select=*&oslc..searchTerms={filter_by}&searchAttributes=\"{filter_value}\"",
+                            
+                headers=HEADERS,
+                verify=manage_host_ca_filepath
+            )
+            print("Filter response:", response.text)
+            print("Filter response code:", response.status_code)
+            assert response.status_code == 200, f"Failed to fetch services based on filter criteria {filter_by}" 
+            # Extract the totalCount value
+            total_count = response.json()['oslc:responseInfo']['oslc:totalCount']    
+            # Assert that the totalCount is 1 or greater
+            assert total_count >= 1, f"Failed to fetch services based on filter criteria {filter_by}"    
+          
+    #***** Self Serve Testcases******
+    #Create new ticket from Report an Issue in Self Serve
+    def create_ticket(ticket_desc,manage_host_ca_filepath):
+        ticket_payload = {
+            "spi:class": "SR",
+            "spi:class description": "Service Request",
+            "spi:reportedby": "MAXADMIN",
+            "spi:description": ticket_desc
+        }
 
-    try:
-        res = requests.get(url, headers=HEADERS, verify=manage_host_ca_filepath)
-        res.raise_for_status()  # Raise an error for bad responses
-    except requests.exceptions.RequestException as e:
-        print("Error during requests to Maximo API:", e)
-        return None
+        # Create the New Ticket
+        response = requests.post(f'{MANAGE_URL}/maximo/api/os/cduimysr?oslc.select=*', json=ticket_payload, headers=HEADERS,
+                                 verify=manage_host_ca_filepath)
+        print("Response Code in Service Creation", response.status_code)
+        assert response.status_code == 201, "Failed to create ticket."
+        print("Ticket created successfully.")
+        return ticket_desc
 
-    response_data = res.json()
-    print("Response Data:", response_data)
+    #***********************Test Functions***************  
+    #TC#1 Test to verify system info has Maximo IT
+    def test_system_info(manage_host_ca_filepath):
+        response = requests.get(MANAGE_URL + '/maximo/api/systeminfo', headers=HEADERS, verify=manage_host_ca_filepath)
+        # Check if the response code is 200 OK
+        assert response.status_code == 200, "System Info fetch failed."
+        
+        # Check if 'Maximo IT' is present in the response text
+        assert 'Maximo IT' in response.text, "'Maximo IT' not found in the response."
+        print("'Maximo IT' found in the response.")
+        
+    #TC#2 Test to verify Self Serve is installed
+    def test_self_serve_installed_insystem(manage_host_ca_filepath):
 
-    # Validate that problem is present in response
-    assert 'rdfs:member' in response_data and response_data['rdfs:member'], "No Problem found with the given Summary."
-    
-    # Get the problem summary from the response
-    res_problem_summary = response_data['rdfs:member'][0].get('spi:description')
+        response = requests.get(f'{MANAGE_URL}/maximo/api/os/mxapimaxapp?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        print("Response Code ", response.status_code)
+        assert response.status_code == 200, "Failed to Fetch system information."
+        systemsinfo = response.json()
+        systemsinfo.get('oslc:responseInfo')
+        app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
 
-    if res_problem_summary is None:
-        print('No such problem summary found in the response.')
-        return None
-    
-    assert res_problem_summary.upper() == prb_summary.upper(), "Problem created is not as expected."
+        # iterate through the application list
+        for i in range(app_count):
+            j=0
+            app_name = systemsinfo['rdfs:member'][i].get('spi:app')
+            if app_name == "SELFSERVE":
+                print("SELFSERVE : Installed in System")
+                j=1
+                break
+        assert j == 1, "Self Serve is not installed"
 
-    # Extract the value of reference code from "rdf:about"
-    rdf_about_url = response_data['rdfs:member'][0].get('rdf:about')
+    #TC#3 Test to verify Service View is installed
+    def test_service_view_installed_insystem(manage_host_ca_filepath):
 
-    if not rdf_about_url:
-        print('No "rdf:about" found in the response.')
-        return None
+        response = requests.get(f'{MANAGE_URL}/maximo/api/os/mxapimaxapp?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        print("Response Code ", response.status_code)
+        assert response.status_code == 200, "Failed to Fetch system information."
+        systemsinfo = response.json()
+        systemsinfo.get('oslc:responseInfo')
+        app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
 
-    problem_ref_code = rdf_about_url.split('/')[-1]  # Get the last segment of the URL to get reference code
-    print('Value extracted from "rdf:about":', problem_ref_code)
-    
-    # Return the SR reference code
-    return problem_ref_code
-    
-#fetch services based on filter criteria.
-def fetch_all_services_based_on_filter(filter_by, filter_value,manage_host_ca_filepath):
-   
-        response = requests.get(
-            #f"{MANAGE_URL}/maximo/api/os/cduiserviceview?oslc.select=*&oslc.where={filter_by}=\"{filter_value}\"",
-            f"{MANAGE_URL}/maximo/api/os/cduiserviceview?oslc.select=*&oslc..searchTerms={filter_by}&searchAttributes=\"{filter_value}\"",
-                        
+        # iterate through the application list
+
+        for i in range(app_count):
+            j=0
+            app_name = systemsinfo['rdfs:member'][i].get('spi:app')
+            if app_name == "SERVICEVIEW":
+                print("SERVICEVIEW : Installed in System")
+                j=1
+                break
+        assert j == 1, "SERVICEVIEW is not installed"
+        
+    #TC#4 Test to verify Service Delivery is installed
+    def test_service_delivery_installed_insystem(manage_host_ca_filepath):
+
+        response = requests.get(f'{MANAGE_URL}/maximo/api/os/mxapimaxapp?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        print("Response Code ", response.status_code)
+        assert response.status_code == 200, "Failed to Fetch system information."
+        systemsinfo = response.json()
+        systemsinfo.get('oslc:responseInfo')
+        app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
+
+        # iterate through the application list
+        for i in range(app_count):
+            j=0
+            app_name = systemsinfo['rdfs:member'][i].get('spi:app')
+            if app_name == "SERVICEDELIVERY":
+                print("SERVICEDELIVERY : Installed in System")
+                j=1
+                break
+        assert j == 1, "SERVICEDELIVERY is not installed"
+
+
+
+    def test_create_and_validate_incident(incident_desc, incident_long_desc, manage_host_ca_filepath):
+        # Create the incident
+        response_code = create_incident(incident_desc, incident_long_desc, manage_host_ca_filepath)
+        assert response_code == 201, f"Failed to create Incident, got status code {response_code}"
+
+        # Retrieve the created incident
+        res = requests.get(
+            MANAGE_URL + f'/maximo/api/os/cduiincident?oslc.select=*&oslc.where=spi:description="{incident_desc}"',
             headers=HEADERS,
             verify=manage_host_ca_filepath
         )
-        print("Filter response:", response.text)
-        print("Filter response code:", response.status_code)
-        assert response.status_code == 200, f"Failed to fetch services based on filter criteria {filter_by}" 
-        # Extract the totalCount value
-        total_count = response.json()['oslc:responseInfo']['oslc:totalCount']    
-        # Assert that the totalCount is 1 or greater
-        assert total_count >= 1, f"Failed to fetch services based on filter criteria {filter_by}"    
-      
-#***** Self Serve Testcases******
-#Create new ticket from Report an Issue in Self Serve
-def create_ticket(ticket_desc,manage_host_ca_filepath):
-    ticket_payload = {
-        "spi:class": "SR",
-        "spi:class description": "Service Request",
-        "spi:reportedby": "MAXADMIN",
-        "spi:description": ticket_desc
-    }
+        assert res.status_code == 200, f"Failed to retrieve incident: {res.status_code}, {res.text}"
 
-    # Create the New Ticket
-    response = requests.post(f'{MANAGE_URL}/maximo/api/os/cduimysr?oslc.select=*', json=ticket_payload, headers=HEADERS,
-                             verify=manage_host_ca_filepath)
-    print("Response Code in Service Creation", response.status_code)
-    assert response.status_code == 201, "Failed to create ticket."
-    print("Ticket created successfully.")
-    return ticket_desc
+        response_data = res.json()
 
-#***********************Test Functions***************  
-#TC#1 Test to verify system info has Maximo IT
-def test_system_info(manage_host_ca_filepath):
-    response = requests.get(MANAGE_URL + '/maximo/api/systeminfo', headers=HEADERS, verify=manage_host_ca_filepath)
-    # Check if the response code is 200 OK
-    assert response.status_code == 200, "System Info fetch failed."
-    
-    # Check if 'Maximo IT' is present in the response text
-    assert 'Maximo IT' in response.text, "'Maximo IT' not found in the response."
-    print("'Maximo IT' found in the response.")
-    
-#TC#2 Test to verify Self Serve is installed
-def test_self_serve_installed_insystem(manage_host_ca_filepath):
+        # Assert that 'rdfs:member' exists in the response data
+        assert 'rdfs:member' in response_data, "No 'rdfs:member' found in response data."
 
-    response = requests.get(f'{MANAGE_URL}/maximo/api/os/mxapimaxapp?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    print("Response Code ", response.status_code)
-    assert response.status_code == 200, "Failed to Fetch system information."
-    systemsinfo = response.json()
-    systemsinfo.get('oslc:responseInfo')
-    app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
-
-    # iterate through the application list
-    for i in range(app_count):
-        j=0
-        app_name = systemsinfo['rdfs:member'][i].get('spi:app')
-        if app_name == "SELFSERVE":
-            print("SELFSERVE : Installed in System")
-            j=1
-            break
-    assert j == 1, "Self Serve is not installed"
-
-#TC#3 Test to verify Service View is installed
-def test_service_view_installed_insystem(manage_host_ca_filepath):
-
-    response = requests.get(f'{MANAGE_URL}/maximo/api/os/mxapimaxapp?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    print("Response Code ", response.status_code)
-    assert response.status_code == 200, "Failed to Fetch system information."
-    systemsinfo = response.json()
-    systemsinfo.get('oslc:responseInfo')
-    app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
-
-    # iterate through the application list
-
-    for i in range(app_count):
-        j=0
-        app_name = systemsinfo['rdfs:member'][i].get('spi:app')
-        if app_name == "SERVICEVIEW":
-            print("SERVICEVIEW : Installed in System")
-            j=1
-            break
-    assert j == 1, "SERVICEVIEW is not installed"
-    
-#TC#4 Test to verify Service Delivery is installed
-def test_service_delivery_installed_insystem(manage_host_ca_filepath):
-
-    response = requests.get(f'{MANAGE_URL}/maximo/api/os/mxapimaxapp?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    print("Response Code ", response.status_code)
-    assert response.status_code == 200, "Failed to Fetch system information."
-    systemsinfo = response.json()
-    systemsinfo.get('oslc:responseInfo')
-    app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
-
-    # iterate through the application list
-    for i in range(app_count):
-        j=0
-        app_name = systemsinfo['rdfs:member'][i].get('spi:app')
-        if app_name == "SERVICEDELIVERY":
-            print("SERVICEDELIVERY : Installed in System")
-            j=1
-            break
-    assert j == 1, "SERVICEDELIVERY is not installed"
-
-
-
-#TC#5 Test to create a incident and validate its creation.
-def test_create_and_validate_incident(incident_desc, incident_long_desc,manage_host_ca_filepath):
-    response_code = create_incident(incident_desc, incident_long_desc,manage_host_ca_filepath)
-    assert response_code == 201, f"Failed to create Incident, got status code {response_code}"  
-
-    # Retrieve the created incident
-    res = requests.get(
-        MANAGE_URL + f'/maximo/api/os/cduiincident?oslc.select=*&oslc.where=spi:description="{incident_desc}"',
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )    
-    response_data = res.json()
-    
-    if res.status_code == 200:
-        print('Response:', res.text)
-
-        # Check if 'rdfs:member' is in the response data
         if response_data.get('rdfs:member'):
             res_incident = response_data['rdfs:member'][0].get('spi:description')
             print("Incident from Get request:", res_incident)
 
             # Validate if the retrieved description matches the created description
-            if res_incident == incident_desc:
-                print("Incident created successfully and verified.")
-            else:
-                print("Incident not created correctly.")
+            assert res_incident == incident_desc, f"Incident description does not match. Expected: {incident_desc}, Got: {res_incident}"
+            print("Incident created successfully and verified.")
         else:
             print("No incident found.")
-    else:
-        print(f"Failed to retrieve incident: {res.status_code}, {res.text}")
-        
 
-#TC#6 Test to create a Asset and validate its creation.
-def test_create_and_validate_asset(assetnum, asset_desc,manage_host_ca_filepath): 
-    response = create_asset(assetnum, asset_desc,manage_host_ca_filepath)
-    assert response == 201, "Failed to create asset."  
-      
-    # Retrieve the created asset
-    res = requests.get(
-        MANAGE_URL+'/maximo/api/os/cduiasset?oslc.select=*&oslc.where=spi:assetnum="'+assetnum+'"',
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )    
-    response_data = res.json()
-    if res.status_code == 200:
-        print('Response:', res.text)
+
+    #TC#6 Test to create a Asset and validate its creation.
+    def test_create_and_validate_asset(assetnum, asset_desc, manage_host_ca_filepath): 
+        # Create the asset
+        response = create_asset(assetnum, asset_desc, manage_host_ca_filepath)
+        assert response == 201, f"Failed to create asset, got status code {response}"
+
+        # Retrieve the created asset
+        res = requests.get(
+            MANAGE_URL + '/maximo/api/os/cduiasset?oslc.select=*&oslc.where=spi:assetnum="' + assetnum + '"',
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )    
+
+        # Assert that the GET request is successful
+        assert res.status_code == 200, f"Failed to retrieve asset: {res.status_code}, {res.text}"
+
         response_data = res.json()
+
+        # Assert that 'rdfs:member' exists in the response data
+        assert 'rdfs:member' in response_data, "No 'rdfs:member' found in response data."
 
         if response_data.get('rdfs:member'):
             res_asset = response_data['rdfs:member'][0].get('spi:assetnum')
             print("Asset from Get request:", res_asset)
 
-            if res_asset == assetnum.upper():
-                print("Asset created successfully and verified.")
-            else:
-                print("Asset not created.")
+            # Assert that the retrieved asset number matches the original asset number
+            assert res_asset == assetnum.upper(), f"Asset number does not match. Expected: {assetnum.upper()}, Got: {res_asset}"
+
+            print("Asset created successfully and verified.")
         else:
             print("No asset found.")
-    else:
-        print("Failed to retrieve asset:", res.status_code, res.text)
+            
+    #TC#7 Test to create a ticket template and validate its creation.
+    def test_create_and_validate_ticket_template(tk_template_desc, manage_host_ca_filepath): 
+        # Create the ticket template
+        response = create_ticket_template(tk_template_desc, manage_host_ca_filepath)
+        assert response == 201, "Failed to create ticket template."  # Assert the ticket template creation was successful.
         
-        
-#TC#7 Test to create a ticket template and validate its creation.
-def test_create_and_validate_ticket_template(tk_template_desc,manage_host_ca_filepath): 
-    response = create_ticket_template(tk_template_desc,manage_host_ca_filepath)
-    assert response == 201, "Failed to create ticket template."  
-      
-    # Retrieve the created ticket template
-    res = requests.get(
-        MANAGE_URL+'/maximo/api/os/CDUITKTEMPLATE?oslc.select=*&oslc.where=spi:description="'+tk_template_desc+'"',
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )    
-    response_data = res.json()
-    if res.status_code == 200:
-        print('Response:', res.text)
+        # Retrieve the created ticket template
+        res = requests.get(
+            MANAGE_URL + '/maximo/api/os/CDUITKTEMPLATE?oslc.select=*&oslc.where=spi:description="' + tk_template_desc + '"',
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )    
         response_data = res.json()
 
-        if response_data.get('rdfs:member'):
-            res_tktemplate = response_data['rdfs:member'][0].get('spi:description')
-            print("Ticket Template from Get request:", res_tktemplate)
+        # Check if the GET request was successful
+        if res.status_code == 200:
+            print('Response:', res.text)
+            response_data = res.json()
 
-            if res_tktemplate == tk_template_desc:
+            # Check if the response contains ticket template data
+            if response_data.get('rdfs:member'):
+                res_tktemplate = response_data['rdfs:member'][0].get('spi:description')
+                print("Ticket Template from Get request:", res_tktemplate)
+
+                # Assert if the template description matches
+                assert res_tktemplate == tk_template_desc, "Ticket Template description does not match."
                 print("Ticket Template created successfully and verified.")
             else:
-                print("Ticket Template not created.")
-        else:
-            print("No Ticket Template found.")
-    else:
-        print("Failed to retrieve Ticket Template:", res.status_code, res.text)
-        
-        
-#TC#8 Test to create a Solution and validate its creation.
-def test_create_and_validate_solution(solution_desc,manage_host_ca_filepath): 
-    response = create_solution(solution_desc,manage_host_ca_filepath)
-    assert response == 201, "Failed to create solution."  
-      
-    # Retrieve the created solution
-    res = requests.get(
-        MANAGE_URL+'/maximo/api/os/CDUISRMSOLUTION?oslc.select=*&oslc.where=spi:description="'+solution_desc+'"',
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )    
-    response_data = res.json()
-    if res.status_code == 200:
-        print('Response:', res.text)
+                print("No Ticket Template found.")
+                assert False, "No Ticket Template found."
+
+            
+    #TC#8 Test to create a Solution and validate its creation.
+    def test_create_and_validate_solution(solution_desc,manage_host_ca_filepath): 
+        response = create_solution(solution_desc,manage_host_ca_filepath)
+        assert response == 201, "Failed to create solution."  
+          
+        # Retrieve the created solution
+        res = requests.get(
+            MANAGE_URL+'/maximo/api/os/CDUISRMSOLUTION?oslc.select=*&oslc.where=spi:description="'+solution_desc+'"',
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )    
         response_data = res.json()
+        if res.status_code == 200:
+            print('Response:', res.text)
+            response_data = res.json()
 
-        if response_data.get('rdfs:member'):
-            res_sol = response_data['rdfs:member'][0].get('spi:description')
-            print("Solution from Get request:", res_sol)
+            if response_data.get('rdfs:member'):
+                res_sol = response_data['rdfs:member'][0].get('spi:description')
+                print("Solution from Get request:", res_sol)
 
-            if res_sol == solution_desc:
-                print("Solution created successfully and verified.")
+                if res_sol == solution_desc:
+                    print("Solution created successfully and verified.")
+                else:
+                    print("Solution not created.")
             else:
-                print("Solution not created.")
+                print("No solution found.")
         else:
-            print("No solution found.")
-    else:
-        print("Failed to retrieve solution:", res.status_code, res.text)
+            print("Failed to retrieve solution:", res.status_code, res.text)
+            
+            
+           
+    #TC#9 Test to create a problem and validate its creation.
+    def test_create_and_validate_problem(problem_desc,problem_long_desc, manage_host_ca_filepath): 
+        # Create the problem
+        response = create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath)
+        assert response == 201, "Failed to create problem."  # Assert the problem creation was successful.
         
-        
-       
-#TC#9 Test to create a problem and validate its creation.
-def test_create_and_validate_problem(problem_desc,problem_long_desc,manage_host_ca_filepath): 
-    response = create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath)
-    assert response == 201, "Failed to create problem."  
-      
-    # Retrieve the created problem
-    res = requests.get(
-        MANAGE_URL+'/maximo/api/os/cduiproblem?oslc.select=*&oslc.where=spi:description="'+problem_desc+'"',
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )    
-    response_data = res.json()
-    if res.status_code == 200:
-        print('Response:', res.text)
+        # Retrieve the created problem
+        res = requests.get(
+            MANAGE_URL + '/maximo/api/os/CDUIPROBLEM?oslc.select=*&oslc.where=spi:description="' + problem_desc + '"',
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )    
         response_data = res.json()
 
-        if response_data.get('rdfs:member'):
-            res_problem = response_data['rdfs:member'][0].get('spi:description')
-            print("Problem from Get request:", res_problem)
+        # Assert if the GET request was successful
+        assert res.status_code == 200, f"Failed to retrieve problem with status code {res.status_code}."  # Assert GET success
+        
+        # If the GET request is successful, proceed to check the problem description
+        if res.status_code == 200:
+            print('Response:', res.text)
+            
+            if response_data.get('rdfs:member'):
+                res_prb = response_data['rdfs:member'][0].get('spi:description')
+                print("Problem from Get request:", res_prb)
 
-            if res_problem == problem_desc:
+                # Assert that the returned problem description matches the expected description
+                assert res_prb == problem_desc, f"Problem description does not match. Expected: {problem_desc}, but got: {res_prb}"
                 print("Problem created successfully and verified.")
             else:
-                print("Problem not created.")
-        else:
-            print("No problem found.")
-    else:
-        print("Failed to retrieve problem:", res.status_code, res.text)
+                print("No problem found.")
+                assert False, "No problem found in response."  # Assert if no problem is found.
+
+            
+    #TC#10 Test to create a change request and validate its creation.
+    def test_create_and_validate_changes(change_request_desc, change_request_long_desc, manage_host_ca_filepath): 
+        # Create the change request
+        response = create_changes(change_request_desc, change_request_long_desc, manage_host_ca_filepath)
+        assert response == 201, "Failed to create Change Request."  # Assert that the change request was created successfully.
         
-#TC#10 Test to create a change request and validate its creation.
-def test_create_and_validate_changes(change_request_desc,change_request_long_desc,manage_host_ca_filepath): 
-    response = create_changes(change_request_desc,change_request_long_desc,manage_host_ca_filepath)
-    assert response == 201, "Failed to create Change Request."  
-      
-    # Retrieve the created changes
-    res = requests.get(
-        MANAGE_URL+'/maximo/api/os/cduiwochange?oslc.select=*&oslc.where=spi:description="'+change_request_desc+'"',
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )    
-    response_data = res.json()
-    if res.status_code == 200:
-        print('Response:', res.text)
+        # Retrieve the created change request
+        res = requests.get(
+            MANAGE_URL + '/maximo/api/os/cduiwochange?oslc.select=*&oslc.where=spi:description="' + change_request_desc + '"',
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )    
         response_data = res.json()
 
-        if response_data.get('rdfs:member'):
-            res_cr = response_data['rdfs:member'][0].get('spi:description')
-            print("Changes from Get request:", res_cr)
+        # Assert if the GET request was successful (status code 200)
+        assert res.status_code == 200, f"Failed to retrieve Change Request with status code {res.status_code}."  # Assert GET success
+        
+        # If the GET request is successful, proceed to check the change request description
+        if res.status_code == 200:
+            print('Response:', res.text)
+            
+            # Check if the response contains change request data
+            if response_data.get('rdfs:member'):
+                res_cr = response_data['rdfs:member'][0].get('spi:description')
+                print("Change Request from Get request:", res_cr)
 
-            if res_cr == change_request_desc:
+                # Assert that the returned change request description matches the expected description
+                assert res_cr == change_request_desc, f"Change Request description does not match. Expected: {change_request_desc}, but got: {res_cr}"
                 print("Change Request created successfully and verified.")
             else:
-                print("Change Request not created.")
-        else:
-            print("No Change Request found.")
-    else:
-        print("Failed to retrieve Change Requests:", res.status_code, res.text)
-               
-       
-    
-#TC#11 Test to create a Service Request and validate its creation.
-def test_create_and_validate_sr(sr_desc,sr_long_desc,manage_host_ca_filepath): 
-    response = create_sr(sr_desc,sr_long_desc,manage_host_ca_filepath)
-    assert response == 201, "Failed to create SR."  
-      
-    # Retrieve the created SR
-    res = requests.get(
-        MANAGE_URL+'/maximo/api/os/cduisr?oslc.select=*&oslc.where=spi:description="'+sr_desc+'"',
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )    
-    response_data = res.json()
-    if res.status_code == 200:
-        print('Response:', res.text)
+                print("No Change Request found.")
+                assert False, "No Change Request found in response."  # Assert if no change request is found.
+                
+           
+        
+    #TC#11 Test to create a Service Request and validate its creation.
+    def test_create_and_validate_sr(sr_desc, sr_long_desc, manage_host_ca_filepath): 
+        # Create the SR
+        response = create_sr(sr_desc, sr_long_desc, manage_host_ca_filepath)
+        assert response == 201, "Failed to create SR."  # Assert that the SR was created successfully.
+        
+        # Retrieve the created SR
+        res = requests.get(
+            MANAGE_URL + '/maximo/api/os/cduisr?oslc.select=*&oslc.where=spi:description="' + sr_desc + '"',
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )    
         response_data = res.json()
 
-        if response_data.get('rdfs:member'):
-            res_sr = response_data['rdfs:member'][0].get('spi:description')
-            print("SR from Get request:", res_sr)
+        # Assert if the GET request was successful (status code 200)
+        assert res.status_code == 200, f"Failed to retrieve SR with status code {res.status_code}."  # Assert GET success
+        
+        # If the GET request is successful, proceed to check the SR description
+        if res.status_code == 200:
+            print('Response:', res.text)
+            
+            # Check if the response contains SR data
+            if response_data.get('rdfs:member'):
+                res_sr = response_data['rdfs:member'][0].get('spi:description')
+                print("SR from Get request:", res_sr)
 
-            if res_sr == sr_desc:
+                # Assert that the returned SR description matches the expected description
+                assert res_sr == sr_desc, f"SR description does not match. Expected: {sr_desc}, but got: {res_sr}"
                 print("SR created successfully and verified.")
             else:
-                print("SR not created.")
-        else:
-            print("No SR found.")
-    else:
-        print("Failed to retrieve SR:", res.status_code, res.text)
-      
-      
-#TC#12 Test to create a Bulletin Message and validate its creation.
-def test_create_and_validate_bulletin_msg(bb_subject,bb_message,bb_expiredate,manage_host_ca_filepath): 
-    response = create_bulletin_board_msg(bb_subject,bb_message,bb_expiredate,manage_host_ca_filepath)
-    assert response == 201, "Failed to create BB Message."  
-    print("Bulletin Message Name:",bb_subject)
-      
-    # Retrieve the created Bulletin Message
-    res = requests.get(
-        MANAGE_URL+'/maximo/api/os/CDUISRMBULLETIN?oslc.select=*&oslc.where=spi:subject="'+bb_subject+'"',
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )    
-    response_data = res.json()
-    print("Bulleting Board get request Response:",res.status_code)
-    if res.status_code == 200:
-        print('Response:', res.text)
-        response_data = res.json()
+                print("No SR found.")
+                assert False, "No SR found in response."  # Assert if no SR is found.
 
-        if response_data.get('rdfs:member'):
-            res_bb = response_data['rdfs:member'][0].get('spi:subject')
-            print("BB Message from Get request:", res_bb)
+          
+    #TC#12 Test to create a Bulletin Message and validate its creation.
 
-            if res_bb == bb_subject:
+    def test_create_and_validate_bulletin_msg(bb_subject, bb_message, bb_expiredate, manage_host_ca_filepath): 
+        # Create the Bulletin Board message
+        response = create_bulletin_board_msg(bb_subject, bb_message, bb_expiredate, manage_host_ca_filepath)
+        
+        # Assert that the response code is 201 (Created)
+        assert response == 201, "Failed to create BB Message."  
+        print("Bulletin Message Name:", bb_subject)
+        
+        # Retrieve the created Bulletin Message from the server
+        res = requests.get(
+            MANAGE_URL + '/maximo/api/os/CDUISRMBULLETIN?oslc.select=*&oslc.where=spi:subject="' + bb_subject + '"',
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )    
+        
+        # Assert that the status code of the GET request is 200 (OK)
+        assert res.status_code == 200, f"Failed to retrieve Bulletin Board, status code: {res.status_code}"
+        print("Bulletin Board get request Response:", res.status_code)
+        
+        # Check if the GET request is successful
+        if res.status_code == 200:
+            print('Response:', res.text)
+            response_data = res.json()
+
+            # Assert that we received 'rdfs:member' in the response
+            assert 'rdfs:member' in response_data, "No Bulletin Message found in the response."
+            
+            if response_data.get('rdfs:member'):
+                res_bb = response_data['rdfs:member'][0].get('spi:subject')
+                print("BB Message from Get request:", res_bb)
+
+                # Assert that the retrieved Bulletin Board message matches the original subject
+                assert res_bb == bb_subject, f"Bulletin Board Message mismatch. Expected: {bb_subject}, Found: {res_bb}"
+                
                 print("Bulletin Board Message created successfully and verified.")
             else:
-                print("Bulletin Board Message not created.")
+                print("No Bulletin Message found.")
         else:
-            print("No Bulletin Message found.")
-    else:
-        print("Failed to retrieve Bulletin Board:", res.status_code, res_bb.text)   
+            print(f"Failed to retrieve Bulletin Board: {res.status_code}")
+
+
+           
        
-#TC#13 Test to search incident by incident description.
-def test_search_incident(incident_desc,incident_long_desc,manage_host_ca_filepath):
-    response_code = create_incident(incident_desc, incident_long_desc,manage_host_ca_filepath)
-    print("incident desc:", incident_desc)
-    # Send a GET request to search for the incident by description
-    response = requests.get(
-        f"{MANAGE_URL}/maximo/api/os/cduiincident?oslc.select=*&oslc.where=description=\"{incident_desc}\"",
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )
-
-    # Print response details
-    print("Incident search response:", response.text)
-    print("Incident search by description response code:", response.status_code)
-
-    # Assert the response code is 200 (OK)
-    assert response.status_code == 200, f"Failed to search incident by description, status code: {response.status_code}"
-    
-    # Parse the JSON response
-    response_data = response.json()
-
-    # Assert that 'rdfs:member' is present in the response
-    assert 'rdfs:member' in response_data, "No incidents found in response"
-
-    # Check if 'spi:description' is in the first item of 'rdfs:member'
-    description = response_data['rdfs:member'][0].get('spi:description', None)
-
-    # Assert that the description exists
-    assert description, "spi:description not found in the incident"
-
-    # Print the found incident description
-    print(f"Incident: {description} found")
-    
-    
-#TC#14 Test to search Service Request by its summary
-def test_search_sr(sr_desc,sr_long_desc,manage_host_ca_filepath):
-    response_code = create_sr(sr_desc,sr_long_desc,manage_host_ca_filepath)
-    print("SR desc:", sr_desc)
-    url=f"{MANAGE_URL}/maximo/api/os/cduisr?oslc.select=*&oslc.where=description=\"{sr_desc}\""
-    print("URL***",url)
-    # Send a GET request to search for the SR by summary
-    response = requests.get(
-        f"{MANAGE_URL}/maximo/api/os/cduisr?oslc.select=*&oslc.where=description=\"{sr_desc}\"",
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )
-
-    # Print response details
-    print("SR search response:", response.text)
-    print("SR search by description response code:", response.status_code)
-
-    # Assert the response code is 200 (OK)
-    assert response.status_code == 200, f"Failed to search SR by summary, status code: {response.status_code}"
-    
-    # Parse the JSON response
-    response_data = response.json()
-
-    # Assert that 'rdfs:member' is present in the response
-    assert 'rdfs:member' in response_data, "No SR found in response"
-
-    # Check if 'spi:description' is in the first item of 'rdfs:member'
-    description = response_data['rdfs:member'][0].get('spi:description', None)
-
-    # Assert that the description exists
-    assert description, "spi:description not found in the SR"
-
-    # Print the found SR description
-    print(f"SR: {description} found")
-    
-    
-    
-#TC#15 Test to Search Problem by its summary
-def test_search_problem(problem_desc,problem_long_desc,manage_host_ca_filepath):
-    response_code = create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath)
-    print("Problem desc:", problem_desc,manage_host_ca_filepath)
-    # Send a GET request to search for the Problem by summary
-    response = requests.get(
-        f"{MANAGE_URL}/maximo/api/os/cduiproblem?oslc.select=*&oslc.where=description=\"{problem_desc}\"",
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )
-
-    # Print response details
-    print("Problem search response:", response.text)
-    print("Problem search by description response code:", response.status_code)
-
-    # Assert the response code is 200 (OK)
-    assert response.status_code == 200, f"Failed to search Problem by summary, status code: {response.status_code}"
-    
-    # Parse the JSON response
-    response_data = response.json()
-
-    # Assert that 'rdfs:member' is present in the response
-    assert 'rdfs:member' in response_data, "No Problem found in response"
-
-    # Check if 'spi:description' is in the first item of 'rdfs:member'
-    description = response_data['rdfs:member'][0].get('spi:description', None)
-
-    # Assert that the description exists
-    assert description, "spi:description not found in the Problem"
-
-    # Print the found Problem description
-    print(f"Problem: {description} found")
-     
-#TC#16 Test to update summary and long description of incident.
-def test_update_incident(incident_desc, incident_long_desc,manage_host_ca_filepath):
-    response_code = create_incident(incident_desc, incident_long_desc,manage_host_ca_filepath)
-    assert response_code == 201, f"Failed to create Incident, got status code {response_code}"  
-
-    ref_code = get_incident_info(incident_desc,manage_host_ca_filepath)
-    
-    update_payload = {
-        "spi:description": "updated incident summary value",
-        "spi:description_longdescription": "updated incident long desc",
-    }
-    
-    # Sending a POST request to update the incident desc and long desc
-    response = requests.post(
-        url=f"{MANAGE_URL}/maximo/api/os/cduiincident/{ref_code}",
-        json=update_payload,
-        headers=HEADERS_UPDATE,
-        verify=manage_host_ca_filepath
-    )
-    
-    # Check for a 200 status code
-    assert response.status_code == 200, "Expected status code to be 200"
-
-    # getting updated incident summary and long description in response
-    response_body = response.json()
-    
-    updated_summary_in_response = response_body['spi:description']
-    updated_long_description_in_response = response_body['spi:description_longdescription']
-    assert updated_summary_in_response == 'updated incident summary value', "Incident Summary does not match with updated incident summary"
-    assert updated_long_description_in_response == 'updated incident long desc', "Long desc does not match with the updated incident long desc"
-    print("Incident Updated ")   
-
-#TC#17 Test to update summary and detail of SR.
-def test_update_sr(sr_desc,sr_long_desc,manage_host_ca_filepath):
-    response_code=create_sr(sr_desc,sr_long_desc,manage_host_ca_filepath)
-    assert response_code == 201, f"Failed to create SR, got status code {response_code}"
-    ref_code = get_sr_info(sr_desc,manage_host_ca_filepath)
-    
-    update_payload = {
-        "spi:description": "updated SR summary value",
-        "spi:description_longdescription": "updated SR Details",
-    }
-    
-    # Sending a POST request to update the SR summary and details
-    response = requests.post(
-        url=f"{MANAGE_URL}/maximo/api/os/cduisr/{ref_code}",
-        json=update_payload,
-        headers=HEADERS_UPDATE,
-        verify=manage_host_ca_filepath
-    )
-    
-    # Check for a 200 status code
-    assert response.status_code == 200, "Expected status code to be 200"
-
-    # getting updated SR summary and long description in response
-    response_body = response.json()
-    
-    updated_summary_in_response = response_body['spi:description']
-    updated_long_description_in_response = response_body['spi:description_longdescription']
-    assert updated_summary_in_response == 'updated SR summary value', "SR Summary does not match with updated SR summary"
-    assert updated_long_description_in_response == 'updated SR Details', "Long desc does not match with the updated SR long desc"
-    print("SR Updated")    
-    
-#TC#18 Test to update summary and detail of Change Request.
-def test_update_change(change_request_desc,change_request_long_desc,manage_host_ca_filepath):
-    response_code=create_changes(change_request_desc,change_request_long_desc,manage_host_ca_filepath)
-    assert response_code == 201, f"Failed to create CR, got status code {response_code}"
-    ref_code = get_cr_info(change_request_desc,manage_host_ca_filepath)
-    
-    update_payload = {
-        "spi:description": "updated CR summary value",
-        "spi:description_longdescription": "updated CR Details",
-    }
-    
-    # Sending a POST request to update the CR summary and details
-    response = requests.post(
-        url=f"{MANAGE_URL}/maximo/api/os/cduiwochange/{ref_code}",
-        json=update_payload,
-        headers=HEADERS_UPDATE,
-        verify=manage_host_ca_filepath
-    )
-    
-    # Check for a 200 status code
-    assert response.status_code == 200, "Expected status code to be 200"
-
-    # getting updated CR summary and long description in response
-    response_body = response.json()
-    
-    updated_summary_in_response = response_body['spi:description']
-    updated_long_description_in_response = response_body['spi:description_longdescription']
-    assert updated_summary_in_response == 'updated CR summary value', "CR Summary does not match with updated CR summary"
-    assert updated_long_description_in_response == 'updated CR Details', "Long desc does not match with the updated CR long desc"
-    print("CR Updated")         
-
-#TC#19 Test to update summary and details of solution.
-def test_update_solution(solution_desc,manage_host_ca_filepath):
-    response_code = create_solution(solution_desc,manage_host_ca_filepath)
-    assert response_code == 201, f"Failed to create solution, got status code {response_code}"  
-
-    ref_code = get_solution_info(solution_desc,manage_host_ca_filepath)
-    
-    update_payload = {
-        "spi:description": "updated solution summary value"
-       
-    }
-    
-    # Sending a POST request to update the solution desc and long desc
-    response = requests.post(
-        url=f"{MANAGE_URL}/maximo/api/os/CDUISRMSOLUTION/{ref_code}",
-        json=update_payload,
-        headers=HEADERS_UPDATE,
-        verify=manage_host_ca_filepath
-    )
-    
-    # Check for a 200 status code
-    assert response.status_code == 200, "Expected status code to be 200"
-
-    # getting updated solution summary and long description in response
-    response_body = response.json()
-    
-    updated_summary_in_response = response_body['spi:description']
-    assert updated_summary_in_response == 'updated solution summary value', "solution Summary does not match with updated solution summary"
-    print("solution Updated ")    
-    
-#TC#20 Test to update summary and detail of Problem.
-def test_update_problem(problem_desc,problem_long_desc,manage_host_ca_filepath):
-    response_code=create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath)
-    assert response_code == 201, f"Failed to create SR, got status code {response_code}"
-    ref_code = get_problem_info(problem_desc,test_update_problem)
-    
-    update_payload = {
-        "spi:description": "updated Problem summary value123",
-        "spi:description_longdescription": "updated Problem Details123",
-    }
-    
-    # Sending a POST request to update the problem summary and details
-    response = requests.post(
-        url=f"{MANAGE_URL}/maximo/api/os/cduiproblem/{ref_code}",
-        json=update_payload,
-        headers=HEADERS_UPDATE,
-        verify=manage_host_ca_filepath
-    )    
-    # Check for a 200 status code
-    assert response.status_code == 200, "Expected status code to be 200"
-    # getting updated problem summary and long description in response
-    response_body = response.json()
-    updated_summary_in_response = response_body['spi:description']
-    updated_long_description_in_response = response_body['spi:description_longdescription']
-    assert updated_summary_in_response == 'updated Problem summary value123', "Problem Summary does not match with updated problem summary"
-    assert updated_long_description_in_response == 'updated Problem Details123', "Long desc does not match with the updated problem long desc"
-    print("Problem Updated")
-    
-#TC#21 Test to get all incidents.
-def test_get_all_incidents(manage_host_ca_filepath):
-    response = requests.get(MANAGE_URL + '/maximo/api/os/cduiincident?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch incidents."    
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "Incidents List is not present in json response." 
-    print("Incidents details present in json response." )
-    
-#TC#22 Test fetching all ticket templates.
-def test_get_all_tk_templates(manage_host_ca_filepath):
-    response = response = requests.get(MANAGE_URL + '/maximo/api/os/CDUITKTEMPLATE?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch ticket templates." 
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "ticket templates List is not present in json response."  
-    print("ticket templates details present in json response." )  
-    
-#TC#23 Test fetching all problems.
-def test_get_all_problems(manage_host_ca_filepath):
-    response = requests.get(MANAGE_URL + '/maximo/api/os/cduiproblem?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch problems." 
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "Problems List is not present in json response."   
-    print("Problems details present in json response." ) 
-    
-#TC#24 Test fetching all assets.
-def test_get_all_assets(manage_host_ca_filepath):
-    response = requests.get(MANAGE_URL + '/maximo/api/os/cduiasset?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch Assets." 
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "Assets List is notpresent in json response."  
-    print("Assets details present in json response." )  
-    
-#TC#25 Test fetching all service request.
-def test_get_all_service_request(manage_host_ca_filepath):
-    response = requests.get(MANAGE_URL + '/maximo/api/os/cduisr?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch service request."    
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "SR List is not present in json response." 
-    print("SR details present in json response." ) 
-
-#TC#26 Test fetching all Offerings.
-def test_get_all_offering(manage_host_ca_filepath):
-    response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMOFFERING?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch offerings."  
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "Offering List is not present in json response."  
-    print("Offering details present in json response." )    
-    
-#TC#27 Test fetching all solutions.
-def test_get_all_solution(manage_host_ca_filepath):
-    response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMSOLUTION?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch Solutions."  
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "Solutions List is not present in json response."   
-    print("Solutions details present in json response." )  
-    
-#TC#28 Test fetching all change request.
-def test_get_all_changes(manage_host_ca_filepath):
-    response = requests.get(MANAGE_URL + '/maximo/api/os/cduiwochange?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch Change Requests."    
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "Changes List is not present in json response."   
-    print("Changes details present in json response." )
-    
-#TC#29 Test fetching all Bulletin Board Message.
-def test_get_all_bulletin_msg(manage_host_ca_filepath):
-    response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMBULLETIN?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch Bulletin Board Messages." 
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "Bulletin Message List is not present in json response."  
-    print("Changes details present in json response." )      
-    
-    
-#TC#30 Create a new service and validate its creation.
-def test_create_and_validate_service(manage_host_ca_filepath):       
-    service_name=create_service(manage_host_ca_filepath)
-    # Validate the service creation
-    res = requests.get(
-    MANAGE_URL + '/maximo/api/os/cduiserviceview?oslc.select=*&oslc.where=service_name="' + service_name + '"',
-    headers=HEADERS,
-    verify=manage_host_ca_filepath)
-    response_data = res.json()
-
-    assert response_data['rdfs:member'], "No service found with the given name."
-    res_service_name = response_data['rdfs:member'][0]['spi:service_name']
-    print("Response Service Name generated is:", res_service_name)
-    assert res_service_name == service_name, "Service name does not match the expected name."
-    print("Service created with the same name.")
-    
-    
-#TC#31 Test to check error message when editing service name    
-def test_error_update_service_name(manage_host_ca_filepath):
-    service_name=create_service(manage_host_ca_filepath)
-    last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
-    
-    update_payload = {
-        "spi:service_name": "new_value"
-    }
-    
-    # Sending a POST request to update the service name
-    response = requests.post(
-        url=f"{MANAGE_URL}/maximo/api/os/cduiserviceview/{last_segment}",
-        json=update_payload,
-        headers=HEADERS_UPDATE,
-        verify=manage_host_ca_filepath
-    )
-    
-    # Check for a 400 status code
-    assert response.status_code == 400, "Expected status code to be 400"
-
-    # Check error message
-    response_body = response.json()
-    expected_error_message = "SERVICE_NAME cannot be modified"
-
-    assert 'oslc:Error' in response_body, "Response should contain 'oslc:Error'"
-    error = response_body['oslc:Error']
-    
-    assert 'oslc:message' in error, "Error should contain 'oslc:message'"
-    assert error['oslc:message'] == expected_error_message, "Error message does not match expected value"
-
-    print('Response Error Message:', error['oslc:message'])
-    print('Expected Error Message:', expected_error_message)
-    
-    
-#TC#32 To test error message displayed when updating service with blank Service Name.
-def test_error_with_blank_service_name(manage_host_ca_filepath):
-    service_name=create_service(manage_host_ca_filepath)
-    last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
-      
-    update_payload = {
-        "spi:service_name": ""
-    }
-    
-    # Sending a POST request to update the service name with blank service name
-    response = requests.post(
-        url=f"{MANAGE_URL}/maximo/api/os/cduiserviceview/{last_segment}",
-        json=update_payload,
-        headers=HEADERS_UPDATE,
-        verify=manage_host_ca_filepath
-    )
-    print("Status Code:",response.status_code)
-    # Check for a 400 status code
-    assert response.status_code == 400, "Expected status code to be 400"
-
-    # Check error message
-    response_body = response.json()
-    expected_error_message = "BMXAA4195E - A value is required for the Service Name field on the SERVICE_VIEW object."
-
-    assert 'oslc:Error' in response_body, "Response should contain 'oslc:Error'"
-    error = response_body['oslc:Error']
-    
-    assert 'oslc:message' in error, "Error should contain 'oslc:message'"
-    
-    assert error['oslc:message'] == expected_error_message, "Error message does not match expected value"
-
-    print('Response Error Message:', error['oslc:message'])
-    print('Expected Error Message:', expected_error_message)
-    
-#TC#33 Test to update service status as Draft.   
-def test_update_service_status(manage_host_ca_filepath):
-    service_name=create_service(manage_host_ca_filepath)
-    last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
-    
-    update_payload = {
-        "spi:status": "DRAFT"
-    }
-    
-    # Sending a POST request to update the service status
-    response = requests.post(
-        url=f"{MANAGE_URL}/maximo/api/os/cduiserviceview/{last_segment}",
-        json=update_payload,
-        headers=HEADERS_UPDATE,
-        verify=manage_host_ca_filepath
-    )
-    
-    # Check for a 200 status code
-    assert response.status_code == 200, "Expected status code to be 200"
-
-    # getting updated service status in response
-    response_body = response.json()
-    
-    updated_status_in_response = response_body['spi:status']
-    print('Response updated status:', updated_status_in_response)
-    print('Expected updated status:', "DRAFT")
-    assert updated_status_in_response == 'DRAFT', "service status does not match with updated service status"
-    
-#TC#34 Test to update description of service.
-def test_update_service_description(manage_host_ca_filepath):
-    service_name=create_service(manage_host_ca_filepath)
-    last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
-    
-    update_payload = {
-        "spi:description": "updated service desc value"
-    }
-    
-    # Sending a POST request to update the service description
-    response = requests.post(
-        url=f"{MANAGE_URL}/maximo/api/os/cduiserviceview/{last_segment}",
-        json=update_payload,
-        headers=HEADERS_UPDATE,
-        verify=manage_host_ca_filepath
-    )
-    
-    # Check for a 200 status code
-    assert response.status_code == 200, "Expected status code to be 200"
-
-    # getting updated service description in response
-    response_body = response.json()
-    
-    updated_description_in_response = response_body['spi:description']
-    assert updated_description_in_response == 'updated service desc value', "service description does not match with updated service description"
-
-    print('Response updated desc:', updated_description_in_response)
-    print('Expected updated desc:', "updated service desc value")
-        
-
-#TC#35 Test fetching all services.
-def test_get_all_services(manage_host_ca_filepath):
-    response = requests.get(MANAGE_URL + '/maximo/api/os/cduiserviceview?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch services." 
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "Service List is not present in json response."
-    print("Service details present in json response." )   
-
-#TC#36 Test filter service by service name. 
-def test_get_all_services_as_per_filter_service_name(manage_host_ca_filepath):      
-    service_name=create_service(manage_host_ca_filepath)
-    fetch_all_services_based_on_filter('service_name',service_name,manage_host_ca_filepath)  
-
-#TC#37 Test filter service by service description.  
-def test_get_all_services_as_per_filter_service_description(manage_host_ca_filepath): 
-    fetch_all_services_based_on_filter('description',"Python_service_description",manage_host_ca_filepath)     
-
-#TC#38 Test filter service by service status active.           
-def test_get_all_services_as_per_filter_service_status_active(manage_host_ca_filepath): 
-    fetch_all_services_based_on_filter("status","ACTIVE",manage_host_ca_filepath) 
-             
-#TC#39 Test filter service by service status draft.  
-def test_get_all_services_as_per_filter_service_status_draft(manage_host_ca_filepath):   
-    fetch_all_services_based_on_filter("status","DRAFT",manage_host_ca_filepath)         
-
-#TC#40 Test filter service by service provision Inhouse.
-def test_get_all_services_as_per_filter_service_provision_Inhouse(manage_host_ca_filepath):      
-    fetch_all_services_based_on_filter("service_provision","In-house",manage_host_ca_filepath)            
-
-#TC#41 Test filter service by service owned by.
-def test_get_all_services_as_per_filter_owned_by(manage_host_ca_filepath): 
-    fetch_all_services_based_on_filter("owned_by",owned_by,manage_host_ca_filepath)  
-    
-#********Self Serve TestCases*******
- 
-#TC#42 Fetch all Assets in self serve My Assest
-def test_ss_asset_list(manage_host_ca_filepath):
-    response = requests.get(f'{MANAGE_URL}/maximo/api/os/srm_asset?_fd=SRM_ASSET&oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Asset List not fetched"
-    assetinfo = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(assetinfo.get('rdfs:member', [])) > 0, "Assets List is not present in json response." 
-    print("Asset list fetched successfully" )
-    assetcount = assetinfo['oslc:responseInfo']['oslc:totalCount']
-    print("Asset count are", assetcount)
-
-#TC#43 Create a Ticket and validate its creation
-def test_ss_create_and_validate_ticket(ticket_desc,manage_host_ca_filepath):
-    ticket_descrip = create_ticket(ticket_desc,manage_host_ca_filepath)
-    # Validate the ticket creation
-    res = requests.get(
-        f'{MANAGE_URL}/maximo/api/os/cduimyticket?oslc.select=*&oslc.where=spi:description="{ticket_desc}"',
-        headers=HEADERS,
-        verify=manage_host_ca_filepath)
-    if res.status_code == 200:
-        response_data = res.json()
-        if response_data.get('rdfs:member'):
-            res_ticket = response_data['rdfs:member'][0].get('spi:description')
-            print("Ticket from Get request:", res_ticket)
-            if res_ticket == ticket_descrip:
-                print("Ticket created successfully and verified.")
-            else:
-                print("Ticket not created.")
-        else:
-            print("No Ticket found.")
-    else:
-        print("Failed to retrieve Ticket:", res.status_code, res.text)
-
-#TC#44 Get the list of tickets displayed in My Items View More
-def test_ss_get_ticket_list_in_my_items(manage_host_ca_filepath):
-    response = requests.get(f'{MANAGE_URL}/maximo/api/os/cduimyticket?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Ticket list not found in the response."
-    print("Ticket list is fetched with status code.", response.status_code)
-    data = response.json()
-    # Ensure that there is at least one item in 'rdfs:member'
-    assert len(data.get('rdfs:member', [])) > 0, "Tickets List is not present in json response." 
-    print("Tickets details present in json response." )
-    data = response.json()
-    data.get('oslc:responseInfo')
-    total_ticket_count = data['oslc:responseInfo']['oslc:totalCount']
-    print("Ticket count is", total_ticket_count)
-
-#TC#45 Request Update on the ticket in MyItems in self serve
-def test_ss_request_update(ticket_desc,manage_host_ca_filepath):
-    #Get the ticketid from API
-    res = requests.get(
-        f'{MANAGE_URL}/maximo/api/os/cduimyticket?oslc.select=*&oslc.where=spi:description="{ticket_desc}"',
-        headers=HEADERS,
-        verify=manage_host_ca_filepath
-    )
-    json_data = res.json()
-    if json_data.get('oslc:responseInfo'):
-        ticketcount=  json_data['oslc:responseInfo']['oslc:totalCount']
-        if ticketcount == 1:
-            ticketid = json_data['rdfs:member'][0].get('spi:ticketid')
-            recordkey = ticketid
-
-            requestupdate_payload = {
-            "spi:class": "SR",
-            "spi:description": f"Reporting user MAXADMIN requested a ticket update for the following reason: TestUpdate{random_string}",
-            "spi:logtype": "UPDATE",
-            "spi:modifyby": "MAXADMIN",
-            "spi:createby": "MAXADMIN",
-            "spi:recordkey": recordkey
-            }
-
-            response = requests.post(f'{MANAGE_URL}/maximo/api/os/cduimyworklog?oslc.select=*', json=requestupdate_payload,
-                                     headers=HEADERS, verify=manage_host_ca_filepath)
-            assert response.status_code == 201, "Request not updated"
-            print(f"RequestUpdated with message : TestUpdate{random_string}")
-
-#TC#46 Adding comment in Ticket from My Items
-def test_ss_add_comment_on_ticket(ticket_desc,manage_host_ca_filepath):
-    ###To fetch Ticket id from the API
-    res = requests.get(f'{MANAGE_URL}/maximo/api/os/cduimyticket?oslc.select=*&oslc.where=spi:description="{ticket_desc}"',headers=HEADERS,verify=manage_host_ca_filepath)
-    json_data = res.json()
-    if json_data.get('oslc:responseInfo'):
-        ticketcount=  json_data['oslc:responseInfo']['oslc:totalCount']
-        if ticketcount == 1:
-            ticketid = json_data['rdfs:member'][0].get('spi:ticketid')
-            recordkey = ticketid
-            comment_payload = {
-                "spi:class": "SR",
-                "spi:description": f"Testcomment{random_string}...",
-                "spi:description_longdescription": f"Testcomment{random_string}",
-                "spi:logtype": "CLIENTNOTE",
-                "spi:modifyby": "MAXADMIN",
-                "spi:recordkey": recordkey
-             }
-            #Add comment on ticket with from my items in Self serve
-            response = requests.post(f'{MANAGE_URL}/maximo/api/os/cduimyworklog?oslc.select=*', json=comment_payload, headers=HEADERS, verify=manage_host_ca_filepath)
-            assert response.status_code == 201, "Comment not added"
-            print('Comment added on ticket is :', "Testcomment" + random_string)
-
-
-#TC#47 Get all the current Update On self serve
-def test_get_all_currentupdates(manage_host_ca_filepath):
-    objstr = ['CDUISRMOFFERING', 'CDUISRMSOLUTION', 'CDUISRMBULLETIN']
-    for obj in objstr:
+           
+    #TC#13 Test to search incident by incident description.
+    def test_search_incident(incident_desc,incident_long_desc,manage_host_ca_filepath):
+        response_code = create_incident(incident_desc, incident_long_desc,manage_host_ca_filepath)
+        print("incident desc:", incident_desc)
+        # Send a GET request to search for the incident by description
         response = requests.get(
-            f'{MANAGE_URL}/maximo/api/os/{obj}?oslc.select=*',
+            f"{MANAGE_URL}/maximo/api/os/cduiincident?oslc.select=*&oslc.where=description=\"{incident_desc}\"",
             headers=HEADERS,
             verify=manage_host_ca_filepath
         )
-        assert response.status_code == 200, f"Failed to fetch {obj}."
-        count = response.json()['oslc:responseInfo']['oslc:totalCount']
-        assert count > 0, "Tickets List is not present in json response."
-        print(f"Total {obj} count:", count)
 
-#TC#48 Check Request new service on Self Serve
-def test_ss_request_new_service(manage_host_ca_filepath):
-    response= requests.get(f'{MANAGE_URL}/maximo/api/os/CDUIOFFLIST?oslc.select=*' , headers=HEADERS, verify=manage_host_ca_filepath)
-    assert response.status_code == 200, "Failed to fetch services."
-    services_jsondata = response.json()
-    services_jsondata.get('oslc:responseInfo')
-    services_count = services_jsondata['oslc:responseInfo']['oslc:totalCount']
-    assert services_count > 0,"List of Request Services fetched successfully."
-    print("Total Service count :", services_count)
+        # Print response details
+        print("Incident search response:", response.text)
+        print("Incident search by description response code:", response.status_code)
 
-#TC#49 Search offering using string from search box
-def test_ss_search_string_in_request_service(manage_host_ca_filepath):
-    response =  requests.get(f'{MANAGE_URL}/maximo/api/os/CDUISRMOFFERING?oslc.select=*&savedQuery=search&sqp:text=offering', headers=HEADERS, verify=manage_host_ca_filepath)
-    response.status_code ==200,
-    print("Offerings are searchable")
-    jsondata= response.json()
-    jsondata.get('oslc:responseInfo')
-    offering_count = jsondata['oslc:responseInfo']['oslc:totalCount']
-    assert offering_count > 0,"Offering found in Search Results"
-    print("Total Offering count :", offering_count)
-    # iterate through the offering list
-    offeringlist= []
-    for i in range(offering_count):
-        offeringname = jsondata['rdfs:member'][i].get('spi:description')
-        offeringlist.append(offeringname)
-    print("List of all searched offering are", offeringlist)   
+        # Assert the response code is 200 (OK)
+        assert response.status_code == 200, f"Failed to search incident by description, status code: {response.status_code}"
+        
+        # Parse the JSON response
+        response_data = response.json()
+
+        # Assert that 'rdfs:member' is present in the response
+        assert 'rdfs:member' in response_data, "No incidents found in response"
+
+        # Check if 'spi:description' is in the first item of 'rdfs:member'
+        description = response_data['rdfs:member'][0].get('spi:description', None)
+
+        # Assert that the description exists
+        assert description, "spi:description not found in the incident"
+
+        # Print the found incident description
+        print(f"Incident: {description} found")
+        
+        
+    #TC#14 Test to search Service Request by its summary
+    def test_search_sr(sr_desc,sr_long_desc,manage_host_ca_filepath):
+        response_code = create_sr(sr_desc,sr_long_desc,manage_host_ca_filepath)
+        print("SR desc:", sr_desc)
+        url=f"{MANAGE_URL}/maximo/api/os/cduisr?oslc.select=*&oslc.where=description=\"{sr_desc}\""
+        print("URL***",url)
+        # Send a GET request to search for the SR by summary
+        response = requests.get(
+            f"{MANAGE_URL}/maximo/api/os/cduisr?oslc.select=*&oslc.where=description=\"{sr_desc}\"",
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )
+
+        # Print response details
+        print("SR search response:", response.text)
+        print("SR search by description response code:", response.status_code)
+
+        # Assert the response code is 200 (OK)
+        assert response.status_code == 200, f"Failed to search SR by summary, status code: {response.status_code}"
+        
+        # Parse the JSON response
+        response_data = response.json()
+
+        # Assert that 'rdfs:member' is present in the response
+        assert 'rdfs:member' in response_data, "No SR found in response"
+
+        # Check if 'spi:description' is in the first item of 'rdfs:member'
+        description = response_data['rdfs:member'][0].get('spi:description', None)
+
+        # Assert that the description exists
+        assert description, "spi:description not found in the SR"
+
+        # Print the found SR description
+        print(f"SR: {description} found")
+        
+        
+        
+    #TC#15 Test to Search Problem by its summary
+    def test_search_problem(problem_desc,problem_long_desc,manage_host_ca_filepath):
+        response_code = create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath)
+        print("Problem desc:", problem_desc,manage_host_ca_filepath)
+        # Send a GET request to search for the Problem by summary
+        response = requests.get(
+            f"{MANAGE_URL}/maximo/api/os/cduiproblem?oslc.select=*&oslc.where=description=\"{problem_desc}\"",
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )
+
+        # Print response details
+        print("Problem search response:", response.text)
+        print("Problem search by description response code:", response.status_code)
+
+        # Assert the response code is 200 (OK)
+        assert response.status_code == 200, f"Failed to search Problem by summary, status code: {response.status_code}"
+        
+        # Parse the JSON response
+        response_data = response.json()
+
+        # Assert that 'rdfs:member' is present in the response
+        assert 'rdfs:member' in response_data, "No Problem found in response"
+
+        # Check if 'spi:description' is in the first item of 'rdfs:member'
+        description = response_data['rdfs:member'][0].get('spi:description', None)
+
+        # Assert that the description exists
+        assert description, "spi:description not found in the Problem"
+
+        # Print the found Problem description
+        print(f"Problem: {description} found")
+         
+    #TC#16 Test to update summary and long description of incident.
+    def test_update_incident(incident_desc, incident_long_desc,manage_host_ca_filepath):
+        response_code = create_incident(incident_desc, incident_long_desc,manage_host_ca_filepath)
+        assert response_code == 201, f"Failed to create Incident, got status code {response_code}"  
+
+        ref_code = get_incident_info(incident_desc,manage_host_ca_filepath)
+        
+        update_payload = {
+            "spi:description": "updated incident summary value",
+            "spi:description_longdescription": "updated incident long desc",
+        }
+        
+        # Sending a POST request to update the incident desc and long desc
+        response = requests.post(
+            url=f"{MANAGE_URL}/maximo/api/os/cduiincident/{ref_code}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=manage_host_ca_filepath
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated incident summary and long description in response
+        response_body = response.json()
+        
+        updated_summary_in_response = response_body['spi:description']
+        updated_long_description_in_response = response_body['spi:description_longdescription']
+        assert updated_summary_in_response == 'updated incident summary value', "Incident Summary does not match with updated incident summary"
+        assert updated_long_description_in_response == 'updated incident long desc', "Long desc does not match with the updated incident long desc"
+        print("Incident Updated ")   
+
+    #TC#17 Test to update summary and detail of SR.
+    def test_update_sr(sr_desc,sr_long_desc,manage_host_ca_filepath):
+        response_code=create_sr(sr_desc,sr_long_desc,manage_host_ca_filepath)
+        assert response_code == 201, f"Failed to create SR, got status code {response_code}"
+        ref_code = get_sr_info(sr_desc,manage_host_ca_filepath)
+        
+        update_payload = {
+            "spi:description": "updated SR summary value",
+            "spi:description_longdescription": "updated SR Details",
+        }
+        
+        # Sending a POST request to update the SR summary and details
+        response = requests.post(
+            url=f"{MANAGE_URL}/maximo/api/os/cduisr/{ref_code}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=manage_host_ca_filepath
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated SR summary and long description in response
+        response_body = response.json()
+        
+        updated_summary_in_response = response_body['spi:description']
+        updated_long_description_in_response = response_body['spi:description_longdescription']
+        assert updated_summary_in_response == 'updated SR summary value', "SR Summary does not match with updated SR summary"
+        assert updated_long_description_in_response == 'updated SR Details', "Long desc does not match with the updated SR long desc"
+        print("SR Updated")    
+        
+    #TC#18 Test to update summary and detail of Change Request.
+    def test_update_change(change_request_desc,change_request_long_desc,manage_host_ca_filepath):
+        response_code=create_changes(change_request_desc,change_request_long_desc,manage_host_ca_filepath)
+        assert response_code == 201, f"Failed to create CR, got status code {response_code}"
+        ref_code = get_cr_info(change_request_desc,manage_host_ca_filepath)
+        
+        update_payload = {
+            "spi:description": "updated CR summary value",
+            "spi:description_longdescription": "updated CR Details",
+        }
+        
+        # Sending a POST request to update the CR summary and details
+        response = requests.post(
+            url=f"{MANAGE_URL}/maximo/api/os/cduiwochange/{ref_code}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=manage_host_ca_filepath
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated CR summary and long description in response
+        response_body = response.json()
+        
+        updated_summary_in_response = response_body['spi:description']
+        updated_long_description_in_response = response_body['spi:description_longdescription']
+        assert updated_summary_in_response == 'updated CR summary value', "CR Summary does not match with updated CR summary"
+        assert updated_long_description_in_response == 'updated CR Details', "Long desc does not match with the updated CR long desc"
+        print("CR Updated")         
+
+    #TC#19 Test to update summary and details of solution.
+    def test_update_solution(solution_desc,manage_host_ca_filepath):
+        response_code = create_solution(solution_desc,manage_host_ca_filepath)
+        assert response_code == 201, f"Failed to create solution, got status code {response_code}"  
+
+        ref_code = get_solution_info(solution_desc,manage_host_ca_filepath)
+        
+        update_payload = {
+            "spi:description": "updated solution summary value"
+           
+        }
+        
+        # Sending a POST request to update the solution desc and long desc
+        response = requests.post(
+            url=f"{MANAGE_URL}/maximo/api/os/CDUISRMSOLUTION/{ref_code}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=manage_host_ca_filepath
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated solution summary and long description in response
+        response_body = response.json()
+        
+        updated_summary_in_response = response_body['spi:description']
+        assert updated_summary_in_response == 'updated solution summary value', "solution Summary does not match with updated solution summary"
+        print("solution Updated ")    
+        
+    #TC#20 Test to update summary and detail of Problem.
+    def test_update_problem(problem_desc,problem_long_desc,manage_host_ca_filepath):
+        response_code=create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath)
+        assert response_code == 201, f"Failed to create SR, got status code {response_code}"
+        ref_code = get_problem_info(problem_desc,test_update_problem)
+        
+        update_payload = {
+            "spi:description": "updated Problem summary value123",
+            "spi:description_longdescription": "updated Problem Details123",
+        }
+        
+        # Sending a POST request to update the problem summary and details
+        response = requests.post(
+            url=f"{MANAGE_URL}/maximo/api/os/cduiproblem/{ref_code}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=manage_host_ca_filepath
+        )    
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+        # getting updated problem summary and long description in response
+        response_body = response.json()
+        updated_summary_in_response = response_body['spi:description']
+        updated_long_description_in_response = response_body['spi:description_longdescription']
+        assert updated_summary_in_response == 'updated Problem summary value123', "Problem Summary does not match with updated problem summary"
+        assert updated_long_description_in_response == 'updated Problem Details123', "Long desc does not match with the updated problem long desc"
+        print("Problem Updated")
+        
+    #TC#21 Test to get all incidents.
+    def test_get_all_incidents(manage_host_ca_filepath):
+        response = requests.get(MANAGE_URL + '/maximo/api/os/cduiincident?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch incidents."    
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Incidents List is not present in json response." 
+        print("Incidents details present in json response." )
+        
+    #TC#22 Test fetching all ticket templates.
+    def test_get_all_tk_templates(manage_host_ca_filepath):
+        response = response = requests.get(MANAGE_URL + '/maximo/api/os/CDUITKTEMPLATE?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch ticket templates." 
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "ticket templates List is not present in json response."  
+        print("ticket templates details present in json response." )  
+        
+    #TC#23 Test fetching all problems.
+    def test_get_all_problems(manage_host_ca_filepath):
+        response = requests.get(MANAGE_URL + '/maximo/api/os/cduiproblem?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch problems." 
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Problems List is not present in json response."   
+        print("Problems details present in json response." ) 
+        
+    #TC#24 Test fetching all assets.
+    def test_get_all_assets(manage_host_ca_filepath):
+        response = requests.get(MANAGE_URL + '/maximo/api/os/cduiasset?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch Assets." 
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Assets List is notpresent in json response."  
+        print("Assets details present in json response." )  
+        
+    #TC#25 Test fetching all service request.
+    def test_get_all_service_request(manage_host_ca_filepath):
+        response = requests.get(MANAGE_URL + '/maximo/api/os/cduisr?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch service request."    
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "SR List is not present in json response." 
+        print("SR details present in json response." ) 
+
+    #TC#26 Test fetching all Offerings.
+    def test_get_all_offering(manage_host_ca_filepath):
+        response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMOFFERING?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch offerings."  
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Offering List is not present in json response."  
+        print("Offering details present in json response." )    
+        
+    #TC#27 Test fetching all solutions.
+    def test_get_all_solution(manage_host_ca_filepath):
+        response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMSOLUTION?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch Solutions."  
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Solutions List is not present in json response."   
+        print("Solutions details present in json response." )  
+        
+    #TC#28 Test fetching all change request.
+    def test_get_all_changes(manage_host_ca_filepath):
+        response = requests.get(MANAGE_URL + '/maximo/api/os/cduiwochange?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch Change Requests."    
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Changes List is not present in json response."   
+        print("Changes details present in json response." )
+        
+    #TC#29 Test fetching all Bulletin Board Message.
+    def test_get_all_bulletin_msg(manage_host_ca_filepath):
+        response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMBULLETIN?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch Bulletin Board Messages." 
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Bulletin Message List is not present in json response."  
+        print("Changes details present in json response." )      
+        
+        
+    #TC#30 Create a new service and validate its creation.
+    def test_create_and_validate_service(manage_host_ca_filepath):       
+        service_name=create_service(manage_host_ca_filepath)
+        # Validate the service creation
+        res = requests.get(
+        MANAGE_URL + '/maximo/api/os/cduiserviceview?oslc.select=*&oslc.where=service_name="' + service_name + '"',
+        headers=HEADERS,
+        verify=manage_host_ca_filepath)
+        response_data = res.json()
+
+        assert response_data['rdfs:member'], "No service found with the given name."
+        res_service_name = response_data['rdfs:member'][0]['spi:service_name']
+        print("Response Service Name generated is:", res_service_name)
+        assert res_service_name == service_name, "Service name does not match the expected name."
+        print("Service created with the same name.")
+        
+        
+    #TC#31 Test to check error message when editing service name    
+    def test_error_update_service_name(manage_host_ca_filepath):
+        service_name=create_service(manage_host_ca_filepath)
+        last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
+        
+        update_payload = {
+            "spi:service_name": "new_value"
+        }
+        
+        # Sending a POST request to update the service name
+        response = requests.post(
+            url=f"{MANAGE_URL}/maximo/api/os/cduiserviceview/{last_segment}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=manage_host_ca_filepath
+        )
+        
+        # Check for a 400 status code
+        assert response.status_code == 400, "Expected status code to be 400"
+
+        # Check error message
+        response_body = response.json()
+        expected_error_message = "SERVICE_NAME cannot be modified"
+
+        assert 'oslc:Error' in response_body, "Response should contain 'oslc:Error'"
+        error = response_body['oslc:Error']
+        
+        assert 'oslc:message' in error, "Error should contain 'oslc:message'"
+        assert error['oslc:message'] == expected_error_message, "Error message does not match expected value"
+
+        print('Response Error Message:', error['oslc:message'])
+        print('Expected Error Message:', expected_error_message)
+        
+        
+    #TC#32 To test error message displayed when updating service with blank Service Name.
+    def test_error_with_blank_service_name(manage_host_ca_filepath):
+        service_name=create_service(manage_host_ca_filepath)
+        last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
+          
+        update_payload = {
+            "spi:service_name": ""
+        }
+        
+        # Sending a POST request to update the service name with blank service name
+        response = requests.post(
+            url=f"{MANAGE_URL}/maximo/api/os/cduiserviceview/{last_segment}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=manage_host_ca_filepath
+        )
+        print("Status Code:",response.status_code)
+        # Check for a 400 status code
+        assert response.status_code == 400, "Expected status code to be 400"
+
+        # Check error message
+        response_body = response.json()
+        expected_error_message = "BMXAA4195E - A value is required for the Service Name field on the SERVICE_VIEW object."
+
+        assert 'oslc:Error' in response_body, "Response should contain 'oslc:Error'"
+        error = response_body['oslc:Error']
+        
+        assert 'oslc:message' in error, "Error should contain 'oslc:message'"
+        
+        assert error['oslc:message'] == expected_error_message, "Error message does not match expected value"
+
+        print('Response Error Message:', error['oslc:message'])
+        print('Expected Error Message:', expected_error_message)
+        
+    #TC#33 Test to update service status as Draft.   
+    def test_update_service_status(manage_host_ca_filepath):
+        service_name=create_service(manage_host_ca_filepath)
+        last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
+        
+        update_payload = {
+            "spi:status": "DRAFT"
+        }
+        
+        # Sending a POST request to update the service status
+        response = requests.post(
+            url=f"{MANAGE_URL}/maximo/api/os/cduiserviceview/{last_segment}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=manage_host_ca_filepath
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated service status in response
+        response_body = response.json()
+        
+        updated_status_in_response = response_body['spi:status']
+        print('Response updated status:', updated_status_in_response)
+        print('Expected updated status:', "DRAFT")
+        assert updated_status_in_response == 'DRAFT', "service status does not match with updated service status"
+        
+    #TC#34 Test to update description of service.
+    def test_update_service_description(manage_host_ca_filepath):
+        service_name=create_service(manage_host_ca_filepath)
+        last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
+        
+        update_payload = {
+            "spi:description": "updated service desc value"
+        }
+        
+        # Sending a POST request to update the service description
+        response = requests.post(
+            url=f"{MANAGE_URL}/maximo/api/os/cduiserviceview/{last_segment}",
+            json=update_payload,
+            headers=HEADERS_UPDATE,
+            verify=manage_host_ca_filepath
+        )
+        
+        # Check for a 200 status code
+        assert response.status_code == 200, "Expected status code to be 200"
+
+        # getting updated service description in response
+        response_body = response.json()
+        
+        updated_description_in_response = response_body['spi:description']
+        assert updated_description_in_response == 'updated service desc value', "service description does not match with updated service description"
+
+        print('Response updated desc:', updated_description_in_response)
+        print('Expected updated desc:', "updated service desc value")
+            
+
+    #TC#35 Test fetching all services.
+    def test_get_all_services(manage_host_ca_filepath):
+        response = requests.get(MANAGE_URL + '/maximo/api/os/cduiserviceview?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch services." 
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Service List is not present in json response."
+        print("Service details present in json response." )   
+
+    #TC#36 Test filter service by service name. 
+    def test_get_all_services_as_per_filter_service_name(manage_host_ca_filepath):      
+        service_name=create_service(manage_host_ca_filepath)
+        fetch_all_services_based_on_filter('service_name',service_name,manage_host_ca_filepath)  
+
+    #TC#37 Test filter service by service description.  
+    def test_get_all_services_as_per_filter_service_description(manage_host_ca_filepath): 
+        fetch_all_services_based_on_filter('description',"Python_service_description",manage_host_ca_filepath)     
+
+    #TC#38 Test filter service by service status active.           
+    def test_get_all_services_as_per_filter_service_status_active(manage_host_ca_filepath): 
+        fetch_all_services_based_on_filter("status","ACTIVE",manage_host_ca_filepath) 
+                 
+    #TC#39 Test filter service by service status draft.  
+    def test_get_all_services_as_per_filter_service_status_draft(manage_host_ca_filepath):   
+        fetch_all_services_based_on_filter("status","DRAFT",manage_host_ca_filepath)         
+
+    #TC#40 Test filter service by service provision Inhouse.
+    def test_get_all_services_as_per_filter_service_provision_Inhouse(manage_host_ca_filepath):      
+        fetch_all_services_based_on_filter("service_provision","In-house",manage_host_ca_filepath)            
+
+    #TC#41 Test filter service by service owned by.
+    def test_get_all_services_as_per_filter_owned_by(manage_host_ca_filepath): 
+        fetch_all_services_based_on_filter("owned_by",owned_by,manage_host_ca_filepath)  
+        
+    #********Self Serve TestCases*******
+     
+    #TC#42 Fetch all Assets in self serve My Assest
+    def test_ss_asset_list(manage_host_ca_filepath):
+        response = requests.get(f'{MANAGE_URL}/maximo/api/os/srm_asset?_fd=SRM_ASSET&oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Asset List not fetched"
+        assetinfo = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(assetinfo.get('rdfs:member', [])) > 0, "Assets List is not present in json response." 
+        print("Asset list fetched successfully" )
+        assetcount = assetinfo['oslc:responseInfo']['oslc:totalCount']
+        print("Asset count are", assetcount)
+
+    #TC#43 Create a Ticket and validate its creation
+    def test_ss_create_and_validate_ticket(ticket_desc,manage_host_ca_filepath):
+        ticket_descrip = create_ticket(ticket_desc,manage_host_ca_filepath)
+        # Validate the ticket creation
+        res = requests.get(
+            f'{MANAGE_URL}/maximo/api/os/cduimyticket?oslc.select=*&oslc.where=spi:description="{ticket_desc}"',
+            headers=HEADERS,
+            verify=manage_host_ca_filepath)
+        # Assert that the GET request was successful
+        assert res.status_code == 200, f"Expected status code 200, but got {res.status_code}. Response: {res.text}"
+
+        # If the response status is 200, proceed to check the ticket
+        response_data = res.json()
+
+        # Assert that the response contains 'rdfs:member'
+        assert 'rdfs:member' in response_data, "Response data does not contain 'rdfs:member'"
+
+        if response_data.get('rdfs:member'):
+           res_ticket = response_data['rdfs:member'][0].get('spi:description')
+           # Assert that the ticket description in the response matches the one created
+           assert res_ticket == ticket_descrip, f"Expected ticket description '{ticket_descrip}', but got '{res_ticket}'"
+           print("Ticket from Get request:", res_ticket)
+           print("Ticket created successfully and verified.")
+        else:
+           print("No Ticket found.")
+
+    #TC#44 Get the list of tickets displayed in My Items View More
+    def test_ss_get_ticket_list_in_my_items(manage_host_ca_filepath):
+        response = requests.get(f'{MANAGE_URL}/maximo/api/os/cduimyticket?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Ticket list not found in the response."
+        print("Ticket list is fetched with status code.", response.status_code)
+        data = response.json()
+        # Ensure that there is at least one item in 'rdfs:member'
+        assert len(data.get('rdfs:member', [])) > 0, "Tickets List is not present in json response." 
+        print("Tickets details present in json response." )
+        data = response.json()
+        data.get('oslc:responseInfo')
+        total_ticket_count = data['oslc:responseInfo']['oslc:totalCount']
+        print("Ticket count is", total_ticket_count)
+
+    #TC#45 Request Update on the ticket in MyItems in self serve
+    def test_ss_request_update(ticket_desc,manage_host_ca_filepath):
+        #Get the ticketid from API
+        res = requests.get(
+            f'{MANAGE_URL}/maximo/api/os/cduimyticket?oslc.select=*&oslc.where=spi:description="{ticket_desc}"',
+            headers=HEADERS,
+            verify=manage_host_ca_filepath
+        )
+        json_data = res.json()
+        if json_data.get('oslc:responseInfo'):
+            ticketcount=  json_data['oslc:responseInfo']['oslc:totalCount']
+            if ticketcount == 1:
+                ticketid = json_data['rdfs:member'][0].get('spi:ticketid')
+                recordkey = ticketid
+
+                requestupdate_payload = {
+                "spi:class": "SR",
+                "spi:description": f"Reporting user MAXADMIN requested a ticket update for the following reason: TestUpdate{random_string}",
+                "spi:logtype": "UPDATE",
+                "spi:modifyby": "MAXADMIN",
+                "spi:createby": "MAXADMIN",
+                "spi:recordkey": recordkey
+                }
+
+                response = requests.post(f'{MANAGE_URL}/maximo/api/os/cduimyworklog?oslc.select=*', json=requestupdate_payload,
+                                         headers=HEADERS, verify=manage_host_ca_filepath)
+                assert response.status_code == 201, "Request not updated"
+                print(f"RequestUpdated with message : TestUpdate{random_string}")
+
+    #TC#46 Adding comment in Ticket from My Items
+    def test_ss_add_comment_on_ticket(ticket_desc,manage_host_ca_filepath):
+        ###To fetch Ticket id from the API
+        res = requests.get(f'{MANAGE_URL}/maximo/api/os/cduimyticket?oslc.select=*&oslc.where=spi:description="{ticket_desc}"',headers=HEADERS,verify=manage_host_ca_filepath)
+        json_data = res.json()
+        if json_data.get('oslc:responseInfo'):
+            ticketcount=  json_data['oslc:responseInfo']['oslc:totalCount']
+            if ticketcount == 1:
+                ticketid = json_data['rdfs:member'][0].get('spi:ticketid')
+                recordkey = ticketid
+                comment_payload = {
+                    "spi:class": "SR",
+                    "spi:description": f"Testcomment{random_string}...",
+                    "spi:description_longdescription": f"Testcomment{random_string}",
+                    "spi:logtype": "CLIENTNOTE",
+                    "spi:modifyby": "MAXADMIN",
+                    "spi:recordkey": recordkey
+                 }
+                #Add comment on ticket with from my items in Self serve
+                response = requests.post(f'{MANAGE_URL}/maximo/api/os/cduimyworklog?oslc.select=*', json=comment_payload, headers=HEADERS, verify=manage_host_ca_filepath)
+                assert response.status_code == 201, "Comment not added"
+                print('Comment added on ticket is :', "Testcomment" + random_string)
+
+
+    #TC#47 Get all the current Update On self serve
+    def test_get_all_currentupdates(manage_host_ca_filepath):
+        objstr = ['CDUISRMOFFERING', 'CDUISRMSOLUTION', 'CDUISRMBULLETIN']
+        for obj in objstr:
+            response = requests.get(
+                f'{MANAGE_URL}/maximo/api/os/{obj}?oslc.select=*',
+                headers=HEADERS,
+                verify=manage_host_ca_filepath
+            )
+            assert response.status_code == 200, f"Failed to fetch {obj}."
+            count = response.json()['oslc:responseInfo']['oslc:totalCount']
+            assert count > 0, "Tickets List is not present in json response."
+            print(f"Total {obj} count:", count)
+
+    #TC#48 Check Request new service on Self Serve
+    def test_ss_request_new_service(manage_host_ca_filepath):
+        response= requests.get(f'{MANAGE_URL}/maximo/api/os/CDUIOFFLIST?oslc.select=*' , headers=HEADERS, verify=manage_host_ca_filepath)
+        assert response.status_code == 200, "Failed to fetch services."
+        services_jsondata = response.json()
+        services_jsondata.get('oslc:responseInfo')
+        services_count = services_jsondata['oslc:responseInfo']['oslc:totalCount']
+        assert services_count > 0,"List of Request Services fetched successfully."
+        print("Total Service count :", services_count)
+
+    #TC#49 Search offering using string from search box
+    def test_ss_search_string_in_request_service(manage_host_ca_filepath):
+        response =  requests.get(f'{MANAGE_URL}/maximo/api/os/CDUISRMOFFERING?oslc.select=*&savedQuery=search&sqp:text=offering', headers=HEADERS, verify=manage_host_ca_filepath)
+        response.status_code ==200,
+        print("Offerings are searchable")
+        jsondata= response.json()
+        jsondata.get('oslc:responseInfo')
+        offering_count = jsondata['oslc:responseInfo']['oslc:totalCount']
+        assert offering_count > 0,"Offering found in Search Results"
+        print("Total Offering count :", offering_count)
+        # iterate through the offering list
+        offeringlist= []
+        for i in range(offering_count):
+            offeringname = jsondata['rdfs:member'][i].get('spi:description')
+            offeringlist.append(offeringname)
+        print("List of all searched offering are", offeringlist)   
+
 	
 	
 ---
@@ -2253,6 +2189,9 @@ spec:
                 path: tests.py
             defaultMode: 420
             optional: false
-  backoffLimit: 4
+      backoffLimit: 4
 
 {{- end }}
+	
+	
+

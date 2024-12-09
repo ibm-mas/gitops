@@ -59,9 +59,9 @@ spec:
 
                   echo "... attempt ${c} of ${RETRIES}"
                   
-                  SECRET_DATA=$(oc get secrets -n ${SECRET_NS} | grep ${SECRET_PRE}-token)
-                  if [[ ! -z "${SECRET_DATA}" ]]; then
-                    echo "SECRET_DATA: $SECRET_DATA"
+                  SECRET_NAME=$(oc get secrets -n ${SECRET_NS} | grep ${SECRET_PRE}-token | head -1 | cut -d' ' -f1)
+                  if [[ ! -z "${SECRET_NAME}" ]]; then
+                    echo "SECRET_NAME: $SECRET_NAME"
                     echo "...... success"
                     return 0
                   fi
@@ -82,6 +82,13 @@ spec:
               echo "Waiting for custom sa secret to be present before continuing (timeout 300s)"
               echo "================================================================================"
               wait_for_secret "${CUSTOM_SA_NAMESPACE}" "${CUSTOM_SA_NAME}"
+              
+              echo ""
+              echo "================================================================================"
+              echo "Creating ConfigMap to store custom sa secret name for later use"
+              echo "================================================================================"
+              oc create configmap custom-sa-config --from-literal=${CUSTOM_SA_NAME}=${SECRET_NAME} 
+
 
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}

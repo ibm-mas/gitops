@@ -1,9 +1,7 @@
 {{ $aws_secret := "aws"}}
 {{ $sa_name    :=  "postsync-custom-sa-update-sm-sa" }}
 {{- range $custom_sa_name, $custom_sa_role := $.Values.custom_sa_details }}
-{{- $prefix := printf "%s-token" $custom_sa_name }}
-{{- range $index, $secret := (lookup "v1" "Secret" $.Values.custom_sa_namespace "").items }}
-{{- if (hasPrefix $prefix $secret.metadata.name) }}
+{{ $custom_sa_secret_name := (lookup "v1" "ConfigMap" $.Values.custom_sa_namespace "custom-sa-config").data.$custom_sa_name | quote }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -51,15 +49,15 @@ spec:
             - name: CUSTOM_SA_NAME
               value: {{ $custom_sa_name }}
             - name: CUSTOM_SA_SECRET_NAME
-              value: {{ $secret.metadata.name }}
+              value: {{ $custom_sa_secret_name }}
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
-            - name: {{ $secret.metadata.name }}
-              mountPath: "/etc/mas/creds/{{ $secret.metadata.name }}"
+            - name: {{ $custom_sa_secret_name }}
+              mountPath: "/etc/mas/creds/{{ $custom_sa_secret_name }}"
           command:
             - /bin/sh
             - -c
@@ -111,9 +109,9 @@ spec:
             secretName: {{ $aws_secret }}
             defaultMode: 420
             optional: false
-        - name: {{ $secret.metadata.name }}
+        - name: {{ $custom_sa_secret_name }}
           secret:
-            secretName: {{ $secret.metadata.name }}
+            secretName: {{ $custom_sa_secret_name }}
             defaultMode: 420
             optional: false
   backoffLimit: 4

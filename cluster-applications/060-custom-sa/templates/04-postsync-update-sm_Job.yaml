@@ -1,7 +1,6 @@
 {{ $aws_secret := "aws"}}
 {{ $sa_name    :=  "postsync-custom-sa-update-sm-sa" }}
 {{- range $custom_sa_name, $custom_sa_role := $.Values.custom_sa_details }}
-{{ $custom_sa_secret_name := (index (lookup "v1" "ConfigMap" $.Values.custom_sa_namespace "custom-sa-config").data $custom_sa_name) | quote }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -14,7 +13,7 @@ metadata:
   name: postsync-custom-sa-update-sm-job-v1-{{ $custom_sa_name }}-{{ omit $.Values "junitreporter" | toYaml | adler32sum }}
   namespace: {{ $.Values.custom_sa_namespace }}
   annotations:
-    argocd.argoproj.io/sync-wave: "066"
+    argocd.argoproj.io/sync-wave: "065"
 {{- if $.Values.custom_labels }}
   labels:
 {{ $.Values.custom_labels | toYaml | indent 4 }}
@@ -48,16 +47,14 @@ spec:
               value: {{ $.Values.cluster_id }}
             - name: CUSTOM_SA_NAME
               value: {{ $custom_sa_name }}
-            - name: CUSTOM_SA_SECRET_NAME
-              value: {{ $custom_sa_secret_name }}
+            - name: CUSTOM_SA_NAMESPACE
+              value: {{ $.Values.custom_sa_namespace }}
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
-            - name: {{ $custom_sa_secret_name }}
-              mountPath: "/etc/mas/creds/{{ $custom_sa_secret_name }}"
           command:
             - /bin/sh
             - -c
@@ -73,16 +70,25 @@ spec:
               # mount the secret on the jobs filesystem, and read them in here
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-
-              echo "Fetching token from ${CUSTOM_SA_SECRET_NAME} Secret for Service Account ${CUSTOM_SA_NAME}"
-              export CUSTOM_SA_SECRET_TOKEN=$(cat /etc/mas/creds/${CUSTOM_SA_SECRET_NAME}/token)
-              if [[ -z "${CUSTOM_SA_SECRET_TOKEN}" ]]; then
+              
+              # Get name of secret generated for the custom service account
+              echo "Fetching name of secret generated for custom service account ${CUSTOM_SA_NAME}"
+              SECRET_NAME=$(oc get secret -n ${CUSTOM_SA_NAMESPACE} | grep ${CUSTOM_SA_NAME}-token | head -1 | cut -d' ' -f1)
+              if [[ -z "${SECRET_NAME}" ]]; then
+                echo "Failed to fetch secret name"
+                exit 1
+              fi
+              
+              # Get secret token to store in sm
+              echo "Fetching token from secret ${SECRET_NAME} for service account ${CUSTOM_SA_NAME}"
+              SECRET_TOKEN=$(oc get secret ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} --ignore-not-found -o json | jq -r '.data.token' | base64 -d)
+              if [[ -z "${SECRET_TOKEN}" ]]; then
                 echo "Failed to fetch token"
                 exit 1
               fi
               
+              # Get cluster API URL to store in sm
               echo "Fetching cluster API URL for cluster ${CLUSTER_ID}"
-              rc=0
               CLUSTER_API_URL=$(oc cluster-info | grep https | cut -d'/' -f3 > /tmp/${CLUSTER_ID}; cat -A /tmp/${CLUSTER_ID} | cut -d'^' -f1)
               if [[ -z "${CLUSTER_API_URL}" ]]; then
                 echo "Failed to fetch cluster API URL"
@@ -96,10 +102,10 @@ spec:
               export SM_AWS_REGION=${REGION_ID}
               sm_login
 
-              # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}" --tags "${SECRET_TAGS}"
+              # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_TOKEN}" --tags "${SECRET_TAGS}"
               SM_SECRET_NAME=${ACCOUNT_ID}/${CLUSTER_ID}/${CUSTOM_SA_NAME}
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-custom-sa-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              sm_update_secret ${SM_SECRET_NAME} "{\"cluster\": \"${CLUSTER_ID}\",\"apiurl\":\"https://${CLUSTER_API_URL}\",\"token\":\"${CUSTOM_SA_SECRET_TOKEN}\"}" "${TAGS}"
+              sm_update_secret ${SM_SECRET_NAME} "{\"cluster\": \"${CLUSTER_ID}\",\"apiurl\":\"https://${CLUSTER_API_URL}\",\"token\":\"${SECRET_TOKEN}\"}" "${TAGS}"
 
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}
@@ -107,11 +113,6 @@ spec:
         - name: aws
           secret:
             secretName: {{ $aws_secret }}
-            defaultMode: 420
-            optional: false
-        - name: {{ $custom_sa_secret_name }}
-          secret:
-            secretName: {{ $custom_sa_secret_name }}
             defaultMode: 420
             optional: false
   backoffLimit: 4

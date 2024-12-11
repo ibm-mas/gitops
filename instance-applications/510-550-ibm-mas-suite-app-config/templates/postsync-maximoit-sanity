@@ -1117,29 +1117,7 @@ data:
                 j=1
                 break
         assert j == 1, "SERVICEVIEW is not installed"
-        
-    #TC#4 Test to verify Service Delivery is installed
-    def test_service_delivery_installed_insystem(manage_host_ca_filepath):
-
-        response = requests.get(f'{MANAGE_URL}/maximo/api/os/mxapimaxapp?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-        print("Response Code ", response.status_code)
-        assert response.status_code == 200, "Failed to Fetch system information."
-        systemsinfo = response.json()
-        systemsinfo.get('oslc:responseInfo')
-        app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
-
-        # iterate through the application list
-        for i in range(app_count):
-            j=0
-            app_name = systemsinfo['rdfs:member'][i].get('spi:app')
-            if app_name == "SERVICEDELIVERY":
-                print("SERVICEDELIVERY : Installed in System")
-                j=1
-                break
-        assert j == 1, "SERVICEDELIVERY is not installed"
-
-
-
+    #TC#4 Test to create and validate incident
     def test_create_and_validate_incident(incident_desc, incident_long_desc, manage_host_ca_filepath):
         # Create the incident
         response_code = create_incident(incident_desc, incident_long_desc, manage_host_ca_filepath)
@@ -1169,7 +1147,7 @@ data:
             print("No incident found.")
 
 
-    #TC#6 Test to create a Asset and validate its creation.
+    #TC#5 Test to create a Asset and validate its creation.
     def test_create_and_validate_asset(assetnum, asset_desc, manage_host_ca_filepath): 
         # Create the asset
         response = create_asset(assetnum, asset_desc, manage_host_ca_filepath)
@@ -1201,7 +1179,7 @@ data:
         else:
             print("No asset found.")
             
-    #TC#7 Test to create a ticket template and validate its creation.
+    #TC#6 Test to create a ticket template and validate its creation.
     def test_create_and_validate_ticket_template(tk_template_desc, manage_host_ca_filepath): 
         # Create the ticket template
         response = create_ticket_template(tk_template_desc, manage_host_ca_filepath)
@@ -1233,7 +1211,7 @@ data:
                 assert False, "No Ticket Template found."
 
             
-    #TC#8 Test to create a Solution and validate its creation.
+    #TC#7 Test to create a Solution and validate its creation.
     def test_create_and_validate_solution(solution_desc,manage_host_ca_filepath): 
         response = create_solution(solution_desc,manage_host_ca_filepath)
         assert response == 201, "Failed to create solution."  
@@ -1264,7 +1242,7 @@ data:
             
             
            
-    #TC#9 Test to create a problem and validate its creation.
+    #TC#8 Test to create a problem and validate its creation.
     def test_create_and_validate_problem(problem_desc,problem_long_desc, manage_host_ca_filepath): 
         # Create the problem
         response = create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath)
@@ -1297,7 +1275,7 @@ data:
                 assert False, "No problem found in response."  # Assert if no problem is found.
 
             
-    #TC#10 Test to create a change request and validate its creation.
+    #TC#9 Test to create a change request and validate its creation.
     def test_create_and_validate_changes(change_request_desc, change_request_long_desc, manage_host_ca_filepath): 
         # Create the change request
         response = create_changes(change_request_desc, change_request_long_desc, manage_host_ca_filepath)
@@ -1332,7 +1310,7 @@ data:
                 
            
         
-    #TC#11 Test to create a Service Request and validate its creation.
+    #TC#10 Test to create a Service Request and validate its creation.
     def test_create_and_validate_sr(sr_desc, sr_long_desc, manage_host_ca_filepath): 
         # Create the SR
         response = create_sr(sr_desc, sr_long_desc, manage_host_ca_filepath)
@@ -1366,8 +1344,7 @@ data:
                 assert False, "No SR found in response."  # Assert if no SR is found.
 
           
-    #TC#12 Test to create a Bulletin Message and validate its creation.
-
+    #TC#11 Test to create a Bulletin Message and validate its creation.
     def test_create_and_validate_bulletin_msg(bb_subject, bb_message, bb_expiredate, manage_host_ca_filepath): 
         # Create the Bulletin Board message
         response = create_bulletin_board_msg(bb_subject, bb_message, bb_expiredate, manage_host_ca_filepath)
@@ -1412,7 +1389,7 @@ data:
            
        
            
-    #TC#13 Test to search incident by incident description.
+    #TC#12 Test to search incident by incident description.
     def test_search_incident(incident_desc,incident_long_desc,manage_host_ca_filepath):
         response_code = create_incident(incident_desc, incident_long_desc,manage_host_ca_filepath)
         print("incident desc:", incident_desc)
@@ -1446,7 +1423,7 @@ data:
         print(f"Incident: {description} found")
         
         
-    #TC#14 Test to search Service Request by its summary
+    #TC#13 Test to search Service Request by its summary
     def test_search_sr(sr_desc,sr_long_desc,manage_host_ca_filepath):
         response_code = create_sr(sr_desc,sr_long_desc,manage_host_ca_filepath)
         print("SR desc:", sr_desc)
@@ -1483,7 +1460,7 @@ data:
         
         
         
-    #TC#15 Test to Search Problem by its summary
+    #TC#14 Test to Search Problem by its summary
     def test_search_problem(problem_desc,problem_long_desc,manage_host_ca_filepath):
         response_code = create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath)
         print("Problem desc:", problem_desc,manage_host_ca_filepath)
@@ -1516,7 +1493,7 @@ data:
         # Print the found Problem description
         print(f"Problem: {description} found")
          
-    #TC#16 Test to update summary and long description of incident.
+    #TC#15 Test to update summary and long description of incident.
     def test_update_incident(incident_desc, incident_long_desc,manage_host_ca_filepath):
         response_code = create_incident(incident_desc, incident_long_desc,manage_host_ca_filepath)
         assert response_code == 201, f"Failed to create Incident, got status code {response_code}"  
@@ -1548,7 +1525,7 @@ data:
         assert updated_long_description_in_response == 'updated incident long desc', "Long desc does not match with the updated incident long desc"
         print("Incident Updated ")   
 
-    #TC#17 Test to update summary and detail of SR.
+    #TC#16 Test to update summary and detail of SR.
     def test_update_sr(sr_desc,sr_long_desc,manage_host_ca_filepath):
         response_code=create_sr(sr_desc,sr_long_desc,manage_host_ca_filepath)
         assert response_code == 201, f"Failed to create SR, got status code {response_code}"
@@ -1579,7 +1556,7 @@ data:
         assert updated_long_description_in_response == 'updated SR Details', "Long desc does not match with the updated SR long desc"
         print("SR Updated")    
         
-    #TC#18 Test to update summary and detail of Change Request.
+    #TC#17 Test to update summary and detail of Change Request.
     def test_update_change(change_request_desc,change_request_long_desc,manage_host_ca_filepath):
         response_code=create_changes(change_request_desc,change_request_long_desc,manage_host_ca_filepath)
         assert response_code == 201, f"Failed to create CR, got status code {response_code}"
@@ -1610,7 +1587,7 @@ data:
         assert updated_long_description_in_response == 'updated CR Details', "Long desc does not match with the updated CR long desc"
         print("CR Updated")         
 
-    #TC#19 Test to update summary and details of solution.
+    #TC#18 Test to update summary and details of solution.
     def test_update_solution(solution_desc,manage_host_ca_filepath):
         response_code = create_solution(solution_desc,manage_host_ca_filepath)
         assert response_code == 201, f"Failed to create solution, got status code {response_code}"  
@@ -1640,7 +1617,7 @@ data:
         assert updated_summary_in_response == 'updated solution summary value', "solution Summary does not match with updated solution summary"
         print("solution Updated ")    
         
-    #TC#20 Test to update summary and detail of Problem.
+    #TC#19 Test to update summary and detail of Problem.
     def test_update_problem(problem_desc,problem_long_desc,manage_host_ca_filepath):
         response_code=create_problem(problem_desc,problem_long_desc,manage_host_ca_filepath)
         assert response_code == 201, f"Failed to create SR, got status code {response_code}"
@@ -1668,7 +1645,7 @@ data:
         assert updated_long_description_in_response == 'updated Problem Details123', "Long desc does not match with the updated problem long desc"
         print("Problem Updated")
         
-    #TC#21 Test to get all incidents.
+    #TC#20 Test to get all incidents.
     def test_get_all_incidents(manage_host_ca_filepath):
         response = requests.get(MANAGE_URL + '/maximo/api/os/cduiincident?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
         assert response.status_code == 200, "Failed to fetch incidents."    
@@ -1677,7 +1654,7 @@ data:
         assert len(data.get('rdfs:member', [])) > 0, "Incidents List is not present in json response." 
         print("Incidents details present in json response." )
         
-    #TC#22 Test fetching all ticket templates.
+    #TC#21 Test fetching all ticket templates.
     def test_get_all_tk_templates(manage_host_ca_filepath):
         response = response = requests.get(MANAGE_URL + '/maximo/api/os/CDUITKTEMPLATE?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
         assert response.status_code == 200, "Failed to fetch ticket templates." 
@@ -1686,7 +1663,7 @@ data:
         assert len(data.get('rdfs:member', [])) > 0, "ticket templates List is not present in json response."  
         print("ticket templates details present in json response." )  
         
-    #TC#23 Test fetching all problems.
+    #TC#22 Test fetching all problems.
     def test_get_all_problems(manage_host_ca_filepath):
         response = requests.get(MANAGE_URL + '/maximo/api/os/cduiproblem?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
         assert response.status_code == 200, "Failed to fetch problems." 
@@ -1695,7 +1672,7 @@ data:
         assert len(data.get('rdfs:member', [])) > 0, "Problems List is not present in json response."   
         print("Problems details present in json response." ) 
         
-    #TC#24 Test fetching all assets.
+    #TC#23 Test fetching all assets.
     def test_get_all_assets(manage_host_ca_filepath):
         response = requests.get(MANAGE_URL + '/maximo/api/os/cduiasset?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
         assert response.status_code == 200, "Failed to fetch Assets." 
@@ -1704,7 +1681,7 @@ data:
         assert len(data.get('rdfs:member', [])) > 0, "Assets List is notpresent in json response."  
         print("Assets details present in json response." )  
         
-    #TC#25 Test fetching all service request.
+    #TC#24 Test fetching all service request.
     def test_get_all_service_request(manage_host_ca_filepath):
         response = requests.get(MANAGE_URL + '/maximo/api/os/cduisr?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
         assert response.status_code == 200, "Failed to fetch service request."    
@@ -1712,17 +1689,7 @@ data:
         # Ensure that there is at least one item in 'rdfs:member'
         assert len(data.get('rdfs:member', [])) > 0, "SR List is not present in json response." 
         print("SR details present in json response." ) 
-
-    #TC#26 Test fetching all Offerings.
-    def test_get_all_offering(manage_host_ca_filepath):
-        response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMOFFERING?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-        assert response.status_code == 200, "Failed to fetch offerings."  
-        data = response.json()
-        # Ensure that there is at least one item in 'rdfs:member'
-        assert len(data.get('rdfs:member', [])) > 0, "Offering List is not present in json response."  
-        print("Offering details present in json response." )    
-        
-    #TC#27 Test fetching all solutions.
+    #TC#25 Test fetching all solutions.
     def test_get_all_solution(manage_host_ca_filepath):
         response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMSOLUTION?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
         assert response.status_code == 200, "Failed to fetch Solutions."  
@@ -1731,7 +1698,7 @@ data:
         assert len(data.get('rdfs:member', [])) > 0, "Solutions List is not present in json response."   
         print("Solutions details present in json response." )  
         
-    #TC#28 Test fetching all change request.
+    #TC#26 Test fetching all change request.
     def test_get_all_changes(manage_host_ca_filepath):
         response = requests.get(MANAGE_URL + '/maximo/api/os/cduiwochange?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
         assert response.status_code == 200, "Failed to fetch Change Requests."    
@@ -1740,7 +1707,7 @@ data:
         assert len(data.get('rdfs:member', [])) > 0, "Changes List is not present in json response."   
         print("Changes details present in json response." )
         
-    #TC#29 Test fetching all Bulletin Board Message.
+    #TC#27 Test fetching all Bulletin Board Message.
     def test_get_all_bulletin_msg(manage_host_ca_filepath):
         response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMBULLETIN?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
         assert response.status_code == 200, "Failed to fetch Bulletin Board Messages." 
@@ -1750,7 +1717,7 @@ data:
         print("Changes details present in json response." )      
         
         
-    #TC#30 Create a new service and validate its creation.
+    #TC#28 Create a new service and validate its creation.
     def test_create_and_validate_service(manage_host_ca_filepath):       
         service_name=create_service(manage_host_ca_filepath)
         # Validate the service creation
@@ -1767,7 +1734,7 @@ data:
         print("Service created with the same name.")
         
         
-    #TC#31 Test to check error message when editing service name    
+    #TC#29 Test to check error message when editing service name    
     def test_error_update_service_name(manage_host_ca_filepath):
         service_name=create_service(manage_host_ca_filepath)
         last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
@@ -1801,7 +1768,7 @@ data:
         print('Expected Error Message:', expected_error_message)
         
         
-    #TC#32 To test error message displayed when updating service with blank Service Name.
+    #TC#30 To test error message displayed when updating service with blank Service Name.
     def test_error_with_blank_service_name(manage_host_ca_filepath):
         service_name=create_service(manage_host_ca_filepath)
         last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
@@ -1835,7 +1802,7 @@ data:
         print('Response Error Message:', error['oslc:message'])
         print('Expected Error Message:', expected_error_message)
         
-    #TC#33 Test to update service status as Draft.   
+    #TC#31 Test to update service status as Draft.   
     def test_update_service_status(manage_host_ca_filepath):
         service_name=create_service(manage_host_ca_filepath)
         last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
@@ -1863,7 +1830,7 @@ data:
         print('Expected updated status:', "DRAFT")
         assert updated_status_in_response == 'DRAFT', "service status does not match with updated service status"
         
-    #TC#34 Test to update description of service.
+    #TC#32 Test to update description of service.
     def test_update_service_description(manage_host_ca_filepath):
         service_name=create_service(manage_host_ca_filepath)
         last_segment, service_view_id = get_service_info(service_name,manage_host_ca_filepath)
@@ -1893,7 +1860,7 @@ data:
         print('Expected updated desc:', "updated service desc value")
             
 
-    #TC#35 Test fetching all services.
+    #TC#33 Test fetching all services.
     def test_get_all_services(manage_host_ca_filepath):
         response = requests.get(MANAGE_URL + '/maximo/api/os/cduiserviceview?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
         assert response.status_code == 200, "Failed to fetch services." 
@@ -1902,45 +1869,33 @@ data:
         assert len(data.get('rdfs:member', [])) > 0, "Service List is not present in json response."
         print("Service details present in json response." )   
 
-    #TC#36 Test filter service by service name. 
+    #TC#34 Test filter service by service name. 
     def test_get_all_services_as_per_filter_service_name(manage_host_ca_filepath):      
         service_name=create_service(manage_host_ca_filepath)
         fetch_all_services_based_on_filter('service_name',service_name,manage_host_ca_filepath)  
 
-    #TC#37 Test filter service by service description.  
+    #TC#35 Test filter service by service description.  
     def test_get_all_services_as_per_filter_service_description(manage_host_ca_filepath): 
         fetch_all_services_based_on_filter('description',"Python_service_description",manage_host_ca_filepath)     
 
-    #TC#38 Test filter service by service status active.           
+    #TC#36 Test filter service by service status active.           
     def test_get_all_services_as_per_filter_service_status_active(manage_host_ca_filepath): 
         fetch_all_services_based_on_filter("status","ACTIVE",manage_host_ca_filepath) 
                  
-    #TC#39 Test filter service by service status draft.  
+    #TC#37 Test filter service by service status draft.  
     def test_get_all_services_as_per_filter_service_status_draft(manage_host_ca_filepath):   
         fetch_all_services_based_on_filter("status","DRAFT",manage_host_ca_filepath)         
 
-    #TC#40 Test filter service by service provision Inhouse.
+    #TC#38 Test filter service by service provision Inhouse.
     def test_get_all_services_as_per_filter_service_provision_Inhouse(manage_host_ca_filepath):      
         fetch_all_services_based_on_filter("service_provision","In-house",manage_host_ca_filepath)            
 
-    #TC#41 Test filter service by service owned by.
+    #TC#39 Test filter service by service owned by.
     def test_get_all_services_as_per_filter_owned_by(manage_host_ca_filepath): 
         fetch_all_services_based_on_filter("owned_by",owned_by,manage_host_ca_filepath)  
         
     #********Self Serve TestCases*******
-     
-    #TC#42 Fetch all Assets in self serve My Assest
-    def test_ss_asset_list(manage_host_ca_filepath):
-        response = requests.get(f'{MANAGE_URL}/maximo/api/os/srm_asset?_fd=SRM_ASSET&oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
-        assert response.status_code == 200, "Asset List not fetched"
-        assetinfo = response.json()
-        # Ensure that there is at least one item in 'rdfs:member'
-        assert len(assetinfo.get('rdfs:member', [])) > 0, "Assets List is not present in json response." 
-        print("Asset list fetched successfully" )
-        assetcount = assetinfo['oslc:responseInfo']['oslc:totalCount']
-        print("Asset count are", assetcount)
-
-    #TC#43 Create a Ticket and validate its creation
+    #TC#40 Create a Ticket and validate its creation
     def test_ss_create_and_validate_ticket(ticket_desc,manage_host_ca_filepath):
         ticket_descrip = create_ticket(ticket_desc,manage_host_ca_filepath)
         # Validate the ticket creation
@@ -1966,7 +1921,7 @@ data:
         else:
            print("No Ticket found.")
 
-    #TC#44 Get the list of tickets displayed in My Items View More
+    #TC#41 Get the list of tickets displayed in My Items View More
     def test_ss_get_ticket_list_in_my_items(manage_host_ca_filepath):
         response = requests.get(f'{MANAGE_URL}/maximo/api/os/cduimyticket?oslc.select=*', headers=HEADERS, verify=manage_host_ca_filepath)
         assert response.status_code == 200, "Ticket list not found in the response."
@@ -1980,7 +1935,7 @@ data:
         total_ticket_count = data['oslc:responseInfo']['oslc:totalCount']
         print("Ticket count is", total_ticket_count)
 
-    #TC#45 Request Update on the ticket in MyItems in self serve
+    #TC#42 Request Update on the ticket in MyItems in self serve
     def test_ss_request_update(ticket_desc,manage_host_ca_filepath):
         #Get the ticketid from API
         res = requests.get(
@@ -2009,7 +1964,7 @@ data:
                 assert response.status_code == 201, "Request not updated"
                 print(f"RequestUpdated with message : TestUpdate{random_string}")
 
-    #TC#46 Adding comment in Ticket from My Items
+    #TC#43 Adding comment in Ticket from My Items
     def test_ss_add_comment_on_ticket(ticket_desc,manage_host_ca_filepath):
         ###To fetch Ticket id from the API
         res = requests.get(f'{MANAGE_URL}/maximo/api/os/cduimyticket?oslc.select=*&oslc.where=spi:description="{ticket_desc}"',headers=HEADERS,verify=manage_host_ca_filepath)
@@ -2032,50 +1987,6 @@ data:
                 assert response.status_code == 201, "Comment not added"
                 print('Comment added on ticket is :', "Testcomment" + random_string)
 
-
-    #TC#47 Get all the current Update On self serve
-    def test_get_all_currentupdates(manage_host_ca_filepath):
-        objstr = ['CDUISRMOFFERING', 'CDUISRMSOLUTION', 'CDUISRMBULLETIN']
-        for obj in objstr:
-            response = requests.get(
-                f'{MANAGE_URL}/maximo/api/os/{obj}?oslc.select=*',
-                headers=HEADERS,
-                verify=manage_host_ca_filepath
-            )
-            assert response.status_code == 200, f"Failed to fetch {obj}."
-            count = response.json()['oslc:responseInfo']['oslc:totalCount']
-            assert count > 0, "Tickets List is not present in json response."
-            print(f"Total {obj} count:", count)
-
-    #TC#48 Check Request new service on Self Serve
-    def test_ss_request_new_service(manage_host_ca_filepath):
-        response= requests.get(f'{MANAGE_URL}/maximo/api/os/CDUIOFFLIST?oslc.select=*' , headers=HEADERS, verify=manage_host_ca_filepath)
-        assert response.status_code == 200, "Failed to fetch services."
-        services_jsondata = response.json()
-        services_jsondata.get('oslc:responseInfo')
-        services_count = services_jsondata['oslc:responseInfo']['oslc:totalCount']
-        assert services_count > 0,"List of Request Services fetched successfully."
-        print("Total Service count :", services_count)
-
-    #TC#49 Search offering using string from search box
-    def test_ss_search_string_in_request_service(manage_host_ca_filepath):
-        response =  requests.get(f'{MANAGE_URL}/maximo/api/os/CDUISRMOFFERING?oslc.select=*&savedQuery=search&sqp:text=offering', headers=HEADERS, verify=manage_host_ca_filepath)
-        response.status_code ==200,
-        print("Offerings are searchable")
-        jsondata= response.json()
-        jsondata.get('oslc:responseInfo')
-        offering_count = jsondata['oslc:responseInfo']['oslc:totalCount']
-        assert offering_count > 0,"Offering found in Search Results"
-        print("Total Offering count :", offering_count)
-        # iterate through the offering list
-        offeringlist= []
-        for i in range(offering_count):
-            offeringname = jsondata['rdfs:member'][i].get('spi:description')
-            offeringlist.append(offeringname)
-        print("List of all searched offering are", offeringlist)   
-
-	
-	
 ---
 kind: ConfigMap
 apiVersion: v1

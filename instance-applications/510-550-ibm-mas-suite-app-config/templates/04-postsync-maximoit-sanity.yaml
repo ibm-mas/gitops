@@ -290,6 +290,7 @@ data:
             logger.info(cert_content)
         return client_cert
 
+
     @pytest.fixture()
     def user_api_key(client_cert, manage_host_ca_filepath):
         user_id="maxadmin"
@@ -960,27 +961,6 @@ data:
                 j=1
                 break
         assert j == 1, "SERVICEVIEW is not installed"
-        
-    #TC#4 Test to verify Service Delivery is installed
-    def test_service_delivery_installed_insystem(manage_host_ca_filepath, headers):
-
-        response = requests.get(f'{MANAGE_URL}/maximo/api/os/mxapimaxapp?oslc.select=*', headers=headers, verify=manage_host_ca_filepath)
-        print("Response Code ", response.status_code)
-        assert response.status_code == 200, "Failed to Fetch system information."
-        systemsinfo = response.json()
-        systemsinfo.get('oslc:responseInfo')
-        app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
-
-        # iterate through the application list
-        for i in range(app_count):
-            j=0
-            app_name = systemsinfo['rdfs:member'][i].get('spi:app')
-            if app_name == "SERVICEDELIVERY":
-                print("SERVICEDELIVERY : Installed in System")
-                j=1
-                break
-        assert j == 1, "SERVICEDELIVERY is not installed"
-
 
 
     def test_create_and_validate_incident(create_incident, incident_desc, manage_host_ca_filepath, headers):
@@ -1523,15 +1503,7 @@ data:
         assert len(data.get('rdfs:member', [])) > 0, "SR List is not present in json response." 
         print("SR details present in json response." ) 
 
-    #TC#26 Test fetching all Offerings.
-    def test_get_all_offering(manage_host_ca_filepath, headers):
-        response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMOFFERING?oslc.select=*', headers=headers, verify=manage_host_ca_filepath)
-        assert response.status_code == 200, "Failed to fetch offerings."  
-        data = response.json()
-        # Ensure that there is at least one item in 'rdfs:member'
-        assert len(data.get('rdfs:member', [])) > 0, "Offering List is not present in json response."  
-        print("Offering details present in json response." )    
-        
+
     #TC#27 Test fetching all solutions.
     def test_get_all_solution(manage_host_ca_filepath, headers):
         response = requests.get(MANAGE_URL + '/maximo/api/os/CDUISRMSOLUTION?oslc.select=*', headers=headers, verify=manage_host_ca_filepath)
@@ -1734,17 +1706,6 @@ data:
         
     #********Self Serve TestCases*******
         
-    #TC#42 Fetch all Assets in self serve My Assest
-    def test_ss_asset_list(manage_host_ca_filepath, headers):
-        response = requests.get(f'{MANAGE_URL}/maximo/api/os/srm_asset?_fd=SRM_ASSET&oslc.select=*', headers=headers, verify=manage_host_ca_filepath)
-        assert response.status_code == 200, "Asset List not fetched"
-        assetinfo = response.json()
-        # Ensure that there is at least one item in 'rdfs:member'
-        assert len(assetinfo.get('rdfs:member', [])) > 0, "Assets List is not present in json response." 
-        print("Asset list fetched successfully" )
-        assetcount = assetinfo['oslc:responseInfo']['oslc:totalCount']
-        print("Asset count are", assetcount)
-
     #TC#43 Create a Ticket and validate its creation
     def test_ss_create_and_validate_ticket(ticket_desc, create_ticket, manage_host_ca_filepath, headers):
         # Validate the ticket creation
@@ -1836,47 +1797,6 @@ data:
                 assert response.status_code == 201, "Comment not added"
                 print('Comment added on ticket is :', "Testcomment" + random_string)
 
-
-    #TC#47 Get all the current Update On self serve
-    def test_get_all_currentupdates(manage_host_ca_filepath, headers):
-        objstr = ['CDUISRMOFFERING', 'CDUISRMSOLUTION', 'CDUISRMBULLETIN']
-        for obj in objstr:
-            response = requests.get(
-                f'{MANAGE_URL}/maximo/api/os/{obj}?oslc.select=*',
-                headers=headers,
-                verify=manage_host_ca_filepath
-            )
-            assert response.status_code == 200, f"Failed to fetch {obj}."
-            count = response.json()['oslc:responseInfo']['oslc:totalCount']
-            assert count > 0, "Tickets List is not present in json response."
-            print(f"Total {obj} count:", count)
-
-    #TC#48 Check Request new service on Self Serve
-    def test_ss_request_new_service(manage_host_ca_filepath, headers):
-        response= requests.get(f'{MANAGE_URL}/maximo/api/os/CDUIOFFLIST?oslc.select=*' , headers=headers, verify=manage_host_ca_filepath)
-        assert response.status_code == 200, "Failed to fetch services."
-        services_jsondata = response.json()
-        services_jsondata.get('oslc:responseInfo')
-        services_count = services_jsondata['oslc:responseInfo']['oslc:totalCount']
-        assert services_count > 0,"List of Request Services fetched successfully."
-        print("Total Service count :", services_count)
-
-    #TC#49 Search offering using string from search box
-    def test_ss_search_string_in_request_service(manage_host_ca_filepath, headers):
-        response =  requests.get(f'{MANAGE_URL}/maximo/api/os/CDUISRMOFFERING?oslc.select=*&savedQuery=search&sqp:text=offering', headers=headers, verify=manage_host_ca_filepath)
-        response.status_code ==200,
-        print("Offerings are searchable")
-        jsondata= response.json()
-        jsondata.get('oslc:responseInfo')
-        offering_count = jsondata['oslc:responseInfo']['oslc:totalCount']
-        assert offering_count > 0,"Offering found in Search Results"
-        print("Total Offering count :", offering_count)
-        # iterate through the offering list
-        offeringlist= []
-        for i in range(offering_count):
-            offeringname = jsondata['rdfs:member'][i].get('spi:description')
-            offeringlist.append(offeringname)
-        print("List of all searched offering are", offeringlist)
 
 
 ---

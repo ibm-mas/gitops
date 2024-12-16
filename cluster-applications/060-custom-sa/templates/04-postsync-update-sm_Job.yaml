@@ -17,7 +17,6 @@ metadata:
 {{ $.Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  ttlSecondsAfterFinished: null
   template:
 {{- if $.Values.custom_labels }}
     metadata:
@@ -87,7 +86,7 @@ spec:
               
               # Get cluster API URL to store in sm
               echo "Fetching cluster API URL for cluster ${CLUSTER_ID}"
-              CLUSTER_API_URL=$(oc cluster-info | grep https | cut -d'/' -f3 > /tmp/${CLUSTER_ID}; cat -A /tmp/${CLUSTER_ID} | cut -d'^' -f1)
+              CLUSTER_API_URL=$(oc get infrastructure cluster -o jsonpath='{.status.apiServerURL}')
               if [[ -z "${CLUSTER_API_URL}" ]]; then
                 echo "Failed to fetch cluster API URL"
                 exit 1
@@ -103,7 +102,7 @@ spec:
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_TOKEN}" --tags "${SECRET_TAGS}"
               SM_SECRET_NAME=${ACCOUNT_ID}/${CLUSTER_ID}/${CUSTOM_SA_NAME}
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-custom-sa-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              sm_update_secret ${SM_SECRET_NAME} "{\"cluster\": \"${CLUSTER_ID}\",\"apiurl\":\"https://${CLUSTER_API_URL}\",\"token\":\"${SECRET_TOKEN}\"}" "${TAGS}"
+              sm_update_secret ${SM_SECRET_NAME} "{\"cluster\": \"${CLUSTER_ID}\",\"apiurl\":\"${CLUSTER_API_URL}\",\"token\":\"${SECRET_TOKEN}\"}" "${TAGS}"
 
       restartPolicy: Never
       serviceAccountName: postsync-custom-sa-sa

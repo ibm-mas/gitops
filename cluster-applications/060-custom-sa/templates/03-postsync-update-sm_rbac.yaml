@@ -1,0 +1,105 @@
+{{- if .Values.custom_sa_namespace }}
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: aws
+  namespace: {{ $.Values.custom_sa_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "063"
+{{- if $.Values.custom_labels }}
+  labels:
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  aws_access_key_id: {{ $.Values.sm_aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ $.Values.sm_aws_secret_access_key | b64enc }}
+type: Opaque
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: postsync-custom-sa-sa
+  namespace: {{ $.Values.custom_sa_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "063"
+{{- if $.Values.custom_labels }}
+  labels:
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: postsync-custom-sa-r-get-secrets
+  namespace: {{ $.Values.custom_sa_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "063"
+{{- if $.Values.custom_labels }}
+  labels:
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}    
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "watch", "list"]
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: postsync-custom-sa-rb-get-secrets
+  namespace: {{ $.Values.custom_sa_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "063"
+{{- if $.Values.custom_labels }}
+  labels:
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: postsync-custom-sa-sa
+    namespace: {{ $.Values.custom_sa_namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: postsync-custom-sa-r-get-secrets
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: postsync-custom-sa-r-get-infra
+  annotations:
+    argocd.argoproj.io/sync-wave: "063"
+{{- if $.Values.custom_labels }}
+  labels:
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}    
+rules:
+- apiGroups: ["config.openshift.io"]
+  resources: ["infrastructures"]
+  verbs: ["get", "watch", "list"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: postsync-custom-sa-rb-get-infra
+  annotations:
+    argocd.argoproj.io/sync-wave: "063"
+{{- if $.Values.custom_labels }}
+  labels:
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: postsync-custom-sa-sa
+    namespace: {{ $.Values.custom_sa_namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: postsync-custom-sa-r-get-infra
+{{- end }}

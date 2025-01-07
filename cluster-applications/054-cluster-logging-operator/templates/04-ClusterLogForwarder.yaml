@@ -1,0 +1,64 @@
+---
+apiVersion: logging.openshift.io/v1
+kind: ClusterLogForwarder
+metadata:
+  name: instance
+  namespace: openshift-logging
+  annotations:
+    argocd.argoproj.io/sync-wave: "055"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  filters:
+    - drop:
+        - test:
+            - field: .level
+              matches: info|debug
+      name: noise
+      type: drop
+    - kubeAPIAudit:
+        omitStages: []
+        rules:
+          - level: Metadata
+      name: sos-policy
+      type: kubeAPIAudit
+  outputs:
+    - name: cloudwatch-1
+      type: cloudwatch
+      secret:
+        name: cw-secret
+      tuning:
+        compression: zstd
+      cloudwatch:
+        groupBy: logType
+        groupPrefix: '{{ .Values.cluster.id }}'
+        region: '{{ .Values.region.id }}'
+{{- if .Values.cluster_logging_operator_use_syslog_forwarder true }}
+    - name: rsyslog-local
+      type: syslog
+      url: 'tcp://syslog-forwarder:9200'
+      syslog:
+        appName: myapp
+        facility: user
+        msgID: mymsg
+        procID: myproc
+        rfc: RFC5424
+        severity: informational
+{{- end }}
+  pipelines:
+    - detectMultilineErrors: true
+      inputRefs:
+        - infrastructure
+      name: infra-logs
+      outputRefs:
+        - cloudwatch-1
+    - inputRefs:
+        - audit
+      name: audit-logs
+      outputRefs:
+        - cloudwatch-1
+{{- if .Values.cluster_logging_operator_use_syslog_forwarder true }}
+        - rsyslog-local
+{{- end }}

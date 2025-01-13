@@ -1,0 +1,156 @@
+{{- if .Values.ingress }}
+
+{{ $ns :=                 printf "mas-%s-core" .Values.instance_id }}
+{{ $np_name :=            "postsync-configtool-oidc-np" }}
+{{ $role_name :=          "postsync-configtool-oidc-r" }}
+{{ $sa_name :=            "postsync-configtool-oidc-sa" }}
+{{ $rb_name :=            "postsync-configtool-oidc-rb" }}
+{{ $job_label :=          "postsync-configtool-oidc-job" }}
+{{ $oauth_admin_secret := printf "%s-credentials-oauth-admin" .Values.instance_id }}
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "140"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "140"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "140"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules: []
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "141"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_label }}-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "142"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            # .Values.DOMAIN:
+            #   dns.cis.subdomain (if set) - e.g. fvtsaas.ibmmasfvt.com
+            #   mas_instance.domain (otherwise) - e.g. mascore3763.apps.noble6.cp.fyre.ibm.com
+            - name: DOMAIN
+              value: {{ .Values.domain }}
+
+            - name: TRUST_UI_PREFIX
+              value: mas-{{ .Values.instance_id }}-core
+
+            - name: OAUTH_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: oauth-admin-username
+                  key: {{ $oauth_admin_secret }}
+            - name: OAUTH_ADMIN_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: oauth-admin-password
+                  key: {{ $oauth_admin_secret }}
+            - name: SM_AWS_ACCESS_KEY_ID
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              # NOTE: "x" is used as workspace ID. This is just so the MAS_HOME parameter conforms to the format expected by the 
+              # configtool-oidc script. This is not a workspace-level operation. Its actual value is not used for anything else.
+              mas configtool-oidc \
+                register \
+                --mas-home "x.home.${DOMAIN}" \
+                --ui-prefix "${TRUST_UI_PREFIX}"
+              
+      restartPolicy: Never
+      serviceAccountName: "{{ $sa_name }}"
+  backoffLimit: 4
+
+{{- end }}
+

@@ -121,7 +121,6 @@ spec:
             - name: OIDC_CONFIG_YAML
               value: {{ .Values.oidc | toYaml | replace "\n" "\\n" }}
                 
-
             - name: OAUTH_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -140,14 +139,27 @@ spec:
 
               set -e
 
-              echo -e "${OIDC_CONFIG_YAML}"
+              if $(echo -e "${OIDC_CONFIG_YAML}" | yq --exit-status=1 eval '(. | has("configtool")) and (.configtool | has("trusted_uri_prefixes"))' 1>/dev/null 2>&1); then
+                echo "- oidc.configtool configuration supplied, (re)registering client"
+                echo "--------------------------------------------------------------"
+                echo ""
+                TRUST_UI_PREFIX=$(echo -e "${OIDC_CONFIG_YAML}" | yq eval '.configtool.trusted_uri_prefixes | join(",")')
+                # NOTE: "x" is used as workspace ID. This is just so the MAS_HOME parameter conforms to the format expected by the 
+                # configtool-oidc script. This is not a workspace-level operation. Its actual value is not used for anything else.
+                mas configtool-oidc \
+                  register \
+                  --mas-home "x.home.${DOMAIN}" \
+                  --ui-prefix "${TRUST_UI_PREFIX}"
+              else
+                echo "- oidc.configtool configuration absent, unregistering client"
+                echo "--------------------------------------------------------------"
+                echo ""
+                mas configtool-oidc \
+                  unregister \
+                  --mas-home "x.home.${DOMAIN}" \
+                  --ui-prefix "${TRUST_UI_PREFIX}"
+              fi
 
-              # NOTE: "x" is used as workspace ID. This is just so the MAS_HOME parameter conforms to the format expected by the 
-              # configtool-oidc script. This is not a workspace-level operation. Its actual value is not used for anything else.
-              # mas configtool-oidc \
-              #   register \
-              #   --mas-home "x.home.${DOMAIN}" \
-              #   --ui-prefix "${TRUST_UI_PREFIX}"
               
       restartPolicy: Never
       serviceAccountName: "{{ $sa_name }}"

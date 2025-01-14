@@ -1,5 +1,3 @@
-{{- if .Values.ingress }}
-
 {{ $ns :=                 printf "mas-%s-core" .Values.instance_id }}
 {{ $np_name :=            "postsync-configtool-oidc-np" }}
 {{ $role_name :=          "postsync-configtool-oidc-r" }}
@@ -120,8 +118,8 @@ spec:
             - name: DOMAIN
               value: {{ .Values.domain }}
 
-            - name: TRUST_UI_PREFIX
-              value: mas-{{ .Values.instance_id }}-core
+            - name: OIDC_CONFIG_YAML
+              value: {{ .Values.oidc }}
 
             - name: OAUTH_ADMIN_USERNAME
               valueFrom:
@@ -141,16 +139,16 @@ spec:
 
               set -e
 
+              echo ${OIDC_CONFIG_YAML}
+
               # NOTE: "x" is used as workspace ID. This is just so the MAS_HOME parameter conforms to the format expected by the 
               # configtool-oidc script. This is not a workspace-level operation. Its actual value is not used for anything else.
-              mas configtool-oidc \
-                register \
-                --mas-home "x.home.${DOMAIN}" \
-                --ui-prefix "${TRUST_UI_PREFIX}"
+              # mas configtool-oidc \
+              #   register \
+              #   --mas-home "x.home.${DOMAIN}" \
+              #   --ui-prefix "${TRUST_UI_PREFIX}"
               
       restartPolicy: Never
       serviceAccountName: "{{ $sa_name }}"
   backoffLimit: 4
-
-{{- end }}
 

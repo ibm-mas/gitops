@@ -1,0 +1,48 @@
+---
+apiVersion: instana.io/v1
+kind: InstanaAgent
+metadata:
+  name: instana-agent
+  namespace: instana-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "056"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  cluster:
+    name: {{ .Values.cluster.id }}
+  zone:
+    name: {{ .Values.cluster.id }}
+  k8s_sensor:
+    deployment:
+      enabled: true
+  agent:
+    key: {{ .Values.instana_agent_operator_key }}
+    endpointHost: {{ .Values.instana_agent_operator_endpoint_host }}
+    endpointPort: {{ .Values.instana_agent_operator_endpoint_port }}
+    env: {{ .Values.instana_agent_operator.env }}
+    pod:
+      volumeMounts:
+        - name: instana-db2-jks
+          mountPath: /jks/
+      volumes:
+        - name: instana-db2-jks
+          persistentVolumeClaim:
+            claimName: instana-db2-jks
+    configuration_yaml: |
+      com.instana.plugin.db2:
+        remote:
+          - host: {{ .Values.instana_agent_operator_db2_host }}
+            port: {{ .Values.instana_agent_operator_db2_port }}
+            tabschema: db2inst1
+            user: {{ .Values.instana_agent_operator_db2_user }}
+            password: {{ .Values.instana_agent_operator_db2_password }}
+            availabilityZone: {{ .Values.instana_agent_operator_db2_availability_zone }}
+            sslTrustStorePassword: {{ .Values.instana_agent_operator_db2_jks_password }}
+            sslTrustStoreLocation: /jks/db2-ca-certs.jks
+            poll_rate: 60
+            loginTimeout: 45
+            databases:
+              {{ .Values.instana_agent_operator_db2_databases }} # TODO list 

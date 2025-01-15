@@ -100,6 +100,51 @@ roleRef:
   name: "db2-database-postsync-sa-role-{{ .Values.db2_instance_name }}"
   apiGroup: rbac.authorization.k8s.io
 
+# The following ClusterRole and RoleBinding allow the triggering of the Instana agent configuration
+# job in the "instana-agent" namespace.
+{{- if eq .Values.is_instana_agent_enabled "true" }}
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "db2-instana-agent-config-{{ .Values.db2_instance_name }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "127"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - jobs
+      - cronjobs
+    verbs:
+      - get
+      - create
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "db2-instana-agent-config-{{ .Values.db2_instance_name }}"
+  namespace: instana-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "128"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: "postsync-sa-{{ .Values.db2_instance_name }}"
+    namespace: "{{ .Values.db2_namespace }}"
+roleRef:
+  kind: ClusterRole
+  name: "db2-instana-agent-config-{{ .Values.db2_instance_name }}"
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
 
 ---
 apiVersion: batch/v1
@@ -148,6 +193,8 @@ spec:
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
+            - name: IS_INSTANA_AGENT_ENABLED
+              value: "{{ .Values.is_instana_agent_enabled }}"
             - name: DB2_NAMESPACE
               value: "{{ .Values.db2_namespace }}"
             - name: DB2_INSTANCE_NAME
@@ -716,6 +763,24 @@ spec:
                 echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+              fi
+
+              # Trigger job to update Instana agent CR with DB2 JDBC config
+              if [ "${IS_INSTANA_AGENT_ENABLED}" == "true" ]; then
+                echo 'Triggering Instana agent configuration update'
+                cron_yaml=$(curl -ik -X GET -H 'Accept: application/yaml' \
+                    -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+                    https://kubernetes.default.svc.cluster.local/apis/batch/v1/namespaces/instana-agent/cronjobs/instana-agent-db2-config)
+                job_yaml=$(echo "${cron_yaml}" | yq '.spec = .spec.jobTemplate.spec.template.spec' | yq '.kind = "Job"' \
+                  | yq '.metadata.generateName = "instana-agent-db2-config-"' | yq 'del(.metadata.name)' \
+                  | yq '.spec.initContainers[0].env += {"name": "DB2_INSTANCE_NAME", "value": env(DB2_INSTANCE_NAME) }' \
+                  | yq '.spec.containers[0].env += {"name": "DB2_INSTANCE_NAME", "value": env(DB2_INSTANCE_NAME) }')
+                curl -ik -X POST -H 'Content-Type: application/yaml' \
+                  -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+                  https://kubernetes.default.svc.cluster.local/apis/batch/v1/namespaces/instana-agent/jobs?fieldManager=kubectl-create&fieldValidation=Strict \
+                  -d "${job_yaml}"
+              else
+                echo 'Not triggering Instana agent configuration update'
               fi
 
       restartPolicy: Never

@@ -219,10 +219,10 @@ spec:
                   exit 1
                 fi
 
-                db2 "select 'alter sequence maximo.' || sequencename || ' cache 500;' from maximo.maxsequence" | grep "alter sequence" > "alter_seq.sql"
-                echo "alter sequence maximo.maxseq cache 2000;" >> "alter_seq.sql"
+                db2 "select 'alter sequence maximo.' || sequencename || ' cache 500;' from maximo.maxsequence" | grep "alter sequence" > "/tmp/alter_seq.sql"
+                echo "alter sequence maximo.maxseq cache 2000;" >> "/tmp/alter_seq.sql"
 
-                db2 -tvf "alter_seq.sql" | tee "alter_seq.sql.log" || exit \$?
+                db2 -tvf "/tmp/alter_seq.sql" | tee "/tmp/alter_seq.sql.log" || exit \$?
               EOF
               # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
 
@@ -230,7 +230,7 @@ spec:
               # (see https://jsw.ibm.com/browse/MASCORE-4639)
               if [[ "${OPERATIONAL_MODE}" == "production" ]]; then
                 cat >> ${UPDATE_DB2_SH_PATH} << EOF
-                  echo "TODO: run db2 update maximo.apiroute set active=0 where route in ('icheckerrepair','managestart','icheckerreport', 'managestop'); || exit \$?"
+                db2 "update maximo.apiroute set active=0 where route in ('icheckerrepair','managestart','icheckerreport', 'managestop');" | tee "/tmp/disable_routes.log" || exit \$?"
               EOF
                 # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
               fi

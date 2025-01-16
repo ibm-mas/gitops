@@ -226,14 +226,14 @@ spec:
               EOF
               # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
 
-              # If this is a production instance, add an additional db2 command to disable destructive API routes
+              # Disable destructive/disruptive API routes if this is a production instance.
+              # Otherwise (re)enable them
+              ROUTES_ACTIVE=$([[ "${OPERATIONAL_MODE}" == "production" ]] && echo "0" || echo "1")
               # (see https://jsw.ibm.com/browse/MASCORE-4639)
-              if [[ "${OPERATIONAL_MODE}" == "production" ]]; then
-                cat >> ${UPDATE_DB2_SH_PATH} << EOF
-                db2 "update maximo.apiroute set active=0 where route in ('icheckerrepair','managestart','icheckerreport', 'managestop');" | tee "/tmp/disable_routes.log" || exit \$?
+              cat >> ${UPDATE_DB2_SH_PATH} << EOF
+                db2 "update maximo.apiroute set active=${ROUTES_ACTIVE} where route in ('icheckerrepair','managestart','icheckerreport', 'managestop');" | tee "/tmp/disable_routes.log" || exit \$?
               EOF
-                # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
-              fi
+              # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
 
               cat ${UPDATE_DB2_SH_PATH}
 

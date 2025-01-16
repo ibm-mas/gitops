@@ -212,14 +212,16 @@ spec:
                   function write_cert_file() {
                     local secret_name="${1}"
                     local jdbc_secret=$(sm_get_secret "${secret_name}")
-                    local url=$(extract_secret_value "${jdbc_secret}" jdbc_connection_url)     
-                    echo "${cert}" > "/jks/db2_ca_${DB2_INSTANCE_NAME}.pem"
+                    local jdbc_instance_name=$(extract_secret_value "${jdbc_secret}" jdbc_instance_name)
+                    local pem_cert=$(extract_secret_value "${jdbc_secret}" ca_b64_pem | base64 --decode)     
+                    echo "${pem_cert}" > "/jks/${jdbc_instance_name}.pem"
                   }
 
                   echo '[INFO] Starting Instana agent configuration update for DB2'
                   remotes_list=$(yq eval -n '."com.instana.plugin.db2".remote = []')
                   for secret_name in $(get_all_jdbc_secret_names); do
                     jdbc_remote=$(create_jdbc_remote "${secret_name}")
+                    write_cert_file "${secret_name}"
                     remotes_list=$(update_remotes_list "${remotes_list}" "${jdbc_remote}")
                   done
                   instana_cr=$(get_instana_cr)
@@ -230,17 +232,19 @@ spec:
 
           # This container runs second and creates the JKS file for Instana agent from DB2 PEM certificate.
           containers:
-            - name: create-jks
+            - name: update-jks
               image: registry.redhat.io/ubi8/openjdk-17:latest
               volumeMounts:
                 - name: db2-jks
                   mountPath: /jks/
-              env: []
               args:
-                - /bin/sh
+                - /bin/bash
                 - '-c'
                 - |
-                  readonly CERT_PATH="/jks/db2_ca_${DB2_INSTANCE_NAME}.pem"
-                  readonly JKS_PATH="/jks/db2-ca-certs.jks"              
-                  echo "[INFO] Creating JKS file ${JKS_PATH} from DB2 CA PEM certificate ${CERT_PATH}"
-                  echo "yes" | keytool -importcert -alias "jdbc-${DB2_INSTANCE_NAME}" -file ${CERT_PATH} -keystore ${JKS_PATH} -storepass changeit 
+                  readonly CERTS_DIR=/jks"
+                  readonly JKS_PATH="${CERTS_DIR}/db2-ca-certs.jks"
+                  for cert in ${CERTS_DIR}/*.pem; do
+                    echo "[INFO] Importing DB2 CA PEM certificate ${cert} to Instana agent JKS keystore ${JKS_PATH}"
+                    keytool -list -keystore ${JKS_PATH} -alias ${cert%.*} -storepass changeit && keytool -delete -alias ${cert%.*} -keystore ${JKS_PATH} -storepass changeit
+                    echo "yes" | keytool -importcert -alias ${cert%.*} -file ${cert} -keystore ${JKS_PATH} -storepass changeit
+                  done    

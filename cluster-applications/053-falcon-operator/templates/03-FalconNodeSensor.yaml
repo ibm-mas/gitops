@@ -1,0 +1,21 @@
+---
+apiVersion: falcon.crowdstrike.com/v1alpha1
+kind: FalconNodeSensor
+metadata:
+  name: falcon-node-sensor
+  namespace: falcon-operator
+  annotations:
+    argocd.argoproj.io/sync-wave: "054"
+    argocd.argoproj.io/sync-options: "SkipDryRunOnMissingResource=true,Validate=false"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  falcon_api:
+    client_id: "{{ .Values.falcon_operator_client_id }}"
+    client_secret: "{{ .Values.falcon_operator_client_secret }}"
+    cloud_region: "{{ .Values.falcon_operator_cloud_region }}"
+{{- if .Values.falcon_operator_node_sensor }}
+{{ .Values.falcon_operator_node_sensor | toYaml | indent 2 }}
+{{- end }}

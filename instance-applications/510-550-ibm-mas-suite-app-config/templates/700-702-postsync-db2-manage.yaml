@@ -140,7 +140,7 @@ metadata:
   # Suffix the Job name with a hash of all chart values
   # This is to ensure that ArgoCD will delete and recreate the job if anything changes in the application config
   # The job is idempotent
-  name: {{ $job_name }}-v1-{{ omit $.Values "junitreporter" | toYaml | adler32sum }}
+  name: {{ $job_name }}-v2-{{ omit $.Values "junitreporter" | toYaml | adler32sum }}
   namespace: "{{ $manage_ns }}"
   annotations:
     argocd.argoproj.io/sync-wave: "702"
@@ -178,6 +178,8 @@ spec:
               value: "{{ $db2_dbname }}"
             - name: DB2_INSTANCE_NAME
               value: "{{ $db2_instance_name }}"
+            - name: OPERATIONAL_MODE
+              value: "{{ $.Values.operational_mode }}"
 
           volumeMounts: []
           command:
@@ -199,16 +201,17 @@ spec:
               echo "AVP_TYPE ............................ ${AVP_TYPE}"
               echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
               echo "DB2_POD_NAME ........................ ${DB2_POD_NAME}"
+              echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
               # Path to the generated script, on both this pod and on the db2u pod
-              ALTERSEQ_SH_PATH="/tmp/alterseq.sh"
+              UPDATE_DB2_SH_PATH="/tmp/postsync_db2_manage.sh"
 
               echo ""
-              echo "Create ${ALTERSEQ_SH_PATH}"
+              echo "Create ${UPDATE_DB2_SH_PATH}"
               echo "--------------------------------------------------------------------------------"
 
               # Generate a script to copy and run on the db2u pod
-              cat > ${ALTERSEQ_SH_PATH} << EOF
+              cat > ${UPDATE_DB2_SH_PATH} << EOF
                 #!/bin/bash
                 db2 connect to ${DB2_DBNAME}
                 if [ \$? != 0 ]; then
@@ -216,27 +219,36 @@ spec:
                   exit 1
                 fi
 
-                db2 "select 'alter sequence maximo.' || sequencename || ' cache 500;' from maximo.maxsequence" | grep "alter sequence" > "${ALTERSEQ_SH_PATH}.sql"
-                echo "alter sequence maximo.maxseq cache 2000;" >> "${ALTERSEQ_SH_PATH}.sql"
+                db2 "select 'alter sequence maximo.' || sequencename || ' cache 500;' from maximo.maxsequence" | grep "alter sequence" > "/tmp/alter_seq.sql"
+                echo "alter sequence maximo.maxseq cache 2000;" >> "/tmp/alter_seq.sql"
 
-                db2 -tvf "${ALTERSEQ_SH_PATH}.sql" | tee "${ALTERSEQ_SH_PATH}.sql.log" || exit \$?
+                db2 -tvf "/tmp/alter_seq.sql" | tee "/tmp/alter_seq.sql.log" || exit \$?
               EOF
               # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
 
-              cat ${ALTERSEQ_SH_PATH}
+              # Disable destructive/disruptive API routes if this is a production instance.
+              # Otherwise (re)enable them
+              ROUTES_ACTIVE=$([[ "${OPERATIONAL_MODE}" == "production" ]] && echo "0" || echo "1")
+              # (see https://jsw.ibm.com/browse/MASCORE-4639)
+              cat >> ${UPDATE_DB2_SH_PATH} << EOF
+                db2 "update maximo.apiroute set active=${ROUTES_ACTIVE} where route in ('icheckerrepair','managestart','icheckerreport', 'managestop');" | tee "/tmp/disable_routes.log" || exit \$?
+              EOF
+              # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
 
-              chmod +x ${ALTERSEQ_SH_PATH}
+              cat ${UPDATE_DB2_SH_PATH}
+
+              chmod +x ${UPDATE_DB2_SH_PATH}
 
               echo ""
-              echo "Copy ${ALTERSEQ_SH_PATH} to ${DB2_NAMESPACE}/${DB2_POD_NAME}"
+              echo "Copy ${UPDATE_DB2_SH_PATH} to ${DB2_NAMESPACE}/${DB2_POD_NAME}"
               echo "--------------------------------------------------------------------------------"
-              oc cp ${ALTERSEQ_SH_PATH} ${DB2_NAMESPACE}/${DB2_POD_NAME}:${ALTERSEQ_SH_PATH} -c db2u || exit $?
+              oc cp ${UPDATE_DB2_SH_PATH} ${DB2_NAMESPACE}/${DB2_POD_NAME}:${UPDATE_DB2_SH_PATH} -c db2u || exit $?
               echo "... done"
 
               echo ""
-              echo "Executing ${ALTERSEQ_SH_PATH} file on ${DB2_NAMESPACE}/${DB2_POD_NAME}"
+              echo "Executing ${UPDATE_DB2_SH_PATH} file on ${DB2_NAMESPACE}/${DB2_POD_NAME}"
               echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} ${DB2_POD_NAME} -- su -lc "${ALTERSEQ_SH_PATH} | tee ${ALTERSEQ_SH_PATH}.log" db2inst1 || exit $?
+              oc exec -n ${DB2_NAMESPACE} ${DB2_POD_NAME} -- su -lc "${UPDATE_DB2_SH_PATH} | tee ${UPDATE_DB2_SH_PATH}.log" db2inst1 || exit $?
 
       restartPolicy: Never
       serviceAccountName: "{{ $sa_name }}"

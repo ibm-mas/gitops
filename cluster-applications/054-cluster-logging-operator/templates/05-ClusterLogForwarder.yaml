@@ -16,7 +16,7 @@ spec:
     - drop:
         - test:
             - field: .level
-              matches: info|debug
+              matches: info|Info|INFO|DEBUG|Debug|debug
       name: noise
       type: drop
     - kubeAPIAudit:
@@ -49,15 +49,23 @@ spec:
         severity: informational
 {{- end }}
   pipelines:
-    - detectMultilineErrors: true
+    - name: app-logs
+      detectMultilineErrors: true
+      filterRefs:
+        - noise
       inputRefs:
-        - infrastructure
-      name: infra-logs
+        - application
       outputRefs:
         - cloudwatch-1
-    - inputRefs:
+    - name: infra-logs
+      detectMultilineErrors: true
+      inputRefs:
+        - infrastructure
+      outputRefs:
+        - cloudwatch-1
+    - name: audit-logs
+      inputRefs:
         - audit
-      name: audit-logs
       outputRefs:
         - cloudwatch-1
 {{- if eq .Values.cluster_logging_operator_use_syslog_forwarder "true" }}

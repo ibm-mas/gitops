@@ -1,0 +1,35 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: "c-{{ .Values.instance_id }}db2u{{ .Values.mas_application_id }}-sdb-db2u-engn-svc"
+  namespace: "mas-{{ .Values.instance_id }}-db2u-{{ .Values.mas_application_id }}"
+spec:
+  # clusterIP: 172.30.172.1
+  publishNotReadyAddresses: true
+  externalTrafficPolicy: Cluster
+  ipFamilies:
+    - IPv4
+  ports:
+    - name: ssl-server
+      protocol: TCP
+      port: 50001
+      targetPort: 50001
+      # nodePort: 32635
+    - name: legacy-server
+      protocol: TCP
+      port: 50000
+      targetPort: 50000
+      # nodePort: 30358
+  internalTrafficPolicy: Cluster
+  # clusterIPs:
+  #   - 172.30.172.1
+  type: NodePort
+  ipFamilyPolicy: SingleStack
+  sessionAffinity: None
+  selector:
+    db2u-engn.controller.io/name: "c-{{ .Values.db2_instance_name }}-db2u-0"
+    # app: "{{ .Values.instance_id }}db2u{{ .Values.mas_application_id }}"
+    # component: db2wh
+    # formation_id: "{{ .Values.instance_id }}db2u{{ .Values.mas_application_id }}"
+    # role: db
+    # type: engine

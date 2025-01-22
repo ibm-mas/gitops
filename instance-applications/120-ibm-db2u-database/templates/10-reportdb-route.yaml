@@ -1,0 +1,19 @@
+{{- if contains "sdb" .Values.db2_instance_name }}
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: "reportdb.{{ .Values.instance_id}}.suite.maximo.com"
+  namespace: "{{ .Values.db2_namespace }}"
+spec:
+  host: "reportdb.{{ .Values.instance_id }}.suite.maximo.com"
+  to:
+    kind: Service
+    name: "c-{{ .Values.db2_instance_name }}-db2u-engn-svc"
+    weight: 100
+  port:
+    targetPort: ssl-server
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+{{- end }}

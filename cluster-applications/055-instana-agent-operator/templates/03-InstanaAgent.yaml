@@ -20,10 +20,11 @@ spec:
     deployment:
       enabled: true
   agent:
-    key: {{ .Values.instana_agent_operator_key }}
+    keysSecret: instana-agent
     endpointHost: {{ .Values.instana_agent_operator_endpoint_host }}
     endpointPort: {{ .Values.instana_agent_operator_endpoint_port }}
-    env: {{ .Values.instana_agent_operator.env }}
+    env:
+{{ .Values.instana_agent_operator_env | toYaml | indent 6 }}
     pod:
       volumeMounts:
         - name: instana-db2-jks
@@ -32,18 +33,4 @@ spec:
         - name: instana-db2-jks
           persistentVolumeClaim:
             claimName: instana-db2-jks
-    configuration_yaml: |
-      com.instana.plugin.db2:
-        remote:
-          - host: {{ .Values.instana_agent_operator_db2_host }}
-            port: {{ .Values.instana_agent_operator_db2_port }}
-            tabschema: db2inst1
-            user: {{ .Values.instana_agent_operator_db2_user }}
-            password: {{ .Values.instana_agent_operator_db2_password }}
-            availabilityZone: {{ .Values.instana_agent_operator_db2_availability_zone }}
-            sslTrustStorePassword: {{ .Values.instana_agent_operator_db2_jks_password }}
-            sslTrustStoreLocation: /jks/db2-ca-certs.jks
-            poll_rate: 60
-            loginTimeout: 45
-            databases:
-              {{ .Values.instana_agent_operator_db2_databases }} # TODO list 
+    configuration_yaml: ""

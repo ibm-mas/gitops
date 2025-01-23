@@ -53,7 +53,31 @@ roleRef:
   name: instana-agent-db2-config
   apiGroup: rbac.authorization.k8s.io
 
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: instana-agent-db2-config
+  namespace: instana-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "056"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: instana-agent-db2-config
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
 ---
+# This CronJob is only intended to be triggered on-demand as a post-DB2 setup step. It serves as a template from which a regular Job will be created and run (a regular Job
+# cannot be applied without running immediately). When the Job is created, the additional environment variables MAS_INSTANCE_ID and MAS_APP_ID must be set.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -72,9 +96,10 @@ spec:
   jobTemplate:
     spec:
       template:
-{{- if .Values.custom_labels }}
         metadata:
-          labels:  
+          labels:
+            app: instana-agent-db2-config
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 12 }}
 {{- end }}
         spec:
@@ -83,6 +108,11 @@ spec:
             - name: instana-db2-jks
               persistentVolumeClaim:
                 claimName: instana-db2-jks
+            - name: aws
+              secret:
+                secretName: aws
+                defaultMode: 420
+                optional: false
 
           # This container runs first to configure the Instana agent CR with the config for the DB2 instance.
           # Additionally, it writes the DB2 certificate to a persistent volume.
@@ -92,10 +122,11 @@ spec:
               imagePullPolicy: IfNotPresent
               restartPolicy: Never
               serviceAccountName: "postsync-sa-{{ .Values.db2_instance_name }}"
-              volumes:
+              volumeMounts:
                 - name: db2-jks
-                  persistentVolumeClaim:
-                    claimName: instana-db2-jks
+                  mountPath: /jks/
+                - name: aws
+                  mountPath: /etc/mas/creds/aws
               resources:
                 limits:
                   cpu: 200m
@@ -108,7 +139,6 @@ spec:
                   value: {{ .Values.account_id }}
                 - name: CLUSTER_ID
                   value: {{ .Values.cluster_id }}
-                # Hard-coded for now:
                 - name: AVP_TYPE
                   value: "aws"
                 - name: SECRET_NAME_PATTERN
@@ -121,30 +151,29 @@ spec:
                       "host": "",
                       "port": "",
                       "tabschema": "db2inst1",
-                      "user": "{{ .Values.instana_agent_operator_db2_user }}",
-                      "password": "{{ .Values.instana_agent_operator_db2_password }}",
-                      "availabilityZone": "${CLUSTER_ID}:db2",
+                      "user": "",
+                      "password": "",
+                      "availabilityZone": "",
                       "sslTrustStorePassword": "changeit",
-                      "sslTrustStoreLocation": "",
+                      "sslTrustStoreLocation": /jks/db2-ca-certs.jks",
                       "poll_rate": 60,
                       "loginTimeout": 45,
                       "databases": []
                     }
-              volumeMounts:
-                - name: db2-jks
-                  mountPath: /jks/
               command:
                 - /bin/sh
                 - -c
                 - |
                   set -e
                   source /mascli/functions/gitops_utils
+                  SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+                  SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
                   function get_all_jdbc_secret_names() {
                     echo "[INFO] Getting all secrets matching name pattern: ${SECRET_NAME_PATTERN}"
                     sm_login
                     cluster_secrets=$(sm_list_cluster_secrets "${ACCOUNT_ID}" "${CLUSTER_ID}")
-                    jdbc_secrets=$(echo "${cluster_secrets}" | yq .SecretList | yq '.[] | select(.Name == "${SECRET_NAME_PATTERN}")')
+                    jdbc_secrets=$(echo "${cluster_secrets}" | yq .SecretList | yq '.[] | select(.Name == strenv(SECRET_NAME_PATTERN))')
                     echo "${jdbc_secrets}" | grep 'Name:' | awk '{print $2}'
                   }
 
@@ -155,7 +184,7 @@ spec:
                     echo "${yaml}" | yq eval -o=yaml -P ".${key} = \"${value}\""
                   }
 
-                  # fields: jdbc_connection_url, jdbc_instance_name, ca_b64_pem, db2_dbname, db2_namespace
+                  # fields: jdbc_connection_url, jdbc_instance_name, ca_b64, db2_dbname, db2_namespace
                   function extract_secret_value() {
                     local secret="${1}"
                     local key="${2}"
@@ -164,12 +193,15 @@ spec:
 
                   function create_jdbc_remote() {
                     local secret_name="${1}"
+                    local db2_username="${2}"
+                    local db2_password="${3}"
                     local jdbc_secret=$(sm_get_secret "${secret_name}")
                     local url=$(extract_secret_value "${jdbc_secret}" jdbc_connection_url)           
                     local yaml=$(set_yaml_string_field "${DB2_PLUGIN_REMOTE_TEMPLATE}" host ${url%:*})
                     local yaml=$(set_yaml_string_field "${yaml}" port ${url##*:})   
-                    local yaml=$(set_yaml_string_field "${yaml}" sslTrustStoreLocation "/jks/db2_ca_${DB2_INSTANCE_NAME}.jks")
-                    # TODO rest of values             
+                    local yaml=$(set_yaml_string_field "${yaml}" user ${db2_username})   
+                    local yaml=$(set_yaml_string_field "${yaml}" password ${db2_password})
+                    local yaml=$(set_yaml_string_field "${yaml}" availabilityZone "${CLUSTER_ID}:db2")             
                     echo "${yaml}"
                   }
 
@@ -213,14 +245,25 @@ spec:
                     local secret_name="${1}"
                     local jdbc_secret=$(sm_get_secret "${secret_name}")
                     local jdbc_instance_name=$(extract_secret_value "${jdbc_secret}" jdbc_instance_name)
-                    local pem_cert=$(extract_secret_value "${jdbc_secret}" ca_b64_pem | base64 --decode)     
+                    local pem_cert=$(extract_secret_value "${jdbc_secret}" ca_b64 | base64 --decode)     
                     echo "${pem_cert}" > "/jks/${jdbc_instance_name}.pem"
+                  }
+
+                  function get_db2_credentials() {
+                    local jdbc_secret_name="${1}"
+                    local jdbc_secret=$(sm_get_secret "${jdbc_secret_name}")
+                    local jdbc_instance_name=$(extract_secret_value "${jdbc_secret}" jdbc_instance_name)
+                    local db2_secret=$(sm_get_secret ${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/${jdbc_instance_name}/credentials)
+                    local db2_username=$(extract_secret_value "${db2_secret}" username)
+                    local db2_password=$(extract_secret_value "${db2_secret}" password)
+                    echo "${db2_username} ${db2_password}"
                   }
 
                   echo '[INFO] Starting Instana agent configuration update for DB2'
                   remotes_list=$(yq eval -n '."com.instana.plugin.db2".remote = []')
                   for secret_name in $(get_all_jdbc_secret_names); do
-                    jdbc_remote=$(create_jdbc_remote "${secret_name}")
+                    db2_credentials=$(get_db2_credentials "${secret_name}")
+                    jdbc_remote=$(create_jdbc_remote "${secret_name}" $(echo ${db2_credentials} | awk '{print $1}') $(echo ${db2_credentials} | awk '{print $2}'))
                     write_cert_file "${secret_name}"
                     remotes_list=$(update_remotes_list "${remotes_list}" "${jdbc_remote}")
                   done

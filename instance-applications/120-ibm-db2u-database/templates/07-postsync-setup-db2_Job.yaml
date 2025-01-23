@@ -768,13 +768,14 @@ spec:
               # Trigger job to update Instana agent CR with DB2 JDBC config
               if [ "${IS_INSTANA_AGENT_ENABLED}" == "true" ]; then
                 echo 'Triggering Instana agent configuration update'
+                export job_name_prefix="instana-agent-db2-config-${MAS_INSTANCE_ID}-${MAS_APP_ID}-"
                 cron_yaml=$(curl -ik -X GET -H 'Accept: application/yaml' \
                     -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
                     https://kubernetes.default.svc.cluster.local/apis/batch/v1/namespaces/instana-agent/cronjobs/instana-agent-db2-config)
                 job_yaml=$(echo "${cron_yaml}" | yq '.spec = .spec.jobTemplate.spec.template.spec' | yq '.kind = "Job"' \
-                  | yq '.metadata.generateName = "instana-agent-db2-config-"' | yq 'del(.metadata.name)' \
-                  | yq '.spec.initContainers[0].env += {"name": "DB2_INSTANCE_NAME", "value": env(DB2_INSTANCE_NAME) }' \
-                  | yq '.spec.containers[0].env += {"name": "DB2_INSTANCE_NAME", "value": env(DB2_INSTANCE_NAME) }')
+                  | yq '.metadata.generateName = strenv(job_name_prefix)' | yq 'del(.metadata.name)' \
+                  | yq '.spec.initContainers[0].env += {"name": "MAS_INSTANCE_ID", "value": strenv(MAS_INSTANCE_ID) }' \
+                  | yq '.spec.containers[0].env += {"name": "MAS_INSTANCE_ID", "value": strenv(MAS_INSTANCE_ID) }')
                 curl -ik -X POST -H 'Content-Type: application/yaml' \
                   -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
                   https://kubernetes.default.svc.cluster.local/apis/batch/v1/namespaces/instana-agent/jobs?fieldManager=kubectl-create&fieldValidation=Strict \

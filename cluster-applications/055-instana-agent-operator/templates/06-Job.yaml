@@ -184,6 +184,13 @@ spec:
                     echo "${yaml}" | yq eval -o=yaml -P ".${key} = \"${value}\""
                   }
 
+                  function set_yaml_array_field() {
+                    local yaml="${1}"
+                    export key=".${2}"
+                    export value="${3}"
+                    echo "${yaml}" | yq 'eval(strenv(key)) += [strenv(value)]'
+                  }
+
                   # fields: jdbc_connection_url, jdbc_instance_name, ca_b64, db2_dbname, db2_namespace
                   function extract_secret_value() {
                     local secret="${1}"
@@ -201,7 +208,9 @@ spec:
                     local yaml=$(set_yaml_string_field "${yaml}" port ${url##*:})   
                     local yaml=$(set_yaml_string_field "${yaml}" user ${db2_username})   
                     local yaml=$(set_yaml_string_field "${yaml}" password ${db2_password})
-                    local yaml=$(set_yaml_string_field "${yaml}" availabilityZone "${CLUSTER_ID}:db2")             
+                    local yaml=$(set_yaml_string_field "${yaml}" availabilityZone "${CLUSTER_ID}:db2")
+                    local db_name=$(extract_secret_value "${jdbc_secret}" db2_dbname)              
+                    local yaml=$(set_yaml_array_field "${yaml}" databases "${db_name}")  
                     echo "${yaml}"
                   }
 

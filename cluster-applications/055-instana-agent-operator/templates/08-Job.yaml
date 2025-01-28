@@ -1,84 +1,4 @@
 ---
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: instana-agent-db2-config
-  namespace: instana-agent
-  annotations:
-    argocd.argoproj.io/sync-wave: "055"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-
----
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: instana-agent-db2-config
-  namespace: instana-agent
-  annotations:
-    argocd.argoproj.io/sync-wave: "055"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-- apiGroups:
-    - instana.io
-  resources:
-    - instanaagents
-  verbs:
-    - get
-    - update
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: instana-agent-db2-config
-  namespace: instana-agent
-  annotations:
-    argocd.argoproj.io/sync-wave: "056"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: instana-agent-db2-config
-    namespace: instana-agent
-roleRef:
-  kind: Role
-  name: instana-agent-db2-config
-  apiGroup: rbac.authorization.k8s.io
-
----
-# Permit outbound communication by the Job pods
-# (Needed to communicate with the K8S HTTP API and AWS SM)
-kind: NetworkPolicy
-apiVersion: networking.k8s.io/v1
-metadata:
-  name: instana-agent-db2-config
-  namespace: instana-agent
-  annotations:
-    argocd.argoproj.io/sync-wave: "056"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  podSelector:
-    matchLabels:
-      app: instana-agent-db2-config
-  egress:
-    - {}
-  policyTypes:
-    - Egress
-
----
-# This CronJob is only intended to be triggered on-demand as a post-DB2 setup step. It serves as a template from which a regular Job will be created and run (a regular Job
-# cannot be applied without running immediately). When the Job is created, the additional environment variables MAS_INSTANCE_ID and MAS_APP_ID must be set.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -91,8 +11,7 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  suspend: true # Trigger job via API only
-  schedule: "@hourly"
+  schedule: "*/15 * * * *" # every 15 minutes
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
@@ -175,6 +94,13 @@ spec:
                     cluster_secrets=$(sm_list_cluster_secrets "${ACCOUNT_ID}" "${CLUSTER_ID}")
                     jdbc_secrets=$(echo "${cluster_secrets}" | yq .SecretList | yq '.[] | select(.Name == strenv(SECRET_NAME_PATTERN))')
                     echo "${jdbc_secrets}" | grep 'Name:' | awk '{print $2}'
+                  }
+                  
+                  # Secret name is of form: ${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/${DB2_INSTANCE_NAME}/config
+                  function get_mas_instance_id() {
+                    local secret_name="${1}"
+                    local mas_instance_id=$(echo "${secret_name}" | sed -e 's_[^/]*/[^/]*/\([^/]*\)/jdbc/.*_\1_')
+                    echo "${mas_instance_id}"
                   }
 
                   function set_yaml_string_field() {
@@ -262,7 +188,8 @@ spec:
                     local jdbc_secret_name="${1}"
                     local jdbc_secret=$(sm_get_secret "${jdbc_secret_name}")
                     local jdbc_instance_name=$(extract_secret_value "${jdbc_secret}" jdbc_instance_name)
-                    local db2_secret=$(sm_get_secret ${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/${jdbc_instance_name}/credentials)
+                    local mas_instance_id=$(get_mas_instance_id "${jdbc_secret_name}")
+                    local db2_secret=$(sm_get_secret ${ACCOUNT_ID}/${CLUSTER_ID}/${mas_instance_id}/jdbc/${jdbc_instance_name}/credentials)
                     local db2_username=$(extract_secret_value "${db2_secret}" username)
                     local db2_password=$(extract_secret_value "${db2_secret}" password)
                     echo "${db2_username} ${db2_password}"

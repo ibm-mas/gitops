@@ -1,4 +1,8 @@
-{{- if .Values.ingress }}
+# .Values.ingress is passed into the suite as a string (even though the original value is a boolean)
+# (see https://github.com/ibm-mas/gitops/blob/d46e6577fc2081e0a5624dddf575cead5310d794/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml#L60)
+# This meant the check was passing even when ingress was false (.Values.ingress is considered true when it is the string "false")
+# Rather than change the suite app (and force it to resync in all existing envs), we'll instead fix the check here to look for either boolean true OR the string "true".
+{{- if (eq (toString .Values.ingress) "true") }}
 
 {{ $job_label :=  "mas-route-patch" }}
 ---

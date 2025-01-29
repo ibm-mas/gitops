@@ -64,7 +64,7 @@ spec:
                 - name: AVP_TYPE
                   value: "aws"
                 - name: SECRET_NAME_PATTERN
-                  value: "*/jdbc/*/config"
+                  value: ".*/jdbc/.*"
                 - name: INSTANA_CR_NAME
                   value: instana-agent
                 - name: DB2_PLUGIN_REMOTE_TEMPLATE
@@ -90,8 +90,7 @@ spec:
                   source /mascli/functions/gitops_utils
         
                   function get_all_jdbc_secret_names() {
-                    cluster_secrets=$(sm_list_cluster_secrets "${ACCOUNT_ID}" "${CLUSTER_ID}")
-                    echo "${cluster_secrets}" | yq .SecretList | yq '.[] | select(.Name == strenv(SECRET_NAME_PATTERN))' | yq .Name
+                    sm_list_cluster_secrets "${ACCOUNT_ID}" "${CLUSTER_ID}" | grep -e "${SECRET_NAME_PATTERN}"
                   }
                   
                   # Secret name is of form: ${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/${DB2_INSTANCE_NAME}/config

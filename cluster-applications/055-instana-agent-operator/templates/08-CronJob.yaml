@@ -90,11 +90,8 @@ spec:
                   source /mascli/functions/gitops_utils
         
                   function get_all_jdbc_secret_names() {
-                    echo "[INFO] Getting all secrets matching name pattern: ${SECRET_NAME_PATTERN}"
                     cluster_secrets=$(sm_list_cluster_secrets "${ACCOUNT_ID}" "${CLUSTER_ID}")
-                    echo "[INFO] Cluster secrets: ${cluster_secrets}"
-                    jdbc_secrets=$(echo "${cluster_secrets}" | yq .SecretList | yq '.[] | select(.Name == strenv(SECRET_NAME_PATTERN))')
-                    echo "${jdbc_secrets}" | grep 'Name:' | awk '{print $2}'
+                    echo "${cluster_secrets}" | yq .SecretList | yq '.[] | select(.Name == strenv(SECRET_NAME_PATTERN))' | yq .Name
                   }
                   
                   # Secret name is of form: ${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/${DB2_INSTANCE_NAME}/config
@@ -148,7 +145,6 @@ spec:
                   }
 
                   function generate_updated_agent_config() {
-                    echo '[INFO] Generating updated Instana agent configuration YAML'
                     local instana_cr="${1}"
                     export jdbc_remotes="{2}"
                     local config_yaml=$(echo "${instana_cr} | yq .spec.agent.configuration_yaml")
@@ -156,7 +152,6 @@ spec:
                   }
 
                   function generate_updated_instana_cr() {
-                    echo '[INFO] Generating updated Instana agent custom resource'
                     local instana_cr="${1}"
                     export config_yaml="${2}"
                     echo "${instana_cr}" | yq '.spec.agent.configuration_yaml |= env(config_yaml)'

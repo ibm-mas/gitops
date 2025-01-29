@@ -157,14 +157,12 @@ spec:
                   }
 
                   function get_instana_cr() {
-                    echo "[INFO] Getting Instana custom resource with name: ${INSTANA_CR_NAME}"
                     curl -ik -X GET -H 'Accept: application/yaml' \
                       -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
                       https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/instanaagents/${INSTANA_CR_NAME}
                   }
 
                   function submit_instana_cr() {
-                    echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
                     local updated_cr="${1}"
                     curl -ik -X POST -d @- -H 'Content-Type: application/yaml' \
                       -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
@@ -197,7 +195,6 @@ spec:
 
                   echo '[INFO] Starting Instana agent configuration update for DB2 ...'
                   remotes_list=$(yq eval -n '."com.instana.plugin.db2".remote = []')
-                  echo "[INFO] Starting remotes: ${remotes_list}"
                   for secret_name in $(get_all_jdbc_secret_names); do
                     echo "[INFO] Processing JDBC secret ${secret_name}"
                     db2_credentials=$(get_db2_credentials "${secret_name}")
@@ -207,7 +204,9 @@ spec:
                   done
                   instana_cr=$(get_instana_cr)
                   agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${remotes_list}")
+                  echo "[INFO] Getting Instana custom resource with name: ${INSTANA_CR_NAME}"
                   instana_cr=$(generate_updated_instana_cr "${instana_cr}" "${agent_config_yaml}")
+                  echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
                   submit_instana_cr "${instana_cr}"
                   echo "[INFO] Completed updating Instana agent configuration for DB2"
 

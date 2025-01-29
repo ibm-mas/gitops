@@ -88,13 +88,9 @@ spec:
                 - |
                   set -e
                   source /mascli/functions/gitops_utils
-                  SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-                  SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-                  SM_AWS_REGION=${REGION_ID}
-
+        
                   function get_all_jdbc_secret_names() {
                     echo "[INFO] Getting all secrets matching name pattern: ${SECRET_NAME_PATTERN}"
-                    sm_login
                     cluster_secrets=$(sm_list_cluster_secrets "${ACCOUNT_ID}" "${CLUSTER_ID}")
                     jdbc_secrets=$(echo "${cluster_secrets}" | yq .SecretList | yq '.[] | select(.Name == strenv(SECRET_NAME_PATTERN))')
                     echo "${jdbc_secrets}" | grep 'Name:' | awk '{print $2}'
@@ -199,7 +195,13 @@ spec:
                     echo "${db2_username} ${db2_password}"
                   }
 
-                  echo '[INFO] Starting Instana agent configuration update for DB2'
+                  SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+                  SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+                  SM_AWS_REGION=${REGION_ID}
+                  echo '[INFO] Logging in to AWS Secrets Manager ...'
+                  sm_login
+
+                  echo '[INFO] Starting Instana agent configuration update for DB2 ...'
                   remotes_list=$(yq eval -n '."com.instana.plugin.db2".remote = []')
                   for secret_name in $(get_all_jdbc_secret_names); do
                     db2_credentials=$(get_db2_credentials "${secret_name}")

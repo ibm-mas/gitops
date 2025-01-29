@@ -198,12 +198,13 @@ spec:
                   SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
                   SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
                   SM_AWS_REGION=${REGION_ID}
-                  echo '[INFO] Logging in to AWS Secrets Manager ...'
                   sm_login
 
                   echo '[INFO] Starting Instana agent configuration update for DB2 ...'
                   remotes_list=$(yq eval -n '."com.instana.plugin.db2".remote = []')
+                  echo "[INFO] Starting remotes: ${remotes_list}"
                   for secret_name in $(get_all_jdbc_secret_names); do
+                    echo "[INFO] Processing JDBC secret ${secret_name}"
                     db2_credentials=$(get_db2_credentials "${secret_name}")
                     jdbc_remote=$(create_jdbc_remote "${secret_name}" $(echo ${db2_credentials} | awk '{print $1}') $(echo ${db2_credentials} | awk '{print $2}'))
                     write_cert_file "${secret_name}"

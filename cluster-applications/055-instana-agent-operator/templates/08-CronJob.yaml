@@ -195,16 +195,21 @@ spec:
 
                   echo '[INFO] Starting Instana agent configuration update for DB2 ...'
                   remotes_list=$(yq eval -n '."com.instana.plugin.db2".remote = []')
-                  for secret_name in $(get_all_jdbc_secret_names); do
+                  secret_names=$(get_all_jdbc_secret_names)
+                  echo "[INFO] Found $(echo ${secret_names} | wc -l) JDBC secrets"
+                  for secret_name in ${secret_names}; do
                     echo "[INFO] Processing JDBC secret ${secret_name}"
                     db2_credentials=$(get_db2_credentials "${secret_name}")
                     jdbc_remote=$(create_jdbc_remote "${secret_name}" $(echo ${db2_credentials} | awk '{print $1}') $(echo ${db2_credentials} | awk '{print $2}'))
+                    echo "[INFO] Instana remote config: ${jdbc_remote}"
                     write_cert_file "${secret_name}"
                     remotes_list=$(update_remotes_list "${remotes_list}" "${jdbc_remote}")
+                    echo "[INFO] All remotes list: ${remotes_list}"
                   done
-                  instana_cr=$(get_instana_cr)
-                  agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${remotes_list}")
                   echo "[INFO] Getting Instana custom resource with name: ${INSTANA_CR_NAME}"
+                  instana_cr=$(get_instana_cr)
+                  echo "${instana_cr}"
+                  agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${remotes_list}")
                   instana_cr=$(generate_updated_instana_cr "${instana_cr}" "${agent_config_yaml}")
                   echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
                   submit_instana_cr "${instana_cr}"

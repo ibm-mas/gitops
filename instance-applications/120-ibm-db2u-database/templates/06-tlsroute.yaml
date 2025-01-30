@@ -3,11 +3,7 @@
 kind: Route
 apiVersion: route.openshift.io/v1
 metadata:
-{{- if contains "sdb" .Values.db2_instance_name }}
-  name: "reportdb.{{ .Values.instance_id}}.suite.maximo.com"
-{{- else }}
   name: db2u-{{ .Values.db2_instance_name }}-tls-route
-{{- end }}
   namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "123"
@@ -22,7 +18,7 @@ metadata:
 spec:
   host: >-
 {{- if contains "sdb" .Values.db2_instance_name }}
-    reportdb.{{ .Values.instance_id }}.suite.maximo.com
+    reportdb-{{ .Values.db2_instance_name | lower }}-{{ .Values.db2_namespace }}.{{ .Values.cluster_domain }}
 {{- else }}
     {{ .Values.db2_instance_name | lower }}-{{ .Values.db2_namespace }}.{{ .Values.cluster_domain }}
 {{- end }}

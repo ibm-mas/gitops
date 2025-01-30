@@ -155,17 +155,16 @@ spec:
                   }
 
                   function get_instana_cr() {
-                    local agents=$(curl -ks -X GET -H 'Accept: application/yaml' \
+                    curl -ks -X GET -H 'Accept: application/yaml' \
                       -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
-                      https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/agents)
-                    echo "${agents}" | yq '.items[] | select(.metadata.namespace == "instana-agent")'
+                      https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/agents/instana-agent-operator
                   }
 
                   function submit_instana_cr() {
                     local updated_cr="${1}"
                     curl -ik -X POST -d @- -H 'Content-Type: application/yaml' \
                       -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
-                      https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/agents "${updated_cr}"
+                      https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/agents/instana-agent-operator "${updated_cr}"
                   }
 
                   function write_cert_file() {

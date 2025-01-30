@@ -13,6 +13,8 @@ metadata:
 spec:
   schedule: "*/15 * * * *" # every 15 minutes
   concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       backoffLimit: 5
@@ -143,9 +145,10 @@ spec:
 
                   function generate_updated_agent_config() {
                     local instana_cr="${1}"
-                    export jdbc_remotes="${2}"
+                    local jdbc_remotes="${2}"
+                    export jdbc_items=$(echo "${jdbc_remotes}" | yq '."com.instana.plugin.db2".remote')
                     local config_yaml=$(echo "${instana_cr}" | yq .spec.agent.configuration_yaml)
-                    echo "${config_yaml}" | yq '."com.instana.plugin.db2".remote = env(jdbc_remotes)'
+                    echo "${config_yaml}" | yq '."com.instana.plugin.db2".remote = env(jdbc_items)'
                   }
 
                   function generate_updated_instana_cr() {

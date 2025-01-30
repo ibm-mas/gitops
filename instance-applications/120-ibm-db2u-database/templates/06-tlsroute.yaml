@@ -1,3 +1,4 @@
+{{- if or (not (contains "sdb" .Values.db2_instance_name)) (and (contains "sdb" .Values.db2_instance_name) (eq (index .Values.mas_annotations "mas.ibm.com/operationalMode") "production")) }}
 ---
 kind: Route
 apiVersion: route.openshift.io/v1
@@ -16,7 +17,11 @@ metadata:
 {{- end }}
 spec:
   host: >-
+{{- if contains "sdb" .Values.db2_instance_name }}
+    reportdb-{{ .Values.db2_instance_name | lower }}-{{ .Values.db2_namespace }}.{{ .Values.cluster_domain }}
+{{- else }}
     {{ .Values.db2_instance_name | lower }}-{{ .Values.db2_namespace }}.{{ .Values.cluster_domain }}
+{{- end }}
   to:
     kind: Service
     name: "c-{{ .Values.db2_instance_name | lower }}-db2u-engn-svc"
@@ -27,3 +32,4 @@ spec:
     termination: passthrough
     insecureEdgeTerminationPolicy: None
   wildcardPolicy: None
+{{- end }}

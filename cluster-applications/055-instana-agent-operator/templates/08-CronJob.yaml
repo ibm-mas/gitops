@@ -162,7 +162,7 @@ spec:
 
                   function submit_instana_cr() {
                     local updated_cr="${1}"
-                    curl -ik -X POST -d @- -H 'Content-Type: application/yaml' \
+                    curl -ik -X PUT -d @- -H 'Content-Type: application/yaml' \
                       -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
                       https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/agents/instana-agent-operator "${updated_cr}"
                   }
@@ -205,8 +205,8 @@ spec:
                   done
                   echo "[INFO] Getting InstanaAgent custom resource"
                   instana_cr=$(get_instana_cr)
-                  echo "${instana_cr}"
                   agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${remotes_list}")
+                  echo "${agent_config_yaml}"
                   instana_cr=$(generate_updated_instana_cr "${instana_cr}" "${agent_config_yaml}")
                   echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
                   submit_instana_cr "${instana_cr}"

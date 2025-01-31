@@ -71,7 +71,7 @@ spec:
                   value: |
                     {
                       "host": "",
-                      "port": "",
+                      "port": "50001",
                       "tabschema": "db2inst1",
                       "user": "",
                       "password": "",
@@ -127,8 +127,7 @@ spec:
                     local db2_password="${3}"
                     local jdbc_secret=$(sm_get_secret "${secret_name}")
                     local url=$(extract_secret_value "${jdbc_secret}" jdbc_connection_url)           
-                    local yaml=$(set_yaml_string_field "${DB2_PLUGIN_REMOTE_TEMPLATE}" host ${url%:*})
-                    local yaml=$(set_yaml_string_field "${yaml}" port ${url##*:})   
+                    local yaml=$(set_yaml_string_field "${DB2_PLUGIN_REMOTE_TEMPLATE}" host $(echo "${url}" | cut -d'/' -f3 | cut -d':' -f1))
                     local yaml=$(set_yaml_string_field "${yaml}" user ${db2_username})   
                     local yaml=$(set_yaml_string_field "${yaml}" password ${db2_password})
                     local yaml=$(set_yaml_string_field "${yaml}" availabilityZone "${CLUSTER_ID}:db2")
@@ -172,7 +171,7 @@ spec:
 
                   function submit_instana_cr() {
                     local updated_cr_yaml="${1}"
-                    echo "${updated_cr_yaml}" | curl -ik -X PUT --data-binary @- -H 'Content-Type: application/yaml' \
+                    echo "${updated_cr_yaml}" | curl -iks -X PUT --data-binary @- -H 'Content-Type: application/yaml' \
                       -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
                       https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/agents/instana-agent-operator
                   }
@@ -232,7 +231,7 @@ spec:
                 - /bin/bash
                 - '-c'
                 - |
-                  readonly CERTS_DIR=/jks"
+                  readonly CERTS_DIR=/jks
                   readonly JKS_PATH="${CERTS_DIR}/db2-ca-certs.jks"
                   for cert in ${CERTS_DIR}/*.pem; do
                     echo "[INFO] Importing DB2 CA PEM certificate ${cert} to Instana agent JKS keystore ${JKS_PATH}"

@@ -164,10 +164,10 @@ spec:
                   }
 
                   function submit_instana_cr() {
-                    local updated_cr="${1}"
-                    curl -ik -X PUT -d @- -H 'Content-Type: application/yaml' \
+                    local updated_cr_yaml="${1}"
+                    echo "${updated_cr_yaml}" | curl -ik -X PUT -d @- -H 'Content-Type: application/yaml' \
                       -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
-                      https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/agents/instana-agent-operator "${updated_cr}"
+                      https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/agents/instana-agent-operator
                   }
 
                   function write_cert_file() {
@@ -209,11 +209,10 @@ spec:
                   echo "[INFO] Getting InstanaAgent custom resource"
                   instana_cr=$(get_instana_cr)
                   agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${remotes_list}")
-
-                  echo "--------------------------------------------"
-                  echo "${agent_config_yaml}"
-                  echo "--------------------------------------------"
                   instana_cr=$(generate_updated_instana_cr "${instana_cr}" "${agent_config_yaml}")
+                  echo "----------------------------------------------------"
+                  echo "${instana_cr}"
+                  echo "----------------------------------------------------"
                   echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
                   submit_instana_cr "${instana_cr}"
                   echo "[INFO] Completed updating Instana agent configuration for DB2"

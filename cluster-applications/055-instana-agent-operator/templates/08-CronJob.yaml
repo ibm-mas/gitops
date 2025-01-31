@@ -67,6 +67,8 @@ spec:
                   value: "aws"
                 - name: JDBC_SECRET_NAME_PATTERN
                   value: ".*/jdbc/.*/config"
+                - name: SKIP_IF_NULL_CREDENTIALS
+                  value: {{ .Values.instana_agent_operator_skip_if_null_credentials }}
                 - name: DB2_PLUGIN_REMOTE_TEMPLATE
                   value: |
                     {
@@ -208,6 +210,11 @@ spec:
                   for secret_name in ${secret_names}; do
                     echo "[INFO] Processing JDBC secret ${secret_name}"
                     db2_credentials=$(get_db2_credentials "${secret_name}")
+                    db2_password=$(echo "${db2_credentials}" | awk '{print $2}')
+                    if [[ "${SKIP_IF_NULL_CREDENTIALS}" == "true" && (-z "${db2_password}" || "${db2_password}" == "null") ]]; then
+                      echo "[INFO] Skipping JDBC secret ${secret_name} as password is null"
+                      continue
+                    fi
                     jdbc_remote=$(create_jdbc_remote "${secret_name}" $(echo ${db2_credentials} | awk '{print $1}') $(echo ${db2_credentials} | awk '{print $2}'))
                     write_cert_file "${secret_name}"
                     remotes_list=$(update_remotes_list "${remotes_list}" "${jdbc_remote}")

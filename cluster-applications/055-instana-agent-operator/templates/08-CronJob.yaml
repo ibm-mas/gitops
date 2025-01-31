@@ -154,7 +154,12 @@ spec:
                   function generate_updated_instana_cr() {
                     local instana_cr="${1}"
                     export config_yaml="${2}"
-                    echo "${instana_cr}" | yq '.spec.agent.configuration_yaml = strenv(config_yaml)'
+                    export labels=$(echo "${instana_cr}" | yq '.metadata.labels')
+                    export annotations=$(echo "${instana_cr}" | yq '.metadata.annotations')
+                    annotations=$(echo "${annotations}" | yq 'del(."kubectl.kubernetes.io/last-applied-configuration")')
+                    echo "${instana_cr}" | yq '.spec.agent.configuration_yaml = strenv(config_yaml)' | yq 'del(.metadata)' \
+                      | yq '.metadata.name = "instana-agent-operator"' | yq '.metadata.namespace = "instana-agent"' \
+                      | yq '.metadata.labels = env(labels)' | yq '.metadata.annotations = env(annotations)'
                   }
 
                   function get_instana_cr() {

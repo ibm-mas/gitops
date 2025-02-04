@@ -27,10 +27,16 @@ spec:
     env:
 {{ .Values.instana_agent_operator_env | toYaml | indent 6 }}
     pod:
+      securityContext:
+        readOnlyRootFilesystem: true
       volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
         - name: instana-db2-jks
           mountPath: /jks/
       volumes:
+        - name: tmp-volume
+          emptyDir: {}
         - name: instana-db2-jks
           persistentVolumeClaim:
             claimName: instana-db2-jks

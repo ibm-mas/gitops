@@ -160,20 +160,20 @@ spec:
                     export resource_version=$(echo "${instana_cr}" | yq '.metadata.resourceVersion')
                     annotations=$(echo "${annotations}" | yq 'del(."kubectl.kubernetes.io/last-applied-configuration")')
                     echo "${instana_cr}" | yq '.spec.agent.configuration_yaml = strenv(config_yaml)' | yq 'del(.metadata)' \
-                      | yq '.metadata.name = "instana-agent-operator"' | yq '.metadata.namespace = "instana-agent"' \
+                      | yq '.metadata.name = "instana-agent"' | yq '.metadata.namespace = "instana-agent"' \
                       | yq '.metadata.labels = env(labels)' | yq '.metadata.annotations = env(annotations)' \
                       | yq '.metadata.resourceVersion = strenv(resource_version)'
                   }
 
                   function get_instana_cr() {
-                    curl -ks -X GET -H 'Accept: application/yaml' \
+                    curl -ksS -X GET -H 'Accept: application/yaml' \
                       -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
                       https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/agents/instana-agent
                   }
 
                   function submit_instana_cr() {
                     local updated_cr_yaml="${1}"
-                    echo "${updated_cr_yaml}" | curl -iks -o /dev/null -X PUT --data-binary @- -H 'Content-Type: application/yaml' \
+                    echo "${updated_cr_yaml}" | curl -iksS -o /dev/null -X PUT --data-binary @- -H 'Content-Type: application/yaml' \
                       -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
                       https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/agents/instana-agent
                   }

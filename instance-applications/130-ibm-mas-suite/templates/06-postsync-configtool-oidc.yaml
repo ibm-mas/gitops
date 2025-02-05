@@ -1,3 +1,5 @@
+{{ $cli_image_tag := "13.2.0" }}
+
 {{ $ns :=                 printf "mas-%s-core" .Values.instance_id }}
 {{ $np_name :=            "postsync-configtool-oidc-np" }}
 {{ $role_name :=          "postsync-configtool-oidc-r" }}
@@ -83,7 +85,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $job_label }}-v2-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: {{ $job_label }}-v2-{{ cat (omit .Values "junitreporter" | toYaml) $cli_image_tag | adler32sum }}
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "145"
@@ -102,7 +104,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:latest
+          image: quay.io/ibmmas/cli:{{ $cli_image_tag }}
           imagePullPolicy: IfNotPresent
           resources:
             limits:

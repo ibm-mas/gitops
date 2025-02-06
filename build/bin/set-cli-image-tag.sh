@@ -16,13 +16,6 @@ Example:
 EOM
 }
 
-
-# echo "build/bin/copy-tekton.sh -c <ibm-mas/cli directory>"
-# echo ""
-# echo "Example usage: "
-# echo "  build/bin/copy-tekton.sh -c /Users/whitfiea/Work/Git/ibm-mas/cli -v 10.3.0 --saas-task-version 1.0.0-amd64"
-# echo ""
-
 # Process command line arguments
 while [[ $# -gt 0 ]]
 do

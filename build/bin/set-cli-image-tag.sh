@@ -51,9 +51,9 @@ for file in $(find ${ROOT_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \)); d
     (( scanned_count++ ))
     before_cksum=$(cksum "$file")
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -Ezi '' 's/(\{\{-?\s*[[:space:]]*\$_cli_image_tag[[:space:]]*:=[[:space:]]*")([^"]*)("[[:space:]]*\}\})/\1'${TAG}'\3/g' ${file}
+        sed -Ei '' 's/(\{\{-?\s*[[:space:]]*\$_cli_image_tag[[:space:]]*:=[[:space:]]*")([^"]*)("[[:space:]]*\}\})/\1'${TAG}'\3/g' ${file}
     else
-        sed -Ezi 's/(\{\{-?\s*[[:space:]]*\$_cli_image_tag[[:space:]]*:=[[:space:]]*")([^"]*)("[[:space:]]*\}\})/\1'${TAG}'\3/g' ${file}
+        sed -Ei 's/(\{\{-?\s*[[:space:]]*\$_cli_image_tag[[:space:]]*:=[[:space:]]*")([^"]*)("[[:space:]]*\}\})/\1'${TAG}'\3/g' ${file}
     fi
     after_cksum=$(cksum "$file")
     if [[ "$before_cksum" != "$after_cksum" ]]; then

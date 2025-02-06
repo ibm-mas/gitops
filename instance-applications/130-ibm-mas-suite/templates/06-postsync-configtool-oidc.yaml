@@ -1,12 +1,13 @@
 {{- /*
-Use the build/bin/set-cli-image.sh script to update this value across all charts.
-*/}}
-{{- $_cli_image_tag := "13.2.0" }}
-
-{{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
 {{- $_job_name_prefix := "postsync-configtool-oidc-job" }}
+
+{{- /*
+Use the build/bin/set-cli-image.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_tag := "13.2.0" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -14,12 +15,14 @@ Any changes to values in this dict will trigger a rerun of the job.
 Since jobs must be idemopotent, it's generally safe to pass in values here that are not
 strictly necessary (i.e. including some values that don't actually influence job behaviour).
 We may want to refine this further though for jobs that can take a long time to complete.
+Included in $_job_hash (see below).
 */}}
 {{- $_job_config_values := omit .Values "junitreporter" }}
 
 {{- /*
 Increment this value whenever you make a change to an immutable field of the Job resource.
 E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
 */}}
 {{- $_job_version := "v2" }}
 
@@ -138,7 +141,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:{{ $cli_image_tag }}
+          image: quay.io/ibmmas/cli:{{ $_cli_image_tag }}
           imagePullPolicy: IfNotPresent
           resources:
             limits:

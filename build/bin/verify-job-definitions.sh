@@ -3,11 +3,46 @@
 
 # WORK IN PROGRESS
 
-ROOT_DIR="/home/tom/workspaces/structured/saas/gitops/instance-applications/130-ibm-mas-suite"
 
+function print_help() {
+  cat << EOM
+Usage: verify-job-definitions.sh [OPTION]
+TODO description
 
-# Any file that contains quay.io/ibmmas/cli, MUST conform
+    -d, --root-dir   Directory to (recursively) search for .yml and .yaml files
+    -t, --tag        The new value for \$_cli_image_tag
+    -h, --help       Print this help message and exit
 
+Example:
+    verify-job-definitions.sh --root-dir /home/tom/workspace/gitops
+EOM
+}
+
+# Process command line arguments
+while [[ $# -gt 0 ]]
+do
+    key="$1"
+    shift
+    case $key in
+        -d|--root-dir)
+        ROOT_DIR=$1
+        shift
+        ;;
+        -h|--help)
+        print_help
+        ;;
+        *)
+        # unknown option
+        echo -e "\nUsage Error: Unsupported flag \"${key}\"\n\n"
+        print_help
+        exit 1
+        ;;
+    esac
+done
+
+: ${ROOT_DIR?"Need to set -d|--root-dir) argument"}
+
+# Checks are performed against any file where a reference to the cli image is detected
 files=$(grep -Erl --include '*.yaml' 'quay.io/ibmmas/cli' ${ROOT_DIR})
 
 scanned_count=0
@@ -25,10 +60,27 @@ for file in ${files}; do
         problems='    Missing {{- $_cli_image_tag := "..." }}\n'
     fi
 
+    # Any line that has "quay.io/ibmmas/cli" must match quay.io/ibmmas/cli:{{ $_cli_image_tag }}
+    while IFS= read -r cli_image_ref; do 
+        grep -Eq '\{\{-?[[:space:]]+\$_cli_image_tag[[:space:]]*\}\}' <<< "$cli_image_ref"
+        rc=$?
+        if [[ $rc != 0 ]]; then
+            problems=${problems}'    Invalid CLI image tag found: "'${cli_image_ref}'" (should be "{{ $_cli_image_tag }}")\n'
+        fi
+    done <<< "$(sed -En 's/.*quay\.io\/ibmmas\/cli:(.*)/\1/p' $file)"
+
+
+    # TODO: perhaps we do not need to enforce strict rules on job names for those annotated with
+    # argocd.argoproj.io/hook: PreSync, PostSync or PostDelete?
+    # (and argocd.argoproj.io/hook-delete-policy: BeforeHookCreation and/or HookSucceeded?
+    # (ArgoCD handles immutability problems for us in these cases)
+    # perhaps for CronJobs too?
+
     # Check $_job_name_prefix constant is defined (and is a string)
     grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_job_name_prefix[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
     rc=$?
     if [[ $rc == 0 ]]; then
+        # TODO: it's sometimes necessary for job prefix names to be generated
         # check $_job_name_prefix is <=52 chars in length
         while IFS= read -r job_name_prefix; do
             job_name_prefix_len=$(echo -n "${job_name_prefix}" | wc -m)
@@ -87,16 +139,16 @@ for file in ${files}; do
         problems=${problems}'    Missing {{- $_job_name := "..." }}\n'
     fi
 
-    # Any line that has "quay.io/ibmmas/cli" must match quay.io/ibmmas/cli:{{ $_cli_image_tag }}
-    while IFS= read -r cli_image_ref; do 
-        grep -Eq '\{\{-?[[:space:]]+\$_cli_image_tag[[:space:]]*\}\}' <<< "$cli_image_ref"
-        rc=$?
-        if [[ $rc != 0 ]]; then
-            problems=${problems}'    Invalid CLI image tag found: "'${cli_image_ref}'" (should be "{{ $_cli_image_tag }}")\n'
-        fi
-    done <<< "$(sed -En 's/.*quay\.io\/ibmmas\/cli:(.*)/\1/p' $file)"
+    # Check the job actually uses $_job_name
+    # This isn't a perfect check - it just verifies that there is at least one instance of name: {{ $_job_name }}
+    # in the file, not that it is assigned to a (the) Job resource.
+    # Definitely possible to fool the validator here, but I think this will catch most cases.
+    grep -Eq '^[[:space:]]+name:[[:space:]]+\{\{[[:space:]]*\$_job_name[[:space:]]*\}\}' $file
+    rc=$?
+    if [[ $rc != 0 ]]; then
+        problems=${problems}'    Missing "name: {{ $_job_name }}"\n'
+    fi
 
-    # TODO: need to relax rules for resources other than Jobs (where immutability is not an issue - e.g. CronJobs)?
 
     if [[ -n "$problems" ]]; then
         echo "${file}:"

@@ -1,0 +1,245 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: instana-agent-db2-config
+  namespace: instana-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "056"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  schedule: "*/15 * * * *" # every 15 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 5
+      template:
+        metadata:
+          labels:
+            app: instana-agent-db2-config
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 12 }}
+{{- end }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: instana-agent-db2-config
+          volumes:
+            - name: instana-db2-jks
+              persistentVolumeClaim:
+                claimName: instana-db2-jks
+            - name: aws
+              secret:
+                secretName: aws
+                defaultMode: 420
+                optional: false
+
+          # This container runs first to configure the Instana agent CR with the config for the DB2 instance.
+          # Additionally, it writes the DB2 certificate to a persistent volume.
+          initContainers:
+            - name: update-agent-cr
+              image: quay.io/ibmmas/cli:latest
+              imagePullPolicy: IfNotPresent              
+              volumeMounts:
+                - name: instana-db2-jks
+                  mountPath: /jks/
+                - name: aws
+                  mountPath: /etc/mas/creds/aws
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 512Mi
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+              env:
+                - name: ACCOUNT_ID
+                  value: {{ .Values.account_id }}
+                - name: REGION_ID
+                  value: {{ .Values.region_id }}
+                - name: CLUSTER_ID
+                  value: {{ .Values.cluster_id }}
+                - name: AVP_TYPE
+                  value: "aws"
+                - name: JDBC_SECRET_NAME_PATTERN
+                  value: ".*/jdbc/.*/config"
+                - name: DB2_PLUGIN_REMOTE_TEMPLATE
+                  value: |
+                    {
+                      "host": "",
+                      "port": "50001",
+                      "tabschema": "db2inst1",
+                      "user": "",
+                      "password": "",
+                      "availabilityZone": "",
+                      "sslTrustStorePassword": "changeit",
+                      "sslTrustStoreLocation": "/jks/db2-ca-certs.jks",
+                      "poll_rate": 60,
+                      "loginTimeout": 45,
+                      "databases": []
+                    }
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  source /mascli/functions/gitops_utils
+        
+                  function get_all_jdbc_secret_names() {
+                    sm_list_cluster_secrets "${ACCOUNT_ID}" "${CLUSTER_ID}" | grep -e "${JDBC_SECRET_NAME_PATTERN}"
+                  }
+                  
+                  # Secret name is of form: ${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/${DB2_INSTANCE_NAME}/config
+                  function get_mas_instance_id() {
+                    local secret_name="${1}"
+                    local mas_instance_id=$(echo "${secret_name}" | sed -e 's_[^/]*/[^/]*/\([^/]*\)/jdbc/.*_\1_')
+                    echo "${mas_instance_id}"
+                  }
+
+                  function set_yaml_string_field() {
+                    yaml="${1}"
+                    key="${2}"
+                    value="${3}"
+                    echo "${yaml}" | yq eval -o=yaml -P ".${key} = \"${value}\""
+                  }
+
+                  function set_yaml_array_field() {
+                    local yaml="${1}"
+                    export key=".${2}"
+                    export value="${3}"
+                    echo "${yaml}" | yq 'eval(strenv(key)) += [strenv(value)]'
+                  }
+
+                  # fields: jdbc_connection_url, jdbc_instance_name, ca_b64, db2_dbname, db2_namespace
+                  function extract_secret_value() {
+                    local secret="${1}"
+                    local key="${2}"
+                    echo "${secret}" | yq .${key}
+                  }
+
+                  function create_jdbc_remote() {
+                    local secret_name="${1}"
+                    local db2_username="${2}"
+                    local db2_password="${3}"
+                    local jdbc_secret=$(sm_get_secret "${secret_name}")
+                    local url=$(extract_secret_value "${jdbc_secret}" jdbc_connection_url)           
+                    local yaml=$(set_yaml_string_field "${DB2_PLUGIN_REMOTE_TEMPLATE}" host $(echo "${url}" | cut -d'/' -f3 | cut -d':' -f1))
+                    local yaml=$(set_yaml_string_field "${yaml}" user ${db2_username})   
+                    local yaml=$(set_yaml_string_field "${yaml}" password ${db2_password})
+                    local yaml=$(set_yaml_string_field "${yaml}" availabilityZone "${CLUSTER_ID}:db2")
+                    local db_name=$(extract_secret_value "${jdbc_secret}" db2_dbname)              
+                    local yaml=$(set_yaml_array_field "${yaml}" databases "${db_name}")  
+                    echo "${yaml}"
+                  }
+
+                  function update_remotes_list() {
+                    local remotes_list="${1}"
+                    export jdbc_remote="${2}"
+                    echo "${remotes_list}" | yq '."com.instana.plugin.db2".remote += [env(jdbc_remote)]'
+                  }
+
+                  function generate_updated_agent_config() {
+                    local instana_cr="${1}"
+                    local jdbc_remotes="${2}"
+                    export jdbc_items=$(echo "${jdbc_remotes}" | yq '."com.instana.plugin.db2".remote')
+                    local config_yaml=$(echo "${instana_cr}" | yq .spec.agent.configuration_yaml)
+                    echo "${config_yaml}" | yq '."com.instana.plugin.db2".remote = env(jdbc_items)'
+                  }
+
+                  function generate_updated_instana_cr() {
+                    local instana_cr="${1}"
+                    export config_yaml="${2}"
+                    export labels=$(echo "${instana_cr}" | yq '.metadata.labels')
+                    export annotations=$(echo "${instana_cr}" | yq '.metadata.annotations')
+                    export resource_version=$(echo "${instana_cr}" | yq '.metadata.resourceVersion')
+                    annotations=$(echo "${annotations}" | yq 'del(."kubectl.kubernetes.io/last-applied-configuration")')
+                    echo "${instana_cr}" | yq '.spec.agent.configuration_yaml = strenv(config_yaml)' | yq 'del(.metadata)' \
+                      | yq '.metadata.name = "instana-agent"' | yq '.metadata.namespace = "instana-agent"' \
+                      | yq '.metadata.labels = env(labels)' | yq '.metadata.annotations = env(annotations)' \
+                      | yq '.metadata.resourceVersion = strenv(resource_version)'
+                  }
+
+                  function get_instana_cr() {
+                    curl -ksS -X GET -H 'Accept: application/yaml' \
+                      -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+                      https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/agents/instana-agent
+                  }
+
+                  function submit_instana_cr() {
+                    local updated_cr_yaml="${1}"
+                    echo "${updated_cr_yaml}" | curl -iksS -o /dev/null -X PUT --data-binary @- -H 'Content-Type: application/yaml' \
+                      -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+                      https://kubernetes.default.svc.cluster.local/apis/instana.io/v1/namespaces/instana-agent/agents/instana-agent
+                  }
+
+                  function write_cert_file() {
+                    local secret_name="${1}"
+                    local jdbc_secret=$(sm_get_secret "${secret_name}")
+                    local jdbc_instance_name=$(extract_secret_value "${jdbc_secret}" jdbc_instance_name)
+                    local pem_cert=$(extract_secret_value "${jdbc_secret}" ca_b64 | base64 --decode)     
+                    echo "${pem_cert}" > "/jks/${jdbc_instance_name}.pem"
+                  }
+
+                  function get_db2_credentials() {
+                    local jdbc_secret_name="${1}"
+                    local jdbc_secret=$(sm_get_secret "${jdbc_secret_name}")
+                    local jdbc_instance_name=$(extract_secret_value "${jdbc_secret}" jdbc_instance_name)
+                    local mas_instance_id=$(get_mas_instance_id "${jdbc_secret_name}")
+                    local db2_secret=$(sm_get_secret ${ACCOUNT_ID}/${CLUSTER_ID}/${mas_instance_id}/jdbc/${jdbc_instance_name}/credentials)
+                    local db2_username=$(extract_secret_value "${db2_secret}" username)
+                    local db2_password=$(extract_secret_value "${db2_secret}" password)
+                    echo "${db2_username} ${db2_password}"
+                  }
+
+                  SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+                  SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+                  SM_AWS_REGION=${REGION_ID}
+                  sm_login
+
+                  echo '[INFO] Starting Instana agent configuration update for DB2 ...'
+                  remotes_list=$(yq eval -n '."com.instana.plugin.db2".remote = []')
+                  secret_names=$(get_all_jdbc_secret_names)
+                  num_secrets=$(echo "${secret_names}" | wc -l)
+                  echo "[INFO] Found ${num_secrets} JDBC secrets"
+                  for secret_name in ${secret_names}; do
+                    echo "[INFO] Processing JDBC secret ${secret_name}"
+                    db2_credentials=$(get_db2_credentials "${secret_name}")
+                    db2_user=$(echo "${db2_credentials}" | awk '{print $1}')
+                    if [[ -z "${db2_user}" || "${db2_user}" == "null" ]]; then
+                      echo "[INFO] Skipping JDBC secret ${secret_name} as username is null"
+                      continue
+                    fi
+                    jdbc_remote=$(create_jdbc_remote "${secret_name}" $(echo ${db2_credentials} | awk '{print $1}') $(echo ${db2_credentials} | awk '{print $2}'))
+                    write_cert_file "${secret_name}"
+                    remotes_list=$(update_remotes_list "${remotes_list}" "${jdbc_remote}")
+                  done
+                  echo "[INFO] Getting InstanaAgent custom resource"
+                  instana_cr=$(get_instana_cr)
+                  agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${remotes_list}")
+                  instana_cr=$(generate_updated_instana_cr "${instana_cr}" "${agent_config_yaml}")
+                  echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
+                  submit_instana_cr "${instana_cr}"
+                  echo "[INFO] Completed updating Instana agent configuration for DB2"
+
+          # This container runs second and creates the JKS file for Instana agent from DB2 PEM certificate.
+          containers:
+            - name: update-jks
+              image: registry.redhat.io/ubi8/openjdk-17:latest
+              volumeMounts:
+                - name: instana-db2-jks
+                  mountPath: /jks/
+              args:
+                - /bin/bash
+                - '-c'
+                - |
+                  readonly CERTS_DIR=/jks
+                  readonly JKS_PATH="${CERTS_DIR}/db2-ca-certs.jks"
+                  for cert in ${CERTS_DIR}/*.pem; do
+                    echo "[INFO] Importing DB2 CA PEM certificate ${cert} to Instana agent JKS keystore ${JKS_PATH}"
+                    keytool -list -keystore ${JKS_PATH} -alias ${cert%.*} -storepass changeit && keytool -delete -alias ${cert%.*} -keystore ${JKS_PATH} -storepass changeit
+                    echo "yes" | keytool -importcert -alias ${cert%.*} -file ${cert} -keystore ${JKS_PATH} -storepass changeit
+                  done    

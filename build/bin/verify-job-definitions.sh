@@ -6,18 +6,6 @@
 
 
 
-# whitespace-separated list of files to relax job naming restrictions on
-
-# This should only be used in cases where we know Job resource immutability problems when the cli_image_tag is updated
-# will not be hit (e.g. due to use of argocd.argoproj.io/hook-delete-policy)
-
-# TODO: allow to be loaded from a separate file / which is maintained by calls to this script
-# TODO: use paths to files rather than names (relative to root dir?) to avoid accidental matches against
-# files with the same name but under a different directory
-
-RELAX_FILES_LIST="10-postsync-report-starter.yaml 00-presync-report-starter.yaml 04-postsync-mvi-verify.yaml 04-postsync-mvi-sanity.yaml 04-postsync-maximoit-verify.yaml 04-postsync-maximoit-sanity.yaml 04-postsync-manage-verify.yaml"
-
-
 function print_help() {
   cat << EOM
 Usage: verify-job-definitions.sh [OPTION]
@@ -56,6 +44,21 @@ done
 
 : ${ROOT_DIR?"Need to set -d|--root-dir) argument"}
 
+
+
+
+# list of files (one file per line, relative to root-dir) to relax job naming restrictions on
+
+# This should only be used in cases where we know Job resource immutability problems when the cli_image_tag is updated
+# will not be hit (e.g. due to use of argocd.argoproj.io/hook-delete-policy)
+
+RELAX_LIST_FILE="${ROOT_DIR}/.verify-job-definitions/relax-list"
+if [[ -f ${RELAX_LIST_FILE} ]]; then
+    RELAX_LIST=$(cat ${RELAX_LIST_FILE})
+fi
+
+
+
 # Checks are performed against any file where a reference to the cli image is detected
 files=$(grep -Erl --include '*.yaml' 'quay.io/ibmmas/cli' ${ROOT_DIR})
 
@@ -64,6 +67,8 @@ valid_count=0
 invalid_count=0
 
 for file in ${files}; do
+
+
     problems=""
     (( scanned_count++ ))
 
@@ -94,9 +99,9 @@ for file in ${files}; do
     # (_cli_image_tag constraints should always be enforced however!)
 
     relax_for_file=0
-    filename=$(basename $file)
-    for relax_filename in $RELAX_FILES_LIST; do
-        if [[ $filename == $relax_filename ]]; then
+    file_relative=${file#"${ROOT_DIR%/}/"}
+    for relax_filename in $RELAX_LIST; do
+        if [[ $file_relative == $relax_filename ]]; then
             relax_for_file=1
             break
         fi

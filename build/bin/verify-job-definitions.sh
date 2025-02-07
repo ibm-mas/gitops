@@ -6,11 +6,9 @@
 ROOT_DIR="/home/tom/workspaces/structured/saas/gitops/instance-applications/130-ibm-mas-suite"
 
 
-# Any file that contains quay.io/ibmmas/cli, MUST also contain:
-#   {{- $_job_name_prefix := "postsync-configtool-oidc-job" }}
+# Any file that contains quay.io/ibmmas/cli, MUST conform
 
-
-files=$(grep -Erl --include '*.yaml' 'quay.io/ibmmas/cli:' ${ROOT_DIR})
+files=$(grep -Erl --include '*.yaml' 'quay.io/ibmmas/cli' ${ROOT_DIR})
 
 scanned_count=0
 valid_count=0
@@ -20,38 +18,83 @@ for file in ${files}; do
     problems=""
     (( scanned_count++ ))
 
-    grep -Eq '\{\{-?\s*[[:space:]]*\$_cli_image_tag[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
+    # Check $_cli_image_tag constant is defined (and is a string)
+    grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_cli_image_tag[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
     rc=$?
     if [[ $rc != 0 ]]; then
         problems='    Missing {{- $_cli_image_tag := "..." }}\n'
     fi
 
-    grep -Eq '\{\{-?\s*[[:space:]]*\$_job_name_prefix[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
+    # Check $_job_name_prefix constant is defined (and is a string)
+    grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_job_name_prefix[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
     rc=$?
-    if [[ $rc != 0 ]]; then
+    if [[ $rc == 0 ]]; then
+        # check $_job_name_prefix is <=52 chars in length
+        while IFS= read -r job_name_prefix; do
+            job_name_prefix_len=$(echo -n "${job_name_prefix}" | wc -m)
+            if [[ $job_name_prefix_len > 52 ]]; then
+                problems=${problems}'    Invalid $_job_name_prefix value found: "'${job_name_prefix}'" (must at most 52 chars but is currently '${job_name_prefix_len}')\n'
+            fi
+       done <<< "$(sed -En 's/^[[:space:]]*\{\{-?[[:space:]]+\$_job_name_prefix[[:space:]]*:=[[:space:]]*"([^"]+)"[[:space:]]*\}\}/\1/p' $file)"
+    else
         problems=${problems}'    Missing {{- $_job_name_prefix := "..." }}\n'
-        # TODO: check actual value <=52 chars in length?
     fi
 
-    # TODO: check $_job_config_values - a bit different since its value is a dict
-    # TODO: maybe we change how these are specified - at least need to try out some examples where we pick specific values out
-    # grep -Eq '\{\{-?\s*[[:space:]]*\$_job_config_values[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
-    # rc=$?
-    # if [[ $rc != 0 ]]; then
-    #     problems='    Missing {{- $_job_config_values := "..." }}\n'
-    # fi
+    # Check $_job_config_values constant is defined
+    grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_job_config_values[[:space:]]*:=[^}]+\}' $file
+    rc=$?
+    if [[ $rc != 0 ]]; then
+        problems=${problems}'    Missing {{- $_job_config_values := ... }}\n'
+    fi
 
-    grep -Eq '\{\{-?\s*[[:space:]]*\$_job_version[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
+    # Check $_job_version constant is defined (and is a string)
+    grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_job_version[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
     rc=$?
     if [[ $rc != 0 ]]; then
         problems=${problems}'    Missing {{- $_job_version := "..." }}\n'
     fi
 
-    # TODO: check $_job_config_values has specific value
+    # check $_job_hash constant is defined
+    grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_job_hash[[:space:]]*:=[^}]+\}' $file
+    rc=$?
+    if [[ $rc == 0 ]]; then
+        # check $_job_hash has correct value
+        while IFS= read -r job_hash_value; do
+            grep -Eq '^[[:space:]]*print[[:space:]]+\([[:space:]]*\$_job_config_values[[:space:]]*\|[[:space:]]*toYaml[[:space:]]*\)[[:space:]]+\$_cli_image_tag[[:space:]]+\$_job_version[[:space:]]*\|[[:space:]]*adler32sum' <<< "$job_hash_value"
+            rc=$?
+            if [[ $rc != 0 ]]; then
+                problems=${problems}'    Invalid $_job_hash value found: "'${job_hash_value}'" (should be "print ($_job_config_values | toYaml) $_cli_image_tag $_job_version | adler32sum")\n'
+            fi
+        done <<< "$(sed -En 's/^[[:space:]]*\{\{-?[[:space:]]+\$_job_hash[[:space:]]*:=[[:space:]]*([^}]+)\}\}/\1/p' $file)"
+    else
+        problems=${problems}'    Missing {{- $_job_hash := "..." }}\n'
+    fi
 
-    # TODO: check $_job_name has specific value
 
-    # TODO: any line that has "quay.io/ibmmas/cli" only has quay.io/ibmmas/cli:{{ $_cli_image_tag }}
+    # check $_job_name is constant is defined
+    grep -Eq '^[[:space:]]*\{\{-?[[:space:]]*\$_job_name[[:space:]]*:=[^}]+\}' $file
+    rc=$?
+    if [[ $rc == 0 ]]; then
+        # check $_job_name has correct value
+        while IFS= read -r job_name_value; do
+            grep -Eq '^[[:space:]]*join[[:space:]]*"-"[[:space:]]*\([[:space:]]*list[[:space:]]*\$_job_name_prefix[[:space:]]*\$_job_hash[[:space:]]*\)[[:space:]]*' <<< "$job_name_value"
+            rc=$?
+            if [[ $rc != 0 ]]; then
+                problems=${problems}'    Invalid $_job_name value found: "'${job_name_value}'" (should be "join "-" (list $_job_name_prefix $_job_hash)")\n'
+            fi
+        done <<< "$(sed -En 's/^[[:space:]]*\{\{-?[[:space:]]+\$_job_name[[:space:]]*:=[[:space:]]*([^}]+)\}\}/\1/p' $file)"
+    else
+        problems=${problems}'    Missing {{- $_job_name := "..." }}\n'
+    fi
+
+    # Any line that has "quay.io/ibmmas/cli" must match quay.io/ibmmas/cli:{{ $_cli_image_tag }}
+    while IFS= read -r cli_image_ref; do 
+        grep -Eq '\{\{-?[[:space:]]+\$_cli_image_tag[[:space:]]*\}\}' <<< "$cli_image_ref"
+        rc=$?
+        if [[ $rc != 0 ]]; then
+            problems=${problems}'    Invalid CLI image tag found: "'${cli_image_ref}'" (should be "{{ $_cli_image_tag }}")\n'
+        fi
+    done <<< "$(sed -En 's/.*quay\.io\/ibmmas\/cli:(.*)/\1/p' $file)"
 
     # TODO: need to relax rules for resources other than Jobs (where immutability is not an issue - e.g. CronJobs)?
 

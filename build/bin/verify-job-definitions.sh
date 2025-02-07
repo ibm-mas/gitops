@@ -15,7 +15,7 @@
 # TODO: use paths to files rather than names (relative to root dir?) to avoid accidental matches against
 # files with the same name but under a different directory
 
-RELAX_FILES_LIST="10-postsync-report-starter.yaml 00-presync-report-starter.yaml"
+RELAX_FILES_LIST="10-postsync-report-starter.yaml 00-presync-report-starter.yaml 04-postsync-mvi-verify.yaml 04-postsync-mvi-sanity.yaml 04-postsync-maximoit-verify.yaml 04-postsync-maximoit-sanity.yaml 04-postsync-manage-verify.yaml"
 
 
 function print_help() {

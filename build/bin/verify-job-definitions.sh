@@ -111,7 +111,6 @@ for file in ${files}; do
         grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_job_name_prefix[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
         rc=$?
         if [[ $rc == 0 ]]; then
-            # TODO: it's sometimes necessary for job prefix names to be generated
             # check $_job_name_prefix is <=52 chars in length
             while IFS= read -r job_name_prefix; do
                 job_name_prefix_len=$(echo -n "${job_name_prefix}" | wc -m)
@@ -170,14 +169,21 @@ for file in ${files}; do
             problems=${problems}'    Missing {{- $_job_name := "..." }}\n'
         fi
 
-        # Check the job actually uses $_job_name
-        # This isn't a perfect check - it just verifies that there is at least one instance of name: {{ $_job_name }}
-        # in the file, not that it is assigned to a (the) Job resource.
-        # Definitely possible to fool the validator here, but I think this will catch most cases.
-        grep -Eq '^[[:space:]]+name:[[:space:]]+\{\{[[:space:]]*\$_job_name[[:space:]]*\}\}' $file
+        # Check all jobs actually use $_job_name
+        awkout=$(awk 'BEGIN { job_count=0; valid_name_count=0; }
+            /^[[:space:]]*kind:[[:space:]]+Job/ { inJob=1; job_count++ }
+            /^---/ { inJob=0 }
+            inJob && /name:[[:space:]]+\{\{[[:space:]]*\$_job_name[[:space:]]*\}\}/ { valid_name_count++ }
+            END {
+                if(valid_name_count!=job_count) {
+                    print "At least one Job does not have name: {{ $_job_name }}"
+                    exit 1
+                }
+            }' $file \
+        )
         rc=$?
         if [[ $rc != 0 ]]; then
-            problems=${problems}'    Missing "name: {{ $_job_name }}"\n'
+            problems=${problems}'    '${awkout}'\n'
         fi
     fi
 

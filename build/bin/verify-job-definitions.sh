@@ -47,18 +47,6 @@ done
 
 
 
-# list of files (one file per line, relative to root-dir) to relax job naming restrictions on
-
-# This should only be used in cases where we know Job resource immutability problems when the cli_image_tag is updated
-# will not be hit (e.g. due to use of argocd.argoproj.io/hook-delete-policy)
-
-RELAX_LIST_FILE="${ROOT_DIR}/.verify-job-definitions/relax-list"
-if [[ -f ${RELAX_LIST_FILE} ]]; then
-    RELAX_LIST=$(cat ${RELAX_LIST_FILE})
-fi
-
-
-
 # Checks are performed against any file where a reference to the cli image is detected
 files=$(grep -Erl --include '*.yaml' 'quay.io/ibmmas/cli' ${ROOT_DIR})
 
@@ -89,61 +77,35 @@ for file in ${files}; do
     done <<< "$(sed -En 's/.*quay\.io\/ibmmas\/cli:(.*)/\1/p' $file)"
 
 
-    # TODO: perhaps we do not need to enforce strict rules on job names for those annotated with
-    # argocd.argoproj.io/hook: PreSync, PostSync or PostDelete?
-    # (and argocd.argoproj.io/hook-delete-policy: BeforeHookCreation and/or HookSucceeded?
-    # (ArgoCD handles immutability problems for us in these cases)
-    # perhaps for CronJobs too?
-
-    # Perhaps we could allow devs to specify a list of files to relax job naming restrictions on?
-    # (_cli_image_tag constraints should always be enforced however!)
-
-    relax_for_file=0
-    file_relative=${file#"${ROOT_DIR%/}/"}
-    for relax_filename in $RELAX_LIST; do
-        if [[ $file_relative == $relax_filename ]]; then
-            relax_for_file=1
-            break
-        fi
-    done
-
-    # Experimental: check there is a valid reason for this file being added to the relax-list
-    if [[ $relax_for_file == 1 ]]; then
-        # The following awk commands exits 0 if and only if:
-        #   - File does not contain a Job resource 
-        #       Jobs are currently the only resource we use where immutability of the image field is a problem.
-        #       e.g. it's fine to modify the image field of a CronJob resource
-        #   - All Jobs have argocd.argoproj.io/hook
-        #   - No job has JUST argocd.argoproj.io/hook-delete-policy: HookFailed
-        #       HookFailed is the only delete policy where we might encounter immutability issues
-        #       This works because if multiple policies specified, then it must also have either HookSucceeded or BeforeHookCreation
-        #       or, if the annotation is omitted, the policy defaults to BeforeHookCreation
-        awkout=$(awk 'BEGIN { found=0; job_count=0; hook_count=0; hf_detected=0 }
-            /^[[:space:]]*kind:[[:space:]]+Job/ { inJob=1; job_count++ }
-            /^---/ { inJob=0 }
-            inJob && /argocd\.argoproj\.io\/hook:/ { hook_count++ }
-            inJob && /argocd\.argoproj\.io\/hook-delete-policy:[[:space:]]+HookFailed[[:space:]]*$/ { hf_detected=1 }
-            END {
-                if(hook_count!=job_count) {
-                    print "At least one Job is not annotated with argocd.argoproj.io/hook"
-                    exit 1
-                }
-                if(hf_detected==1) {
-                    print "At least one Job with argocd.argoproj.io/hook-delete-policy: HookFailed was detected"
-                    exit 1
-                }
-            }' $file \
-        )
-
-        rc=$?
-        if [[ $rc != 0 ]]; then
-            problems=${problems}'    '${awkout}
-        fi
-
-
-    fi
-
-    if [[ $relax_for_file == 0 ]]; then
+    # Experimental: attempt to dynamically detect if we can relax job naming restrictions for this file
+    # The following awk commands exits 0 if and only if:
+    #   - File does not contain a Job resource 
+    #       Jobs are currently the only resource we use where immutability of the image field is a problem.
+    #       e.g. it's fine to modify the image field of a CronJob resource
+    #   - All Jobs have argocd.argoproj.io/hook
+    #   - No job has JUST argocd.argoproj.io/hook-delete-policy: HookFailed
+    #       HookFailed is the only delete policy where we might encounter immutability issues
+    #       This works because if multiple policies specified, then it must also have either HookSucceeded or BeforeHookCreation
+    #       or, if the annotation is omitted, the policy defaults to BeforeHookCreation
+    awkout=$(awk 'BEGIN { found=0; job_count=0; hook_count=0; hf_detected=0 }
+        /^[[:space:]]*kind:[[:space:]]+Job/ { inJob=1; job_count++ }
+        /^---/ { inJob=0 }
+        inJob && /argocd\.argoproj\.io\/hook:/ { hook_count++ }
+        inJob && /argocd\.argoproj\.io\/hook-delete-policy:[[:space:]]+HookFailed[[:space:]]*$/ { hf_detected=1 }
+        END {
+            if(hook_count!=job_count) {
+                print "At least one Job is not annotated with argocd.argoproj.io/hook"
+                exit 1
+            }
+            if(hf_detected==1) {
+                print "At least one Job with argocd.argoproj.io/hook-delete-policy: HookFailed was detected"
+                exit 1
+            }
+        }' $file \
+    )
+    enforce_job_naming_conventions=$?
+    
+    if [[ $enforce_job_naming_conventions == 1 ]]; then
 
         # Check $_job_name_prefix constant is defined (and is a string)
         grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_job_name_prefix[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file

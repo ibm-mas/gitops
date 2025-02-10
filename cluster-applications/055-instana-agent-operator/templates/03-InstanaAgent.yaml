@@ -1,0 +1,50 @@
+---
+apiVersion: instana.io/v1
+kind: InstanaAgent
+metadata:
+  name: instana-agent
+  namespace: instana-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "056"
+    argocd.argoproj.io/sync-options: "SkipDryRunOnMissingResource=true,Validate=false"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  openshift: true
+  cluster:
+    name: {{ .Values.cluster_id }}
+  zone:
+    name: {{ .Values.cluster_id }}
+  k8s_sensor:
+    deployment:
+      enabled: true
+  agent:
+    keysSecret: instana-agent
+    endpointHost: "{{ .Values.instana_agent_operator_endpoint_host }}"
+    endpointPort: "{{ .Values.instana_agent_operator_endpoint_port }}"
+    env:
+{{ .Values.instana_agent_operator_env | toYaml | indent 6 }}
+    pod:
+      volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: instana-db2-jks
+          mountPath: /jks/
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}
+        - name: instana-db2-jks
+          persistentVolumeClaim:
+            claimName: instana-db2-jks
+    configuration_yaml: |
+      com.instana.ignore:
+        arguments:
+          - io.strimzi.operator.cluster.Main
+          - kafka.Kafka
+          - org.apache.zookeeper.server.quorum.QuorumPeerMain
+          - io.strimzi.operator.topic.Main
+          - io.strimzi.operator.user.Main
+        processes:
+          - stunnel

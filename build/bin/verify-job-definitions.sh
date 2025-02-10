@@ -107,6 +107,42 @@ for file in ${files}; do
         fi
     done
 
+    # Experimental: check there is a valid reason for this file being added to the relax-list
+    if [[ $relax_for_file == 1 ]]; then
+        # The following awk commands exits 0 if and only if:
+        #   - File does not contain a Job resource 
+        #       Jobs are currently the only resource we use where immutability of the image field is a problem.
+        #       e.g. it's fine to modify the image field of a CronJob resource
+        #   - All Jobs have argocd.argoproj.io/hook
+        #   - No job has JUST argocd.argoproj.io/hook-delete-policy: HookFailed
+        #       HookFailed is the only delete policy where we might encounter immutability issues
+        #       This works because if multiple policies specified, then it must also have either HookSucceeded or BeforeHookCreation
+        #       or, if the annotation is omitted, the policy defaults to BeforeHookCreation
+        awkout=$(awk 'BEGIN { found=0; job_count=0; hook_count=0; hf_detected=0 }
+            /^[[:space:]]*kind:[[:space:]]+Job/ { inJob=1; job_count++ }
+            /^---/ { inJob=0 }
+            inJob && /argocd\.argoproj\.io\/hook:/ { hook_count++ }
+            inJob && /argocd\.argoproj\.io\/hook-delete-policy:[[:space:]]+HookFailed[[:space:]]*$/ { hf_detected=1 }
+            END {
+                if(hook_count!=job_count) {
+                    print "At least one Job is not annotated with argocd.argoproj.io/hook"
+                    exit 1
+                }
+                if(hf_detected==1) {
+                    print "At least one Job with argocd.argoproj.io/hook-delete-policy: HookFailed was detected"
+                    exit 1
+                }
+            }' $file \
+        )
+
+        rc=$?
+        if [[ $rc != 0 ]]; then
+            problems=${problems}'    '${awkout}
+        fi
+
+
+    fi
+
     if [[ $relax_for_file == 0 ]]; then
 
         # Check $_job_name_prefix constant is defined (and is a string)

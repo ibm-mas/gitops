@@ -256,7 +256,6 @@ echo "     ${skipped_count} skipped"
 
 if [[ $invalid_count > 0 ]]; then
     echo ""
-    echo "Invalid files were found, please see logs above for details"
-    echo "Further documentation available at TODO"
+    echo "Invalid files were found, please consult logs above for details"
     exit 1
 fi

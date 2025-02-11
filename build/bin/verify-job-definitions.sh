@@ -1,64 +1,90 @@
 #!/bin/bash
 
-
-# WORK IN PROGRESS
-
-
-
-
 function print_help() {
   cat << EOM
-Usage: verify-job-definitions.sh [OPTION]
+Usage: verify-job-definitions.sh [OPTION] [PATH]....
 TODO description
-
-    -d, --root-dir   Directory to (recursively) search for .yml and .yaml files
-    -t, --tag        The new value for \$_cli_image_tag
-    -h, --help       Print this help message and exit
+    -h      Print this help message and exit
 
 Example:
-    verify-job-definitions.sh --root-dir /home/tom/workspace/gitops
+    verify-job-definitions.sh /home/tom/workspace/gitops
+    verify-job-definitions.sh /home/tom/workspace/gitops/instance-applications/010-ibm-sync-jobs/templates/00-aws-docdb-add-user_Job.yaml
 EOM
 }
 
-# Process command line arguments
-while [[ $# -gt 0 ]]
+while getopts h flag
 do
-    key="$1"
-    shift
-    case $key in
-        -d|--root-dir)
-        ROOT_DIR=$1
-        shift
+    case "${flag}" in
+        h) 
+            print_help
+            exit 0
         ;;
-        -h|--help)
-        print_help
+        ?)
+            print_help
+            exit 1
         ;;
-        *)
-        # unknown option
-        echo -e "\nUsage Error: Unsupported flag \"${key}\"\n\n"
-        print_help
-        exit 1
-        ;;
+
     esac
 done
-
-: ${ROOT_DIR?"Need to set -d|--root-dir) argument"}
-
+shift $((OPTIND - 1))
 
 
+# if single PATH, check if it's a dir
+#   if so, scan it for yaml files containing references to quay.io/ibmmas/cli
+#   otherwise, we'll treat it as a file
+if [[ $# == 1 ]]; then
+    path=$1
+    if [[ -d $path ]]; then
+        files=$(grep -Erl --include '*.yaml' 'quay.io/ibmmas/cli' ${path})
+        echo "Checking all YAML files with quay.io/ibmmas/cli references under directory ${path}"
+        echo "---------"
+        shift
+    fi
+fi
 
-# Checks are performed against any file where a reference to the cli image is detected
-files=$(grep -Erl --include '*.yaml' 'quay.io/ibmmas/cli' ${ROOT_DIR})
+# if >1 path, all must be files
+file_count=$#
+while [[ $# -gt 0 ]]
+do
+    path=$1
+    if [[ -d $path ]]; then
+        echo "Only a single [PATH] can be specified when referencing a directory"
+        print_help
+        exit 1
+    elif [[ -f $path ]]; then
+        files="${files} ${path}"
+    else
+        echo "Specified [PATH] $path is not valid"
+        print_help
+        exit 1
+    fi
+    shift
+done
+
+if [[ $file_count -gt 0 ]]; then
+    echo "Checking $file_count files"
+    echo "---------"
+fi
 
 scanned_count=0
 valid_count=0
 invalid_count=0
+skipped_count=0
 
 for file in ${files}; do
 
 
     problems=""
     (( scanned_count++ ))
+
+    # Skip the file if it does not contain a reference to quay.io/ibmmas/cli
+    grep -Eq 'quay.io/ibmmas/cli' ${file}
+    rc=$?
+    if [[ $rc != 0 ]]; then
+        (( skipped_count++ ))
+        continue
+    fi
+
 
     # Check $_cli_image_tag constant is defined (and is a string)
     grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_cli_image_tag[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
@@ -199,9 +225,10 @@ done
 
 echo
 echo "Complete"
-echo "  ${scanned_count} files scanned"
-echo "  ${valid_count} are valid"
-echo "  ${invalid_count} are invalid"
+echo "  ${scanned_count} file(s) scanned"
+echo "     ${valid_count} valid"
+echo "     ${invalid_count} invalid"
+echo "     ${skipped_count} skipped"
 
 if [[ $invalid_count > 0 ]]; then
     echo ""

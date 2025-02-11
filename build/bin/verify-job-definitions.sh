@@ -3,12 +3,36 @@
 function print_help() {
   cat << EOM
 Usage: verify-job-definitions.sh [OPTION] [PATH]....
-TODO description
+
+Check that YAML files containing a reference to the quay.io/ibmmas/cli image conform to the following constraints:
+    - The \$_cli_image_tag constant is defined
+    - The \$_cli_image_tag constant is used for all quay.io/ibmmas/cli image tags
+
+Additional constraints are imposed for YAML files containing Job definitions that lack the argocd.argoproj.io/hook annotation, 
+or have the annotation but apply only the HookFailed argocd.argoproj.io/hook-delete-policy.
+
+These additional constraints are intended to protect against making changes to the Job
+(e.g. updating \$_cli_image_tag, or changing some other immutable Job field) without also updating the
+Job name accordingly:
+    - The \$_job_name_prefix constant is defined, and is at most 5 chars in length
+    - The \$_job_config_values constant is defined
+    - The \$_job_version constant is defined
+    - The \$_job_hash constant is defined and has the correct value
+    - The \$_job_name constant is defined and has the correct value
+    - The \$_job_name constant is used as the name of the Job
+
+[PATH]... can be either:
+    - A single directory: the script will check all files under this directory (recursive)
+    - Any number of paths to individual YAML files
+
+[OPTION]:
     -h      Print this help message and exit
 
 Example:
     verify-job-definitions.sh /home/tom/workspace/gitops
-    verify-job-definitions.sh /home/tom/workspace/gitops/instance-applications/010-ibm-sync-jobs/templates/00-aws-docdb-add-user_Job.yaml
+    verify-job-definitions.sh \\
+        /home/tom/workspace/gitops/instance-applications/010-ibm-sync-jobs/templates/00-aws-docdb-add-user_Job.yaml \\
+        /home/tom/workspace/gitops/instance-applications/510-550-ibm-mas-suite-app-config/templates/700-702-postsync-db2-manage.yaml
 EOM
 }
 

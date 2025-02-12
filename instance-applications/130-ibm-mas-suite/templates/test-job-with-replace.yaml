@@ -1,0 +1,42 @@
+---
+
+{{ $ns :=                 printf "mas-%s-core" .Values.instance_id }}
+
+{{- /*
+Use the build/bin/set-cli-image-tag.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_tag := "13.2.0" }}
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "test-job-with-replace"
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "145"
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  template:
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:{{ $_cli_image_tag }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "done"
+              
+      restartPolicy: Never
+      serviceAccountName: "default"
+  backoffLimit: 4
+

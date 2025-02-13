@@ -35,7 +35,7 @@ immutable field of any existing Job resource.
 
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
 
-
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
 {{ $ns :=                 printf "mas-%s-core" .Values.instance_id }}
 {{ $np_name :=            "postsync-configtool-oidc-np" }}
@@ -128,7 +128,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "145"
   labels:
-    mas.ibm.com/job-cleanup-group: {{ $_job_name_prefix }}
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
@@ -210,12 +210,12 @@ spec:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: {{ $_job_name_prefix }}-cleanup
+  name: {{ $_job_cleanup_group }}
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "146"
   labels:
-    mas.ibm.com/job-cleanup-group: {{ $_job_name_prefix }}
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}

@@ -45,6 +45,7 @@ immutable field of any existing Job resource.
 {{ $job_label :=          "postsync-configtool-oidc-job" }}
 {{ $oauth_admin_secret := printf "%s-credentials-oauth-admin" .Values.instance_id }}
 
+
 ---
 # Permit outbound communication by the Job pods
 # (Needed to communicate with the K8S HTTP API and AWS SM)
@@ -126,8 +127,9 @@ metadata:
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "145"
-{{- if .Values.custom_labels }}
   labels:
+    mas.ibm.com/job-tracker-group: {{ $_job_name_prefix }}
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
@@ -135,7 +137,7 @@ spec:
     metadata:
       labels:
         app: {{ $job_label }}
-{{- if .Values.custom_labels }}
+{{- if .Values.custom_labels }} 
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
@@ -204,3 +206,19 @@ spec:
       serviceAccountName: "{{ $sa_name }}"
   backoffLimit: 4
 
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ $_job_name_prefix }}-tracker
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "146"
+  labels:
+    mas.ibm.com/job-tracker-group: {{ $_job_name_prefix }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+immutable: false
+data:
+  current_job_name: {{ $_job_name }}

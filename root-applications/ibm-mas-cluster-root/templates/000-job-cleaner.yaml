@@ -1,0 +1,66 @@
+{{- if .Values.auto_delete }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: job-cleaner.{{ .Values.cluster.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+    healthCheckTimeout: "1800"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: job-cleaner
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: cluster-applications/000-job-cleaner
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }}
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            junitreporter:
+              reporter_name: "job-cleaner"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+        - name: ARGOCD_APP_NAME
+          value: jobcleanerapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+{{- end }}

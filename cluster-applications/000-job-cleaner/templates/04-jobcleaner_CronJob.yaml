@@ -1,0 +1,108 @@
+{{- /*
+Use the build/bin/set-cli-image-tag.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_tag := "13.6.0-pre.mascore5637-amd64" }}
+
+
+{{- $ns := "job-cleaner" }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mas-saas-job-cleaner-role
+  annotations:
+    argocd.argoproj.io/sync-wave: "02"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+- apiGroups:
+    - batch
+  resources: 
+    - jobs
+  verbs: 
+    - list
+    - delete
+
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "mas-saas-job-cleaner-sa"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "02"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: mas-saas-job-cleaner-rolebinding
+  annotations:
+    argocd.argoproj.io/sync-wave: "03"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: mas-saas-job-cleaner-sa"
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mas-saas-job-cleaner-role
+
+
+
+---
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: "mas-saas-job-cleaner-cron"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "04"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  schedule: '* * * * *'
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+{{- if .Values.custom_labels }}
+          labels:
+{{ .Values.custom_labels | toYaml | indent 12 }}
+{{- end }}
+        spec:
+          containers:
+            - name: "mas-saas-job-cleaner"
+              image: quay.io/ibmmas/cli:{{ $_cli_image_tag }}
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -c
+                - |
+
+                  set -e
+
+                  mas-devops-saas-job-cleaner --label mas.ibm.com/job-cleanup-group --log-level INFO --dry-run || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+                    exit 0
+                  fi
+
+                  exit 1
+          restartPolicy: OnFailure
+          serviceAccountName: "mas-saas-job-cleaner-sa"

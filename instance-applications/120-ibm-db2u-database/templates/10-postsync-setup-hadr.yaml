@@ -120,6 +120,8 @@ spec:
               value: "{{ .Values.db2_namespace }}"
             - name: DB2_INSTANCE_NAME
               value: "{{ .Values.db2_instance_name }}"
+            - name: DB2_DBNAME
+              value: "{{ .Values.db2_dbname }}"
           command:
             - /bin/sh
             - -c
@@ -191,6 +193,24 @@ spec:
               wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
 
               echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "pod" "c-${DB2_INSTANCE_NAME:0:-4}-db2u-0" "${DB2_NAMESPACE}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 to report Ready=True before continuing (timeout 300s)"
+              echo "================================================================================"
+              oc wait --for=condition=Ready pod/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 --timeout 300s -n ${DB2_NAMESPACE}
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for service c-${DB2_INSTANCE_NAME:0:-4}-db2u-engn-svc to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "svc" "c-${DB2_INSTANCE_NAME:0:-4}-db2u-engn-svc" "${DB2_NAMESPACE}"
+
+              echo ""
               echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1 || exit $?
@@ -200,8 +220,31 @@ spec:
               echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "================================================================================"
               db2apply || exit $?
+
               # Copy the backup from primary and restore in standby
-              # Start hadr in standby
-              # Start hadr in Primary
+              echo ""
+              echo "Taking backup on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup | tee /tmp/dbbackup.log" db2inst1 || exit $?
+
+              echo ""
+              timestamp=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "cat /tmp/dbbackup.log | grep timestamp | awk '{print $NF}'" db2inst1`
+              backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "ls /mnt/backup | grep ${timestamp} " db2inst1`
+
+              echo ""
+              echo "Copying backup /mnt/backup/${backup_filename} from ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0 "
+              oc cp ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0:/mnt/backup/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/mnt/backup/${backup_filename}
+
+              # # Start hadr in standby
+              # echo ""
+              # echo "Starting HADR in standby"
+              # echo "--------------------------------------------------------------------------------"
+              # oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; db2 start hadr on db bludb as standby; | tee /tmp//start_hadr_standby.log" db2inst1 || exit $?
+
+              # # Start hadr in Primary
+              # echo ""
+              # echo "Starting HADR in standby"
+              # echo "--------------------------------------------------------------------------------"
+              # oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "db2stop force; db2start; db2 start hadr on db bludb as primary; | tee /tmp//start_hadr_primary.log" db2inst1 || exit $?
               exit 0
 {{ end }}

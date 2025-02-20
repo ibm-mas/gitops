@@ -221,7 +221,7 @@ spec:
               echo "================================================================================"
               db2apply || exit $?
 
-              # Copy the backup from primary and restore in standby
+              # Copy the backup from primary to standby
               echo ""
               echo "Taking backup on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0"
               echo "--------------------------------------------------------------------------------"
@@ -238,6 +238,20 @@ spec:
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "cp /mnt/backup/${backup_filename} /tmp; chmod 777 /tmp/${backup_filename}" db2inst1 || exit $?
               oc cp ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0:/tmp/${backup_filename} /tmp/${backup_filename}
               oc cp /tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
+
+              echo ""
+              echo "Copying keystore from primary to standby"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "mkdir /tmp/keystore; cp /mnt/blumeta0/db2/keystore/* /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
+              oc rsync ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0:/tmp/keystore/ /tmp
+              oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mv /mnt/blumeta0/db2/keystore/keystore.p12 /mnt/blumeta0/db2/keystore/keystore.p12_orig; mv /mnt/blumeta0/db2/keystore/keystore.sth /mnt/blumeta0/db2/keystore/keystore.sth_orig; cp /tmp/keystore/keystore.* /mnt/blumeta0/db2/keystore/; chown db2inst1.db2iadm1 /mnt/blumeta0/db2/keystore/keystore.*; chmod 600 /mnt/blumeta0/db2/keystore/keystore.*;" db2inst1 || exit $?
+
+
+              # Restore in standby
+              # echo ""
+              # echo "Restoring ${timestamp} in standby server"
+              # echo "--------------------------------------------------------------------------------"
+              # oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 drop db ${DB2_DBNAME}; db2 restore db ${DB2_DBNAME} taken at ${timestamp}" db2inst1 | | exit $?
 
               # # Start hadr in standby
               # echo ""

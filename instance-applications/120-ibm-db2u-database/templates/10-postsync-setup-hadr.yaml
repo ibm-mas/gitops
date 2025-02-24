@@ -216,35 +216,35 @@ spec:
               # oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /mnt/backup/MIRRORLOGPATH" db2inst1 || exit $?
 
               # Copy the backup from primary to standby
-              echo ""
-              echo "Taking backup on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup | tee /tmp/dbbackup.log" db2inst1 || exit $?
+              # echo ""
+              # echo "Taking backup on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0"
+              # echo "--------------------------------------------------------------------------------"
+              # oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup | tee /tmp/dbbackup.log" db2inst1 || exit $?
 
-              echo ""
-              timestamp=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "cat /tmp/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
-              echo "Timestamp of backup is ${timestamp}"
-              backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "ls /mnt/backup | grep ${timestamp}" db2inst1`
-              echo "Backup filename is ${backup_filename}"
+              # echo ""
+              # timestamp=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "cat /tmp/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
+              # echo "Timestamp of backup is ${timestamp}"
+              # backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "ls /mnt/backup | grep ${timestamp}" db2inst1`
+              # echo "Backup filename is ${backup_filename}"
 
-              echo ""
-              echo "Copying backup /mnt/backup/${backup_filename} from ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0 "
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "cp /mnt/backup/${backup_filename} /tmp; chmod 777 /tmp/${backup_filename}" db2inst1 || exit $?
-              oc cp ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0:/tmp/${backup_filename} /tmp/${backup_filename}
-              oc cp /tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
+              # echo ""
+              # echo "Copying backup /mnt/backup/${backup_filename} from ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0 "
+              # oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "cp /mnt/backup/${backup_filename} /tmp; chmod 777 /tmp/${backup_filename}" db2inst1 || exit $?
+              # oc cp ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0:/tmp/${backup_filename} /tmp/${backup_filename}
+              # oc cp /tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
 
-              echo ""
-              echo "Copying keystore from primary to standby"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "mkdir /tmp/keystore; cp /mnt/blumeta0/db2/keystore/* /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
-              oc rsync ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0:/tmp/keystore /tmp
-              oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mv /mnt/blumeta0/db2/keystore/keystore.p12 /mnt/blumeta0/db2/keystore/keystore.p12_orig; mv /mnt/blumeta0/db2/keystore/keystore.sth /mnt/blumeta0/db2/keystore/keystore.sth_orig; cp /tmp/keystore/keystore.* /mnt/blumeta0/db2/keystore/; chown db2inst1.db2iadm1 /mnt/blumeta0/db2/keystore/keystore.*; chmod 600 /mnt/blumeta0/db2/keystore/keystore.*;" db2inst1 || exit $?
+              # echo ""
+              # echo "Copying keystore from primary to standby"
+              # oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "mkdir /tmp/keystore; cp /mnt/blumeta0/db2/keystore/* /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
+              # oc rsync ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0:/tmp/keystore /tmp
+              # oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp
+              # oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mv /mnt/blumeta0/db2/keystore/keystore.p12 /mnt/blumeta0/db2/keystore/keystore.p12_orig; mv /mnt/blumeta0/db2/keystore/keystore.sth /mnt/blumeta0/db2/keystore/keystore.sth_orig; cp /tmp/keystore/keystore.* /mnt/blumeta0/db2/keystore/; chown db2inst1.db2iadm1 /mnt/blumeta0/db2/keystore/keystore.*; chmod 600 /mnt/blumeta0/db2/keystore/keystore.*;" db2inst1 || exit $?
 
               # Restore in standby
-              echo ""
-              echo "Restoring ${timestamp} in standby server"
-              echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 force applications all; db2 terminate; db2 deactivate db ${DB2_DBNAME}; db2 drop db ${DB2_DBNAME}; db2 restore db ${DB2_DBNAME} from /tmp taken at ${timestamp} with 15 buffers buffer 4096 parallelism 15 encrypt without prompting" db2inst1 || exit $?
+              # echo ""
+              # echo "Restoring ${timestamp} in standby server"
+              # echo "--------------------------------------------------------------------------------"
+              # oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 force applications all; db2 terminate; db2 deactivate db ${DB2_DBNAME}; db2 drop db ${DB2_DBNAME}; db2 restore db ${DB2_DBNAME} from /tmp taken at ${timestamp} with 15 buffers buffer 4096 parallelism 15 encrypt without prompting" db2inst1 || exit $?
 
               echo ""
               echo "================================================================================"
@@ -260,7 +260,7 @@ spec:
 
               # # Start hadr in Primary
               echo ""
-              echo "Starting HADR in standby"
+              echo "Starting HADR in primary"
               echo "--------------------------------------------------------------------------------"
               oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "db2stop force; db2start; db2 start hadr on db bludb as primary | tee /tmp//start_hadr_primary.log" db2inst1 || exit $?
 {{ end }}

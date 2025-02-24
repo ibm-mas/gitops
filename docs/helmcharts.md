@@ -20,10 +20,11 @@ The following figure shows a tree of ArgoCD applications and Application Sets ge
 
 ## {{ cluster_root_chart() }} 
 
-**Cluster Root Applications** render the {{ cluster_root_chart() }}, which contains templates to generate ArgoCD Applications for configuring various dependencies shared by MAS instances on {{ target_clusters() }}.
+**Cluster Root Applications** render the {{ cluster_root_chart() }}, which contains templates to generate ArgoCD Applications for configuring various dependencies and supporting services shared by MAS instances on {{ target_clusters() }}.
 
 | Application | Template | Helm Chart |
 |-|-|-|
+|Job Cleaner | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-job-cleaner.yaml", "000-job-cleaner.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/000-job-cleaner", "000-job-cleaner") }} |
 |IBM Operator Catalog | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml", "000-ibm-operator-catalog-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/000-ibm-operator-catalog", "000-ibm-operator-catalog") }} |
 |Redhat Certificate Manager | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml", "010-ibm-redhat-cert-manager-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/010-redhat-cert-manager", "010-redhat-cert-manager") }} |
 |Data Reporter Operator (DRO) | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml", "020-ibm-dro-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/020-ibm-dro", "020-ibm-dro") }} |
@@ -31,6 +32,7 @@ The following figure shows a tree of ArgoCD applications and Application Sets ge
 |NFD Operator | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/050-nfd-operator-app.yaml", "050-nfd-operator-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/050-nfd-operator", "050-nfd-operator") }} |
 |Nvidia GPU Operator | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/051-nvidia-gpu-operator-app.yaml", "051-nvidia-gpu-operator-app.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/051-nvidia-gpu-operator", "051-nvidia-gpu-operator") }} |
 |Custom Cluster Service Accounts | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/060-custom-sa.yaml", "060-custom-sa.yaml") }} | {{ gitops_repo_dir_link("cluster-applications/060-custom-sa", "060-custom-sa") }} |
+
 The {{ cluster_root_chart() }} also installs the {{ instance_root_app_set() }}. This generates a set of **Instance Root Applications** based on the configuration in the {{  config_repo() }}.  
 
 ## {{ instance_root_chart() }} 
@@ -53,7 +55,6 @@ The {{ cluster_root_chart() }} also installs the {{ instance_root_app_set() }}. 
 |Analytics Engine powered by Apache Spark (Spark) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-ibm-spark-app.yaml", "120-ibm-spark-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/120-ibm-spark", "120-ibm-spark") }} |
 |SPSS Modeler | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-ibm-spss-app.yaml", "120-ibm-spss-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/120-ibm-spss", "120-ibm-spss") }} |
 
-gitops/root-applications/ibm-mas-instance-root/templates/120-ibm-spss-app.yaml
 ##### MAS Core Platform
 
 This includes the suite, suite configurations and core workspaces

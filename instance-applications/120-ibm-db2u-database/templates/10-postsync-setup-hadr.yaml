@@ -213,7 +213,7 @@ spec:
               PRIMARY_ROLE=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "db2 get db cfg for BLUDB | grep role | cut -d'=' -f2 | tr -d ' '" db2inst1`
               STANDBY_ROLE=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 get db cfg for BLUDB | grep role | cut -d'=' -f2 | tr -d ' '" db2inst1`
 
-              if [[ ! ($PRIMARY_ROLE -eq 'PRIMARY' && $STANDBY_ROLE -eq 'STANDBY') ]]; then
+              if [[ ! ($PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY') ]]; then
                 # Copy the backup from primary to standby
                 echo ""
                 echo "Taking backup on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0"
@@ -244,6 +244,8 @@ spec:
                 echo "Restoring ${timestamp} in standby server"
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 force applications all; db2 terminate; db2 deactivate db ${DB2_DBNAME}; db2 drop db ${DB2_DBNAME}; db2 restore db ${DB2_DBNAME} from /tmp taken at ${timestamp} with 15 buffers buffer 4096 parallelism 15 encrypt without prompting" db2inst1 || exit $?
+              else
+                echo "HADR is already setup. Hence skipping the restore on standby"
               fi
 
               echo ""

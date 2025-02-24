@@ -24,7 +24,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v8" }}
+{{- $_job_version := "v9" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_tag
@@ -180,16 +180,9 @@ spec:
             - name: OIDC_CONFIG_YAML
               value: {{ .Values.oidc | toYaml | replace "\n" "\\n" }}
                 
-            - name: OAUTH_ADMIN_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $oauth_admin_secret }}
-                  key: oauth-admin-username
-            - name: OAUTH_ADMIN_PWD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $oauth_admin_secret }}
-                  key: oauth-admin-password
+          volumeMounts:
+            - name: oauth-admin-secret
+              mountPath: /etc/mas/creds/oauth_admin_secret
             
           command:
             - /bin/sh
@@ -197,6 +190,9 @@ spec:
             - |
 
               set -e
+
+              export OAUTH_ADMIN_USERNAME="$(cat /etc/mas/creds/oauth_admin_secret/oauth-admin-username)"
+              export OAUTH_ADMIN_PWD="$(cat /etc/mas/creds/oauth_admin_secret/oauth-admin-password)"
 
               if $(echo -e "${OIDC_CONFIG_YAML}" | yq --exit-status=1 eval '(. | has("configtool")) and (.configtool | has("trusted_uri_prefixes"))' 1>/dev/null 2>&1); then
                 echo "- oidc.configtool configuration supplied, (re)registering client"
@@ -222,4 +218,10 @@ spec:
               
       restartPolicy: Never
       serviceAccountName: "{{ $sa_name }}"
+      volumes:
+        - name: oauth-admin-secret
+          secret:
+            secretName: "{{ $oauth_admin_secret }}"
+            defaultMode: 420
+            optional: false
   backoffLimit: 4

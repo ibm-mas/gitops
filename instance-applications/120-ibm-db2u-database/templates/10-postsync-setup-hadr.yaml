@@ -218,6 +218,18 @@ spec:
                 echo ""
                 timestamp=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
                 echo "Timestamp of backup is ${timestamp}"
+
+                if [[ -z ${timestamp} ]]; then
+                  echo "Backup is not available in primary. Attempting to backup"
+                  echo ""
+                  echo "Taking backup on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME:0:-4}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "mkdir -p /mnt/backup/standby; db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby | tee /mnt/backup/standby/dbbackup.log" db2inst1 || exit $?
+                  echo ""
+                  timestamp=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
+                  echo "Timestamp of backup is ${timestamp}"
+                fi
+
                 backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME:0:-4}-db2u-0 -- su -lc "ls /mnt/backup/standby | grep ${timestamp}" db2inst1`
                 echo "Backup filename is ${backup_filename}"
 

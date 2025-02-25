@@ -719,6 +719,11 @@ spec:
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
               fi
 
+              echo ""
+              echo "Taking backup on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/standby; db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby | tee /mnt/backup/standby/dbbackup.log" db2inst1 || exit $?
+
       restartPolicy: Never
 
       serviceAccountName: "postsync-sa-{{ .Values.db2_instance_name }}"

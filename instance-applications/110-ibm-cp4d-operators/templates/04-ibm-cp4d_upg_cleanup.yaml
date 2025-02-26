@@ -60,22 +60,29 @@ spec:
 
               # Verify that the available channel for common service operator is enough for the given product version
               echo "Verify that the available channel in the packagemanifests is enough for the product version currently installing"
-              export CPFS_AVAILABLE_CHANNEL=$((oc get PackageManifest ibm-common-service-operator -o json) | jq -r '[.status.channels | .[].name] | last | split ("v") | last')
+              export CPFS_AVAILABLE_CHANNELS=$((oc get PackageManifest ibm-common-service-operator -o json) | jq -r '[.status.channels | .[].name| split ("v") |last]')
 
               echo
               echo "============"
               echo "Debug:"
               echo "============"
-              echo "- IBM Foundational Services channel in package manifest ............. v${CPFS_AVAILABLE_CHANNEL}"
-              echo "- IBM Foundational Services channel ................................. ${CPFS_CHANNEL}"
-              echo "- CP4D Product Version .............................................. ${CPD_PRODUCT_VERSION}"
+              echo "- Available channels for IBM Foundational Services .... ${CPFS_AVAILABLE_CHANNELS}"
+              echo "- Expected channel for IBM Foundational Services ...... ${CPFS_CHANNEL}"
+              echo "- CP4D Product Version ................................ ${CPD_PRODUCT_VERSION}"
               echo
 
               # Check available channels against the expected channel that would be installed
-              if [[ ! -z "${CPFS_AVAILABLE_CHANNEL}" ]]; then
-                COMPARE=$(compare_channels ${CPFS_AVAILABLE_CHANNEL} ${CPFS_CHANNEL:1})
+              if [[ ! -z "${CPFS_AVAILABLE_CHANNELS}" ]]; then
+                FOUND="false"
+                for channel in $CPFS_AVAILABLE_CHANNELS; do 
+                  compare=$(compare_channels ${channel} ${CPFS_CHANNEL:1})
+                  if [[ ${compare} == 0 ]]; then
+                    export FOUND="true"
+                    break
+                  fi
+                done
 
-                if [[ ${COMPARE} -ge 0 ]]; then
+                if [[ ${FOUND} == "true" ]]; then
                   echo
                   echo "Backup and Delete existing common-service-maps configmap"
                   echo "================================================================================"

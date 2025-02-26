@@ -60,7 +60,7 @@ spec:
 
               # Verify that the available channel for common service operator is enough for the given product version
               echo "Verify that the available channel in the packagemanifests is enough for the product version currently installing"
-              export CPFS_AVAILABLE_CHANNELS=$((oc get PackageManifest ibm-common-service-operator -o json) | jq -r '[.status.channels | .[].name| split ("v") |last]')
+              export CPFS_AVAILABLE_CHANNELS=$((oc get PackageManifest ibm-common-service-operator -o json) | jq -r '.status.channels | .[].name| split ("v") |last')
 
               echo
               echo "============"
@@ -75,6 +75,7 @@ spec:
               if [[ ! -z "${CPFS_AVAILABLE_CHANNELS}" ]]; then
                 FOUND="false"
                 for channel in $CPFS_AVAILABLE_CHANNELS; do 
+                  echo "comparing ${channel} to ${CPFS_CHANNEL:1}"
                   compare=$(compare_channels ${channel} ${CPFS_CHANNEL:1})
                   if [[ ${compare} == 0 ]]; then
                     export FOUND="true"

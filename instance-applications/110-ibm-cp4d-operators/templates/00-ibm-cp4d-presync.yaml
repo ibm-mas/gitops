@@ -5,7 +5,7 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: presync-cpd-olm-sa
-  namespace: mas-{{ .Values.instance_id }}-syncres
+  namespace: {{ .Values.cpd_operators_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "001"
 {{- if .Values.custom_labels }}
@@ -55,7 +55,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: presync-cpd-olm-sa
-    namespace: mas-{{ .Values.instance_id }}-syncres
+    namespace: {{ .Values.cpd_operators_namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -70,8 +70,8 @@ metadata:
   # Any change to cluster config will trigger a rerun of the job.
   # The job is idempotent and quick so no real harm in running it when we don't actually need to.
   # The v1 in the name allows use to change this if there is a modification needed that is not in the yaml
-  name: presync-cpd-olm-job-v3-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
-  namespace: mas-{{ .Values.instance_id }}-syncres
+  name: presync-cpd-olm-job-v4-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  namespace: {{ .Values.cpd_operators_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "003"
 {{- if .Values.custom_labels }}
@@ -372,8 +372,6 @@ spec:
               echo "    - SECRET_NAME_DATAREFINERY_CHANNEL ...................... ${SECRET_NAME_DATAREFINERY_CHANNEL}"
               echo "    - SECRET_NAME_RABBITMQ_CHANNEL .......................... ${SECRET_NAME_RABBITMQ_CHANNEL}"
               echo "    - SECRET_NAME_ELASTICSEARCH_CHANNEL ..................... ${SECRET_NAME_ELASTICSEARCH_CHANNEL}"
-              echo "    - SECRET_NAME_AIOPENSCALE_VERSION ....................... ${SECRET_NAME_AIOPENSCALE_VERSION}"
-              echo "    - SECRET_NAME_AIOPENSCALE_CHANNEL ....................... ${SECRET_NAME_AIOPENSCALE_CHANNEL}"
               echo "    - SECRET_NAME_SPSS_VERSION .............................. ${SECRET_NAME_SPSS_VERSION}"
               echo "    - SECRET_NAME_SPSS_CHANNEL .............................. ${SECRET_NAME_SPSS_CHANNEL}"
               echo "    - SECRET_NAME_CANVASBASE_CHANNEL ........................ ${SECRET_NAME_CANVASBASE_CHANNEL}"

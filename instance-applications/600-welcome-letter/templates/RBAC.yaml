@@ -1,0 +1,53 @@
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: welcome-letter
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: welcome-letter
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+- apiGroups:
+    - batch
+  resources:
+    - jobs
+  verbs:
+    - patch
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: welcome-letter
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: welcome-letter
+    namespace: mas-{{ .Values.instance_id }}-core
+roleRef:
+  kind: Role
+  name: welcome-letter
+  apiGroup: rbac.authorization.k8s.io

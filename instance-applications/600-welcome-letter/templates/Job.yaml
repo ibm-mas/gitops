@@ -1,0 +1,121 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: welcome-letter
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  # On success, this will be set to true
+  suspend: false
+  template:
+    metadata:
+      labels:
+        app: welcome-letter
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: welcome-letter
+      volumes:
+        - name: templates
+          configMap:
+            name: welcome-letter
+        - name: emails
+          emptyDir: {}
+        - name: smtp
+          secret:
+            secretName: "{{ .Values.mas_config_name }}"
+            items:
+              - key: username
+                path: username
+              - key: password
+                path: password
+      # This container renders the emails from Jinja templates
+      initContainers:
+        - name: renderer
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent              
+          volumeMounts:
+            - name: templates
+              mountPath: /templates/
+              readOnly: true
+            - name: emails
+              mountPath: /emails
+              readOnly: false
+          env:
+            - name: INSTANCE_URL
+              value: {{ .Values.instance_url }}
+            - name: CUSTOMER_NAME
+              value: {{ .Values.customer_display_name }}
+            - name: ENV_TYPE
+              value: {{ .Values.environment_type }}
+          # TODO add remaining env vars
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              for template in $(ls /templates/*.html.j2); do
+                echo "[INFO] Rendering email template ${template}"
+                jinjanate ${template} -o /emails/${template%.j2}
+              done
+              echo "[INFO] Rendering email config file"
+              jinjanate /templates/config.yaml.j2 -o /emails/config.yaml
+      
+      # This container sends the rendered emails
+      containers:
+        - name: sender
+          image: busybox:latest
+          imagePullPolicy: IfNotPresent              
+          volumeMounts:
+            - name: templates
+              mountPath: /templates/
+              readOnly: true
+            - name: emails 
+              mountPath: /emails
+              readOnly: true
+            - name: smtp
+              mountPath: /smtp
+              readOnly: true
+          env:
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
+            - name: FROM_EMAIL_ADDRESS
+              value: {{ .Values.from_email_address }}
+            - name: RECIPIENT_EMAIL_ADDRESSES
+              value: {{ .Value.recipient_email_addresses }}
+            - name: SMTP_HOST
+              value: {{ .Values.smtp_host }}
+            - name: SMTP_PORT
+              value: {{ .Values.smtp_port }}
+            - name: NAMESPACE
+              value: mas-{{ .Values.instance_id }}-core
+          # TODO add remaining env vars
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              for html_file in $(ls /emails/*.html); do
+                echo "[INFO] Sending email ${html_file} to ${RECIPIENT_EMAIL_ADDRESSES}"
+                body=$(cat ${html_file})
+                export email_type=${html_file%.html}
+                subject=$(cat /emails/config.yaml | yq '.subjects[strenv(email_type)]')
+                echo -e "Subject:${subject}\n${body}" | sendmail -f "${FROM_EMAIL_ADDRESS}" -t "${RECIPIENT_EMAIL_ADDRESSES}" \
+                  -S ${SMTP_HOST}:${SMTP_PORT} -au $(cat /smtp/username) -ap $(cat /smtp/password)
+              done
+
+              echo "[INFO] All emails sent => disabling job to prevent duplicate emails"
+              curl -iks -X PATCH -H 'Content-Type: application/json-patch+json' \
+                -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+                --data '{"spec" : {"suspend" : true }}' \
+                https://kubernetes.default.svc.cluster.local/apis/batch/v1/namespaces/${NAMESPACE}/jobs/welcome-letter
+              echo "[INFO] Job disabled successfully"

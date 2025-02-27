@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: welcome-letter
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  config.yaml.j2: |-
+{{ .Files.Get "resources/config.yaml.j2" | indent 4 }}
+  general.html.j2: |-
+{{ .Files.Get "resources/general-welcome.html.j2" | indent 4 }}

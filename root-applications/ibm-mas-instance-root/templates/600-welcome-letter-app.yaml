@@ -1,0 +1,75 @@
+{{- if and (not (empty .Values.ibm_mas_suite.mas_annotations)) (eq (index .Values.ibm_mas_suite.mas_annotations "mas.ibm.com/hyperscalerLifecycle") "active") }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: welcome-letter.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: welcome-letter
+  ignoreDifferences:
+    - group: batch
+      kind: Job
+      jsonPointers:
+        - /spec/suspend # Handled by job itself
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/600-welcome-letter
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            instance_id: "{{ .Values.instance.id }}"
+            instance_url: "{{ .Values.ibm_mas_suite.mas_domain }}"
+            smtp_host: "{{ .Values.ibm_mas_suite.mas_domain }}"
+            customer_display_name: "{{ .Values.welcome_letter.customer_display_name }}"
+            from_email_address: "{{ .Values.welcome_letter.from_email_address }}"
+            recipient_email_addresses: "{{ .Values.welcome_letter.recipient_email_addresses }}"
+            environment_type: "{{ .Values.welcome_letter.environment_type }}"
+            junitreporter:
+              reporter_name: "ibm-mas-suite-{{ .Values.instance.id }}"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+        - name: ARGOCD_APP_NAME
+          value: suiteapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+{{- end }}

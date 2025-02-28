@@ -1,0 +1,111 @@
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: spark-cp-sa
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "093"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: spark-cp-role-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "093"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - patch
+    apiGroups:
+      - apps
+    resources:
+      - deployments
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: spark-cp-rb-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "094"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: spark-cp-sa
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: spark-cp-role-{{ .Values.instance_id }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: spark-control-plane-patch-job-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "095"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "Check if spark-hb-control-plane deployment is available and patch it"
+              echo "================================================================================"
+              echo
+
+              SPARK_CP_LOOKUP=$(oc get deployment spark-hb-control-plane -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
+              if [[ ! -z $SPARK_CP_LOOKUP ]]; then
+                echo "patching spark-hb-control-plane deployment..."
+                oc patch --type='merge' deployment spark-hb-control-plane -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"template\":{ \"spec\":{ \"containers\":{ - \"name\":\"spark-hb-control-plane\",\"resources\":{ \"limits\":{ \"cpu\":\"2\"}}}}}}}"
+                echo "complete..."
+              fi
+
+      restartPolicy: Never
+      serviceAccountName: spark-cp-sa
+  backoffLimit: 4
+
+

@@ -166,6 +166,8 @@ spec:
               value: "{{ .Values.db2_backup_bucket_endpoint }}"
             - name: SLACKURL
               value: "{{ .Values.db2_backup_notify_slack_url }}"
+            - name: REPLICA_DB
+              value: "{{ .Values.replica_db }}"
 {{- end }}
 
           volumeMounts:
@@ -353,6 +355,11 @@ spec:
                 oc cp /tmp/db2-scripts.zip ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2-scripts.zip -c db2u || exit $?
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cd /tmp; unzip -o db2-scripts.zip; chmod -R +x /tmp/db2-scripts" db2inst1 || exit $?
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "/tmp/db2-scripts/CopyDBScripts.sh | tee /tmp/copydbscripts.log" db2inst1 || exit $?
+              fi
+
+              IS_HADR_CONFIGURED=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "db2 get db cfg for BLUDB | grep HADR_LOCAL_HOST | cut -d'=' -f2 | tr -d ' '" db2inst1`
+              if [[ ! (-z $IS_HADR_CONFIGURED) &&  REPLICA_DB != 'true' ]]; then
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "db2 stop hadr on db ${DB2_DBNAME} | tee /tmp/stophadr.log" db2inst1 || exit $?
               fi
 
               if [[ "$MAS_APP_ID" == "manage" ]]; then

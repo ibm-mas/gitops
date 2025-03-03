@@ -102,7 +102,7 @@ spec:
       serviceAccountName: "postsync-hadr-sa-{{ .Values.db2_instance_name }}"
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:13.8.1-pre.hadr-replicadb-amd64
+          image: quay.io/ibmmas/cli:latest
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -247,13 +247,6 @@ spec:
               STANDBY_ROLE=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 get db cfg for BLUDB | grep role | cut -d'=' -f2 | tr -d ' '" db2inst1`
 
               if [[ ! ($PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY') ]]; then
-                # Copy the backup from primary to standby
-                # echo ""
-                # timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
-                # echo "Timestamp of backup is ${timestamp}"
-
-                # if [[ -z ${timestamp} ]]; then
-                echo "Backup is not available in primary. Attempting to backup"
                 echo ""
                 echo "Taking backup on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
@@ -261,7 +254,6 @@ spec:
                 echo ""
                 timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
                 echo "Timestamp of backup is ${timestamp}"
-                # fi
 
                 backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "ls /mnt/backup/standby | grep ${timestamp}" db2inst1`
                 echo "Backup filename is ${backup_filename}"

@@ -1,11 +1,26 @@
-{{- if not (empty .Values.cpd_product_version) }}
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: aws
+  namespace: {{ .Values.cpd_instance_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key }}
+type: Opaque
 
 ---
 kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: presync-cpd-olm-sa
-  namespace: mas-{{ .Values.instance_id }}-syncres
+  namespace: {{ .Values.cpd_instance_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "001"
 {{- if .Values.custom_labels }}
@@ -55,7 +70,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: presync-cpd-olm-sa
-    namespace: mas-{{ .Values.instance_id }}-syncres
+    namespace: {{ .Values.cpd_instance_namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -70,8 +85,8 @@ metadata:
   # Any change to cluster config will trigger a rerun of the job.
   # The job is idempotent and quick so no real harm in running it when we don't actually need to.
   # The v1 in the name allows use to change this if there is a modification needed that is not in the yaml
-  name: presync-cpd-olm-job-v2-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
-  namespace: mas-{{ .Values.instance_id }}-syncres
+  name: presync-cpd-olm-job-v4-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  namespace: {{ .Values.cpd_instance_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "003"
 {{- if .Values.custom_labels }}
@@ -292,22 +307,6 @@ spec:
               fi
 
               echo
-              echo "Fetching AI Openscale Channel..."
-              export AIOPENSCALE_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.openscale.sub_channel')
-              if [[ -z "${AIOPENSCALE_CHANNEL}" ]]; then
-                echo "Failed to fetch aiopenscale channel"
-                exit 1
-              fi
-
-              echo
-              echo "Fetching AI Openscale Version..."
-              export AIOPENSCALE_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.openscale.cr_version')
-              if [[ -z "${AIOPENSCALE_VERSION}" ]]; then
-                echo "Failed to fetch aiopenscale version"
-                exit 1
-              fi
-
-              echo
               echo "Fetching SPSS Version..."
               export SPSS_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.spss.cr_version')
               if [[ -z "${SPSS_VERSION}" ]]; then
@@ -354,8 +353,6 @@ spec:
               SECRET_NAME_DATAREFINERY_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/datarefinery_channel
               SECRET_NAME_RABBITMQ_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_rabbitmq_channel
               SECRET_NAME_ELASTICSEARCH_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_elasticsearch_channel
-              SECRET_NAME_AIOPENSCALE_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/aiopenscale_version
-              SECRET_NAME_AIOPENSCALE_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/aiopenscale_channel
               SECRET_NAME_SPSS_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/spss_version
               SECRET_NAME_SPSS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/spss_channel
               SECRET_NAME_CANVASBASE_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/canvasbase_channel
@@ -390,8 +387,6 @@ spec:
               echo "    - SECRET_NAME_DATAREFINERY_CHANNEL ...................... ${SECRET_NAME_DATAREFINERY_CHANNEL}"
               echo "    - SECRET_NAME_RABBITMQ_CHANNEL .......................... ${SECRET_NAME_RABBITMQ_CHANNEL}"
               echo "    - SECRET_NAME_ELASTICSEARCH_CHANNEL ..................... ${SECRET_NAME_ELASTICSEARCH_CHANNEL}"
-              echo "    - SECRET_NAME_AIOPENSCALE_VERSION ....................... ${SECRET_NAME_AIOPENSCALE_VERSION}"
-              echo "    - SECRET_NAME_AIOPENSCALE_CHANNEL ....................... ${SECRET_NAME_AIOPENSCALE_CHANNEL}"
               echo "    - SECRET_NAME_SPSS_VERSION .............................. ${SECRET_NAME_SPSS_VERSION}"
               echo "    - SECRET_NAME_SPSS_CHANNEL .............................. ${SECRET_NAME_SPSS_CHANNEL}"
               echo "    - SECRET_NAME_CANVASBASE_CHANNEL ........................ ${SECRET_NAME_CANVASBASE_CHANNEL}"
@@ -419,8 +414,6 @@ spec:
               sm_update_secret $SECRET_NAME_DATAREFINERY_CHANNEL "{\"datarefinery_channel\": \"$DATAREFINERY_CHANNEL\" }" "${TAGS}"
               sm_update_secret $SECRET_NAME_RABBITMQ_CHANNEL "{\"opencontent_rabbitmq_channel\": \"$RABBITMQ_CHANNEL\" }" "${TAGS}"
               sm_update_secret $SECRET_NAME_ELASTICSEARCH_CHANNEL "{\"opencontent_elasticsearch_channel\": \"$ELASTICSEARCH_CHANNEL\" }" "${TAGS}"
-              sm_update_secret $SECRET_NAME_AIOPENSCALE_VERSION "{\"aiopenscale_version\": \"$AIOPENSCALE_VERSION\" }" "${TAGS}"
-              sm_update_secret $SECRET_NAME_AIOPENSCALE_CHANNEL "{\"aiopenscale_channel\": \"$AIOPENSCALE_CHANNEL\" }" "${TAGS}"
               sm_update_secret $SECRET_NAME_SPSS_VERSION "{\"spss_version\": \"$SPSS_VERSION\" }" "${TAGS}"
               sm_update_secret $SECRET_NAME_SPSS_CHANNEL "{\"spss_channel\": \"$SPSS_CHANNEL\" }" "${TAGS}"
               sm_update_secret $SECRET_NAME_CANVASBASE_CHANNEL "{\"canvasbase_channel\": \"$CANVASBASE_CHANNEL\" }" "${TAGS}"
@@ -437,5 +430,3 @@ spec:
             defaultMode: 420
             optional: false
   backoffLimit: 4
-
-{{- end }}

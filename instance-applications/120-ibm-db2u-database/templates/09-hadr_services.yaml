@@ -1,0 +1,47 @@
+{{ if (default .Values.replica_db false) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: c-{{ .Values.db2_instance_name }}-db2u-hadr-svc
+  namespace: "{{ .Values.db2_namespace }}"
+spec:
+  selector:
+    app: {{ .Values.db2_instance_name }}
+    type: engine
+  ports:
+    - name: db2u-hadrp
+      port: 60006
+      targetPort: 60006
+    - name: db2u-hadrs
+      port: 60007
+      targetPort: 60007
+    - name: db2u-hadra1
+      port: 60008
+      targetPort: 60008
+    - name: db2u-hadra2
+      port: 60009
+      targetPort: 60009
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: c-{{ .Values.db2_instance_name }}-hadr-ext
+  namespace: "{{ .Values.db2_namespace }}"
+spec:
+  ingress:
+  - ports:
+{{- if not (contains "sdb" .Values.db2_instance_name) }}
+    - port: 60006
+{{- else }}
+    - port: 60007
+{{- end }}
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      formation_id: {{ .Values.db2_instance_name }}
+      type: engine
+  policyTypes:
+  - Ingress
+{{ end }}

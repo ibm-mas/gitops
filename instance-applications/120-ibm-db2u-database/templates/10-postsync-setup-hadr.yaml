@@ -1,0 +1,289 @@
+{{ if and (default .Values.replica_db false) (contains "sdb" .Values.db2_instance_name) }}
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "postsync-hadr-sa-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "128"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "db2-database-postsync-hadr-sa-role-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "128"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - get
+    - list
+    - watch
+- apiGroups:
+    - ""
+  resources:
+    - pods/exec
+  verbs:
+    - get
+    - list
+    - create
+- apiGroups:
+    - ""
+  resources:
+    - services
+  verbs:
+    - "get"
+- apiGroups:
+    - db2u.databases.ibm.com
+  resources:
+    - db2uinstances
+  verbs:
+    - "get"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "db2-database-postsync-hadr-sa-rb-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "128"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: "postsync-hadr-sa-{{ .Values.db2_instance_name }}"
+    namespace: "{{ .Values.db2_namespace }}"
+roleRef:
+  kind: Role
+  name: "db2-database-postsync-hadr-sa-role-{{ .Values.db2_instance_name }}"
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Suffix the Job name with a hash of all chart values
+  # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes in the DB2 config
+  name: postsync-setup-hadr-{{ .Values.db2_instance_name }}-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: "postsync-hadr-sa-{{ .Values.db2_instance_name }}"
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: MAS_INSTANCE_ID
+              value: {{ .Values.instance_id }}
+            - name: MAS_APP_ID
+              value: {{ .Values.mas_application_id}}
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+            - name: DB2_DBNAME
+              value: "{{ .Values.db2_dbname }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              source /mascli/functions/gitops_utils
+
+              function wait_for_resource {
+                RES_TYPE="$1"
+                RES_NAME="$2"
+                RES_NS="$3"
+                RETRIES=${4:-10}
+                RETRY_DELAY_SECONDS=${5:-30}
+
+                for (( c=1; c<="${RETRIES}"; c++ )); do
+
+                  echo "... attempt ${c} of ${RETRIES}"
+
+                  rc=0
+                  oc get "${RES_TYPE}/${RES_NAME}" -n "${RES_NAMESPACE}" || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+                    return 0
+                  fi
+
+                  if [[ "${c}" -lt "${RETRIES}" ]]; then
+                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                    sleep $RETRY_DELAY_SECONDS
+                  fi
+                done
+
+                echo "...... failed, no attempts remain"
+                return 1
+              }
+
+              function db2apply {
+                RETRIES=${1:-5}
+                RETRY_DELAY_SECONDS=${2:-30}
+
+                mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
+                if [[ "$rc" == "0" ]]; then
+                  echo "... db2 config already matches expected config, returning without calling apply-db2cfg-settings"
+                  return 0
+                fi
+
+                for (( c=1; c<="${RETRIES}"; c++ )); do
+                  echo ""
+                  echo "... attempt ${c} of ${RETRIES}"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
+                  # no useful info in return code of this script
+
+                  rc=0
+                  mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "...... success"
+
+                    # # Start hadr in standby
+                    echo ""
+                    echo "Starting HADR in standby"
+                    echo "--------------------------------------------------------------------------------"
+                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; db2 start hadr on db bludb as standby" db2inst1 || exit $?
+
+                    # # Start hadr in Primary
+                    echo ""
+                    echo "Starting HADR in primary"
+                    echo "--------------------------------------------------------------------------------"
+                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; db2 start hadr on db bludb as primary" db2inst1 || exit $?
+
+                    return 0
+                  fi
+
+                  if [[ "${c}" -lt "${RETRIES}" ]]; then
+                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                    sleep $RETRY_DELAY_SECONDS
+                  fi
+                done
+
+                echo "...... failed, no attempts remain"
+                return 1
+              }
+
+              PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "pod" "c-${DB2_INSTANCE_NAME}-db2u-0" "${DB2_NAMESPACE}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to report Ready=True before continuing (timeout 300s)"
+              echo "================================================================================"
+              oc wait --for=condition=Ready pod/c-${DB2_INSTANCE_NAME}-db2u-0 --timeout 300s -n ${DB2_NAMESPACE}
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for service c-${DB2_INSTANCE_NAME}-db2u-engn-svc to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "pod" "c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0" "${DB2_NAMESPACE}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 to report Ready=True before continuing (timeout 300s)"
+              echo "================================================================================"
+              oc wait --for=condition=Ready pod/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 --timeout 300s -n ${DB2_NAMESPACE}
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for service c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-engn-svc to be present before continuing (timeout 300s)"
+              echo "================================================================================"
+              wait_for_resource "svc" "c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
+
+              PRIMARY_ROLE=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 get db cfg for BLUDB | grep role | cut -d'=' -f2 | tr -d ' '" db2inst1`
+              STANDBY_ROLE=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 get db cfg for BLUDB | grep role | cut -d'=' -f2 | tr -d ' '" db2inst1`
+
+              if [[ ! ($PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY') ]]; then
+                echo ""
+                echo "Taking backup on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/standby; db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby | tee /mnt/backup/standby/dbbackup.log" db2inst1 || exit $?
+                echo ""
+                timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
+                echo "Timestamp of backup is ${timestamp}"
+
+                backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "ls /mnt/backup/standby | grep ${timestamp}" db2inst1`
+                echo "Backup filename is ${backup_filename}"
+
+                echo ""
+                echo "Copying backup /mnt/backup/standby/${backup_filename} from ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0 "
+                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cp /mnt/backup/standby/${backup_filename} /tmp; chmod 777 /tmp/${backup_filename}" db2inst1 || exit $?
+                oc cp ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename} /tmp/${backup_filename}
+                oc cp /tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
+
+                echo ""
+                echo "Copying keystore from primary to standby"
+                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir /tmp/keystore; cp /mnt/blumeta0/db2/keystore/* /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
+                oc rsync ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/keystore /tmp
+                oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mv /mnt/blumeta0/db2/keystore/keystore.p12 /mnt/blumeta0/db2/keystore/keystore.p12_orig; mv /mnt/blumeta0/db2/keystore/keystore.sth /mnt/blumeta0/db2/keystore/keystore.sth_orig; cp /tmp/keystore/keystore.* /mnt/blumeta0/db2/keystore/; chown db2inst1.db2iadm1 /mnt/blumeta0/db2/keystore/keystore.*; chmod 600 /mnt/blumeta0/db2/keystore/keystore.*;" db2inst1 || exit $?
+
+                # Restore in standby
+                echo ""
+                echo "Restoring ${timestamp} in standby server"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 force applications all; db2 terminate; db2 deactivate db ${DB2_DBNAME}; db2 drop db ${DB2_DBNAME}; db2 restore db ${DB2_DBNAME} from /tmp taken at ${timestamp} with 15 buffers buffer 4096 parallelism 15 encrypt without prompting" db2inst1 || exit $?
+              else
+                echo "HADR is already setup. Hence skipping the restore on standby"
+              fi
+
+              echo ""
+              echo "================================================================================"
+              echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "================================================================================"
+              db2apply || exit $?
+
+{{ end }}

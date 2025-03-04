@@ -15,7 +15,6 @@ Below is a table to show the expected elapsed time for the argocd application to
 | ibm-suite | 10 minutes |
 | ibm-cp4d-operators | 2 minutes |
 | ibm-spss | 80 minutes |
-| ibm-openscale | 15 minutes |
 | ibm-wml | 25 minutes |
 | ibm-wsl | 45 minutes |
 | ibm-spark | 15 minutes |

@@ -501,6 +501,54 @@ spec:
                   
               fi # [[ "$MAS_APP_ID" == "manage" ]]
 
+              if [[ "$MAS_APP_ID" == "facilities" ]]; then
+                echo ""
+                echo "================================================================================"
+                echo "Invoke Suite DB2 setup for Facilities"
+                echo "================================================================================"
+                # Copy and run a script on the db2u pod to perform Facilities-specific setup tasks
+
+                # Execute db2configdb.sh
+                FACILITIES_DB2_SETUP_PATH=/tmp/facilites_db2config.sh
+                jinjanate_commmon /tmp/db2-scripts/facilities/db2config.sh.j2 ${FACILITIES_DB2_SETUP_PATH}
+                echo ""
+                echo "Copy ${FACILITIES_DB2_SETUP_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc cp ${FACILITIES_DB2_SETUP_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${FACILITIES_DB2_SETUP_PATH} -c db2u || exit $?
+
+                echo ""
+                echo "Executing ${SETUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${FACILITIES_DB2_SETUP_PATH}" db2inst1 || exit $?
+
+                # Execute create-tablespaces.sql
+                FACILITIES_TABLESPACES_PATH=/tmp/facilites_tablespaces.sql
+                jinjanate_commmon /tmp/db2-scripts/facilities/create-tablespaces.sql.j2 ${FACILITIES_TABLESPACES_PATH}
+                echo ""
+                echo "Copy ${FACILITIES_TABLESPACES_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc cp ${FACILITIES_TABLESPACES_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${FACILITIES_TABLESPACES_PATH} -c db2u || exit $?
+
+                echo ""
+                echo "Executing ${FACILITIES_TABLESPACES_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 -tvf ${FACILITIES_TABLESPACES_PATH}" db2inst1 || exit $?
+
+                # Execute create-schema.sql 
+                FACILITIES_SCHEMA_PATH=/tmp/facilites_schema.sql
+                jinjanate_commmon /tmp/db2-scripts/facilities/create-schema.sql.j2 ${FACILITIES_SCHEMA_PATH}
+                echo ""
+                echo "Copy ${FACILITIES_SCHEMA_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc cp ${FACILITIES_SCHEMA_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${FACILITIES_SCHEMA_PATH} -c db2u || exit $?
+
+                echo ""
+                echo "Executing ${FACILITIES_SCHEMA_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 -tvf ${FACILITIES_SCHEMA_PATH}" db2inst1 || exit $?
+
+              fi # [[ "$MAS_APP_ID" == "facilities" ]]
+
               if [[ -n $BUCKET_NAME ]]; then
                 POST_BACKFLOW_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/PostBackFlow.sh"
                 echo ""

@@ -1,0 +1,21 @@
+---
+{{- if (eq .Values.non_shared_cluster_addon_enabled "true") }}
+apiVersion: addons.mas.ibm.com/v1
+kind: GenericAddon
+metadata:
+  name: "{{ .Values.instance_id }}-addons-non-shared-cluster"
+  annotations:
+    argocd.argoproj.io/sync-wave: "134" # CRD is in ibm-mas operator
+  labels:
+    mas.ibm.com/configScope: system # correct ???
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  displayName: Non-Shared Cluster
+  addonType: non-shared-cluster
+  config:
+    instances:
+      - name: {{ MAS Application ID }} # TODO what goes here?
+{{- end }}

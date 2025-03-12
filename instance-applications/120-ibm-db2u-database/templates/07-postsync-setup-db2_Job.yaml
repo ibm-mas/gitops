@@ -515,47 +515,42 @@ spec:
 
                 export DB2_SCHEMA="tridata"
 
-                # Execute db2configdb.sh
-                FACILITIES_DB2_SETUP_PATH=/tmp/facilites-db2config.sh
-                sed "s/{ db2_dbname }/$DB2_DBNAME/g; s/{ db2_user }/$DB2_USER/g;" /tmp/db2-scripts-facilities/db2config.sh.j2 > ${FACILITIES_DB2_SETUP_PATH}
                 echo ""
-                echo "Copy ${FACILITIES_DB2_SETUP_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "Templating out facilities db2 scripts"
                 echo "--------------------------------------------------------------------------------"
-                oc cp ${FACILITIES_DB2_SETUP_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${FACILITIES_DB2_SETUP_PATH} -c db2u || exit $?
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "chmod +x ${FACILITIES_DB2_SETUP_PATH}" db2inst1 || exit $?
+                FACILITIES_DB2_SETUP_PATH=/tmp/db2-scripts-facilities-updated/db2config.sh
+                FACILITIES_TABLESPACES_PATH=/tmp/db2-scripts-facilities-updated/create-tablespaces.sql
+                FACILITIES_SCHEMA_PATH=/tmp/db2-scripts-facilities-updated/create-schema.sql
+                sed "s/{ db2_dbname }/$DB2_DBNAME/g; s/{ db2_user }/$DB2_USER/g;" /tmp/db2-scripts-facilities/db2config.sh.j2 > ${FACILITIES_DB2_SETUP_PATH}
+                sed "s/{ db2_dbname }/$DB2_DBNAME/g;" /tmp/db2-scripts-facilities/create-tablespaces.sql.j2 > ${FACILITIES_TABLESPACES_PATH}
+                sed "s/{ db2_dbname }/$DB2_DBNAME/g; s/{ db2_user }/$DB2_USER/g; s/{ db2_schema }/$DB2_SCHEMA/g;" /tmp/db2-scripts-facilities/create-schema.sql.j2 > ${FACILITIES_SCHEMA_PATH}
 
                 echo ""
-                echo "Executing ${SETUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "Copying all the required DB2 scripts in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${FACILITIES_DB2_SETUP_PATH}" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "mkdir -p /tmp/db2-scripts-facilities/" db2inst1 || exit $?
+                cd /tmp
+                zip -r db2-scripts-facilities.zip db2-scripts-facilities-updated/
+                oc cp /tmp/db2-scripts-facilities.zip ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2-scripts-facilities.zip -c db2u || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cd /tmp; unzip -o db2-scripts-facilities.zip; chmod -R +x /tmp/db2-scripts-facilities" db2inst1 || exit $?
+
+                # Execute db2configdb.sh
+                echo ""
+                echo "Executing db2config.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "/tmp/db2-scripts-facilities/db2config.sh" db2inst1 || exit $?
 
                 # Execute create-tablespaces.sql
-                FACILITIES_TABLESPACES_PATH=/tmp/facilites-tablespaces.sql
-                sed "s/{ db2_dbname }/$DB2_DBNAME/g;" /tmp/db2-scripts-facilities/create-tablespaces.sql.j2 > ${FACILITIES_TABLESPACES_PATH}
                 echo ""
-                echo "Copy ${FACILITIES_TABLESPACES_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "Executing create-tablepsaces.sql" file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc cp ${FACILITIES_TABLESPACES_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${FACILITIES_TABLESPACES_PATH} -c db2u || exit $?
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "chmod +x ${FACILITIES_TABLESPACES_PATH}" db2inst1 || exit $?
-
-                echo ""
-                echo "Executing ${FACILITIES_TABLESPACES_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 -tvf ${FACILITIES_TABLESPACES_PATH}" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 -tvf /tmp/db2-scripts-facilities/create-tablepsaces.sql" db2inst1 || exit $?
 
                 # Execute create-schema.sql 
-                FACILITIES_SCHEMA_PATH=/tmp/facilites-schema.sql
-                sed "s/{ db2_dbname }/$DB2_DBNAME/g; s/{ db2_user }/$DB2_USER/g; s/{ db2_schema }/$DB2_SCHEMA/g;" /tmp/db2-scripts-facilities/create-schema.sql.j2 > ${FACILITIES_SCHEMA_PATH}
                 echo ""
-                echo "Copy ${FACILITIES_SCHEMA_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "Executing create-schema.sql file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc cp ${FACILITIES_SCHEMA_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${FACILITIES_SCHEMA_PATH} -c db2u || exit $?
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "chmod +x ${FACILITIES_SCHEMA_PATH}" db2inst1 || exit $?
-
-                echo ""
-                echo "Executing ${FACILITIES_SCHEMA_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 -tvf ${FACILITIES_SCHEMA_PATH}" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 -tvf /tmp/db2-scripts-facilities/create-schema.sql" db2inst1 || exit $?
 
               fi # [[ "$MAS_APP_ID" == "facilities" ]]
 

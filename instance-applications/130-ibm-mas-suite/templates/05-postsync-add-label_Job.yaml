@@ -96,7 +96,7 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: mas-route-patch-v3-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: mas-route-patch-v2-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
   namespace: mas-{{ .Values.instance_id }}-core
   annotations:
     argocd.argoproj.io/sync-wave: "142"
@@ -128,7 +128,7 @@ spec:
             - name: SUITE_NAMESPACE
               value: mas-{{ .Values.instance_id }}-core
             - name: ALLOW_LIST
-              value: "{{ join " " .Values.allow_list }}"
+              value: "{{ .Values.allow_list | replace "[" "" | replace "]" "" }}"
           command:
             - /bin/sh
             - -c
@@ -172,7 +172,8 @@ spec:
                 echo "Adding label to route - ${route}"
                 oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}'
 
-                if [[ -z "$ALLOW_LIST" ]]; then
+                if [[ ! -z "$ALLOW_LIST" ]]; then
+                  echo "Adding whitelist to route - ${route}"
                   oc patch route/${route} -p "{'metadata':{'annotations':{'haproxy.router.openshift.io/ip_whitelist':${ALLOW_LIST}}}}"
                 fi
               done

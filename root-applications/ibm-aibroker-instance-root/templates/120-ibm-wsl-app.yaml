@@ -1,0 +1,79 @@
+{{- if not (empty .Values.ibm_wsl) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "120"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/120-ibm-wsl
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            instance_id: "{{ .Values.instance.id }}"
+            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
+            cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
+            cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+            cpd_service_storage_class: "{{ .Values.ibm_wsl.cpd_service_storage_class }}"
+            cpd_service_block_storage_class: "{{ .Values.ibm_wsl.cpd_service_block_storage_class }}"
+            cpd_service_scale_config: "{{ .Values.ibm_wsl.cpd_service_scale_config }}"
+            wsl_version: "{{ .Values.ibm_wsl.wsl_version }}"
+            wsl_channel: "{{ .Values.ibm_wsl.wsl_channel }}"
+            wsl_install_plan: "{{ .Values.ibm_wsl.wsl_install_plan }}"
+            ccs_version: "{{ .Values.ibm_wsl.ccs_version }}"
+            datarefinery_version: "{{ .Values.ibm_wsl.datarefinery_version }}"
+            ws_runtimes_version: "{{ .Values.ibm_wsl.ws_runtimes_version }}"
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+            junitreporter:
+              reporter_name: "ibm-wsl-{{ .Values.instance.id }}"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+        - name: ARGOCD_APP_NAME
+          value: cpdwslapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+{{- end }}

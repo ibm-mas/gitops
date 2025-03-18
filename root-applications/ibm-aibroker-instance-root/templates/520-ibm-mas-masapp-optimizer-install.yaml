@@ -1,0 +1,91 @@
+{{- if not (empty .Values.ibm_suite_app_optimizer_install) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: optimizer.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+    masapp: 'optimizer'
+  annotations:
+    argocd.argoproj.io/sync-wave: "520"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: "{{ .Values.ibm_suite_app_optimizer_install.mas_app_namespace }}"
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/500-540-ibm-mas-suite-app-install
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            instance_id: "{{ .Values.instance.id }}"
+            argo_namespace: "{{ .Values.argo.namespace }}"
+            mas_app_api_version: "{{ .Values.ibm_suite_app_optimizer_install.mas_app_api_version }}"
+            mas_app_kind: "{{ .Values.ibm_suite_app_optimizer_install.mas_app_kind }}"
+            mas_app_namespace: "{{ .Values.ibm_suite_app_optimizer_install.mas_app_namespace }}"
+            ibm_entitlement_key: "{{ .Values.ibm_suite_app_optimizer_install.ibm_entitlement_key }}"
+            mas_app_id: "{{ .Values.ibm_suite_app_optimizer_install.mas_app_id }}"
+            mas_app_catalog_source: "{{ .Values.ibm_suite_app_optimizer_install.mas_app_catalog_source }}"
+            mas_app_channel: "{{ .Values.ibm_suite_app_optimizer_install.mas_app_channel }}"
+            mas_app_install_plan: "{{ .Values.ibm_suite_app_optimizer_install.mas_app_install_plan }}"
+            mas_edition: "{{ .Values.ibm_suite_app_optimizer_install.mas_edition }}"
+            run_sync_hooks: {{ .Values.ibm_suite_app_optimizer_install.run_sync_hooks }}
+            mas_manual_cert_mgmt: {{ .Values.ibm_suite_app_optimizer_install.mas_manual_cert_mgmt   }}
+            {{- if .Values.ibm_suite_app_optimizer_install.mas_manual_cert_mgmt   }}
+            public_tls_secret_name: "{{ .Values.ibm_suite_app_optimizer_install.public_tls_secret_name }}"
+            ca_cert: |
+              {{ .Values.ibm_suite_app_optimizer_install.ca_cert }}
+            tls_cert: |
+              {{ .Values.ibm_suite_app_optimizer_install.tls_cert }}
+            tls_key: |
+              {{ .Values.ibm_suite_app_optimizer_install.tls_key }}
+            {{- end }}
+            mas_app_spec: {{ .Values.ibm_suite_app_optimizer_install.mas_app_spec | toYaml | nindent 14 }}
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+            junitreporter:
+              reporter_name: "app-install-optimizer-{{ .Values.instance.id }}"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+        - name: ARGOCD_APP_NAME
+          value: "optimizer-install"
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+{{- end }}

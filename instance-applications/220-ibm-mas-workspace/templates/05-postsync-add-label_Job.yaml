@@ -138,6 +138,8 @@ spec:
           env:
             - name: SUITE_NAMESPACE
               value: mas-{{ .Values.instance_id }}-core
+            - name: ALLOW_LIST
+              value: "{{ join " " .Values.allow_list }}"
           command:
             - /bin/sh
             - -c
@@ -180,6 +182,12 @@ spec:
               for route in $routes; do
                 echo "Adding label to route - ${route}"
                 oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}'
+
+                if [[ ! -z "$ALLOW_LIST" ]]; then
+                  echo "Adding whitelist to route - ${route}"
+                  oc patch route/${route} -p '{"metadata":{"annotations":{"haproxy.router.openshift.io/ip_whitelist":"'${ALLOW_LIST//'}'"}}}'
+                fi
+
               done
       restartPolicy: Never
       serviceAccountName: "mas-ws-route-sa"

@@ -1,10 +1,10 @@
 {{- if not (empty .Values.ibm_odh) }}
 ---
-# IBM Maximo Minio 
+# IBM Maximo ODH 
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: minio.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: odh.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -24,7 +24,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: "{{ .Values.ibm_odh.minio_namespace }}"
+    namespace: "{{ .Values.ibm_odh.openshift_namespace }}"
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: instance-applications/112-ibm-odh
@@ -50,13 +50,13 @@ spec:
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
             junitreporter:
-              reporter_name: "ibm-minio-{{ .Values.instance.id }}"
+              reporter_name: "ibm-odh-{{ .Values.instance.id }}"
               cluster_id: "{{ .Values.cluster.id }}"
               devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
               devops_build_number: "{{ .Values.devops.build_number }}"
               gitops_version: "{{ .Values.source.revision }}"
         - name: ARGOCD_APP_NAME
-          value: minioapp
+          value: Odhapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}

@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: testingjobbackoff
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+spec:
+  template:
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+              exit 1
+      restartPolicy: Never
+      serviceAccountName: default
+  backoffLimit: 4

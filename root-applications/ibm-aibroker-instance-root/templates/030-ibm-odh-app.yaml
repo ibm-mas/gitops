@@ -1,4 +1,4 @@
-{{- if not (empty .Values.ibm_minio) }}
+{{- if not (empty .Values.ibm_odh) }}
 ---
 # IBM Maximo Minio 
 apiVersion: argoproj.io/v1alpha1
@@ -12,7 +12,7 @@ metadata:
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "020"
+    argocd.argoproj.io/sync-wave: "030"
     healthCheckTimeout: "1800"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
@@ -24,23 +24,27 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: "{{ .Values.ibm_minio.minio_namespace }}"
+    namespace: "{{ .Values.ibm_odh.minio_namespace }}"
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/111-ibm-minio
+    path: instance-applications/112-ibm-odh
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            minio_namespace: "{{ .Values.ibm_minio.minio_namespace }}"
-            minio_instance_name: "{{ .Values.ibm_minio.minio_instance_name }}"
-            minio_root_user: "{{ .Values.ibm_minio.minio_root_user }}"
-            minio_root_password: "{{ .Values.ibm_minio.minio_root_password }}"
-            minio_storage_class: "{{ .Values.ibm_minio.minio_storage_class }}"
-            minio_storage_size: "{{ .Values.ibm_minio.minio_storage_size }}"
-            minio_image: "{{ .Values.ibm_minio.minio_image }}"
+            openshift_namespace: "{{ .Values.ibm_odh.openshift_namespace }}"
+            pipeline_channel: "{{ .Values.ibm_odh.pipeline_channel }}"
+            pipeline_catalog_source: "{{ .Values.ibm_odh.pipeline_catalog_source }}"
+            service_mesh_namespace: "{{ .Values.ibm_odh.service_mesh_namespace }}"
+            service_mesh_channel: "{{ .Values.ibm_odh.service_mesh_channel }}"
+            service_mesh_catalog_source: "{{ .Values.ibm_odh.service_mesh_catalog_source }}"
+            serverless_channel: "{{ .Values.ibm_odh.serverless_channel }}"
+            authorino_catalog_source: "{{ .Values.ibm_odh.authorino_catalog_source }}"
+            odh_channel: "{{ .Values.ibm_odh.odh_channel }}"
+            odh_catalog_source: "{{ .Values.ibm_odh.odh_catalog_source }}"
+            odh_operator_version: "{{ .Values.ibm_odh.odh_operator_version }}"
             # --storageclass
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}

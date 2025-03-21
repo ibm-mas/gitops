@@ -185,7 +185,8 @@ spec:
 
                 if [[ ! -z "$ALLOW_LIST" ]]; then
                   echo "Adding whitelist to route - ${route}"
-                  oc patch route/${route} -p '{"metadata":{"annotations":{"haproxy.router.openshift.io/ip_whitelist":"'${ALLOW_LIST//'}'"}}}'
+                  export ALLOW_LIST1=$(echo ${ALLOW_LIST} | sed 's/[][]//g')
+                  oc patch route/${route} -p "{\"metadata\":{\"annotations\":{\"haproxy.router.openshift.io/ip_whitelist\":\"${ALLOW_LIST1}\"}}}"
                 elif oc get route/${route} -o yaml | grep -q "haproxy.router.openshift.io/ip_whitelist"; then
                   #check if the route has whitelisting annotation. If available, remove it.
                   oc annotate route/${route} haproxy.router.openshift.io/ip_whitelist-

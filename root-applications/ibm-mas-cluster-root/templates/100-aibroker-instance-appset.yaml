@@ -8,8 +8,8 @@ metadata:
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
-    region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    region: '{{ .Values.region.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "100"
 spec:
@@ -24,11 +24,18 @@ spec:
           - 'merge-key'
         generators:
           # This is the "base" generator, it *must* be first in the list
+
           - git:
               repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
-              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-aibroker-minio-install.yaml"
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/{{ .Values.region.id }}/*/ibm-aibroker-instance-base.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.ibm_minio.minio_namespace }}/{{ .Values.ibm_minio.minio_root_user }}/{{ .Values.ibm_minio.minio_root_password }}/{{ .Values.ibm_minio.minio_storage_class }}/{{ .Values.ibm_minio.minio_storage_size }}/{{ .Values.ibm_minio.minio_image }}/*/ibm-aibroker-minio-install.yaml"
+ 
   syncPolicy:
     applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
   template:
@@ -61,6 +68,14 @@ spec:
             parameters:
               - name: "generator.repo_url"
                 value: "{{ .Values.generator.repo_url }}"
+              - name: "generator.revision"
+                value: "{{ .Values.generator.revision }}"
+              - name: "source.revision"
+                value: "{{ .Values.source.revision }}"
+              - name: "source.repo_url"
+                value: "{{ .Values.source.repo_url }}"
+              - name: "argo.namespace"
+                value: "{{ .Values.argo.namespace }}"
              
       destination:
         server: 'https://kubernetes.default.svc'

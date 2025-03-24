@@ -1,3 +1,3 @@
-IBM minio
+IBM ODH
 ===============================================================================
-Deploy and configure minio storage with configurable version
+Deploy and configure ODH with configurable version

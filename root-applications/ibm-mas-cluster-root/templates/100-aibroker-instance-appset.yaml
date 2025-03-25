@@ -8,8 +8,8 @@ metadata:
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
-    cluster: '{{ .Values.cluster.id }}'
     region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "100"
 spec:
@@ -24,18 +24,16 @@ spec:
           - 'merge-key'
         generators:
           # This is the "base" generator, it *must* be first in the list
-
           - git:
               repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
-              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/{{ .Values.region.id }}/*/ibm-aibroker-instance-base.yaml"
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-aibroker-instance-base.yaml"
           - git:
               repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
-              - path: "{{ .Values.ibm_minio.minio_namespace }}/{{ .Values.ibm_minio.minio_root_user }}/{{ .Values.ibm_minio.minio_root_password }}/{{ .Values.ibm_minio.minio_storage_class }}/{{ .Values.ibm_minio.minio_storage_size }}/{{ .Values.ibm_minio.minio_image }}/*/ibm-aibroker-minio-install.yaml"
- 
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/*/ibm-aibroker-minio-install.yaml"
   syncPolicy:
     applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
   template:
@@ -74,9 +72,42 @@ spec:
                 value: "{{ .Values.source.revision }}"
               - name: "source.repo_url"
                 value: "{{ .Values.source.repo_url }}"
-              - name: "argo.namespace"
+              - name: argo.namespace
                 value: "{{ .Values.argo.namespace }}"
-             
+                {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+              - name: "notifications.slack_channel_id"
+                value: "{{ .Values.notifications.slack_channel_id }}"
+                {{- end }}
+              - name: "minio_namespace"
+                value: "{{ .Values.ibm_minio.minio_namespace }}"
+              - name: "minio_instance_name"
+                value: "{{ .Values.ibm_minio.minio_instance_name }}"
+              - name: "minio_root_user"
+                value: "{{ .Values.ibm_minio.minio_root_user }}"
+              - name: "minio_root_password"
+                value: "{{ .Values.ibm_minio.minio_root_password }}"
+              - name: "minio_storage_class"
+                value: "{{ .Values.ibm_minio.minio_storage_class }}"
+              - name: "minio_storage_size"
+                value: "{{ .Values.ibm_minio.minio_storage_size }}"
+              - name: "minio_image"
+                value: "{{ .Values.ibm_minio.minio_image }}"                                                                                                
+              - name: argo.projects.rootapps
+                value: "{{ .Values.argo.projects.rootapps }}"
+              - name: argo.projects.apps
+                value: "{{ .Values.argo.projects.apps }}"
+              - name: avp.name
+                value: "{{ .Values.avp.name }}"
+              - name: avp.secret
+                value: "{{ .Values.avp.secret }}"
+              - name: avp.values_varname
+                value: "{{ .Values.avp.values_varname }}"
+              - name: auto_delete
+                value: "{{ .Values.auto_delete }}"
+              - name: devops.mongo_uri
+                value: "{{ .Values.devops.mongo_uri }}"
+              - name: devops.build_number
+                value: "{{ .Values.devops.build_number }}"
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}

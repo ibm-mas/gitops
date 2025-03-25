@@ -1,0 +1,90 @@
+{{- if not (empty .Values.ibm_dro) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dro.{{ .Values.cluster.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "020"
+    healthCheckTimeout: "1800"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  - group: 'marketplace.redhat.com/v1alpha1'
+    kind: MarketplaceConfig
+    jsonPointers:
+    - /spec
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: "{{ .Values.ibm_dro.dro_namespace }}"
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: cluster-applications/020-ibm-dro
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            argo_namespace: "{{ .Values.argo.namespace }}"
+            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
+            run_sync_hooks: {{.Values.ibm_dro.run_sync_hooks }}
+            dro_namespace: "{{ .Values.ibm_dro.dro_namespace }}"
+            ibm_entitlement_key: "{{ .Values.ibm_dro.ibm_entitlement_key }}"
+            dro_cmm_setup: "{{ .Values.ibm_dro.dro_cmm_setup }}"
+            dro_install_plan: "{{ .Values.ibm_dro.dro_install_plan }}"
+            imo_install_plan: "{{ .Values.ibm_dro.imo_install_plan }}"
+            junitreporter:
+              reporter_name: "ibm-dro"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+            {{- if .Values.ibm_dro.dro_cmm_setup  }}
+            dro_cmm:
+              auth_apikey: "{{ .Values.ibm_dro.dro_cmm.auth_apikey }}"
+              auth_url: "{{ .Values.ibm_dro.dro_cmm.auth_url }}"
+              cmm_url: "{{ .Values.ibm_dro.dro_cmm.cmm_url }}"
+            {{- end }}
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+        - name: ARGOCD_APP_NAME
+          value: droapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+{{- end }}

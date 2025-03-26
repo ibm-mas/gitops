@@ -1,0 +1,130 @@
+# {{- if .Values.run_sync_hooks }}
+# apiVersion: batch/v1
+# kind: Job
+# metadata:
+#   name: annotate-km-s3-secret
+#   namespace: {{ .Values.aibroker_namespace }}
+# spec:
+#   template:
+#     spec:
+#       containers:
+#         - name: annotate-secret
+#           image: bitnami/kubectl
+#           command:
+#             - /bin/sh
+#             - -c
+#             - |
+#               if [[ "{{ .Values.mas_aibroker_storage_provider }}" == "aws" ]]; then
+#                 kubectl annotate secret km-s3-secret -n {{ .Values.aibroker_namespace }} serving.kserve.io/s3-endpoint={{ .Values.storage.host }}
+#               elif [[ "{{ .Values.mas_aibroker_storage_provider }}" == "minio" ]]; then
+#                 kubectl annotate secret km-s3-secret -n {{ .Values.aibroker_namespace }} serving.kserve.io/s3-endpoint={{ .Values.storage.host }}:{{ .Values.storage.port }}
+#               fi
+
+#               if [[ "{{ .Values.storage.ssl }}" == "false" ]]; then
+#                 kubectl annotate secret km-s3-secret -n {{ .Values.aibroker_namespace }} serving.kserve.io/s3-usehttps="0"
+#               else
+#                 kubectl annotate secret km-s3-secret -n {{ .Values.aibroker_namespace }} serving.kserve.io/s3-usehttps="1"
+#               fi
+
+#               if [[ "{{ .Values.mas_aibroker_storage_provider }}" == "minio" ]]; then
+#                 kubectl annotate secret km-s3-secret -n {{ .Values.aibroker_namespace }} serving.kserve.io/s3-region={{ .Values.storage.region }}
+#               fi
+#       restartPolicy: Never
+# {{- end }}
+
+
+---
+
+{{- /*
+TODO:
+  The secrets being updated in AWS SM by this Job are nothing to do with kmodel
+ */}}
+
+{{- if .Values.run_sync_hooks }}
+
+{{ $ns := .Values.aibroker_namespace }}
+{{ $aws_secret := "aws"}}
+{{ $sa_name    :=  "postsync-kmodel-update-sm-sa" }}
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Generate the job name by suffixing with a hash of all chart values
+  # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes
+  # Any change to cluster config will trigger a rerun of the job.
+  # The job is idempotent and quick so no real harm in running it when we don't actually need to.
+  # The v1 in the name allows use to change this if there is a modification needed that is not in the yaml
+  name: postsync-kmodel-update-sm-job-v2-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "015"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id }}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              if [[ "{{ .Values.mas_aibroker_storage_provider }}" == "aws" ]]; then
+                kubectl annotate secret km-s3-secret -n {{ .Values.aibroker_namespace }} serving.kserve.io/s3-endpoint={{ .Values.mas_aibroker_storage_host }}
+              elif [[ "{{ .Values.mas_aibroker_storage_provider }}" == "minio" ]]; then
+                kubectl annotate secret km-s3-secret -n {{ .Values.aibroker_namespace }} serving.kserve.io/s3-endpoint={{ .Values.mas_aibroker_storage_host }}:{{ .Values.mas_aibroker_storage_port }}
+              fi
+
+              if [[ "{{ .Values.mas_aibroker_storage_ssl }}" == "false" ]]; then
+                kubectl annotate secret km-s3-secret -n {{ .Values.aibroker_namespace }} serving.kserve.io/s3-usehttps="0"
+              else
+                kubectl annotate secret km-s3-secret -n {{ .Values.aibroker_namespace }} serving.kserve.io/s3-usehttps="1"
+              fi
+
+              if [[ "{{ .Values.mas_aibroker_storage_provider }}" == "minio" ]]; then
+                kubectl annotate secret km-s3-secret -n {{ .Values.aibroker_namespace }} serving.kserve.io/s3-region={{ .Values.mas_aibroker_storage_region}}
+              fi
+
+      restartPolicy: Never
+
+      # TODO: is this the correct SA to use here?
+      # No, probably want to add a more restricted SA that can just do things that these post-sync jobs need to do
+      serviceAccountName: {{ $sa_name }}
+      volumes:
+        - name: aws
+          secret:
+            secretName: {{ $aws_secret }}
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+{{- end }}

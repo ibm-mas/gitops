@@ -1,0 +1,29 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "00"
+spec:
+  template:
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+              oc patch installplan {{   | first }} -n openshift-operators --type merge --patch '{"spec":{"approved":true}}'
+              echo "Approve install plan for Opendatahub operator"
+      restartPolicy: OnFailure

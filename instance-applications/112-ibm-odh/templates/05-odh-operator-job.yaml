@@ -11,58 +11,54 @@ metadata:
   name: {{ $sa_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "013"
+    argocd.argoproj.io/sync-wave: "122"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 
 ---
-kind: ClusterRole
+kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: {{ $role_name }}
   annotations:
-    argocd.argoproj.io/sync-wave: "013"
+    argocd.argoproj.io/sync-wave: "123"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 rules:
   - verbs:
-      - get
-    apiGroups:
-      - packages.operators.coreos.com
+      - patch
     resources:
-      - packagemanifests
-  - verbs:
-      - get
-    apiGroups:
-      - config.openshift.io
-    resources:
-      - ingresses
-
+      - installplan
 
 
 ---
-kind: ClusterRoleBinding
+
 apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
 metadata:
-  name: {{ $rb_name }}
   annotations:
-    argocd.argoproj.io/sync-wave: "014"
-{{- if .Values.custom_labels }}
+    argocd.argoproj.io/sync-wave: "124"
+  namespace: "{{ $ns }}"
+  name: "odh-installplan"
   labels:
+    app: "odh-installplan"
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: {{ $sa_name }}
-    namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ $role_name }}
+  kind: Role
+  name: "odh-installplan"
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: "odh-installplan"
+    namespace: {{ $ns }}
+
 
 ---
 apiVersion: batch/v1
@@ -70,13 +66,13 @@ kind: Job
 metadata:
   namespace: {{ .Values.namespace }}
   annotations:
-    argocd.argoproj.io/sync-wave: "016"
+    argocd.argoproj.io/sync-wave: "125"
 spec:
   template:
     spec:
       serviceAccountName: {{ .Values.serviceAccountName }}
       containers:
-        - name: run
+        - name: Installplan-job
           image: quay.io/ibmmas/cli:latest
           imagePullPolicy: IfNotPresent
           resources:

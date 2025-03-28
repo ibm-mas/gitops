@@ -1,4 +1,10 @@
 ---
+
+{{- $ibm_mas_suite := default (dict) .Values.ibm_mas_suite -}}
+{{- $mas_annotations := default (dict) $ibm_mas_suite.mas_annotations -}}
+{{- $hyperscalerLifecycle := default "" (index $mas_annotations "mas.ibm.com/hyperscalerLifecycle") -}}
+{{- $mas_is_active := eq $hyperscalerLifecycle "active" }}
+
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -52,9 +58,7 @@ spec:
             mas_workspace_id: "{{ (.Values.ibm_mas_workspaces | first).mas_workspace_id }}"
             {{- end }}
 
-            {{- if not (empty .Values.ibm_mas_suite) }}
-            mas_is_active: {{ eq (index .Values.mas_annotations "mas.ibm.com/hyperscalerLifecycle") "active" }}
-            {{- end }}
+            mas_is_active: {{ $mas_is_active }}
 
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}

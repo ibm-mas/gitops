@@ -1,0 +1,53 @@
+---
+{{- if eq .Values.mas_aibroker_storage_provider "aws" }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ds-pipeline-s3-instance
+  namespace: "{{ .Values.aibroker_namespace }}"
+  labels:
+    opendatahub.io/dashboard: 'false'
+    opendatahub.io/managed: 'true'
+  annotations:
+    opendatahub.io/connection-type: s3
+    openshift.io/display-name: AWS S3 Connection
+    argocd.argoproj.io/sync-wave: "131"
+stringData:
+  accesskey: "{{ .Values.mas_aibroker_storage_accesskey }}"
+  secretkey: "{{ .Values.mas_aibroker_storage_secretkey}}"
+  host: "{{ .Values.mas_aibroker_storage_host }}"
+  region: "{{ .Values.mas_aibroker_storage_region }}"
+  ssl: "{{ .Values.mas_aibroker_storage_ssl }}"
+---
+apiVersion: datasciencepipelinesapplications.opendatahub.io/v1alpha1
+kind: DataSciencePipelinesApplication
+metadata:
+  name: instance
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "132"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  dspVersion: v1
+  database:
+    disableHealthCheck: true
+    customExtraParams: '{"tls":"false"}'
+    externalDB:
+      host: "{{ .Values.mas_aibroker_db_host }}"
+      port: "{{ .Values.mas_aibroker_db_port }}"
+      username: "{{ .Values.mas_aibroker_db_user }}"
+      pipelineDBName: "{{ .Values.mas_aibroker_db_database }}"
+      passwordSecret:
+        name: "{{ .Values.mas_aibroker_db_secret_name }}"
+        key: password
+  objectStorage:
+    disableHealthCheck: true
+    externalStorage:
+      host: "{{ .Values.mas_aibroker_storage_host }}"
+      bucket: "{{ .Values.mas_aibroker_storage_pipelines_bucket }}"
+      s3CredentialsSecret:
+        accessKey: accesskey
+        secretKey: secretkey
+        secretName: ds-pipeline-s3-instance
+      scheme: https
+{{- end }}

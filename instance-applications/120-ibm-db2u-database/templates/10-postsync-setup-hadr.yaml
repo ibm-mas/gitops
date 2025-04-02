@@ -279,13 +279,15 @@ spec:
                 echo ""
                 echo "Copying keystore from primary to standby"
                 KEYSTORE_GENERATION_SCRIPT='/tmp/keystore_generation.sh'
+
                 cat > ${KEYSTORE_GENERATION_SCRIPT} << EOF
                   #!/bin/bash
-                  db2 connect to ${DB2_DBNAME}
-                  label=`db2 -x "select MASTER_KEY_LABEL from TABLE(SYSPROC.ADMIN_GET_ENCRYPTION_INFO()) where OBJECT_NAME='${DB2_DBNAME}' and OBJECT_TYPE='DATABASE'"`
-                  echo "Label is ${label}"
-                  gsk8capicmd_64 -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label ${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'
-                EOF
+                  LABEL_SQL="/tmp/.label.log"
+                  db2 connect to ${DB2_DBNAME};
+                  db2 -x "select MASTER_KEY_LABEL from TABLE(SYSPROC.ADMIN_GET_ENCRYPTION_INFO()) where OBJECT_NAME='${DB2_DBNAME}' and OBJECT_TYPE='DATABASE'" >\$LABEL_SQL
+
+              EOF
+
                 chmod +x ${KEYSTORE_GENERATION_SCRIPT}
                 echo ""
                 echo "Copy ${KEYSTORE_GENERATION_SCRIPT} to ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
@@ -297,9 +299,12 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${KEYSTORE_GENERATION_SCRIPT} | tee /tmp/keystoregeneration.log" db2inst1 || exit $?
                 # label=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 connect to ${DB2_DBNAME}; db2 -x \"select MASTER_KEY_LABEL from TABLE(SYSPROC.ADMIN_GET_ENCRYPTION_INFO()) where OBJECT_NAME='${DB2_DBNAME}' and OBJECT_TYPE='DATABASE'\"" db2inst1`
-                # oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "gsk8capicmd_64 -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label ${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'" db2inst1 || exit $?
-                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir /tmp/keystore; cp /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
+                label=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /tmp/.label.log" db2inst1`
+                echo "Label is ${label}"
+                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "gsk8capicmd_64 -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label ${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /tmp/keystore; cp /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
                 oc rsync ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/keystore /tmp
+                oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "gsk8capicmd_64 -cert -import -db /tmp/keystore/migrate_hadr.p12 -pw 'CDS0n&Up' -target /mnt/blumeta0/db2/keystore/keystore.p12 -target_stashed" db2inst1 || exit $?
                 # oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir /tmp/keystore; cp /mnt/blumeta0/db2/keystore/* /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
                 # oc rsync ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/keystore /tmp

@@ -86,6 +86,12 @@ spec:
             - /bin/sh
             - -c
             - |
-              oc patch installplan {{   | first }} -n openshift-operators --type merge --patch '{"spec":{"approved":true}}'
-              echo "Approve install plan for Opendatahub operator"
+              clusterServiceVersionNames=$(oc get installplan -n {{ .Values.namespace | default "openshift-operators" }} -o json | jq -r '.items[] | select(.spec.clusterServiceVersionNames[] | contains("{{ .Values.odhOperatorVersion }}")) | .metadata.name')
+              if [ -n "$clusterServiceVersionNames" ]; then
+                oc patch installplan $clusterServiceVersionNames -n {{ .Values.namespace | default "openshift-operators" }} --type merge --patch '{"spec":{"approved":true}}'
+                echo "InstallPlan $clusterServiceVersionNames approved successfully."
+              else
+                echo "No InstallPlan found for {{ .Values.odhOperatorVersion }}."
+                exit 1
+              fi
       restartPolicy: OnFailure

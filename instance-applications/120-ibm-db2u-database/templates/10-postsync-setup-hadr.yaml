@@ -182,23 +182,23 @@ spec:
                 RETRIES=${3:-5}
                 RETRY_DELAY_SECONDS=${4:-30}
 
-                mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc1=$?
-                echo "rc1 - $rc1"
-                if [[ "$rc1" == "0" && $PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY' ]]; then
+                mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
+                echo "rc1 - $rc"
+                if [[ "$rc" == "0" && $PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY' ]]; then
                   echo "... db2 config already matches expected config, returning without calling apply-db2cfg-settings"
                   return 0
                 fi
 
-                if [[ "$rc1" != "0" ]]; then
+                if [[ "$rc" != "0" ]]; then
                   for (( c=1; c<="${RETRIES}"; c++ )); do
                     echo ""
                     echo "... attempt ${c} of ${RETRIES}"
                     oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
                     # no useful info in return code of this script
 
-                    rc2=0
-                    mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc2=$?
-                    if [[ "$rc2" == "0" ]]; then
+                    rc=0
+                    mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
+                    if [[ "$rc" == "0" ]]; then
                       echo "...... configs applied successfully"
                       return 1
                       restart_hadr
@@ -206,7 +206,7 @@ spec:
                     fi
 
                     if [[ "${c}" -lt "${RETRIES}" ]]; then
-                      echo "...... failed (rc: ${rc2}), retry in ${RETRY_DELAY_SECONDS}s"
+                      echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
                       sleep $RETRY_DELAY_SECONDS
                     fi
                   done

@@ -82,7 +82,7 @@ kind: Job
 metadata:
   # Suffix the Job name with a hash of all chart values
   # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes in the DB2 config
-  name: postsync-setup-hadr-{{ .Values.db2_instance_name }}-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: postsync-setup-hadr-{{ .Values.db2_instance_name }}-v2-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
   namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "130"
@@ -159,47 +159,59 @@ spec:
                 return 1
               }
 
-              function db2apply {
-                RETRIES=${1:-5}
-                RETRY_DELAY_SECONDS=${2:-30}
+              function restart_hadr {
+                PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
+                # # Start hadr in standby
+                echo ""
+                echo "Starting HADR in standby"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; db2 start hadr on db bludb as standby" db2inst1 || exit $?
+
+                # # Start hadr in Primary
+                echo ""
+                echo "Starting HADR in primary"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; db2 start hadr on db bludb as primary" db2inst1 || exit $?
+
+                echo "...... HADR services are started successfully"
+              }
+
+              function db2apply() {
+                PRIMARY_ROLE="$1"
+                STANDBY_ROLE="$2"
+                RETRIES=${3:-5}
+                RETRY_DELAY_SECONDS=${4:-30}
 
                 mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
-                if [[ "$rc" == "0" ]]; then
+                if [[ "$rc" == "0" && $PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY' ]]; then
                   echo "... db2 config already matches expected config, returning without calling apply-db2cfg-settings"
                   return 0
                 fi
 
-                for (( c=1; c<="${RETRIES}"; c++ )); do
-                  echo ""
-                  echo "... attempt ${c} of ${RETRIES}"
-                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
-                  # no useful info in return code of this script
-
-                  rc=0
-                  mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
-                  if [[ "$rc" == "0" ]]; then
-                    echo "...... success"
-
-                    # # Start hadr in standby
+                if [[ "$rc" != "0" ]]; then
+                  for (( c=1; c<="${RETRIES}"; c++ )); do
                     echo ""
-                    echo "Starting HADR in standby"
-                    echo "--------------------------------------------------------------------------------"
-                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; db2 start hadr on db bludb as standby" db2inst1 || exit $?
+                    echo "... attempt ${c} of ${RETRIES}"
+                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
+                    # no useful info in return code of this script
 
-                    # # Start hadr in Primary
-                    echo ""
-                    echo "Starting HADR in primary"
-                    echo "--------------------------------------------------------------------------------"
-                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; db2 start hadr on db bludb as primary" db2inst1 || exit $?
+                    rc=0
+                    mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
+                    if [[ "$rc" == "0" ]]; then
+                      echo "...... configs applied successfully"
+                      restart_hadr
+                      return 0
+                    fi
 
-                    return 0
-                  fi
-
-                  if [[ "${c}" -lt "${RETRIES}" ]]; then
-                    echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
-                    sleep $RETRY_DELAY_SECONDS
-                  fi
-                done
+                    if [[ "${c}" -lt "${RETRIES}" ]]; then
+                      echo "...... failed (rc: ${rc}), retry in ${RETRY_DELAY_SECONDS}s"
+                      sleep $RETRY_DELAY_SECONDS
+                    fi
+                  done
+                else
+                  restart_hadr
+                  return 0
+                fi
 
                 echo "...... failed, no attempts remain"
                 return 1
@@ -266,10 +278,34 @@ spec:
 
                 echo ""
                 echo "Copying keystore from primary to standby"
-                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir /tmp/keystore; cp /mnt/blumeta0/db2/keystore/* /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
+                KEYSTORE_GENERATION_SCRIPT='/tmp/keystore_generation.sh'
+
+                cat > ${KEYSTORE_GENERATION_SCRIPT} << EOF
+                  #!/bin/bash
+                  db2 connect to ${DB2_DBNAME};
+                  if [ \$? != 0 ]; then
+                    echo "Failed to connect to database!"
+                    exit 1
+                  fi
+                  label=\$(db2 -x "select MASTER_KEY_LABEL from TABLE(SYSPROC.ADMIN_GET_ENCRYPTION_INFO()) where OBJECT_NAME='${DB2_DBNAME}' and OBJECT_TYPE='DATABASE'")
+                  gsk8capicmd_64 -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label ${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'
+
+              EOF
+
+                chmod +x ${KEYSTORE_GENERATION_SCRIPT}
+                echo ""
+                echo "Copy ${KEYSTORE_GENERATION_SCRIPT} to ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc cp ${KEYSTORE_GENERATION_SCRIPT} ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:${KEYSTORE_GENERATION_SCRIPT} -c db2u || exit $?
+
+                echo ""
+                echo "Executing ${KEYSTORE_GENERATION_SCRIPT} file on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${KEYSTORE_GENERATION_SCRIPT} | tee /tmp/keystoregeneration.log" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /tmp/keystore; cp /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
                 oc rsync ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/keystore /tmp
                 oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mv /mnt/blumeta0/db2/keystore/keystore.p12 /mnt/blumeta0/db2/keystore/keystore.p12_orig; mv /mnt/blumeta0/db2/keystore/keystore.sth /mnt/blumeta0/db2/keystore/keystore.sth_orig; cp /tmp/keystore/keystore.* /mnt/blumeta0/db2/keystore/; chown db2inst1.db2iadm1 /mnt/blumeta0/db2/keystore/keystore.*; chmod 600 /mnt/blumeta0/db2/keystore/keystore.*;" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "gsk8capicmd_64 -cert -import -db /tmp/keystore/migrate_hadr.p12 -pw 'CDS0n&Up' -target /mnt/blumeta0/db2/keystore/keystore.p12 -target_stashed" db2inst1 || exit $?
 
                 # Restore in standby
                 echo ""
@@ -284,6 +320,6 @@ spec:
               echo "================================================================================"
               echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "================================================================================"
-              db2apply || exit $?
+              db2apply ${PRIMARY_ROLE} ${STANDBY_ROLE}  || exit $?
 
 {{ end }}

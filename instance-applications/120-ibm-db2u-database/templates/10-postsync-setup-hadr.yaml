@@ -199,6 +199,7 @@ spec:
                     mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc2=$?
                     if [[ "$rc2" == "0" ]]; then
                       echo "...... configs applied successfully"
+                      return 1
                       restart_hadr
                       return 0
                     fi
@@ -282,9 +283,13 @@ spec:
 
                 cat > ${KEYSTORE_GENERATION_SCRIPT} << EOF
                   #!/bin/bash
-                  LABEL_SQL="/tmp/.label.log"
                   db2 connect to ${DB2_DBNAME};
-                  db2 -x "select MASTER_KEY_LABEL from TABLE(SYSPROC.ADMIN_GET_ENCRYPTION_INFO()) where OBJECT_NAME='${DB2_DBNAME}' and OBJECT_TYPE='DATABASE'" >\$LABEL_SQL
+                  if [ \$? != 0 ]; then
+                    echo "Failed to connect to database!"
+                    exit 1
+                  fi
+                  label=$(db2 -x "select MASTER_KEY_LABEL from TABLE(SYSPROC.ADMIN_GET_ENCRYPTION_INFO()) where OBJECT_NAME='${DB2_DBNAME}' and OBJECT_TYPE='DATABASE'")
+                  gsk8capicmd_64 -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label ${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'
 
               EOF
 
@@ -299,9 +304,9 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${KEYSTORE_GENERATION_SCRIPT} | tee /tmp/keystoregeneration.log" db2inst1 || exit $?
                 # label=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 connect to ${DB2_DBNAME}; db2 -x \"select MASTER_KEY_LABEL from TABLE(SYSPROC.ADMIN_GET_ENCRYPTION_INFO()) where OBJECT_NAME='${DB2_DBNAME}' and OBJECT_TYPE='DATABASE'\"" db2inst1`
-                label=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /tmp/.label.log" db2inst1`
-                echo "Label is ${label}"
-                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "gsk8capicmd_64 -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label ${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'" db2inst1 || exit $?
+                # label=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /tmp/.label.log" db2inst1`
+                # echo "Label is ${label}"
+                # oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "gsk8capicmd_64 -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label ${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'" db2inst1 || exit $?
                 oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /tmp/keystore; cp /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
                 oc rsync ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/keystore /tmp
                 oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp

@@ -123,13 +123,12 @@ spec:
             - /bin/sh
             - -c
             - |
-              clusterServiceVersionNames=$(oc get installplan -n {{ .Values.namespace | default "openshift-operators" }} -o json | jq -r '.items[] | select(.spec.clusterServiceVersionNames[] | contains("opendatahub-operator.v2.11.1")) | .metadata.name')
-              if [ -n "$clusterServiceVersionNames" ]; then
-                oc patch installplan $clusterServiceVersionNames -n {{ .Values.namespace | default "openshift-operators" }} --type merge --patch '{"spec":{"approved":true}}'
-                echo "InstallPlan $clusterServiceVersionNames approved successfully."
-              else
-                echo "No InstallPlan found for {{ .Values.odhOperatorVersion }}."
-                exit 1
-              fi
+              for i in $(seq 1 20); do
+                IP=$(oc get installplan -n {{ .Values.namespace | default "openshift-operators" }} -o json | jq -r '.items[] | select(.spec.clusterServiceVersionNames[] | contains("opendatahub-operator.v2.11.1")) | .metadata.name')
+                if [ "$IP" ]; then
+                  oc patch installplan $IP -n {{ .Values.namespace | default "openshift-operators" }} --type merge --patch '{"spec":{"approved":true}}'
+                  break
+                fi
+                sleep 5
+              done
       restartPolicy: OnFailure
-

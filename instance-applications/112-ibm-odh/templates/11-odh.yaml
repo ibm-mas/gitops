@@ -1,4 +1,44 @@
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: odh-sa
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "135"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: patch-serviceaccount-role
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "136"
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: patch-serviceaccount-binding
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "137"
+subjects:
+  - kind: ServiceAccount
+    name: odh-sa
+    namespace: "{{ .Values.aibroker_namespace }}"
+roleRef:
+  kind: Role
+  name: patch-serviceaccount-role
+  apiGroup: rbac.authorization.k8s.io
+
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -6,17 +46,11 @@ metadata:
   namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "135"
-{{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
   template:
-{{- if .Values.custom_labels }}
-    metadata:
-      labels:
-{{ .Values.custom_labels | toYaml | indent 8 }}
-{{- end }}
     spec:
       containers:
         - name: run
@@ -36,7 +70,6 @@ spec:
             - /bin/sh
             - -c
             - |
-
               set -e
               echo
               echo "================================================================================"
@@ -46,15 +79,15 @@ spec:
 
               sleep 60
 
-              RESOURCE_NAME=$(oc get serviceaccount  pipeline-runner-instance -n mas-sremat-aibroker -o=jsonpath="{.metadata.name}" --ignore-not-found)
-              if [[ -z "${RESOURCE_NAME}" ]]; then
-                echo "patching 'pipeline-runner-instance' sa..."
-                oc patch serviceaccount pipeline-runner-instance -n mas-sremat-aibroker --type='merge' -p '{"imagePullSecrets":[{"name":"ibm-entitlement"}]}'
+              RESOURCE_NAME=$(oc get serviceaccount pipeline-runner-instance -n mas-sremat-aibroker -o=jsonpath="{.metadata.name}" --ignore-not-found)
+              if [[ -n "${RESOURCE_NAME}" ]]; then
+                echo "Patching 'pipeline-runner-instance' sa..."
+                oc patch serviceaccount pipeline-runner-instance -n mas-sremat-aibroker  --type='merge' -p '{"imagePullSecrets":[{"name":"ibm-entitlement"}]}'
+              else
+                echo "'pipeline-runner-instance' service account not found."
               fi
 
               echo "Done patching 'pipeline-runner-instance' sa..."
-
       restartPolicy: Never
-      serviceAccountName: pipeline-runner-instance
-  backoffLimit: 4
-
+      serviceAccountName: odh-sa
+  backoffLimit: 3

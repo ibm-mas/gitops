@@ -3,7 +3,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: installplan-approver
-  namespace: openshift-operators
+  namespace: {{ .Values.openshift_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "123"
 ---
@@ -11,7 +11,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: installplan-approver
-  namespace: openshift-operators
+  namespace: {{ .Values.openshift_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "124"
 rules:
@@ -23,7 +23,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: installplan-approver
-  namespace: openshift-operators
+  namespace: {{ .Values.openshift_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "125"
 roleRef:
@@ -33,13 +33,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: installplan-approver
-    namespace: openshift-operators
+    namespace: {{ .Values.openshift_namespace }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: installplanpatch
-  namespace: openshift-operators
+  namespace: {{ .Values.openshift_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "126"
 spec:
@@ -57,6 +57,11 @@ spec:
             requests:
               cpu: 10m
               memory: 64Mi
+            env:
+            - name: ODH_NAMESPACE
+              value: "{{ .Values.openshift_namespace }}"
+            - name: ODH_VERSION
+              value: "{{ .Values.odh_operator_version }}"
           command:
             - /bin/sh
             - -c
@@ -65,10 +70,10 @@ spec:
               sleep 60
 
               for i in $(seq 1 20); do
-                IP=$(oc get installplan -n openshift-operators -o json   | jq -r '.items[] | select(.spec.clusterServiceVersionNames[] == "opendatahub-operator.v2.11.1") | .metadata.name')
+                IP=$(oc get installplan -n ${ODH_NAMESPACE} -o json   | jq -r '.items[] | select(.spec.clusterServiceVersionNames[] == ${ODH_VERSION}) | .metadata.name')
                 if [ "$IP" ]; then
                   echo "Approving InstallPlan for ODH: $IP"
-                  oc patch installplan $IP -n openshift-operators --type merge --patch '{"spec":{"approved":true}}'
+                  oc patch installplan $IP -n ${ODH_NAMESPACE} --type merge --patch '{"spec":{"approved":true}}'
                   break
                 fi
                 echo "InstallPlan not found. Retry $i..."

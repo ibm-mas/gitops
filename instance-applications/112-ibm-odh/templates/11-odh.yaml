@@ -1,10 +1,60 @@
 ---
-apiVersion: v1
-kind: ServiceAccount
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: pipeline-runner-instance
+  name: odh-sa-patch-job-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
   namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "135"
-imagePullSecrets:
-  - name: "ibm-entitlement"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: AIBROKER_NAMESPACE
+              value: {{ .Values.aibroker_namespace }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "Provide ibm-entitlement-key image pull secret for 'pipeline-runner-instance' service accounts"
+              echo "================================================================================"
+              echo
+
+              sleep 60
+
+              RESOURCE_NAME=$(oc get serviceaccount  pipeline-runner-instance -n ${AIBROKER_NAMESPACE} -o=jsonpath="{.metadata.name}" --ignore-not-found)
+              if [[ -z "${RESOURCE_NAME}" ]]; then
+                echo "patching 'pipeline-runner-instance' sa..."
+                oc patch serviceaccount pipeline-runner-instance -n ${AIBROKER_NAMESPACE} --type='merge' -p '{"imagePullSecrets":[{"name":"ibm-entitlement"}]}'
+              fi
+
+              echo "Done patching 'pipeline-runner-instance' sa..."
+
+      restartPolicy: Never
+      serviceAccountName: pipeline-runner-instance
+  backoffLimit: 4
+

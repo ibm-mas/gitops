@@ -79,3 +79,8 @@ def define_env(env):
      return gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml", "Instance Root Application Set")
   env.macro(instance_root_app_set)
 
+  def aibroker_instance_root_app_set():
+    return gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/099-aibroker-instance-appset.yaml", "AiBroker Instance Root Application Set")
+  env.macro(aibroker_instance_root_app_set)
+
+

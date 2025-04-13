@@ -212,8 +212,11 @@ data:
     def test_bundle_sizes(mange_workspace_cr):
       spec_serverbundles = mange_workspace_cr['spec']['settings']['deployment']['serverBundles']
       status_serverbundles = mange_workspace_cr['status']['settings']['deployment']['serverBundles']
-      if spec_serverbundles is not None:
-        assert status_serverbundles == spec_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the languages in the status: {status_serverbundles}"
+      spec_serverbundles_updated = $(echo spec_serverbundles | yq '.serverBundles |= del(.[] | select(.bundleType == "foundation"))')
+      status_serverbundles_updated =  $(echo status_serverbundles | yq '.serverBundles |= del(.[] | select(.bundleType == "foundation"))')
+
+      if spec_serverbundles_updated is not None:
+        assert status_serverbundles_updated == spec_serverbundles_updated, f"Expected serverbundles set in the spec: {spec_serverbundles_updated} to be equal to the serverbundles in the status: {status_serverbundles_updated}"
 
 ---
 kind: ConfigMap

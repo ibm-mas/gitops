@@ -1,4 +1,44 @@
 {{- if not (contains "sdb" .Values.db2_instance_name) }}
+
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "postsync-setup-db2" }}
+
+{{- /*
+Use the build/bin/set-cli-image-tag.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_tag := "13.17.0" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Since jobs must be idemopotent, it's generally safe to pass in values here that are not
+strictly necessary (i.e. including some values that don't actually influence job behaviour).
+We may want to refine this further though for jobs that can take a long time to complete.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v7" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_tag
+This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
+immutable field of any existing Job resource.
+*/}}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_tag $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
+
+
 ---
 kind: Secret
 apiVersion: v1
@@ -108,7 +148,7 @@ kind: Job
 metadata:
   # Suffix the Job name with a hash of all chart values
   # This is to ensure that ArgoCD will delete and recreate the job if (and only if) anything changes in the DB2 config
-  name: postsync-setup-db2-{{ .Values.db2_instance_name }}-v7-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: {{ $_job_name }}
   namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "129"
@@ -126,7 +166,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:latest
+          image: quay.io/ibmmas/cli:{{ $_cli_image_tag }}
           imagePullPolicy: IfNotPresent
           resources:
             limits:

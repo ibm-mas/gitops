@@ -4,6 +4,12 @@
 # Rather than change the workspace app (and force it to resync in all existing envs), we'll instead fix the check here to look for either boolean true OR the string "true".
 {{- if (eq (toString .Values.ingress) "true") }}
 {{ $job_label :=  "mas-ws-route-patch" }}
+
+{{- /*
+Use the build/bin/set-cli-image-tag.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_tag := "13.17.0" }}
+
 ---
 # Permit outbound communication by the Job pods
 # (Needed to communicate with the K8S HTTP API and AWS SM)
@@ -126,7 +132,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:latest
+          image: quay.io/ibmmas/cli:{{ $_cli_image_tag }}
           imagePullPolicy: IfNotPresent
           resources:
             limits:

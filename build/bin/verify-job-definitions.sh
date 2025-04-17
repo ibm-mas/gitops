@@ -18,8 +18,9 @@ Job name accordingly:
     - The \$_job_config_values constant is defined
     - The \$_job_version constant is defined
     - The \$_job_hash constant is defined and has the correct value
-    - The \$_job_name constant is defined and has the correct value
-    - The \$_job_name constant is used as the name of the Job
+    - The \$_job_name constant is defined, has the correct value and is used as the name of the Job
+    - The \$_job_cleanup_group is constant defined and assigned to the mas.ibm.com/job-cleanup-group Job label
+    - each template file contains only a single Job definition
 
 [PATH]... can be either:
     - A single directory: the script will check all files under this directory (recursive)
@@ -127,7 +128,7 @@ for file in ${files}; do
     done <<< "$(sed -En 's/.*quay\.io\/ibmmas\/cli:(.*)/\1/p' $file)"
 
 
-    # Experimental: attempt to dynamically detect if we can relax job naming restrictions for this file
+    # Attempt to dynamically detect if we can relax job naming restrictions for this file
     # The following awk commands exits 0 if and only if:
     #   - File does not contain a Job resource 
     #       Jobs are currently the only resource we use where immutability of the image field is a problem.
@@ -219,14 +220,12 @@ for file in ${files}; do
             problems=${problems}'    Missing {{- $_job_name := "..." }}\n'
         fi
 
-        # Check all jobs actually use $_job_name
-        awkout=$(awk 'BEGIN { job_count=0; valid_name_count=0; }
-            /^[[:space:]]*kind:[[:space:]]+Job/ { inJob=1; job_count++ }
-            /^---/ { inJob=0 }
-            inJob && /name:[[:space:]]+\{\{[[:space:]]*\$_job_name[[:space:]]*\}\}/ { valid_name_count++ }
+        # Check there is exactly one Job resource defined in the file
+        awkout=$(awk 'BEGIN { job_count=0; }
+            /^[[:space:]]*kind:[[:space:]]+Job/ { job_count++ }
             END {
-                if(valid_name_count!=job_count) {
-                    print "At least one Job does not have name: {{ $_job_name }}"
+                if(job_count != 1) {
+                    printf "Exactly 1 Job should be defined in each template file, but %s were found", job_count
                     exit 1
                 }
             }' $file \
@@ -235,6 +234,53 @@ for file in ${files}; do
         if [[ $rc != 0 ]]; then
             problems=${problems}'    '${awkout}'\n'
         fi
+
+        # Check the job actually uses $_job_name
+        awkout=$(awk 'BEGIN { job_count=0; valid_name_count=0; }
+            /^[[:space:]]*kind:[[:space:]]+Job/ { inJob=1; job_count++ }
+            /^---/ { inJob=0 }
+            inJob && /name:[[:space:]]+\{\{[[:space:]]*\$_job_name[[:space:]]*\}\}/ { valid_name_count++ }
+            END {
+                if(valid_name_count!=job_count) {
+                    print "The Job does not have name: {{ $_job_name }}"
+                    exit 1
+                }
+            }' $file \
+        )
+        rc=$?
+        if [[ $rc != 0 ]]; then
+            problems=${problems}'    '${awkout}'\n'
+        fi
+
+
+
+        # Check $_job_cleanup_group constant is defined
+        grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_job_cleanup_group[[:space:]]*:=[^}]+\}' $file
+        rc=$?
+        if [[ $rc != 0 ]]; then
+            problems=${problems}'    Missing {{- $_job_cleanup_group := ... }}\n'
+        fi
+
+        # Check mas.ibm.com/job-cleanup_group: $_job_cleanup_group label is applied to the Job
+        awkout=$(awk 'BEGIN { state=0; found=0 }
+            /^---/ { state=0 }
+            /^[[:space:]]*spec:/ { state=0 }
+            /^[[:space:]]*kind:[[:space:]]+Job/ { state=1; }
+            state==1 && /^[[:space:]]*metadata:/ { state=2; }
+            state==2 && /^[[:space:]]+labels:/ { state=3; }
+            state==3 && /^[[:space:]]+mas\.ibm\.com\/job-cleanup-group[[:space:]]*:[[:space:]]+\{\{[[:space:]]*\$_job_cleanup_group[[:space:]]*\}\}/ { found=1 }
+            END {
+                if(found!=1) {
+                    print "The Job does not have the mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }} label"
+                    exit 1
+                }
+            }' $file \
+        )
+        rc=$?
+        if [[ $rc != 0 ]]; then
+            problems=${problems}'    '${awkout}'\n'
+        fi
+
     fi
 
 

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+
+<html class="writer-html5" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://pages.github.com/ibm-mas/gitops/6.0/helmcharts/" rel="canonical"/>
+<link href="../img/favicon.ico" rel="shortcut icon"/>
+<title>The Source Repository - MAS GitOps</title>
+<link href="../css/theme.css" rel="stylesheet"/>
+<link href="../css/theme_extra.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" rel="stylesheet"/>
+<link href="../extra.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/gh/fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.css" rel="stylesheet"/>
+<link href="../css/version-select.css" rel="stylesheet"/>
+<script>
+        // Current page data
+        var mkdocs_page_name = "The Source Repository";
+        var mkdocs_page_input_path = "helmcharts.md";
+        var mkdocs_page_url = "/ibm-mas/gitops/6.0/helmcharts/";
+      </script>
+<!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+<script>hljs.highlightAll();</script>
+</head>
+<body class="wy-body-for-nav" role="document">
+<div class="wy-grid-for-nav">
+<nav class="wy-nav-side stickynav" data-toggle="wy-nav-shift">
+<div class="wy-side-scroll">
+<div class="wy-side-nav-search">
+<a class="icon icon-home" href=".."> MAS GitOps
+        </a>
+</div>
+<div aria-label="Navigation menu" class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+</li>
+</ul>
+<p class="caption"><span class="caption-text">Architecture</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../architecture/">Overview</a>
+</li>
+<li class="toctree-l1 current"><a class="reference internal current" href="#">The Source Repository</a>
+<ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="#account-root-chart">Account Root Chart</a>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#cluster-root-chart">Cluster Root Chart</a>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#instance-root-chart">Instance Root Chart</a>
+<ul>
+<li class="toctree-l3"><a class="reference internal" href="#instance-level-mas-dependencies">Instance-level MAS dependencies:</a>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#mas-core-platform">MAS Core Platform</a>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#mas-applications">MAS Applications</a>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#mas-application-workspace-config">MAS Application Workspace Config</a>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../configrepo/">The Config Repository</a>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../secrets/">The Secrets Vault</a>
+</li>
+</ul>
+<p class="caption"><span class="caption-text">Details</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../configtoinstances/">Mapping Config to MAS Deployments</a>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../orchestration/">Deployment Orchestration</a>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../timings/">Deployment Timings</a>
+</li>
+</ul>
+<p class="caption"><span class="caption-text">Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../accountrootmanifest/">Account Root Application Manifest</a>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../limitations/">Known Limitations</a>
+</li>
+</ul>
+</div>
+</div>
+</nav>
+<section class="wy-nav-content-wrap" data-toggle="wy-nav-shift">
+<nav aria-label="Mobile navigation menu" class="wy-nav-top" role="navigation">
+<i class="fa fa-bars" data-toggle="wy-nav-top"></i>
+<a href="..">MAS GitOps</a>
+</nav>
+<div class="wy-nav-content">
+<div class="rst-content"><div aria-label="breadcrumbs navigation" role="navigation">
+<ul class="wy-breadcrumbs">
+<li><a aria-label="Docs" class="icon icon-home" href=".."></a></li>
+<li class="breadcrumb-item">Architecture</li>
+<li class="breadcrumb-item active">The Source Repository</li>
+<li class="wy-breadcrumbs-aside">
+<a class="icon icon-github" href="https://github.com/ibm-mas/gitops/blob/main/docs/helmcharts.md"> Edit on GitHub</a>
+</li>
+</ul>
+<hr/>
+</div>
+<div class="document" itemscope="itemscope" itemtype="http://schema.org/Article" role="main">
+<div class="section" itemprop="articleBody">
+<h1 id="source-repository"><strong>Source Repository</strong><a class="headerlink" href="#source-repository" title="Permanent link"></a></h1>
+<p>The <strong>Source Repository</strong> (usually <a href="https://github.com/ibm-mas/gitops">ibm-mas/gitops</a>) provides Helm Charts that define all of the Kubernetes resources required to deploy MAS instances using ArgoCD. The Helm Charts are split across three sub directories, depending on their intended target:</p>
+<ul>
+<li><strong><a href="https://github.com/ibm-mas/gitops/tree/main/root-applications">root-applications</a></strong>: these charts define ArgoCD Application and ApplicationSet templates following the <a href="https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern">App of Apps pattern</a> and target the <strong>Management Cluster</strong> where ArgoCD is running. The Applications and ApplicationSets render other charts from <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications">root-applications</a>, <a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications">cluster-applications</a> or <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications">instance-applications</a></li>
+<li><strong><a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications">cluster-applications</a></strong>: these charts define Kubernetes resources for installing cluster-wide MAS pre-requisites on <strong>Target Clusters</strong> where MAS is to be installed and managed.</li>
+<li><strong><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications">instance-applications</a></strong>: these charts define Kubernetes resources for installing and managing MAS instances on <strong>Target Clusters</strong>.</li>
+</ul>
+<p>The following figure shows a tree of ArgoCD applications and Application Sets generated by the charts under <strong><a href="https://github.com/ibm-mas/gitops/tree/main/root-applications">root-applications</a></strong>, starting with the <strong>Account Root Application</strong> at the top.</p>
+<p><div class="mxgraph" data-mxgraph='{"highlight":"#0000ff","nav":true,"resize":true,"toolbar":"zoom layers tags lightbox","edit":"_blank","xml":"&lt;mxfile host=\"65bd71144e\"&gt;    &lt;diagram id=\"ml8bYYsEtUAZJTW_Lftc\" name=\"Page-1\"&gt;        &lt;mxGraphModel dx=\"2734\" dy=\"1631\" grid=\"1\" gridSize=\"10\" guides=\"0\" tooltips=\"1\" connect=\"1\" arrows=\"1\" fold=\"1\" page=\"0\" pageScale=\"1\" pageWidth=\"827\" pageHeight=\"1169\" background=\"#ffffff\" math=\"0\" shadow=\"0\"&gt;            &lt;root&gt;                &lt;mxCell id=\"0\"/&gt;                &lt;mxCell id=\"1\" parent=\"0\"/&gt;                &lt;mxCell id=\"146\" value=\"\" style=\"rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;strokeWidth=1;fontSize=20;fillColor=#9C9C9C;fillStyle=cross-hatch;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-450\" y=\"420\" width=\"2500\" height=\"190\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"151\" value=\"\" style=\"rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;strokeWidth=1;fontSize=20;fillColor=#9C9C9C;fillStyle=cross-hatch;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-450\" y=\"750\" width=\"2510\" height=\"340\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"160\" value=\"\" style=\"rounded=0;whiteSpace=wrap;html=1;strokeColor=#000000;strokeWidth=1;fontSize=20;fillColor=#9C9C9C;fillStyle=cross-hatch;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-450\" y=\"140\" width=\"2500\" height=\"140\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"117\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"2\" target=\"3\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"2\" value=\"Account Root\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#000000;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"631.6616821289062\" y=\"50\" width=\"190\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"116\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"3\" target=\"107\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"3\" value=\"Cluster Root Appset\" style=\"shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#008a00;fontColor=#ffffff;strokeColor=#000000;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"631.6616821289062\" y=\"180\" width=\"190\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"134\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"5\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"1740\" y=\"610\"/&gt;                            &lt;mxPoint x=\"779\" y=\"610\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"779.0666666666666\" y=\"660\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"5\" value=\"Instance Root Appset\" style=\"shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#008a00;fontColor=#ffffff;strokeColor=#000000;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"1650\" y=\"500\" width=\"190\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"11\" value=\"Operator Catalog\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-130\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"13\" value=\"Cert Manager\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"30\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"14\" value=\"DRO\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"190\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"15\" value=\"CIS Compliance\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"350\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"16\" value=\"NFD\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"510\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"17\" value=\"DB2U\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"1530\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"26\" value=\"MAS Suite\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"510\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"34\" value=\"SLS\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"170\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"50\" value=\"CP4D\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"118\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" edge=\"1\" source=\"107\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"100\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"826.0000000000005\" y=\"380\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"100\" y=\"500\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"119\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;entryX=0.5;entryY=0;entryDx=0;entryDy=0;\" parent=\"1\" target=\"14\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"380\"/&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"260\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"730\" y=\"390\" as=\"sourcePoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"120\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;entryX=0.5;entryY=0;entryDx=0;entryDy=0;\" parent=\"1\" source=\"107\" target=\"15\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"420\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"740\" y=\"380\" as=\"sourcePoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"121\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;entryX=0.5;entryY=0;entryDx=0;entryDy=0;\" parent=\"1\" source=\"107\" target=\"16\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"580\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"877\" y=\"379.99999999999955\" as=\"sourcePoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"122\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;entryX=0.5;entryY=0;entryDx=0;entryDy=0;\" parent=\"1\" source=\"107\" target=\"WCPXIc9LmJP7Mr7B8AD5-181\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"740\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"876.090909090909\" y=\"379.99999999999955\" as=\"sourcePoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"124\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" target=\"5\" edge=\"1\" source=\"107\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"1740\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"704\" y=\"379\" as=\"sourcePoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"107\" value=\"&amp;lt;span style=&amp;quot;color: rgb(255, 255, 255); font-family: Helvetica; font-size: 20px; font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; letter-spacing: normal; orphans: 2; text-indent: 0px; text-transform: none; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial; float: none; display: inline !important;&amp;quot;&amp;gt;Cluster Roots&amp;lt;/span&amp;gt;\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=15.94;outlineConnect=0;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"632\" y=\"299\" width=\"190\" height=\"81\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"136\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"34\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"801\" y=\"780\"/&gt;                            &lt;mxPoint x=\"240\" y=\"780\"/&gt;                        &lt;/Array&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"137\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"129\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"801\" y=\"780\"/&gt;                            &lt;mxPoint x=\"410\" y=\"780\"/&gt;                        &lt;/Array&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"138\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"26\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"801\" y=\"780\"/&gt;                            &lt;mxPoint x=\"580\" y=\"780\"/&gt;                        &lt;/Array&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"139\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"130\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"801\" y=\"780\"/&gt;                            &lt;mxPoint x=\"750\" y=\"780\"/&gt;                        &lt;/Array&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"140\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"131\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"801\" y=\"780\"/&gt;                            &lt;mxPoint x=\"920\" y=\"780\"/&gt;                        &lt;/Array&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"141\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"132\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"801\" y=\"780\"/&gt;                            &lt;mxPoint x=\"1090\" y=\"780\"/&gt;                        &lt;/Array&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"142\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"133\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"801\" y=\"780\"/&gt;                            &lt;mxPoint x=\"1260\" y=\"780\"/&gt;                        &lt;/Array&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"145\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=3;fontSize=20;orthogonal=1;\" parent=\"1\" source=\"125\" target=\"143\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"801\" y=\"780\"/&gt;                            &lt;mxPoint x=\"1430\" y=\"780\"/&gt;                        &lt;/Array&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-185\" style=\"edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeWidth=3;curved=0;\" parent=\"1\" target=\"WCPXIc9LmJP7Mr7B8AD5-183\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"800\" y=\"740\"/&gt;                            &lt;mxPoint x=\"800\" y=\"780\"/&gt;                            &lt;mxPoint x=\"160\" y=\"780\"/&gt;                            &lt;mxPoint x=\"160\" y=\"960\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"800\" y=\"740\" as=\"sourcePoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-186\" style=\"edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeWidth=3;curved=0;\" parent=\"1\" source=\"125\" target=\"WCPXIc9LmJP7Mr7B8AD5-184\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"800\" y=\"780\"/&gt;                            &lt;mxPoint x=\"160\" y=\"780\"/&gt;                            &lt;mxPoint x=\"160\" y=\"1040\"/&gt;                        &lt;/Array&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"125\" value=\"Instance Roots\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"706\" y=\"660\" width=\"190\" height=\"80\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"129\" value=\"DB2 Databases\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#d80073;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;strokeWidth=2;fontStyle=1;fontSize=20;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"340\" y=\"840\" width=\"140\" height=\"80\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"130\" value=\"MAS Suite Config\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#d80073;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"680\" y=\"840\" width=\"140\" height=\"80\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"131\" value=\"MAS Suite Workspaces\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#d80073;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"850\" y=\"840\" width=\"140\" height=\"80\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"132\" value=\"MAS App Installs\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#d80073;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"1020\" y=\"840\" width=\"140\" height=\"80\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"133\" value=\"MAS App Configs\" style=\"verticalLabelPosition=middle;verticalAlign=middle;html=1;shape=mxgraph.basic.layered_rect;dx=10;outlineConnect=0;fillColor=#d80073;fontColor=#ffffff;strokeColor=#000000;labelPosition=center;align=center;labelBackgroundColor=none;whiteSpace=wrap;horizontal=1;fontStyle=1;fontSize=20;strokeWidth=2;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"1190\" y=\"840\" width=\"140\" height=\"80\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"143\" value=\"WSL\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"1360\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"152\" value=\"\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;endArrow=none;\" parent=\"1\" source=\"125\" target=\"151\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"801\" y=\"780\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"801.0476190476188\" y=\"740\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"70\" y=\"850\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"162\" value=\"&amp;lt;font style=&amp;quot;font-size: 20px;&amp;quot;&amp;gt;ibm-mas-account-root&amp;lt;/font&amp;gt;\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#009999;strokeColor=#000000;fontSize=36;fontColor=#ffffff;strokeWidth=1;fontStyle=1;spacingLeft=42;align=left;spacing=0;verticalAlign=middle;spacingTop=-11;fillStyle=solid;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-450\" y=\"90\" width=\"270\" height=\"50\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"163\" value=\"\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=https://helm.sh/img/helm.svg;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-440\" y=\"100\" width=\"25.99\" height=\"30\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"148\" value=\"&amp;lt;font style=&amp;quot;font-size: 20px;&amp;quot;&amp;gt;ibm-mas-cluster-root&amp;lt;/font&amp;gt;\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#009999;strokeColor=#000000;fontSize=36;fontColor=#ffffff;strokeWidth=1;fontStyle=1;spacingLeft=42;align=left;spacing=0;verticalAlign=middle;spacingTop=-11;fillStyle=solid;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-450\" y=\"370\" width=\"270\" height=\"50\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"149\" value=\"\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=https://helm.sh/img/helm.svg;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-440\" y=\"380\" width=\"25.99\" height=\"30\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"158\" value=\"&amp;lt;font style=&amp;quot;font-size: 20px;&amp;quot;&amp;gt;ibm-mas-instance-root&amp;lt;/font&amp;gt;\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#009999;strokeColor=#000000;fontSize=36;fontColor=#ffffff;strokeWidth=1;fontStyle=1;spacingLeft=42;align=left;spacing=0;verticalAlign=middle;spacingTop=-11;fillStyle=solid;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-450\" y=\"700\" width=\"270\" height=\"50\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"159\" value=\"\" style=\"shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=https://helm.sh/img/helm.svg;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-440\" y=\"710\" width=\"25.99\" height=\"30\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"165\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=3;fontSize=20;orthogonal=1;\" parent=\"1\" source=\"125\" target=\"17\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"800\" y=\"780\"/&gt;                            &lt;mxPoint x=\"1610\" y=\"780\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"811\" y=\"750\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"1440\" y=\"860\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"166\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"125\" target=\"50\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"800\" y=\"780\"/&gt;                            &lt;mxPoint x=\"70\" y=\"780\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"811\" y=\"750\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"590\" y=\"860\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"170\" value=\"WML\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"1690\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"171\" value=\"AI OpenScale\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"1850\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"174\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=3;fontSize=20;orthogonal=1;\" parent=\"1\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"800\" y=\"780\"/&gt;                            &lt;mxPoint x=\"1610\" y=\"780\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"800\" y=\"740\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"1610\" y=\"850\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"175\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=3;fontSize=20;orthogonal=1;\" parent=\"1\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"800\" y=\"740\"/&gt;                            &lt;mxPoint x=\"800\" y=\"780\"/&gt;                            &lt;mxPoint x=\"1760\" y=\"780\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"800\" y=\"760\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"1760\" y=\"850\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"176\" style=\"edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=1;entryDx=0;entryDy=0;\" parent=\"1\" source=\"170\" target=\"170\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"177\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#000000;strokeWidth=3;fontSize=20;orthogonal=1;\" parent=\"1\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"800\" y=\"780\"/&gt;                            &lt;mxPoint x=\"1920\" y=\"780\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"800\" y=\"740\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"1920\" y=\"850\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"178\" value=\"Spark\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-150\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"179\" value=\"SPSS Modeler\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-310\" y=\"850\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"180\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"800\" y=\"740\"/&gt;                            &lt;mxPoint x=\"800\" y=\"780\"/&gt;                            &lt;mxPoint x=\"-240\" y=\"780\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"800\" y=\"740\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"-240\" y=\"850\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"181\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"800\" y=\"740\"/&gt;                            &lt;mxPoint x=\"800\" y=\"780\"/&gt;                            &lt;mxPoint x=\"-80\" y=\"780\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"800\" y=\"750\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"-80\" y=\"850\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-181\" value=\"NVIDIA GPU\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"670\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-183\" value=\"CP4D Operators\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry y=\"930\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"WCPXIc9LmJP7Mr7B8AD5-184\" value=\"CP4D CS Control\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry y=\"1010\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"2ge-qGCwmwGJbEV4CsZ1-181\" value=\"Custom Service Accounts\" style=\"rounded=0;whiteSpace=wrap;fillColor=#d80073;strokeColor=#000000;fontColor=#FFFFFF;fontStyle=1;fontSize=18;strokeWidth=2;align=center;spacing=0;labelBorderColor=none;html=1;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"990\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"Oq5OPkyUyvFc9IJOZWid-187\" value=\"Group Sync\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"830\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"Oq5OPkyUyvFc9IJOZWid-188\" value=\"IBM RBAC\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"1150\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"XvPbVhUA4EUWTuD7yNFU-182\" value=\"Cluster Logging\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"1320\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"XvPbVhUA4EUWTuD7yNFU-185\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"390\"/&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"900\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"730\" y=\"380\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"900\" y=\"500\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"XvPbVhUA4EUWTuD7yNFU-189\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"380\"/&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"1060\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"730\" y=\"380\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"1060\" y=\"500\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"XvPbVhUA4EUWTuD7yNFU-190\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"380\"/&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"1390\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"730\" y=\"380\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"1390\" y=\"500\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"XvPbVhUA4EUWTuD7yNFU-191\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"107\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"1550\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"890\" y=\"380\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"1550\" y=\"500\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"-wIrcGdv7ZLGd_BOV_Xi-182\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"107\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"-50\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"884.9700000000003\" y=\"379.99999999999955\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"-50\" y=\"500\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"-wIrcGdv7ZLGd_BOV_Xi-183\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" parent=\"1\" source=\"107\" edge=\"1\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"1220\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"730\" y=\"380\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"1220\" y=\"500\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"-wIrcGdv7ZLGd_BOV_Xi-184\" value=\"Instana Agent\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"1480\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"182\" value=\"Job Cleaner\" style=\"rounded=0;whiteSpace=wrap;html=1;fillColor=#d80073;strokeColor=#000000;fontColor=#ffffff;fontStyle=1;fontSize=20;strokeWidth=2;align=center;spacing=0;\" parent=\"1\" vertex=\"1\"&gt;                    &lt;mxGeometry x=\"-290\" y=\"500\" width=\"140\" height=\"60\" as=\"geometry\"/&gt;                &lt;/mxCell&gt;                &lt;mxCell id=\"184\" style=\"edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=3;orthogonal=1;strokeColor=#000000;\" edge=\"1\" parent=\"1\" target=\"182\"&gt;                    &lt;mxGeometry relative=\"1\" as=\"geometry\"&gt;                        &lt;Array as=\"points\"&gt;                            &lt;mxPoint x=\"730\" y=\"380\"/&gt;                            &lt;mxPoint x=\"730\" y=\"440\"/&gt;                            &lt;mxPoint x=\"-220\" y=\"440\"/&gt;                        &lt;/Array&gt;                        &lt;mxPoint x=\"730\" y=\"380\" as=\"sourcePoint\"/&gt;                        &lt;mxPoint x=\"-40\" y=\"510\" as=\"targetPoint\"/&gt;                    &lt;/mxGeometry&gt;                &lt;/mxCell&gt;            &lt;/root&gt;        &lt;/mxGraphModel&gt;    &lt;/diagram&gt;&lt;/mxfile&gt;"}' style="max-width:100%;border:1px solid transparent;"></div></p>
+<h2 id="account-root-chart"><a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-account-root">Account Root Chart</a><a class="headerlink" href="#account-root-chart" title="Permanent link"></a></h2>
+<p><strong>Account Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-account-root">Account Root Chart</a>, which installs the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-account-root/templates/000-cluster-appset.yaml">Cluster Root Application Set</a>. This generates a set of <strong>Cluster Root Applications</strong> based on the configuration in the <strong>Config Repository</strong> </p>
+<h2 id="cluster-root-chart"><a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a><a class="headerlink" href="#cluster-root-chart" title="Permanent link"></a></h2>
+<p><strong>Cluster Root Applications</strong> render the <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a>, which contains templates to generate ArgoCD Applications for configuring various dependencies and supporting services shared by MAS instances on <strong>Target Clusters</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Application</th>
+<th>Template</th>
+<th>Helm Chart</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Job Cleaner</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/000-job-cleaner.yaml">000-job-cleaner.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/000-job-cleaner">000-job-cleaner</a></td>
+</tr>
+<tr>
+<td>IBM Operator Catalog</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml">000-ibm-operator-catalog-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/000-ibm-operator-catalog">000-ibm-operator-catalog</a></td>
+</tr>
+<tr>
+<td>Redhat Certificate Manager</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/010-ibm-redhat-cert-manager-app.yaml">010-ibm-redhat-cert-manager-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/010-redhat-cert-manager">010-redhat-cert-manager</a></td>
+</tr>
+<tr>
+<td>Data Reporter Operator (DRO)</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/020-ibm-dro-app.yaml">020-ibm-dro-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/020-ibm-dro">020-ibm-dro</a></td>
+</tr>
+<tr>
+<td>CIS Compliance</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/040-cis-compliance-app.yaml">040-cis-compliance-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/040-cis-compliance">040-cis-compliance</a></td>
+</tr>
+<tr>
+<td>NFD Operator</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/050-nfd-operator-app.yaml">050-nfd-operator-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/050-nfd-operator">050-nfd-operator</a></td>
+</tr>
+<tr>
+<td>Nvidia GPU Operator</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/051-nvidia-gpu-operator-app.yaml">051-nvidia-gpu-operator-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/051-nvidia-gpu-operator">051-nvidia-gpu-operator</a></td>
+</tr>
+<tr>
+<td>Custom Cluster Service Accounts</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/060-custom-sa.yaml">060-custom-sa.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/cluster-applications/060-custom-sa">060-custom-sa</a></td>
+</tr>
+</tbody>
+</table>
+<p>The <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-cluster-root">Cluster Root Chart</a> also installs the <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-cluster-root/templates/099-instance-appset.yaml">Instance Root Application Set</a>. This generates a set of <strong>Instance Root Applications</strong> based on the configuration in the <strong>Config Repository</strong>.  </p>
+<h2 id="instance-root-chart"><a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-instance-root">Instance Root Chart</a><a class="headerlink" href="#instance-root-chart" title="Permanent link"></a></h2>
+<p><strong>Instance Root Applications</strong>  render the <a href="https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-instance-root">Instance Root Chart</a>, which contains templates to generate ArgoCD Applications that installs MAS on <strong>Target Clusters</strong>, including:</p>
+<h5 id="instance-level-mas-dependencies">Instance-level MAS dependencies:<a class="headerlink" href="#instance-level-mas-dependencies" title="Permanent link"></a></h5>
+<table>
+<thead>
+<tr>
+<th>Application</th>
+<th>Template</th>
+<th>Helm Chart</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Db2u Operator</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/110-ibm-db2u-app.yaml">110-ibm-db2u-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/110-ibm-db2u">110-ibm-db2u</a></td>
+</tr>
+<tr>
+<td>Cloudpak 4 Data (CP4D)</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/110-ibm-cp4d-app.yaml">110-ibm-cp4d-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/110-ibm-cp4d">110-ibm-cp4d</a></td>
+</tr>
+<tr>
+<td>Cloudpak 4 Data (CP4D) Operators</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/110-ibm-cp4d-operator-app.yaml">110-ibm-cp4d-operator-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/110-ibm-cp4d-operators">110-ibm-cp4d-operators</a></td>
+</tr>
+<tr>
+<td>Cloudpak 4 Data (CP4D) CS Control</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/110-ibm-cs-control-app.yaml">110-ibm-cs-control-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/110-ibm-cs-control">110-ibm-cs-control</a></td>
+</tr>
+<tr>
+<td>Suite License Service (SLS)</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/100-ibm-sls-app.yaml">100-ibm-sls-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/100-ibm-sls">100-ibm-sls</a></td>
+</tr>
+<tr>
+<td>DB2 Databases</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml">120-db2-databases-app.yaml</a><sup id="fnref4:1"><a class="footnote-ref" href="#fn:1">1</a></sup></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/120-ibm-db2u-database">120-ibm-db2u-database</a></td>
+</tr>
+<tr>
+<td>Watson Studio Local (WSL)</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/120-ibm-wsl-app.yaml">120-ibm-wsl-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/120-ibm-wsl">120-ibm-wsl</a></td>
+</tr>
+<tr>
+<td>Watson Machine Learning (WML)</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/120-ibm-wml-app.yaml">120-ibm-wml-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/120-ibm-wml">120-ibm-wml</a></td>
+</tr>
+<tr>
+<td>Analytics Engine powered by Apache Spark (Spark)</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/120-ibm-spark-app.yaml">120-ibm-spark-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/120-ibm-spark">120-ibm-spark</a></td>
+</tr>
+<tr>
+<td>SPSS Modeler</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/120-ibm-spss-app.yaml">120-ibm-spss-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/120-ibm-spss">120-ibm-spss</a></td>
+</tr>
+</tbody>
+</table>
+<h5 id="mas-core-platform">MAS Core Platform<a class="headerlink" href="#mas-core-platform" title="Permanent link"></a></h5>
+<p>This includes the suite, suite configurations and core workspaces</p>
+<table>
+<thead>
+<tr>
+<th>Application</th>
+<th>Template</th>
+<th>Helm Chart</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MAS Core Suite</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-app.yaml">130-ibm-mas-suite-app.yaml</a></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/130-ibm-mas-suite">130-ibm-mas-suite</a></td>
+</tr>
+<tr>
+<td>MAS Workspaces</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/200-ibm-mas-workspaces.yaml">200-ibm-mas-workspaces.yaml</a><sup id="fnref3:1"><a class="footnote-ref" href="#fn:1">1</a></sup></td>
+<td><a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/220-ibm-mas-workspace">220-ibm-mas-workspace</a></td>
+</tr>
+<tr>
+<td>Suite Configs</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml">130-ibm-mas-suite-configs-app.yaml</a><sup id="fnref2:1"><a class="footnote-ref" href="#fn:1">1</a></sup></td>
+<td>Multiple charts <sup id="fnref:2"><a class="footnote-ref" href="#fn:2">2</a></sup></td>
+</tr>
+</tbody>
+</table>
+<h4 id="mas-applications">MAS Applications<a class="headerlink" href="#mas-applications" title="Permanent link"></a></h4>
+<p>These share a <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/500-540-ibm-mas-suite-app-install">generic chart</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Application</th>
+<th>Template</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Assist</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/510-ibm-mas-masapp-assist-install.yaml">510-ibm-mas-masapp-assist-install.yaml</a></td>
+</tr>
+<tr>
+<td>IoT</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/510-ibm-mas-masapp-iot-install.yaml">510-ibm-mas-masapp-iot-install.yaml</a></td>
+</tr>
+<tr>
+<td>Manage</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/500-ibm-mas-masapp-manage-install.yaml">500-ibm-mas-masapp-manage-install.yaml</a></td>
+</tr>
+<tr>
+<td>VisualInspection</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/510-ibm-mas-masapp-visualinspection-install.yaml">510-ibm-mas-masapp-visualinspection-install.yaml</a></td>
+</tr>
+<tr>
+<td>Health</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-health-install.yaml">520-ibm-mas-masapp-health-install.yaml</a></td>
+</tr>
+<tr>
+<td>Monitor</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-monitor-install.yaml">520-ibm-mas-masapp-monitor-install.yaml</a></td>
+</tr>
+<tr>
+<td>Optimizer</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-optimizer-install.yaml">520-ibm-mas-masapp-optimizer-install.yaml</a></td>
+</tr>
+<tr>
+<td>Predict</td>
+<td><a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/540-ibm-mas-masapp-predict-install.yaml">540-ibm-mas-masapp-predict-install.yaml</a></td>
+</tr>
+</tbody>
+</table>
+<h4 id="mas-application-workspace-config">MAS Application Workspace Config<a class="headerlink" href="#mas-application-workspace-config" title="Permanent link"></a></h4>
+<p>The generic <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/510-550-ibm-mas-masapp-configs.yaml">510-550-ibm-mas-masapp-configs.yaml</a><sup id="fnref:1"><a class="footnote-ref" href="#fn:1">1</a></sup> template and <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/510-550-ibm-mas-suite-app-config">510-550-ibm-mas-suite-app-config</a> chart is used for creating MAS Application workspaces.</p>
+<div class="footnote">
+<hr/>
+<ol>
+<li id="fn:1">
+<p>These templates are capable of generating multiple Applications; necessary because there may be one or more instances of the <strong>type</strong> of resource they are responsible for managing. <a class="footnote-backref" href="#fnref:1" title="Jump back to footnote 1 in the text">↩</a><a class="footnote-backref" href="#fnref2:1" title="Jump back to footnote 1 in the text">↩</a><a class="footnote-backref" href="#fnref3:1" title="Jump back to footnote 1 in the text">↩</a><a class="footnote-backref" href="#fnref4:1" title="Jump back to footnote 1 in the text">↩</a></p>
+</li>
+<li id="fn:2">
+<p>The <a href="https://github.com/ibm-mas/gitops/blob/main/root-applications/ibm-mas-instance-root/templates/130-ibm-mas-suite-configs-app.yaml">Suite Configs</a> Application is responsible for installing various types of suite configuration types (Mongo, BAS, SMTP, etc) at various scopes (<code>system</code>, <code>app</code>, <code>ws</code>, <code>wsapp</code>). The chart is chosen dynamically based on the configuration type: <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/130-ibm-jdbc-config">JDBC</a>, <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/130-ibm-kafka-config">Kafka</a>, <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/130-ibm-mas-bas-config">BAS</a>, <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/130-ibm-mas-idp-config">IDP</a>, <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/130-ibm-mas-mongo-config">Mongo</a>, <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/130-ibm-mas-sls-config">SLS</a>, <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/130-ibm-mas-smtp-config">SMTP</a>, <a href="https://github.com/ibm-mas/gitops/tree/main/instance-applications/130-ibm-objectstorage-config">COS</a> <a class="footnote-backref" href="#fnref:2" title="Jump back to footnote 2 in the text">↩</a></p>
+</li>
+</ol>
+</div>
+</div>
+</div><footer>
+<hr/>
+<div role="contentinfo">
+<!-- Copyright etc -->
+</div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+</div>
+</div>
+</section>
+</div>
+<div aria-label="Versions" class="rst-versions" role="note">
+<span class="rst-current-version" data-toggle="rst-current-version">
+<span>
+<a class="fa fa-github" href="https://github.com/ibm-mas/gitops" style="color: #fcfcfc"> GitHub</a>
+</span>
+<span><a href="../architecture/" style="color: #fcfcfc">« Previous</a></span>
+<span><a href="../configrepo/" style="color: #fcfcfc">Next »</a></span>
+</span>
+</div>
+<script src="../js/jquery-3.6.0.min.js"></script>
+<script>var base_url = "..";</script>
+<script src="../js/theme_extra.js"></script>
+<script src="../js/theme.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/fancyapps/fancybox@3.5.7/dist/jquery.fancybox.min.js"></script>
+<script src="../js/version-select.js"></script>
+<script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+<script src="https://viewer.diagrams.net/js/viewer-static.min.js"></script></body>
+</html>

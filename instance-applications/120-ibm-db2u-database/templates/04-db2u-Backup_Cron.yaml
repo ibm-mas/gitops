@@ -1,4 +1,10 @@
 {{- if and .Values.db2_backup_bucket_name (not (contains "sdb" .Values.db2_instance_name)) }}
+
+{{- /*
+Use the build/bin/set-cli-image-tag.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_tag := "13.17.0" }}
+
 #apiVersion: batch/v1beta1
 kind: CronJob
 apiVersion: batch/v1
@@ -21,7 +27,7 @@ spec:
         spec:
           containers:
             - name: "db2-backup-job-v1-{{ .Values.db2_instance_name }}"
-              image: quay.io/ibmmas/cli:latest
+              image: quay.io/ibmmas/cli:{{ $_cli_image_tag }}
               command:
                 - oc
                 - rsh

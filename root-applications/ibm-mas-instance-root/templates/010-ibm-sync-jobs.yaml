@@ -76,9 +76,17 @@ spec:
             cis_waf: "{{ .Values.ibm_mas_suite.cis_waf }}"
             cis_proxy: "{{ .Values.ibm_mas_suite.cis_proxy }}"
             cis_service_name: "{{ .Values.ibm_mas_suite.cis_service_name }}"
+
+
+            {{- if .Values.override_dns_cis_flags_to_false }}
+            update_dns_entries: "false"
+            delete_wildcards: "false"
+            override_edge_certs: "false"
+            {{- else }}
             update_dns_entries: "{{ .Values.ibm_mas_suite.update_dns_entries }}"
             delete_wildcards: "{{ .Values.ibm_mas_suite.delete_wildcards }}"
             override_edge_certs: "{{ .Values.ibm_mas_suite.override_edge_certs }}"
+            {{- end}}
 
             {{- if .Values.ibm_mas_suite.manual_certs }}
             manual_certs: {{ .Values.ibm_mas_suite.manual_certs | toYaml | nindent 14 }}
@@ -99,6 +107,7 @@ spec:
               gitops_version: "{{ .Values.source.revision }}"
 
             mas_wipe_mongo_data: {{ .Values.mas_wipe_mongo_data }}
+
 
         - name: ARGOCD_APP_NAME
           value: syncres

@@ -38,6 +38,27 @@ immutable field of any existing Job resource.
 
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
 
+{{- /*
+Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+
+When the auto_delete flag is not set on the root application, a CronJob in the cluster uses this label 
+to identify old Job resources that should be pruned on behalf of ArgoCD.
+
+Any Job resources in the same namespace that have the mas.ibm.com/job-cleanup-group with this value
+will be considered to belong to the same cleanup group. All but the most recent (i.e. with the latest "creation_timestamp")
+Jobs will be automatically deleted.
+
+$_job_cleanup_group can usually just be based on $_job_name_prefix. There are some special cases
+where multiple Jobs are created in our templates using a Helm loop. In those cases, additional descriminators
+must be added to $_job_cleanup_group.
+NOTE: this is one of those cases; we need a separate cleanup group for each DB2 database
+
+By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators
+are required here.
+
+*/}}
+{{- $_job_cleanup_group := cat $_job_name_prefix .Values.db2_instance_name | sha1sum }}
+
 ---
 kind: ServiceAccount
 apiVersion: v1
@@ -123,8 +144,9 @@ metadata:
   namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "130"
-{{- if .Values.custom_labels }}
   labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:

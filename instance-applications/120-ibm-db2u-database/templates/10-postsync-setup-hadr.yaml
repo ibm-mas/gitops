@@ -317,17 +317,29 @@ spec:
               PRIMARY_ROLE=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 get db cfg for BLUDB | grep role | cut -d'=' -f2 | tr -d ' '" db2inst1`
               STANDBY_ROLE=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 get db cfg for BLUDB | grep role | cut -d'=' -f2 | tr -d ' '" db2inst1`
 
+              is_backup_file_available='false'
               if [[ ! ($PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY') ]]; then
-                echo ""
-                echo "Taking backup on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/standby; db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby | tee /mnt/backup/standby/dbbackup.log" db2inst1 || exit $?
-                echo ""
-                timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
-                echo "Timestamp of backup is ${timestamp}"
+                echo "Checking if a backup already exists on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
+                is_backup_log_available=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f /mnt/backup/standby/dbbackup.log ]; then echo 'true'; else echo 'false'; fi"`
+                if [[ $is_backup_log_available == 'true' ]]; then
+                  backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "ls /mnt/backup/standby | grep ${timestamp}" db2inst1`
+                  timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
+                  echo "Timestamp of backup is ${timestamp}"
+                  is_backup_file_available=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f $backup_filename ]; then echo 'true'; else echo 'false'; fi"`
+                fi
 
-                backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "ls /mnt/backup/standby | grep ${timestamp}" db2inst1`
-                echo "Backup filename is ${backup_filename}"
+                if [[ $is_backup_file_available == 'false' ]]; then
+                  echo ""
+                  echo "Taking backup on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/standby; db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby | tee /mnt/backup/standby/dbbackup.log" db2inst1 || exit $?
+                  echo ""
+                  timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
+                  echo "Timestamp of backup is ${timestamp}"
+
+                  backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "ls /mnt/backup/standby | grep ${timestamp}" db2inst1`
+                  echo "Backup filename is ${backup_filename}"
+                fi
 
                 echo ""
                 echo "Copying backup /mnt/backup/standby/${backup_filename} from ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0 "

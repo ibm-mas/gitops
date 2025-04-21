@@ -324,8 +324,9 @@ spec:
                 if [[ $is_backup_log_available == 'true' ]]; then
                   backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "ls /mnt/backup/standby | grep ${timestamp}" db2inst1`
                   timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
-                  echo "Timestamp of backup is ${timestamp}"
-                  is_backup_file_available=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f $backup_filename ]; then echo 'true'; else echo 'false'; fi"`
+                  if [[ ${timestamp:0:8} == `date +%Y%m%d` ]]; then
+                    is_backup_file_available=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f $backup_filename ]; then echo 'true'; else echo 'false'; fi"`
+                  fi
                 fi
 
                 if [[ $is_backup_file_available == 'false' ]]; then

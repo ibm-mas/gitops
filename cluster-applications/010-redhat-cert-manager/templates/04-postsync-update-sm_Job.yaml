@@ -8,6 +8,64 @@ TODO:
 
 {{- if .Values.run_sync_hooks }}
 
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "postsync-rhcm-update-sm-job" }}
+
+{{- /*
+Use the build/bin/set-cli-image-tag.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_tag := "13.17.0" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Since jobs must be idemopotent, it's generally safe to pass in values here that are not
+strictly necessary (i.e. including some values that don't actually influence job behaviour).
+We may want to refine this further though for jobs that can take a long time to complete.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v3" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_tag
+This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
+immutable field of any existing Job resource.
+*/}}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_tag $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
+{{- /*
+Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+
+When the auto_delete flag is not set on the root application, a CronJob in the cluster uses this label 
+to identify old Job resources that should be pruned on behalf of ArgoCD.
+
+Any Job resources in the same namespace that have the mas.ibm.com/job-cleanup-group with this value
+will be considered to belong to the same cleanup group. All but the most recent (i.e. with the latest "creation_timestamp")
+Jobs will be automatically deleted.
+
+$_job_cleanup_group can usually just be based on $_job_name_prefix. There are some special cases
+where multiple Jobs are created in our templates using a Helm loop. In those cases, additional descriminators
+must be added to $_job_cleanup_group.
+
+By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators
+are required here.
+
+*/}}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+
 {{ $ns := "cert-manager-operator"}}
 {{ $aws_secret := "aws"}}
 {{ $role_name  :=  "postsync-rhcm-update-sm-r" }}
@@ -101,12 +159,13 @@ metadata:
   # Any change to cluster config will trigger a rerun of the job.
   # The job is idempotent and quick so no real harm in running it when we don't actually need to.
   # The v1 in the name allows use to change this if there is a modification needed that is not in the yaml
-  name: postsync-rhcm-update-sm-job-v2-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  name: {{ $_job_name }}
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "015"
-{{- if .Values.custom_labels }}
   labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
@@ -119,7 +178,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:latest
+          image: quay.io/ibmmas/cli:{{ $_cli_image_tag }}
           imagePullPolicy: Always
           resources:
             limits:

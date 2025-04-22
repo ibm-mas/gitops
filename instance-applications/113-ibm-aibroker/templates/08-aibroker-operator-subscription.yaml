@@ -1,0 +1,43 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ibm-entitlement
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "146"
+type: Opaque
+stringData:
+  .dockerconfigjson: "{{ .Values.artifactory_token}}"
+  # icr_username: "{{ .Values.mas_entitlement_username }}"
+  # icr_password: "{{ .Values.mas_entitlement_key}}"
+  # artifactory_username: "{{ .Values.artifactory_username}}"
+  # artifactory_password: "{{ .Values.artifactory_token}}"
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: "{{ .Values.aibroker_namespace }}"
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "147"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  targetNamespaces:
+    - "{{ .Values.aibroker_namespace }}"
+
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: ibm-mas-aibroker
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "148"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  channel: "{{ .Values.mas_app_channel }}"
+  installPlanApproval: Automatic
+  name: ibm-mas-aibroker
+  source: "{{ .Values.mas_catalog_source }}"
+  sourceNamespace: openshift-marketplace

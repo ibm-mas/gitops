@@ -1,0 +1,39 @@
+---
+apiVersion: apps.mas.ibm.com/v1
+kind: AiBrokerApp
+metadata:
+    name: "{{ .Values.mas_instance_id }}"
+    namespace: "{{ .Values.aibroker_namespace }}"
+    labels:
+        mas.ibm.com/applicationId: aibroker
+        mas.ibm.com/instanceId: "{{ .Values.mas_instance_id }}"
+    annotations:
+        argocd.argoproj.io/sync-wave: "133"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+    settings:
+        icr:
+            cp: "{{ .Values.mas_icr_cp }}"
+            cpopen: "{{ .Values.mas_icr_cpopen }}"
+        dro:
+            url: "{{ .Values.drocfg_url }}"
+            dro_token_secret: "{{ .Values.drocfg_registration_key }}"
+            ca: "{{ .Values.drocfg_ca}}"
+        jdbc:
+            url: "{{ .Values.jdbccfg_url | b64enc }}"
+            credentials_secret: "{{ .Values.mas_aibroker_db2_jdbc_secret }}"
+            ca: "{{ .Values.jdbccfg_ca | b64enc }}"
+        cluster_domain: "{{ .Values.cluster_domain }}"
+        in_saas_env: "{{ .Values.in_saas_env }}"
+        minio: 
+            host: "{{ .Values.mas_aibroker_storage_host }}"
+            port: "{{ .Values.mas_aibroker_storage_port }}"
+            credentials_secret: "{{ .Values.mas_aibroker_minio_secret }}"
+            pipeline_bucket: "{{ .Values.mas_aibroker_storage_pipelines_bucket }}"
+            tenants_bucket: "{{ .Values.mas_aibroker_storage_tenants_bucket }}"
+            templates_bucket: "{{ .Values.mas_aibroker_storage_templates_bucket }}"
+        mariadb:
+            host: "{{ .Values.mas_aibroker_db_host }}"
+            port: "{{ .Values.mas_aibroker_db_port }}"
+            credentials_secret: "{{ .Values.mas_aibroker_mariadb_secret }}"
+            database_name: "{{ .Values.mas_aibroker_db_secret_name }}"

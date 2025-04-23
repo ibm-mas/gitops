@@ -351,8 +351,10 @@ spec:
                 is_backup_copied=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f /tmp/${backup_filename} ]; then echo 'true' else echo 'false'; fi"`
                 if [[ $is_backup_copied == 'true' ]]; then
                   echo "Validating the copied backup image"
-                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2ckbkp -H /tmp/${backup_filename}" db2inst1 || exit $?
-                else
+                  rc=0
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2ckbkp -H /tmp/${backup_filename}" db2inst1 || rc=$?
+                fi
+                if [[ $rc != 0 || $is_backup_copied == 'false' ]]; then
                   echo ""
                   echo "Copying backup /mnt/backup/standby/${backup_filename} from ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0 "
                   oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cp /mnt/backup/standby/${backup_filename} /tmp; chmod 777 /tmp/${backup_filename}" db2inst1 || exit $?

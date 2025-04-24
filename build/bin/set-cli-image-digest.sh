@@ -4,15 +4,15 @@
 
 function print_help() {
   cat << EOM
-Usage: set-cli-image-tag.sh [OPTION]
-Replace value of the \$_cli_image_tag constant with a given tag for all .yaml and .yml files in a given directory (and its sub-directories).
+Usage: set-cli-image-digest.sh [OPTION]
+Replace value of the \$_cli_image_digest constant with a given hash for all .yaml and .yml files in a given directory (and its sub-directories).
 
     -d, --root-dir   Directory to (recursively) search for .yml and .yaml files
-    -t, --tag        The new value for \$_cli_image_tag
+    -g, --digest     The new value for \$_cli_image_digest
     -h, --help       Print this help message and exit
 
 Example:
-    set-cli-image-tag.sh --root-dir /home/tom/workspace/gitops --tag 13.2.1
+    set-cli-image-digest.sh --root-dir /home/tom/workspace/gitops --digest 'sha256:53c53e53f5e7615fe219375d2600ba4601477bec392eebf5580ac0d518fe065c'
 EOM
 }
 
@@ -26,8 +26,8 @@ do
         ROOT_DIR=$1
         shift
         ;;
-        -t|--tag)
-        TAG=$1
+        -g|--digest)
+        DIGEST=$1
         shift
         ;;
         -h|--help)
@@ -43,7 +43,7 @@ do
 done
 
 : ${ROOT_DIR?"Need to set -d|--root-dir) argument"}
-: ${TAG?"Need to set -t|--tag argument"}
+: ${DIGEST?"Need to set -g|--digest argument"}
 
 scanned_count=0
 updated_count=0
@@ -51,9 +51,9 @@ for file in $(find ${ROOT_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \)); d
     (( scanned_count++ ))
     before_cksum=$(cksum "$file")
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -Ei '' 's/(\{\{-?[[:space:]]*\$_cli_image_tag[[:space:]]*:=[[:space:]]*")([^"]*)("[[:space:]]*\}\})/\1'${TAG}'\3/g' ${file}
+        sed -Ei '' 's/(\{\{-?[[:space:]]*\$_cli_image_digest[[:space:]]*:=[[:space:]]*")([^"]*)("[[:space:]]*\}\})/\1'${DIGEST}'\3/g' ${file}
     else
-        sed -Ei 's/(\{\{-?[[:space:]]*\$_cli_image_tag[[:space:]]*:=[[:space:]]*")([^"]*)("[[:space:]]*\}\})/\1'${TAG}'\3/g' ${file}
+        sed -Ei 's/(\{\{-?[[:space:]]*\$_cli_image_digest[[:space:]]*:=[[:space:]]*")([^"]*)("[[:space:]]*\}\})/\1'${DIGEST}'\3/g' ${file}
     fi
     after_cksum=$(cksum "$file")
     if [[ "$before_cksum" != "$after_cksum" ]]; then

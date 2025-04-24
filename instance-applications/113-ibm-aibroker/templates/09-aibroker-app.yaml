@@ -1,4 +1,36 @@
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: allow-aibrokerapp-access
+  namespace: mas-sremat-test-aibroker
+  annotations:
+        argocd.argoproj.io/sync-wave: "149"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aibrokerapp-reader
+subjects:
+- kind: ServiceAccount
+  name: ibm-mas-aibroker-operator
+  namespace: mas-sremat-aibroker
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aibrokerapp-reader
+  namespace: mas-sremat-test-aibroker
+  annotations:
+        argocd.argoproj.io/sync-wave: "150"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+rules:
+- apiGroups: ["apps.mas.ibm.com"]
+  resources: ["aibrokerapps"]
+  verbs: ["get", "list", "watch"]
+
+---
 apiVersion: apps.mas.ibm.com/v1
 kind: AiBrokerApp
 metadata:
@@ -8,7 +40,7 @@ metadata:
         mas.ibm.com/applicationId: aibroker
         mas.ibm.com/instanceId: "{{ .Values.mas_instance_id }}"
     annotations:
-        argocd.argoproj.io/sync-wave: "149"
+        argocd.argoproj.io/sync-wave: "151"
         argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
     # bindings:

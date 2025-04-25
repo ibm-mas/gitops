@@ -5,14 +5,14 @@ function print_help() {
 Usage: verify-job-definitions.sh [OPTION] [PATH]....
 
 Check that YAML files containing a reference to the quay.io/ibmmas/cli image conform to the following constraints:
-    - The \$_cli_image_tag constant is defined
-    - The \$_cli_image_tag constant is used for all quay.io/ibmmas/cli image tags
+    - The \$_cli_image_digest constant is defined and looks like a valid digest
+    - The \$_cli_image_digest constant is used for all quay.io/ibmmas/cli image tags
 
 Additional constraints are imposed for YAML files containing Job definitions that lack the argocd.argoproj.io/hook annotation, 
 or have the annotation but apply only the HookFailed argocd.argoproj.io/hook-delete-policy.
 
 These additional constraints are intended to protect against making changes to the Job
-(e.g. updating \$_cli_image_tag, or changing some other immutable Job field) without also updating the
+(e.g. updating \$_cli_image_digest, or changing some other immutable Job field) without also updating the
 Job name accordingly:
     - The \$_job_name_prefix constant is defined, and is at most 5 chars in length
     - The \$_job_config_values constant is defined
@@ -111,21 +111,22 @@ for file in ${files}; do
     fi
 
 
-    # Check $_cli_image_tag constant is defined (and is a string)
-    grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_cli_image_tag[[:space:]]*:=[[:space:]]*"[^"]+"[[:space:]]*\}\}' $file
+    # Check $_cli_image_digest constant is defined (and is a string that looks like a digest, e.g. <alg>:<hex>)
+    # NOTE: not validating actual alg or hex values; this is just enough to guard against accidental use of image tags here)
+    grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_cli_image_digest[[:space:]]*:=[[:space:]]*".+:.+"[[:space:]]*\}\}' $file
     rc=$?
     if [[ $rc != 0 ]]; then
-        problems='    Missing {{- $_cli_image_tag := "..." }}\n'
+        problems='    Missing {{- $_cli_image_digest := "..." }} or assigned value does not look like valid digest\n'
     fi
 
-    # Any line that has "quay.io/ibmmas/cli" must match quay.io/ibmmas/cli:{{ $_cli_image_tag }}
+    # Any line that has "quay.io/ibmmas/cli" must match quay.io/ibmmas/cli@{{ $_cli_image_digest }}
     while IFS= read -r cli_image_ref; do 
-        grep -Eq '\{\{-?[[:space:]]+\$_cli_image_tag[[:space:]]*\}\}' <<< "$cli_image_ref"
+        grep -Eq '@\{\{-?[[:space:]]+\$_cli_image_digest[[:space:]]*\}\}' <<< "$cli_image_ref"
         rc=$?
         if [[ $rc != 0 ]]; then
-            problems=${problems}'    Invalid CLI image tag found: "'${cli_image_ref}'" (should be "{{ $_cli_image_tag }}")\n'
+            problems=${problems}'    Invalid CLI image digest found: "'${cli_image_ref}'" (should be "@{{ $_cli_image_digest }}")\n'
         fi
-    done <<< "$(sed -En 's/.*quay\.io\/ibmmas\/cli:(.*)/\1/p' $file)"
+    done <<< "$(sed -En 's/.*quay\.io\/ibmmas\/cli(.*)/\1/p' $file)"
 
 
     # Attempt to dynamically detect if we can relax job naming restrictions for this file
@@ -193,10 +194,10 @@ for file in ${files}; do
         if [[ $rc == 0 ]]; then
             # check $_job_hash has correct value
             while IFS= read -r job_hash_value; do
-                grep -Eq '^[[:space:]]*print[[:space:]]+\([[:space:]]*\$_job_config_values[[:space:]]*\|[[:space:]]*toYaml[[:space:]]*\)[[:space:]]+\$_cli_image_tag[[:space:]]+\$_job_version[[:space:]]*\|[[:space:]]*adler32sum' <<< "$job_hash_value"
+                grep -Eq '^[[:space:]]*print[[:space:]]+\([[:space:]]*\$_job_config_values[[:space:]]*\|[[:space:]]*toYaml[[:space:]]*\)[[:space:]]+\$_cli_image_digest[[:space:]]+\$_job_version[[:space:]]*\|[[:space:]]*adler32sum' <<< "$job_hash_value"
                 rc=$?
                 if [[ $rc != 0 ]]; then
-                    problems=${problems}'    Invalid $_job_hash value found: "'${job_hash_value}'" (should be "print ($_job_config_values | toYaml) $_cli_image_tag $_job_version | adler32sum")\n'
+                    problems=${problems}'    Invalid $_job_hash value found: "'${job_hash_value}'" (should be "print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum")\n'
                 fi
             done <<< "$(sed -En 's/^[[:space:]]*\{\{-?[[:space:]]+\$_job_hash[[:space:]]*:=[[:space:]]*([^}]+)\}\}/\1/p' $file)"
         else

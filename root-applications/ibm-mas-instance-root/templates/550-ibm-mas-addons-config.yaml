@@ -1,4 +1,4 @@
-{{ if or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (.Values.replica_db) }}
+{{ if or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (not (empty .Values.ibm_db2u_databases)) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
@@ -42,7 +42,9 @@ spec:
             enhanced_dr: "{{ .Values.enhanced_dr }}"
             extensions: '{{ .Values.extensions }}'
             additional_vpn: "{{ .Values.additional_vpn }}"
-            replica_db: "{{ .Values.replica_db}}"
+            {{- if not (empty .Values.ibm_db2u_databases) }}
+            replica_db: "{{ .Values.ibm_db2u_databases.replica_db}}"
+            {{- end }}
             junitreporter:
               reporter_name: addons-{{ .Values.instance.id }}
               cluster_id: "{{ .Values.cluster.id }}"

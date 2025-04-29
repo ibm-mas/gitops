@@ -1,0 +1,112 @@
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: km-controller-role
+  namespace: "{{ .Values.tenantNamespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "310"
+rules:
+  - verbs:
+      - list
+    apiGroups:
+      - ''
+    resources:
+      - pods
+      - configmaps
+      - secrets
+  - verbs:
+      - delete
+    apiGroups:
+      - ''
+    resources:
+      - pods
+  - verbs:
+      - list
+    apiGroups:
+      - metrics.k8s.io
+    resources:
+      - nodes
+      - pods
+  - verbs:
+      - list
+    apiGroups:
+      - apps
+    resources:
+      - deployments
+  - verbs:
+      - list
+      - create
+      - delete
+    apiGroups:
+      - batch
+    resources:
+      - jobs
+      - cronjobs
+  - verbs:
+      - create
+      - list
+      - delete
+      - get
+      - patch
+    apiGroups:
+      - serving.kserve.io
+    resources:
+      - inferenceservices
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: km-controller-binding
+  namespace: "{{ .Values.tenantNamespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "311"
+subjects:
+  - kind: ServiceAccount
+    name: km-controller
+    namespace: "{{ .Values.aibroker_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: km-controller-role
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: km-watcher-role
+  namespace: "{{ .Values.tenantNamespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "312"
+rules:
+  - verbs:
+      - list
+      - watch
+    apiGroups:
+      - ''
+    resources:
+      - events
+      - pods
+  - verbs:
+      - list
+      - watch
+    apiGroups:
+      - batch
+    resources:
+      - cronjobs
+      - jobs
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: km-watcher-binding
+  namespace: "{{ .Values.tenantNamespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "313"
+subjects:
+  - kind: ServiceAccount
+    name: km-watcher
+    namespace: "{{ .Values.aibroker_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: km-watcher-role

@@ -43,10 +43,12 @@ spec:
             extensions: '{{ .Values.extensions }}'
             additional_vpn: "{{ .Values.additional_vpn }}"
             databases:
-            {{- range $key, $values := .Values.ibm_db2u_databases }}
-            - replica_db: {{ $values.replica_db }}
+            {{- range $val := .Values.ibm_db2u_databases }}
+            {{- if and (contains "sdb" $val.db2_instance_name) ($val.replica_db) }}
+            - mas_application_id: {{ $values.mas_application_id }}
+              replica_db: {{ $values.replica_db }}
               db2_instance_name: {{ $values.db2_instance_name }}
-              mas_application_id: {{ $values.mas_application_id }}
+            {{- end }}
             {{- end }}
             junitreporter:
               reporter_name: addons-{{ .Values.instance.id }}

@@ -1,69 +1,69 @@
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: "kmodel-pkcs12-password"
-  namespace: "{{ .Values.aibroker_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "166"
-type: Opaque
-data:
-  password: {{ .Values.ssh_secret_password | b64enc | quote }}
+# ---
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: "kmodel-pkcs12-password"
+#   namespace: "{{ .Values.aibroker_namespace }}"
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "166"
+# type: Opaque
+# data:
+#   password: {{ .Values.ssh_secret_password | b64enc | quote }}
 
----
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: "kmodel-ca-issuer"
-  namespace: "{{ .Values.aibroker_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "167"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  selfSigned: {}
+# ---
+# apiVersion: cert-manager.io/v1
+# kind: Issuer
+# metadata:
+#   name: "kmodel-ca-issuer"
+#   namespace: "{{ .Values.aibroker_namespace }}"
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "167"
+# {{- if .Values.custom_labels }}
+#   labels:
+# {{ .Values.custom_labels | toYaml | indent 4 }}
+# {{- end }}
+# spec:
+#   selfSigned: {}
 
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: "kmodel-certificate"
-  namespace: "{{ .Values.aibroker_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "168"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  secretName: "{{ .Values.ssh_secret_name }}"
-  duration: "175200h0m0s"
-  renewBefore: "2160h0m0s"
-  keystores:
-    pkcs12:
-      create: true
-      passwordSecretRef:
-        key: password
-        name: "kmodel-pkcs12-password"
+# ---
+# apiVersion: cert-manager.io/v1
+# kind: Certificate
+# metadata:
+#   name: "kmodel-certificate"
+#   namespace: "{{ .Values.aibroker_namespace }}"
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "168"
+# {{- if .Values.custom_labels }}
+#   labels:
+# {{ .Values.custom_labels | toYaml | indent 4 }}
+# {{- end }}
+# spec:
+#   secretName: "{{ .Values.ssh_secret_name }}"
+#   duration: "175200h0m0s"
+#   renewBefore: "2160h0m0s"
+#   keystores:
+#     pkcs12:
+#       create: true
+#       passwordSecretRef:
+#         key: password
+#         name: "kmodel-pkcs12-password"
 
-  issuerRef:
-    name: "kmodel-ca-issuer"
-    kind: Issuer
-  isCA: true
-  usages:
-    - cert sign
-    - digital signature
-    - key encipherment
-    - server auth
-  commonName: "ca.kmodel"
-  subject:
-    countries:
-      - GB
-    streetAddresses:
-      - London
-    localities:
-      - London
-    organizationalUnits:
-      - IBM Maximo Application Suite kmodel
+#   issuerRef:
+#     name: "kmodel-ca-issuer"
+#     kind: Issuer
+#   isCA: true
+#   usages:
+#     - cert sign
+#     - digital signature
+#     - key encipherment
+#     - server auth
+#   commonName: "ca.kmodel"
+#   subject:
+#     countries:
+#       - GB
+#     streetAddresses:
+#       - London
+#     localities:
+#       - London
+#     organizationalUnits:
+#       - IBM Maximo Application Suite kmodel

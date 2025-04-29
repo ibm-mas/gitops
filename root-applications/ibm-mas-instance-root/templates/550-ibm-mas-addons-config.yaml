@@ -42,8 +42,10 @@ spec:
             enhanced_dr: "{{ .Values.enhanced_dr }}"
             extensions: '{{ .Values.extensions }}'
             additional_vpn: "{{ .Values.additional_vpn }}"
-            {{- if not (empty .Values.ibm_db2u_databases) }}
-            replica_db: "{{ .Values.ibm_db2u_databases.replica_db}}"
+            {{- range $key, $value := .Values.ibm_db2u_databases }}
+            {{- if contains "sdb" $value.db2_instance_name }}
+            run_replica_db: true
+            {{- end }}
             {{- end }}
             junitreporter:
               reporter_name: addons-{{ .Values.instance.id }}

@@ -1,0 +1,120 @@
+{{- if not (empty .Values.ibm_aibroker_tenant) }}
+---
+# IBM Maximo aibroker-tenant 
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aibroker-tenant.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "050"
+    healthCheckTimeout: "1800"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: "{{ .Values.ibm_aibroker_tenant.aibroker_namespace }}"
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/114-ibm-aibroker-tenant
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            
+            mas_instance_id: "{{ .Values.ibm_aibroker_tenant.mas_instance_id }}"
+            aibroker_namespace: "{{ .Values.ibm_aibroker_tenant.aibroker_namespace }}"
+            ibm_entitlement_key: "{{ .Values.ibm_aibroker_tenant.ibm_entitlement_key }}"
+
+            # SAAS
+            aibroker_saas_apikey: "{{ .Values.ibm_aibroker_tenant.aibroker_saas_apikey }}"
+            in_saas_env: "{{ .Values.ibm_aibroker_tenant.in_saas_env }}"
+            mas_aibroker_saas: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_saas }}"
+            mas_aibroker_provision_tenant: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_provision_tenant }}"
+
+            # Tenant
+            mas_aibroker_tenant_name: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_tenant_name }}"
+            tenant_action: "{{ .Values.ibm_aibroker_tenant.tenant_action }}"
+            tenantNamespace: "{{ .Values.ibm_aibroker_tenant.tenantNamespace }}"
+
+            cluster_domain: "{{ .Values.ibm_aibroker_tenant.cluster_domain }}"
+            mas_icr_cp: "{{ .Values.ibm_aibroker_tenant.mas_icr_cp }}"
+            mas_icr_cpopen: "{{ .Values.ibm_aibroker_tenant.mas_icr_cpopen }}"
+
+            # DRO
+            mas_aibroker_dro_token_secret: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_dro_token_secret }}"
+            mas_aibroker_dro_cacert_secret: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_dro_cacert_secret }}"
+            drocfg:
+              url: "{{ .Values.ibm_aibroker_tenant.drocfg.url }}"
+              ca: "{{ .Values.ibm_aibroker_tenant.drocfg.ca }}"
+              registration_key: "{{ .Values.ibm_aibroker_tenant.drocfg.registration_key }}"
+
+            slscfg:
+              registration_key: "{{ .Values.ibm_aibroker_tenant.slscfg.registration_key }}"
+              url: "{{ .Values.ibm_aibroker_tenant.slscfg.url }}"
+              slsClientId: "{{ .Values.ibm_aibroker_tenant.slscfg.slsClientId }}"
+              ca: "{{ .Values.ibm_aibroker_tenant.slscfg.ca }}"
+              tls: "{{ .Values.ibm_aibroker_tenant.slscfg.tls }}"
+              key: "{{ .Values.ibm_aibroker_tenant.slscfg.key }}"
+
+
+            # WatsonX
+            mas_aibroker_watsonxai_apikey: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_watsonxai_apikey }}"
+            mas_aibroker_watsonxai_url: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_watsonxai_url }}"
+            mas_aibroker_watsonxai_project_id: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_watsonxai_project_id }}"
+
+            # SLS
+            mas_aibroker_sls_subscription_id: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_sls_subscription_id }}"
+
+            # S3
+            mas_aibroker_storage_provider: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_storage_provider }}"
+            mas_aibroker_storage_ssl: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_storage_ssl }}"
+            mas_aibroker_storage_accesskey: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_storage_accesskey }}"
+            mas_aibroker_storage_secretkey: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_storage_secretkey }}"
+            mas_aibroker_storage_host: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_storage_host }}"
+            mas_aibroker_storage_port: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_storage_port }}"
+            mas_aibroker_storage_region: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_storage_region }}"
+            mas_aibroker_storage_pipelines_bucket: "{{ .Values.ibm_aibroker_tenant.mas_aibroker_storage_pipelines_bucket }}"
+
+
+            junitreporter:
+              reporter_name: "ibm-aibroker-tenant-{{ .Values.instance.id }}"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+        - name: ARGOCD_APP_NAME
+          value: aibrokertenantapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,24 @@
+{{- if not (empty .Values.databases) }}
+---
+apiVersion: addons.mas.ibm.com/v1
+kind: GenericAddon
+metadata:
+  name: "{{ .Values.instance_id }}-addons-replica-db"
+  namespace: "mas-{{ .Values.instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/sync-wave: "555"
+  labels:
+    mas.ibm.com/configScope: system
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  displayName: "{{ .Values.instance_id }}-Replicadb"
+  addonType: replica-db
+  config:
+    instances:
+    {{- range $key, $value := .Values.databases }}
+      - name: "{{ $.Values.instance_id }}-{{ $value.mas_application_id }}"
+    {{- end }}
+{{- end }}

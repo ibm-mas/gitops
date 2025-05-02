@@ -1,10 +1,10 @@
-{{ if or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) }}
+{{ if or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (not (empty .Values.ibm_db2u_databases)) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: addons-{{ .Values.cluster.id }}-{{ .Values.instance.id }}
+  name: addons.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -42,6 +42,16 @@ spec:
             enhanced_dr: "{{ .Values.enhanced_dr }}"
             extensions: '{{ .Values.extensions }}'
             additional_vpn: "{{ .Values.additional_vpn }}"
+            databases:
+            {{- range $val := .Values.ibm_db2u_databases }}
+            {{- if and (contains "sdb" $val.db2_instance_name) ($val.replica_db) }}
+            - mas_application_id: {{ $val.mas_application_id }}
+              replica_db: {{ $val.replica_db }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
             junitreporter:
               reporter_name: addons-{{ .Values.instance.id }}
               cluster_id: "{{ .Values.cluster.id }}"

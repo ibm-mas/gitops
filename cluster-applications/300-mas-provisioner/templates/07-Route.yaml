@@ -1,0 +1,25 @@
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: "mas-provisioner-service-{{ .Values.provisioner_namespace }}"
+  namespace: "{{ .Values.provisioner_namespace }}"
+  labels:
+    type: external
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "307"
+spec:
+  host: "mas-provisioner-service-{{ .Values.provisioner_namespace }}.{{ .Values.cluster_domain }}"
+  to:
+    kind: Service
+    name: mas-provisioner-service
+    weight: 100
+  port:
+    targetPort: {{ .Values.service_port }}
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: None
+  wildcardPolicy: None

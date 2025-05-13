@@ -1,8 +1,9 @@
+{{- if not (empty .Values.ibm_cp4d) }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: syncjobs.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: syncjobs.cp4d.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -10,7 +11,7 @@ metadata:
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "010"
+    argocd.argoproj.io/sync-wave: "101"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
@@ -31,7 +32,7 @@ spec:
     namespace: default
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/010-ibm-sync-jobs
+    path: instance-applications/101-ibm-sync-jobs-cp4d
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
@@ -45,58 +46,14 @@ spec:
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             sm_aws_region: "{{ .Values.region.id }}"
-            {{- if not (empty .Values.ibm_sls) }}
-            {{- if eq .Values.ibm_sls.mongodb_provider "aws" }}
-            docdb:
-              master_username: "{{ .Values.ibm_sls.docdb_master_username }}"
-              master_password: "{{ .Values.ibm_sls.docdb_master_password }}"
-              instance_password: "{{ .Values.ibm_sls.sls_mongo_password }}"
-              master_info: {{ .Values.ibm_sls.docdb_master_info }}
-            {{- end }}
-            {{- end }}
-
-            {{- if not (empty .Values.ibm_mas_suite) }}
-            
-            mas_manual_cert_mgmt: {{ .Values.ibm_mas_suite.mas_manual_cert_mgmt   }}
-            dns_provider: "{{ .Values.ibm_mas_suite.dns_provider }}"
-            mas_workspace_id: "{{ .Values.ibm_mas_suite.mas_workspace_id }}"
-            mas_config_dir: "{{ .Values.ibm_mas_suite.mas_config_dir }}"
-            mas_domain: "{{ .Values.ibm_mas_suite.mas_domain }}"
-            ocp_cluster_domain: "{{ .Values.ibm_mas_suite.ocp_cluster_domain }}"
-            cis_apikey: "{{ .Values.ibm_mas_suite.cis_apikey }}"
-            cis_crn: "{{ .Values.ibm_mas_suite.cis_crn }}"
-
-            cis_email: "{{ .Values.ibm_mas_suite.cis_email }}"
-            cis_subdomain: "{{ .Values.ibm_mas_suite.cis_subdomain }}"
-            cis_mas_domain: "{{ .Values.ibm_mas_suite.cis_mas_domain }}"
-            cis_enhanced_security: "{{ .Values.ibm_mas_suite.cis_enhanced_security }}"
-            cis_waf: "{{ .Values.ibm_mas_suite.cis_waf }}"
-            cis_proxy: "{{ .Values.ibm_mas_suite.cis_proxy }}"
-            cis_service_name: "{{ .Values.ibm_mas_suite.cis_service_name }}"
-
-
-            {{- if .Values.override_dns_cis_flags_to_false }}
-            update_dns_entries: "false"
-            delete_wildcards: "false"
-            override_edge_certs: "false"
-            {{- else }}
-            update_dns_entries: "{{ .Values.ibm_mas_suite.update_dns_entries }}"
-            delete_wildcards: "{{ .Values.ibm_mas_suite.delete_wildcards }}"
-            override_edge_certs: "{{ .Values.ibm_mas_suite.override_edge_certs }}"
-            {{- end}}
-
-            {{- if .Values.ibm_mas_suite.manual_certs }}
-            manual_certs: {{ .Values.ibm_mas_suite.manual_certs | toYaml | nindent 14 }}
-            {{- end }}
-
-            {{- end }}
+            cpd_product_version: "{{ .Values.ibm_cp4d.cpd_product_version }}"
 
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
 
             junitreporter:
-              reporter_name: "ibm-sync-jobs-{{ .Values.instance.id }}"
+              reporter_name: "ibm-sync-jobs-cp4d-{{ .Values.instance.id }}"
               cluster_id: "{{ .Values.cluster.id }}"
               instance_id: "{{ .Values.instance.id }}"
               devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
@@ -107,7 +64,7 @@ spec:
 
 
         - name: ARGOCD_APP_NAME
-          value: syncres
+          value: syncjobscp4d
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}
@@ -123,3 +80,4 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - RespectIgnoreDifferences=true
+{{- end }}

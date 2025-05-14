@@ -27,7 +27,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v4" }}
+{{- $_job_version := "v5" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -190,6 +190,15 @@ spec:
 
               source /mascli/functions/gitops_utils
 
+              var PRIMARY_HADR_ROLE=''
+              var PRIMARY_HADR_STATE=''
+              var PRIMARY_HADR_STATUS=''
+              var PRIMARY_HADR_STATUS_TIME=''
+              var STANDBY_HADR_ROLE=''
+              var STANDBY_HADR_STATE=''
+              var STANDBY_HADR_STATUS=''
+              var STANDBY_HADR_STATUS_TIME=''
+
               function wait_for_resource {
                 RES_TYPE="$1"
                 RES_NAME="$2"
@@ -276,6 +285,37 @@ spec:
                 return 1
               }
 
+              function get_existing_hadr_config() {
+                PRIMARY_HADR=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2pd -db bludb -hadr | egrep "HADR_CONNECT_STATUS|HADR_STATE|HADR_ROLE" | cut -d'=' -f2 | tr -d ' '" db2inst1`
+                PRIMARY_HADR_ARR=(${PRIMARY_HADR})
+                PRIMARY_HADR_ROLE=${PRIMARY_HADR_ARR[0]}
+                PRIMARY_HADR_STATE=${PRIMARY_HADR_ARR[1]}
+                PRIMARY_HADR_STATUS=${PRIMARY_HADR_ARR[2]}
+                PRIMARY_HADR_STATUS_TIME=$(PRIMARY_HADR_ADD[3])
+                STANDBY_HADR=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc db2pd -db bludb -hadr | egrep "HADR_CONNECT_STATUS|HADR_STATE|HADR_ROLE" | cut -d'=' -f2 | tr -d ' '" db2inst1`
+                STANDBY_HADR_ARR=(${STANDBY_HADR})
+                STANDBY_HADR_ROLE=${STANDBY_HADR_ARR[0]}
+                STANDBY_HADR_STATE=${STANDBY_HADR_ARR[1]}
+                STANDBY_HADR_STATUS=${STANDBY_HADR_ARR[2]}
+                STANDBY_HADR_STATUS_TIME=$(STANDBY_HADR_ADD[3])
+
+                echo ""
+                echo "================================================================================"
+                echo "Primary DB2 HADR config"
+                echo "Primary HADR Role - ${PRIMARY_HADR_ROLE}"
+                echo "Primary HADR State - ${PRIMARY_HADR_STATE}"
+                echo "Primary HADR Connect Status - ${PRIMARY_HADR_STATUS}"
+                echo "================================================================================"
+
+                echo ""
+                echo "================================================================================"
+                echo "Standby DB2 HADR config"
+                echo "Standby HADR Role - ${STANDBY_HADR_ROLE}"
+                echo "Standby HADR State - ${STANDBY_HADR_STATE}"
+                echo "Standby HADR Connect Status - ${STANDBY_HADR_STATUS}"
+                echo "================================================================================"
+              }
+
               PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
 
               echo ""
@@ -314,11 +354,33 @@ spec:
               echo "================================================================================"
               wait_for_resource "svc" "c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
 
-              PRIMARY_ROLE=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 get db cfg for BLUDB | grep role | cut -d'=' -f2 | tr -d ' '" db2inst1`
-              STANDBY_ROLE=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 get db cfg for BLUDB | grep role | cut -d'=' -f2 | tr -d ' '" db2inst1`
+
+              # Get HADR ROLE and CONNECT STATUS for Primary and Standby
+              get_existing_hadr_config
+
+              # Always check standby and check if CONNECT STATUS is CONNECTED.
+              # If disconnected, check if we can restart hadr config in both primary and standby. Validate the o/p.
+              # If the state is still not CONnected, throw an error saying it needs to be manually resolved
+              # Check if there is a way to copy the backup from primary to standby directly?
 
               is_backup_file_available='false'
-              if [[ ! ($PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY') ]]; then
+              if [[ ! ($PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY' && STANDBY_HADR_STATE == 'CONNECTED') ]]; then
+
+                # If for some reason HADR got disconnected
+                if [[ $STANDBY_ROLE == 'STANDBY' && STANDBY_HADR_STATE == 'DISCONNECTED' ]]; then
+                  echo "HADR is in DISCONNECTED state. Trying to restart the HADR service"
+                  restart_hadr
+                  # validate the configs in primary and standby again
+                  get_existing_hadr_config
+                  if [[ $PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY' && STANDBY_HADR_STATE == 'CONNECTED' ]]; then
+                    echo "HADR services are restored"
+                    exit 0
+                  else
+                    echo "HADR services are not restored. Kindly check"
+                    exit 1
+                  fi
+                fi
+
                 echo "Checking if a backup already exists on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
                 is_backup_log_available=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f /mnt/backup/standby/dbbackup.log ]; then echo 'true'; else echo 'false'; fi"`
                 if [[ $is_backup_log_available == 'true' ]]; then
@@ -360,12 +422,14 @@ spec:
                     echo "The earlier copied backup is a valid image"
                   fi
                 fi
+
                 if [[ $rc != 0 || $is_backup_copied == 'false' ]]; then
                   echo ""
                   echo "Copying backup /mnt/backup/standby/${backup_filename} from ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0 "
                   oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cp /mnt/backup/standby/${backup_filename} /tmp; chmod 777 /tmp/${backup_filename}" db2inst1 || exit $?
-                  oc cp ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename} /tmp/${backup_filename}
-                  oc cp /tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
+                  oc cp ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
+                  # oc cp ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename} /tmp/${backup_filename}
+                  # oc cp /tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
                 fi
 
                 echo ""

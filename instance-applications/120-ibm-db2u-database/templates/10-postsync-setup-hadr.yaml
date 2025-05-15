@@ -454,17 +454,17 @@ spec:
                     # fi
 
                     # copy backup from cos bucket to standby
+                    storage_access=''
                     echo "Getting storage access details in standby"
-                    storage_access=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 list storage access" db2inst1`
+                    storage_access=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 list storage access" db2inst1` || exit 0
                     echo "storage access of standby - ${storage_access}"
                     if echo ${storage_access} | grep PRIMARYCOS; then
                         echo "PRIMARYCOS is available already."
                         oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 uncatalog storage access alias PRIMARYCOS" db2inst1 || exit $?
                     else
                         echo "PRIMARYCOS is not available. Creating"
-                        oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 catalog storage access alias PRIMARYCOS VENDOR S3 server ${SERVER} user ${PARM1} password ${PARM2} container ${CONTAINER} | tee /tmp/storageaccess.log" db2inst1 || exit $?
                     fi
-
+                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 catalog storage access alias PRIMARYCOS VENDOR S3 server ${SERVER} user ${PARM1} password ${PARM2} container ${CONTAINER} | tee /tmp/storageaccess.log" db2inst1 || exit $?
                     oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/primary-backup; db2RemStgManager ALIAS GET source=DB2REMOTE://PRIMARYCOS//${TARGET} target=/mnt/backup/primary-backup/${backup_filename} | tee /tmp/backupdownload.log" db2inst1 || exit $?
 
 

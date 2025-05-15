@@ -181,6 +181,8 @@ spec:
               value: "{{ .Values.db2_instance_name }}"
             - name: DB2_DBNAME
               value: "{{ .Values.db2_dbname }}"
+            - name: DB2_BACKUP_INSTALL
+              value: 'true'
           command:
             - /bin/sh
             - -c
@@ -426,10 +428,49 @@ spec:
                 if [[ $rc != 0 || $is_backup_copied == 'false' ]]; then
                   echo ""
                   echo "Copying backup /mnt/backup/standby/${backup_filename} from ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0 "
-                  oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cp /mnt/backup/standby/${backup_filename} /tmp; chmod 777 /tmp/${backup_filename}" db2inst1 || exit $?
-                  oc cp ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
-                  # oc cp ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename} /tmp/${backup_filename}
-                  # oc cp /tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
+                  # check if cos bucket is configured.
+                  # if available, use that to transfer backup image to standby
+                  # else copy using oc copy
+                  if [[ ${DB2_BACKUP_INSTALL} == 'true' ]]; then
+
+                    # Reading source props
+                    PROPS=oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/bin/.PROPS | egrep 'SERVER|PARM1|PARM2|CONTAINER' | grep -v '#'" db2inst1 || exit $?
+                    SERVER=`echo ${PROPS} | grep SERVER | cut -d'=' -f2 | tr -d ' '`
+                    PARM1=`echo ${PROPS} | grep PARM1 | cut -d'=' -f2 | tr -d ' '`
+                    PARM2=`echo ${PROPS} | grep PARM2 | cut -d'=' -f2 | tr -d ' '`
+                    CONTAINER=`echo ${PROPS} | grep CONTAINER | cut -d'=' -f2 | tr -d ' '`
+
+                    # copy backup from primary to cos bucket
+                    SOURCE=/mnt/backup/standby/${backup_filename}
+                    TARGET=backups-manage/${HOSTNAME}/copy-to-standby/${backup_filename}
+
+                    DB2V=oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2level | grep Inform | awk '{print $5}' | sed 's/\",//'" db2inst1 || exit $?
+                    echo "DB2 version is ${DB2V}"
+                    if [ ${DB2V} = "v11.5.7.0" ] #MAYBE REMOVED. I HOPE THIS VERSION IS NOT INSTALLED IN DB2
+                    then
+                      oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager S3 put server=${SERVER} auth1=${PARM1} auth2=${PARM2} container=${CONTAINER} source=${SOURCE} target=${TARGET}" db2inst1 || exit $?
+                    else
+                      oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager ALIAS PUT source=${SOURCE} target=DB2REMOTE://AWSCOS//${TARGET} | tee /tmp/backupupload.log" db2inst1 || exit $?
+                    fi
+
+                    # copy backup from cos bucket to standby
+                    storage_access=oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 list storage access" db2inst1 || exit $?
+                    if echo ${storage_access} | grep PRIMARYCOS; then
+                        echo "PRIMARYCOS is available already."
+                        oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 uncatalog storage access alias PRIMARYCOS" db2inst1 || exit $?
+                    else
+                        echo "PRIMARYCOS is not available. Creating"
+                        oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 catalog storage access alias PRIMARYCOS VENDOR S3 server ${SERVER} user ${PARM1} password ${PARM2} container ${CONTAINER} | tee /tmp/storageaccess.log" db2inst1 || exit $?
+                    fi
+
+                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/primary-backup; db2RemStgManager ALIAS GET source=DB2REMOTE://PRIMARYCOS//${TARGET} target=/mnt/backup/primary-backup/${backup_filename} | tee /tmp/backupdownload.log" db2inst1 || exit $?
+
+
+                  else
+                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cp /mnt/backup/standby/${backup_filename} /tmp; chmod 777 /tmp/${backup_filename}" db2inst1 || exit $?
+                    oc cp ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename} /tmp/${backup_filename}
+                    oc cp /tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
+                  fi
                 fi
 
                 echo ""

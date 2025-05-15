@@ -4,15 +4,25 @@ kind: Deployment
 metadata:
   name: mas-provisioner
   namespace: "{{ .Values.provisioner_namespace }}"
-{{- if .Values.custom_labels }}
   labels:
+    app: mas-provisioner
+    component: product-service-broker
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "306"
 spec:
+  selector:
+    matchLabels:
+      app: mas-provisioner
+      component: product-service-broker
   replicas: 1
   template:
+    metadata:
+      labels:
+        app: mas-provisioner
+        component: product-service-broker
     spec:
       securityContext:
         runAsNonRoot: true

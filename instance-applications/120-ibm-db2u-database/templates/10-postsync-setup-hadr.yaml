@@ -452,7 +452,7 @@ spec:
 
                     # copy backup from primary to cos bucket
                     SOURCE=/mnt/backup/standby/${backup_filename}
-                    TARGET=backups-manage/${HOSTNAME}/copy-to-standby/${backup_filename}
+                    TARGET=backups-manage/${MAS_INSTANCE_ID}/copy-to-standby/${backup_filename}
 
                     # DB2V=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2level | grep Inform | awk '{print $5}' | sed 's/\",//'" db2inst1`
                     # echo "DB2 version is ${DB2V}"
@@ -521,7 +521,7 @@ spec:
                 echo ""
                 echo "Restoring ${timestamp} in standby server"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 force applications all; db2 terminate; db2 deactivate db ${DB2_DBNAME}; db2 drop db ${DB2_DBNAME}; db2 restore db ${DB2_DBNAME} from /tmp taken at ${timestamp} with 15 buffers buffer 4096 parallelism 15 encrypt without prompting" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 force applications all; db2 terminate; db2 deactivate db ${DB2_DBNAME}; db2 drop db ${DB2_DBNAME}; db2 restore db ${DB2_DBNAME} from /mnt/backup/primary-backup taken at ${timestamp} with 15 buffers buffer 4096 parallelism 15 encrypt without prompting" db2inst1 || exit $?
               else
                 echo "HADR is already setup. Hence skipping the restore on standby"
               fi

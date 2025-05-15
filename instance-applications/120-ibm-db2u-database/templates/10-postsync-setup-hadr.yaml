@@ -434,7 +434,7 @@ spec:
                   if [[ ${DB2_BACKUP_INSTALL} == 'true' ]]; then
 
                     # Reading source props
-                    PROPS=oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/bin/.PROPS | egrep 'SERVER|PARM1|PARM2|CONTAINER' | grep -v '#'" db2inst1 || exit $?
+                    PROPS=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/bin/.PROPS | egrep 'SERVER|PARM1|PARM2|CONTAINER' | grep -v '#'" db2inst1`
                     SERVER=`echo ${PROPS} | grep SERVER | cut -d'=' -f2 | tr -d ' '`
                     PARM1=`echo ${PROPS} | grep PARM1 | cut -d'=' -f2 | tr -d ' '`
                     PARM2=`echo ${PROPS} | grep PARM2 | cut -d'=' -f2 | tr -d ' '`
@@ -444,7 +444,7 @@ spec:
                     SOURCE=/mnt/backup/standby/${backup_filename}
                     TARGET=backups-manage/${HOSTNAME}/copy-to-standby/${backup_filename}
 
-                    DB2V=oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2level | grep Inform | awk '{print $5}' | sed 's/\",//'" db2inst1 || exit $?
+                    DB2V=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2level | grep Inform | awk '{print $5}' | sed 's/\",//'" db2inst1`
                     echo "DB2 version is ${DB2V}"
                     if [ ${DB2V} = "v11.5.7.0" ] #MAYBE REMOVED. I HOPE THIS VERSION IS NOT INSTALLED IN DB2
                     then
@@ -454,7 +454,7 @@ spec:
                     fi
 
                     # copy backup from cos bucket to standby
-                    storage_access=oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 list storage access" db2inst1 || exit $?
+                    storage_access=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 list storage access" db2inst1`
                     if echo ${storage_access} | grep PRIMARYCOS; then
                         echo "PRIMARYCOS is available already."
                         oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 uncatalog storage access alias PRIMARYCOS" db2inst1 || exit $?

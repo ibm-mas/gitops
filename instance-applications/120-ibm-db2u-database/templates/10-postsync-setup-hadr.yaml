@@ -435,10 +435,18 @@ spec:
 
                     # Reading source props
                     PROPS=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/bin/.PROPS | egrep 'SERVER|PARM1|PARM2|CONTAINER' | grep -v '#'" db2inst1`
-                    SERVER=`echo ${PROPS} | grep SERVER | cut -d'=' -f2 | tr -d ' '`
-                    PARM1=`echo ${PROPS} | grep PARM1 | cut -d'=' -f2 | tr -d ' '`
-                    PARM2=`echo ${PROPS} | grep PARM2 | cut -d'=' -f2 | tr -d ' '`
-                    CONTAINER=`echo ${PROPS} | grep CONTAINER | cut -d'=' -f2 | tr -d ' '`
+                    PROPS_ARR=(${PROPS})
+                    for prop in "${PROPS_ARR[@]}"
+                    do
+                      echo $prop
+                      export $prop
+                    done
+                    echo $SERVER $PARM1 $PARM2 $CONTAINER
+                    # SERVER=`echo (${PROPS}) | grep SERVER | cut -d'=' -f2 | tr -d ' '`
+                    # echo $SERVER
+                    # PARM1=`echo ${PROPS} | grep PARM1 | cut -d'=' -f2 | tr -d ' '`
+                    # PARM2=`echo ${PROPS} | grep PARM2 | cut -d'=' -f2 | tr -d ' '`
+                    # CONTAINER=`echo ${PROPS} | grep CONTAINER | cut -d'=' -f2 | tr -d ' '`
 
                     # copy backup from primary to cos bucket
                     SOURCE=/mnt/backup/standby/${backup_filename}

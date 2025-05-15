@@ -94,15 +94,21 @@ spec:
             - name: tls-certs
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/tls
+            {{- if not (empty .Values.github_token) }}
             - name: git
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/git
+            {{- end }}
+            {{- if and .Values.enable_pd_alert (.Values.pd_key) }}
             - name: pd-key
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/pdkey
+            {{- end }}
+            {{- if not (empty .Values.csb_client_ca) }}
             - name: csb-client-ca
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/cert
+            {{- end }}
       serviceAccountName: mas-provisioner-sa
       imagePullSecrets:
         - name: ibm-entitlement
@@ -110,13 +116,19 @@ spec:
         - name: tls-certs
           secret:
             secretName: mas-provisioner-certificate
+        {{- if not (empty .Values.github_token) }}
         - name: git
           secret:
             secretName: git-secret
+        {{- end }}
+        {{- if and .Values.enable_pd_alert (.Values.pd_key) }}
         - name: pd-key
           secret:
             secretName: pd-routing-key-secret
+        {{- end }}
+        {{- if not (empty .Values.csb_client_ca) }}
         - name: csb-client-ca
           secret:
             secretName: csb-ca
+        {{- end }}
       terminationGracePeriodSeconds: 60

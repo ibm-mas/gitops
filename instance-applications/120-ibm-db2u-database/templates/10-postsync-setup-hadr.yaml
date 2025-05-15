@@ -411,11 +411,11 @@ spec:
                 fi
 
                 echo "Checking if backup file was copied already to standby c-${DB2_INSTANCE_NAME}-db2u-0"
-                is_backup_copied=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f /tmp/${backup_filename} ]; then echo 'true'; else echo 'false'; fi"`
+                is_backup_copied=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f /mnt/backup/primary-backup/${backup_filename} ]; then echo 'true'; else echo 'false'; fi"`
                 if [[ $is_backup_copied == 'true' ]]; then
                   echo "Earlier copied backup is available in standby. Validating the backup file"
                   rc=0
-                  bkp_validation=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2ckbkp -h /tmp/${backup_filename};" db2inst1`
+                  bkp_validation=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2ckbkp -h /mnt/backup/primary-backup/${backup_filename};" db2inst1`
                   echo $bkp_validation
                   if [[ $bkp_validation == *"ERROR"* ]]; then
                     echo "The earlier copied backup is not a valid image."
@@ -482,6 +482,7 @@ spec:
                     oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cp /mnt/backup/standby/${backup_filename} /tmp; chmod 777 /tmp/${backup_filename}" db2inst1 || exit $?
                     oc cp ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename} /tmp/${backup_filename}
                     oc cp /tmp/${backup_filename} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${backup_filename}
+                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/primary-backup; cp /tmp/${backup_filename} /mnt/backup/primary-backup/${backup_filename}"
                   fi
                 fi
 

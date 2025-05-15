@@ -444,14 +444,14 @@ spec:
                     SOURCE=/mnt/backup/standby/${backup_filename}
                     TARGET=backups-manage/${HOSTNAME}/copy-to-standby/${backup_filename}
 
-                    DB2V=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2level | grep Inform | awk '{print $5}' | sed 's/\",//'" db2inst1`
-                    echo "DB2 version is ${DB2V}"
-                    if [ ${DB2V} = "v11.5.7.0" ] #MAYBE REMOVED. I HOPE THIS VERSION IS NOT INSTALLED IN DB2
-                    then
-                      oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager S3 put server=${SERVER} auth1=${PARM1} auth2=${PARM2} container=${CONTAINER} source=${SOURCE} target=${TARGET}" db2inst1 || exit $?
-                    else
-                      oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager ALIAS PUT source=${SOURCE} target=DB2REMOTE://AWSCOS//${TARGET} | tee /tmp/backupupload.log" db2inst1 || exit $?
-                    fi
+                    # DB2V=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2level | grep Inform | awk '{print $5}' | sed 's/\",//'" db2inst1`
+                    # echo "DB2 version is ${DB2V}"
+                    # if [ ${DB2V} = "v11.5.7.0" ] #MAYBE REMOVED. I HOPE THIS VERSION IS NOT INSTALLED IN DB2
+                    # then
+                    #   oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager S3 put server=${SERVER} auth1=${PARM1} auth2=${PARM2} container=${CONTAINER} source=${SOURCE} target=${TARGET}" db2inst1 || exit $?
+                    # else
+                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager ALIAS PUT source=${SOURCE} target=DB2REMOTE://AWSCOS//${TARGET} | tee /tmp/backupupload.log" db2inst1 || exit $?
+                    # fi
 
                     # copy backup from cos bucket to standby
                     storage_access=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 list storage access" db2inst1`

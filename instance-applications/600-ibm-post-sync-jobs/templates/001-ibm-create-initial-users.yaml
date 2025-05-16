@@ -1,0 +1,316 @@
+{{- if not (empty .Values.mas_workspace_id) }}
+{{- if .Values.mas_is_active }}
+
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "ibm-create-initial-users" }}
+
+{{- /*
+Use the build/bin/set-cli-image-tag.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+13.22.1-amd64 - includes mas-devops-create-initial-users script from https://github.com/ibm-mas/python-devops/pull/66
+*/}}
+{{- $_cli_image_digest := "sha256:3735885b3b9d46fcf6408c008768cc04faf2e28c1fa5f6da7c5f969931e2d3cd" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Since jobs must be idemopotent, it's generally safe to pass in values here that are not
+strictly necessary (i.e. including some values that don't actually influence job behaviour).
+We may want to refine this further though for jobs that can take a long time to complete.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v4" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
+This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
+immutable field of any existing Job resource.
+*/}}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
+{{- /*
+Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+
+When the auto_delete flag is not set on the root application, a CronJob in the cluster uses this label 
+to identify old Job resources that should be pruned on behalf of ArgoCD.
+
+Any Job resources in the same namespace that have the mas.ibm.com/job-cleanup-group with this value
+will be considered to belong to the same cleanup group. All but the most recent (i.e. with the latest "creation_timestamp")
+Jobs will be automatically deleted.
+
+$_job_cleanup_group can usually just be based on $_job_name_prefix. There are some special cases
+where multiple Jobs are created in our templates using a Helm loop. In those cases, additional descriminators
+must be added to $_job_cleanup_group.
+
+By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators are required here.
+
+*/}}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+
+
+{{ $ns :=               printf "mas-%s-postsyncjobs" .Values.instance_id }}
+{{ $ns_core :=          printf "mas-%s-core"  .Values.instance_id }}
+{{ $ns_manage :=        printf "mas-%s-manage"  .Values.instance_id }}
+{{ $aws_secret :=       "aws"}}
+{{ $np_name :=          printf "%s-np" $_job_name_prefix }}
+{{ $role_core_name :=   printf "%s-r-core"  $_job_name_prefix }}
+{{ $role_manage_name := printf "%s-r-manage"  $_job_name_prefix }}
+{{ $sa_name :=          printf "%s-sa" $_job_name_prefix }}
+{{ $rb_core_name :=     printf "%s-rb-core" $_job_name_prefix }}
+{{ $rb_manage_name :=   printf "%s-rb-manage" $_job_name_prefix }}
+{{ $job_label :=        printf "%s-l"  $_job_name_prefix }}
+
+
+
+
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key }}
+  aws_default_region: {{ .Values.sm_aws_region }}
+type: Opaque
+
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API, AWS SM and internal services)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+
+---
+# needs to read the following secrets
+#   mas-{i}-core
+#     {i}-credentials-superuser in 
+#     {i}-admindashboard-cert-internal
+#     {i}-coreapi-cert-internal
+#   mas-{i}-manage
+#     {i}-internal-manage-tls
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+
+---
+
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_core_name }}
+  namespace: {{ $ns_core }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $rb_core_name }}
+  namespace: {{ $ns_core }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "001"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  kind: Role
+  name: {{ $role_core_name }}
+  apiGroup: rbac.authorization.k8s.io
+
+
+{{- /*
+mas-devops-create-initial-users-for-saas script run by the Job requires access to the xxx-internal-manage-tls
+secret in the manage namespace so it can create an API Key for the MAXADMIN user
+Since these roles must be created in the manage namespace, we only attempt to create them if Manage is actually installed.
+*/}}
+{{- if .Values.manage_is_installed }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_manage_name }}
+  namespace: {{ $ns_manage }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $rb_manage_name }}
+  namespace: {{ $ns_manage }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "001"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  kind: Role
+  name: {{ $role_manage_name }}
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "002"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: {{ $_job_name_prefix }}
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+
+          env:
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+            - name: MAS_WORKSPACE_ID
+              value: "{{ .Values.mas_workspace_id }}"
+
+            - name: SECRETS_KEY_SEPERATOR
+              value: "/"
+
+            - name: SM_AWS_REGION
+              value: "{{ .Values.sm_aws_region }}"
+
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+
+          volumeMounts:
+            - name: "aws"
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              source /mascli/functions/gitops_utils
+              sm_login
+
+              mas-devops-create-initial-users-for-saas \
+                  --mas-instance-id "${MAS_INSTANCE_ID}" \
+                  --mas-workspace-id "${MAS_WORKSPACE_ID}" \
+                  --initial-users-secret-name "${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/initial_users"
+              rc=$?
+              exit $rc
+
+      restartPolicy: Never
+
+      serviceAccountName: "{{ $sa_name }}"
+      volumes:
+        - name: "aws"
+          secret:
+            secretName: "{{ $aws_secret }}"
+            defaultMode: 420
+            optional: false
+
+  backoffLimit: 4
+
+{{- end }}
+{{- end }}

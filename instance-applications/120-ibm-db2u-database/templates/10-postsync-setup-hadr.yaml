@@ -181,8 +181,8 @@ spec:
               value: "{{ .Values.db2_instance_name }}"
             - name: DB2_DBNAME
               value: "{{ .Values.db2_dbname }}"
-            - name: DB2_BACKUP_INSTALL
-              value: 'true'
+            - name: AUTO_BACKUP
+              value: "{{ .Values.auto_backup }}"
           command:
             - /bin/sh
             - -c
@@ -435,43 +435,26 @@ spec:
                   # check if cos bucket is configured.
                   # if available, use that to transfer backup image to standby
                   # else copy using oc copy
-                  if [[ ${DB2_BACKUP_INSTALL} == 'true' ]]; then
+                  if [[ ${AUTO_BACKUP} == 'true' ]]; then
 
                     # Reading source props
                     echo "Getting props"
                     PROPS=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/bin/.PROPS | egrep 'SERVER|PARM1|PARM2|CONTAINER' | grep -v '#'" db2inst1`
                     PROPS_ARR=(${PROPS})
-                    echo "PROPS ARRAY - ${PROPS_ARR[@]}"
                     for prop in "${PROPS_ARR[@]}"
                     do
-                      echo $prop
                       export $prop
                     done
-                    echo "PROPS PARAMS - $SERVER $PARM1 $PARM2 $CONTAINER"
-                    # SERVER=`echo (${PROPS}) | grep SERVER | cut -d'=' -f2 | tr -d ' '`
-                    # echo $SERVER
-                    # PARM1=`echo ${PROPS} | grep PARM1 | cut -d'=' -f2 | tr -d ' '`
-                    # PARM2=`echo ${PROPS} | grep PARM2 | cut -d'=' -f2 | tr -d ' '`
-                    # CONTAINER=`echo ${PROPS} | grep CONTAINER | cut -d'=' -f2 | tr -d ' '`
 
                     # copy backup from primary to cos bucket
                     SOURCE=/mnt/backup/standby/${backup_filename}
                     TARGET=backups-manage/${MAS_INSTANCE_ID}/copy-to-standby/${backup_filename}
-
-                    # DB2V=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2level | grep Inform | awk '{print $5}' | sed 's/\",//'" db2inst1`
-                    # echo "DB2 version is ${DB2V}"
-                    # if [ ${DB2V} = "v11.5.7.0" ] #MAYBE REMOVED. I HOPE THIS VERSION IS NOT INSTALLED IN DB2
-                    # then
-                    #   oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager S3 put server=${SERVER} auth1=${PARM1} auth2=${PARM2} container=${CONTAINER} source=${SOURCE} target=${TARGET}" db2inst1 || exit $?
-                    # else
                     oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager ALIAS PUT source=${SOURCE} target=DB2REMOTE://AWSCOS//${TARGET} | tee /tmp/backupupload.log" db2inst1 || exit $?
-                    # fi
 
                     # copy backup from cos bucket to standby
                     storage_access=''
                     echo "Getting storage access details in standby"
                     storage_access=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 list storage access || true" db2inst1` || exit $?
-                    echo "storage access of standby - ${storage_access}"
                     if echo ${storage_access} | grep PRIMARYCOS; then
                         echo "PRIMARYCOS is available already."
                         oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 uncatalog storage access alias PRIMARYCOS" db2inst1 || exit $?

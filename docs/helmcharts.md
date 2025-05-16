@@ -80,6 +80,7 @@ These share a {{ gitops_repo_dir_link("instance-applications/500-540-ibm-mas-sui
 |Monitor | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-monitor-install.yaml", "520-ibm-mas-masapp-monitor-install.yaml") }} |
 |Optimizer | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/520-ibm-mas-masapp-optimizer-install.yaml", "520-ibm-mas-masapp-optimizer-install.yaml") }} |
 |Predict |  {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/540-ibm-mas-masapp-predict-install.yaml", "540-ibm-mas-masapp-predict-install.yaml") }} |
+|Facilities |  {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/540-ibm-mas-masapp-facilities-install.yaml", "540-ibm-mas-masapp-facilities-install.yaml") }} |
 
 #### MAS Application Workspace Config
 

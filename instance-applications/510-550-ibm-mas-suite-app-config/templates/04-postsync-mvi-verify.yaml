@@ -4,7 +4,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:e266f8f28150b9e77b98bcee144721176475806dddc1922d84ab47c1b013b826" }}
+{{- $_cli_image_digest := "sha256:b3ecce096368c967bbc6bac2f074473a65418462417b6e550ad4777427c3b06b" }}
 
 
 {{ $ns               :=  .Values.mas_app_namespace }}
@@ -340,16 +340,23 @@ data:
       if mvi_version.compare("8.9.2") < 0:
         pytest.skip("MVI API Key secret required by this test is only currently available in MVI >= 8.9.2")
 
-      mvi_apikey_secret = v1_secrets.get(label_selector="app.kubernetes.io/name=visualinspection-dnn-secret", namespace=mvi_namespace)
+      if mvi_version.compare("9.1.0") >= 0:
+        mvi_apikey_secret = v1_secrets.get(label_selector="app.kubernetes.io/name=visualinspection-superuser-secret", namespace=mvi_namespace)
+      else:
+        mvi_apikey_secret = v1_secrets.get(label_selector="app.kubernetes.io/name=visualinspection-dnn-secret", namespace=mvi_namespace)
+
       if not mvi_apikey_secret:
-        assert False, f"Could not find any visual inspection dnn secret in {mvi_namespace}"
+        assert False, f"Could not find any visual inspection xxx secret in {mvi_namespace}"
 
       mvi_apikey_secret_name = mvi_apikey_secret.items[0]['metadata']['name']
       try:
-        dnn_apikey_b64 = mvi_apikey_secret.items[0]['data']['dnn-apikey']
+        if mvi_version.compare("9.1.0") >= 0:
+          superuser_apikey_b64 = mvi_apikey_secret.items[0]['data']['superuser-apikey']
+        else:
+          superuser_apikey_b64 = mvi_apikey_secret.items[0]['data']['dnn-apikey']
       except:
-        assert False, "Expected data.dnn-apikey field not present in secret {mvi_apikey_secret_name} in {mvi_namespace}"
-      yield base64.b64decode(dnn_apikey_b64)
+        assert False, "Expected data.superuser-apikey field not present in secret {mvi_apikey_secret_name} in {mvi_namespace}"
+      yield base64.b64decode(superuser_apikey_b64)
 
     @pytest.fixture(scope="session")
     def v1_mviapp(dyn_client):
@@ -437,6 +444,7 @@ data:
         assert resp_json['status'] == "Ready", f"Expected status field from GET /api/ping to be 'Ready', but was {resp_json['status']}. Body: {resp_json}"
       except KeyError as e:
         assert False, f"Expected status key not found in response from GET /api/ping. Body: {resp_json}"
+
 
 ---
 kind: ConfigMap

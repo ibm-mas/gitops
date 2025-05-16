@@ -50,6 +50,7 @@ The current set of YAML configuration files recognised by MAS GitOps at each lev
 │       │   ├── ibm-mas-instance-base.yaml
 │       │   ├── ibm-mas-masapp-assist-install.yaml
 │       │   ├── ibm-mas-masapp-configs.yaml
+│       │   ├── ibm-mas-masapp-facilities-install.yaml
 │       │   ├── ibm-mas-masapp-predict-install.yaml
 │       │   ├── ibm-mas-masapp-iot-install.yaml
 │       │   ├── ibm-mas-masapp-manage-install.yaml

@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mas-provisioner
+  name: mas-mcsp-provisioner
   namespace: "{{ .Values.provisioner_namespace }}"
   labels:
     app: mas-provisioner
@@ -34,20 +34,26 @@ spec:
             - name: https
               containerPort: {{ .Values.service_port }}
           env:
+            {{- if not (empty .Values.pd_key) }}
             - name: PD_ROUTING_KEY
               value: /opt/automation/mas-provisioner/pdkey/key
+            {{- end }}
             - name: MTLS_ENABLED
               value: "{{ .Values.enable_mtls }}"
+            {{- if not (empty .Values.csb_client_ca) }}
             - name: CLIENT_CA_PATH
               value: /opt/automation/mas-provisioner/cert
+            {{- end }}
             - name: TLS_CERT_PATH
               value: /opt/automation/mas-provisioner/tls/tls.crt
             - name: TLS_KEY_PATH
               value: /opt/automation/mas-provisioner/tls/tls.key
             - name: SERVICE_PORT
               value: "{{ .Values.service_port }}"
+            {{- if not (empty .Values.github_token) }}
             - name: GITHUB_TOKEN
               value: /opt/automation/mas-provisioner/git/token
+            {{- end }}
             - name: STATUS_REPO_URL
               value: "{{ .Values.status_repo_url }}"
             - name: ASYNC_POLL_INTERVAL
@@ -62,10 +68,14 @@ spec:
               value: "{{ .Values.enable_pd_alert }}"
             - name: ENABLE_OCM_ALERT
               value: "{{ .Values.enable_ocm_alert }}"
+            {{- if not (empty .Values.ocm_api_key) }}
             - name: OCM_API_KEY
-              value: "{{ .Values.ocm_api_key }}"
+              value: /opt/automation/mas-provisioner/ocm/key
+            {{- end }}
+            {{- if not (empty .Values.instana_api_token) }}
             - name: INSTANA_API_TOKEN
-              value: "{{ .Values.instana_api_token }}"
+              value: /opt/automation/mas-provisioner/instana/token
+            {{- end }}
           resources:
             limits:
               cpu: 50m
@@ -109,6 +119,16 @@ spec:
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/cert/clientca
             {{- end }}
+            {{- if not (empty .Values.instana_api_token) }}
+            - name: instana-api
+              readOnly: true
+              mountPath: /opt/automation/mas-provisioner/instana
+            {{- end }}
+            {{- if and .Values.enable_ocm_alert (not (empty .Values.ocm_api_key)) }}
+            - name: ocm-api
+              readOnly: true
+              mountPath: /opt/automation/mas-provisioner/ocm
+            {{- end }}
       serviceAccountName: mas-provisioner-sa
       imagePullSecrets:
         - name: ibm-entitlement
@@ -130,5 +150,15 @@ spec:
         - name: csb-client-ca
           secret:
             secretName: csb-ca
+        {{- end }}
+        {{- if not (empty .Values.instana_api_token) }}
+        - name: instana-api
+          secret:
+            secretName: instana-api-secret
+        {{- end }}
+        {{- if and .Values.enable_ocm_alert (not (empty .Values.ocm_api_key)) }}
+        - name: ocm-api
+          secret:
+            secretName: ocm-api-secret
         {{- end }}
       terminationGracePeriodSeconds: 60

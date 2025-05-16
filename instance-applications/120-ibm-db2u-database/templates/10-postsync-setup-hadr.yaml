@@ -362,11 +362,6 @@ spec:
               # Get HADR ROLE and CONNECT STATUS for Primary and Standby
               get_existing_hadr_config
 
-              # Always check standby and check if CONNECT STATUS is CONNECTED.
-              # If disconnected, check if we can restart hadr config in both primary and standby. Validate the o/p.
-              # If the state is still not CONnected, throw an error saying it needs to be manually resolved
-              # Check if there is a way to copy the backup from primary to standby directly?
-
               is_backup_file_available='false'
               if [[ ! ($PRIMARY_HADR_ROLE == 'PRIMARY' && $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'CONNECTED') ]]; then
 
@@ -385,6 +380,7 @@ spec:
                   fi
                 fi
 
+                # checking if backup is already available in primary
                 echo "Checking if a backup already exists on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
                 is_backup_log_available=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f /mnt/backup/standby/dbbackup.log ]; then echo 'true'; else echo 'false'; fi"`
                 if [[ $is_backup_log_available == 'true' ]]; then
@@ -399,6 +395,7 @@ spec:
                   fi
                 fi
 
+                # take backup of primary if not available
                 if [[ $is_backup_file_available == 'false' ]]; then
                   echo ""
                   echo "Taking backup on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
@@ -414,6 +411,7 @@ spec:
                   echo "Backup is already available in primary. Hence skipping"
                 fi
 
+                # copy backup to standby if it is not there or not a valid image
                 echo "Checking if backup file was copied already to standby c-${DB2_INSTANCE_NAME}-db2u-0"
                 is_backup_copied=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f /mnt/backup/primary-backup/${backup_filename} ]; then echo 'true'; else echo 'false'; fi"`
                 if [[ $is_backup_copied == 'true' ]]; then
@@ -432,6 +430,7 @@ spec:
                 if [[ $rc != 0 || $is_backup_copied == 'false' ]]; then
                   echo ""
                   echo "Copying backup /mnt/backup/standby/${backup_filename} from ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0 "
+
                   # check if cos bucket is configured.
                   # if available, use that to transfer backup image to standby
                   # else copy using oc copy

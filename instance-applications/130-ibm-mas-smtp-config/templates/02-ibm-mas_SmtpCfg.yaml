@@ -15,6 +15,9 @@ metadata:
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   displayName: "{{ .Values.suite_smtp_display_name }}"
+  # certificates:
+  #   alias: #A human-readable alias for the certificate. Must be unique wrt the other aliases in this request.
+  #   crt: #A SINGLE PEM-formatted certificate.
 {{- if not (empty .Values.mas_smtpcfg_pod_templates) }}
   podTemplates:
 {{ .Values.mas_smtpcfg_pod_templates | toYaml | indent 4 }}
@@ -33,4 +36,14 @@ spec:
 {{- if .Values.suite_smtp_disabled_templates }}
     disabledTemplates:
       {{ .Values.suite_smtp_disabled_templates | toYaml | nindent 6 }}
+{{- end }}
+{{ -if not (empty .Values.smtp_config_ca_certificate) }}
+  certificates:
+    - alias: smtpca
+{{ .Values.smtp_config_ca_certificate | toYaml | indent 6 }}
+# list of certificate according to CR definition. So we should accept list of certificates
+#     certificates:
+# {{  .Values.smtp_config_certificates | toYaml | indent 4 }}
+#     - alias: smptpca
+# {{ .Values.smtp_config_certificate | toYaml | indent 6 }}
 {{- end }}

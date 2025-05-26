@@ -1,4 +1,5 @@
-{{- if not (contains "sdb" .Values.db2_instance_name) }}
+# {{- if not (contains "sdb" .Values.db2_instance_name) }}
+{{- if true}}
 
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
@@ -226,8 +227,8 @@ spec:
               value: "{{ .Values.db2_backup_bucket_endpoint }}"
             - name: SLACKURL
               value: "{{ .Values.db2_backup_notify_slack_url }}"
-            - name: REPLICA_DB
-              value: "{{ .Values.replica_db }}"
+            # - name: REPLICA_DB
+            #   value: "{{ .Values.replica_db }}"
 {{- end }}
 
           volumeMounts:
@@ -422,10 +423,10 @@ spec:
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "/tmp/db2-scripts/CopyDBScripts.sh | tee /tmp/copydbscripts.log" db2inst1 || exit $?
               fi
 
-              IS_HADR_CONFIGURED=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "db2 get db cfg for BLUDB | grep HADR_LOCAL_HOST | cut -d'=' -f2 | tr -d ' '" db2inst1`
-              if [[ ! (-z $IS_HADR_CONFIGURED) &&  REPLICA_DB != 'true' ]]; then
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "db2 stop hadr on db ${DB2_DBNAME} | tee /tmp/stophadr.log" db2inst1 || exit $?
-              fi
+              # IS_HADR_CONFIGURED=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "db2 get db cfg for BLUDB | grep HADR_LOCAL_HOST | cut -d'=' -f2 | tr -d ' '" db2inst1`
+              # if [[ ! (-z $IS_HADR_CONFIGURED) &&  REPLICA_DB != 'true' ]]; then
+              #   oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "db2 stop hadr on db ${DB2_DBNAME} | tee /tmp/stophadr.log" db2inst1 || exit $?
+              # fi
 
               if [[ "$MAS_APP_ID" == "manage" ]]; then
                 echo ""

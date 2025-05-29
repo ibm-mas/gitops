@@ -17,19 +17,11 @@ metadata:
 spec:
   goTemplate: true
   generators:
-    - merge:
-        mergeKeys:
-          # Would love to use ".path.path" here to merge the configs together
-          # but this is not possible currently with goTemplate: true - see https://github.com/argoproj/argo-cd/issues/12836
-          # (and we really want goTemplate: true so we can dump the entire config file into HELM_VALUES using toPrettyJson)
-          # instead, we are forced to explicitly provide a merge key in all of our config files to make them line up
-          - 'merge-key'
-        generators:
-          - git:
-              repoURL: "{{ .Values.generator.repo_url }}"
-              revision: "{{ .Values.generator.revision }}"
-              files:
-              - path: "{{ .Values.account.id }}/icn/*/ibm-sls.yaml"
+    - git:
+        repoURL: "{{ .Values.generator.repo_url }}"
+        revision: "{{ .Values.generator.revision }}"
+        files:
+        - path: "{{ .Values.account.id }}/icn/*/ibm-sls.yaml"
   syncPolicy:
     applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
   template:

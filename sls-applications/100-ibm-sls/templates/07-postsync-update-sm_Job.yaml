@@ -59,7 +59,9 @@ are required here.
 
 
 
-{{ $ns := printf "mas-%s-%s-sls" .Values.ibm_sls_standalone.ibm_customer_number .Values.ibm_sls_standalone.subscription_id}}
+{{ $ns := printf "mas-%s-%s-sls" .Values.ibm_customer_number .Values.subscription_id }}
+{{ $instance := printf "%s-%s" .Values.ibm_customer_number .Values.subscription_id }}
+
 {{ $aws_secret := "aws"}}
 {{ $np_name :=    "postsync-ibm-sls-update-sm-np" }}
 {{ $role_name :=  "postsync-ibm-sls-update-sm-r" }}
@@ -207,8 +209,11 @@ spec:
               value: {{ .Values.region_id }}
             - name: CLUSTER_ID
               value: {{ .Values.cluster_id }}
-            - name: INSTANCE_ID
-              value: {{ .Values.instance_id }}
+            - name: ICN
+              value: {{ .Values.ibm_customer_number }}
+            - name: SUBSCRIPTION_ID
+              value: {{ .Values.subscription_id }}
+
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
@@ -230,14 +235,14 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
-              echo "Fetching registrationKey from sls-suite-registration ConfigMap in mas-${INSTANCE_ID}-sls"
+              echo "Fetching registrationKey from sls-suite-registration ConfigMap in mas-${ICN}-${SUBSCRIPTION_ID}-sls"
               SLS_REGISTRATION_KEY=$(cat /etc/mas/creds/sls-suite-registration/registrationKey)
               if [[ -z "${SLS_REGISTRATION_KEY}" ]]; then
                 echo "Failed to fetch registrationKey"
                 exit 1
               fi
 
-              echo "Fetching ca from sls-suite-registration ConfigMap in mas-${INSTANCE_ID}-sls"
+              echo "Fetching ca from sls-suite-registration ConfigMap in mas-${ICN}-${SUBSCRIPTION_ID}-sls"
               SLS_CA=$(cat /etc/mas/creds/sls-suite-registration/ca | base64 -w0)
               if [[ -z "${SLS_CA}" ]]; then
                 echo "Failed to fetch ca"
@@ -255,8 +260,9 @@ spec:
               sm_login
 
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
-              SECRET_NAME_SLS=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/sls
-              TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
+              ## Why is the secreet name here sls and not license as it is in gitops_license function
+              SECRET_NAME_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/sls
+              TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
               sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\" }" "${TAGS}"
 
 

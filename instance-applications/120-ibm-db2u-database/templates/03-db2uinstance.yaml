@@ -36,11 +36,22 @@ spec:
       privilegedSysctlInit: true
     imagePullSecrets:
       - ibm-registry
+{{- if .Values.db2_addons_audit_config }}
+  addOns:
+    audit:
+{{ .Values.db2_addons_audit_config | toYaml | indent 6 }}
+{{- end }}
   version: "{{ .Values.db2_version }}"
   environment:
     dbType: db2wh
     databases:
       - name: "{{ .Values.db2_dbname }}"
+
+{{- if .Values.db2_database_db_config }}
+        dbConfig:
+{{ .Values.db2_database_db_config | toYaml | indent 10 }}
+{{- end }}
+
         settings:
           dftTableOrg: "{{ .Values.db2_table_org }}"
     ssl:
@@ -48,6 +59,16 @@ spec:
       certLabel: "CN=db2u"
       allowSslOnly: true
     instance:
+
+{{- if .Values.db2_instance_registry }}
+      registry:
+{{ .Values.db2_instance_registry | toYaml | indent 8 }}
+{{- end }}
+
+{{- if .Values.db2_instance_dbm_config }}
+      dbmConfig:
+{{ .Values.db2_instance_dbm_config | toYaml | indent 8 }}
+{{- end }}
     partitionConfig:
       total: {{ .Values.db2_mln_count }}
   license:

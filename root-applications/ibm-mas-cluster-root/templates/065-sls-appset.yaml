@@ -26,7 +26,7 @@ spec:
     applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
   template:
     metadata:
-      name: 'sls-instance.{{ .Values.ibm_sls_standalone.ibm_customer_number }}.{{ .Values.ibm_sls_standalone.subscription_id }}'
+      name: 'sls.{{ .Values.ibm_sls_standalone.ibm_customer_number }}.{{ .Values.ibm_sls_standalone.subscription_id }}'
       labels:
         environment: '{{ .Values.account.id }}'
         region: '{{ .Values.region.id }}'
@@ -45,49 +45,53 @@ spec:
         {{- end }}
     spec:
       project: "{{ .Values.argo.projects.rootapps }}"
-      source:
-          repoURL: "{{ .Values.source.repo_url }}"
-          targetRevision: "{{ .Values.source.revision }}"
-          path: root-applications/ibm-mas-sls-root
-          helm:
-            releaseName: slsappset
-            values: "{{ `{{ toYaml . }}` }}"
-            parameters:
-              - name: "generator.repo_url"
-                value: "{{ .Values.generator.repo_url }}"
-              - name: "generator.revision"
-                value: "{{ .Values.generator.revision }}"
-              - name: "source.revision"
-                value: "{{ .Values.source.revision }}"
-              - name: "source.repo_url"
-                value: "{{ .Values.source.repo_url }}"
-              - name: argo.namespace
-                value: "{{ .Values.argo.namespace }}"
-                {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
-              - name: "notifications.slack_channel_id"
-                value: "{{ .Values.notifications.slack_channel_id }}"
-                {{- end }}
-              - name: "mas_catalog_version"
-                value: "{{ .Values.ibm_operator_catalog.mas_catalog_version }}"
-              - name: argo.projects.rootapps
-                value: "{{ .Values.argo.projects.rootapps }}"
-              - name: argo.projects.apps
-                value: "{{ .Values.argo.projects.apps }}"
-              - name: avp.name
-                value: "{{ .Values.avp.name }}"
-              - name: avp.secret
-                value: "{{ .Values.avp.secret }}"
-              - name: avp.values_varname
-                value: "{{ .Values.avp.values_varname }}"
-              - name: auto_delete
-                value: "{{ .Values.auto_delete }}"
-              - name: devops.mongo_uri
-                value: "{{ .Values.devops.mongo_uri }}"
-              - name: devops.build_number
-                value: "{{ .Values.devops.build_number }}"
-      destination:
-        server: 'https://kubernetes.default.svc'
-        namespace: {{ .Values.argo.namespace }}
+     destination:
+       server: {{ .Values.cluster.url }}
+       namespace: "mas-{{ .Values.ibm_sls_standalone.ibm_customer_number }}-{{ .Values.ibm_sls_standalone.subscription_id }}-sls"
+     source:
+       repoURL: "{{ .Values.source.repo_url }}"
+       path: sls-applications/100-ibm-sls
+       targetRevision: "{{ .Values.source.revision }}"
+       plugin:
+         name: {{ .Values.avp.name }} 
+         env:
+           - name: {{ .Values.avp.values_varname }}
+             value: |
+               account_id: "{{ .Values.account.id }}"
+               region_id: "{{ .Values.region.id }}"
+               cluster_id: "{{ .Values.cluster.id }}"
+               ibm_customer_number: "{{ .Values.ibm_sls_standalone.ibm_customer_number }}"
+               subscription_id: "{{ .Values.ibm_sls_standalone.subscription_id }}"
+               sls_domain: "{{ .Values.ibm_sls_standalone.domain }}"
+               argo_namespace: "{{ .Values.argo.namespace }}"
+               sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
+               sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
+               run_sync_hooks: {{.Values.ibm_sls_standalone.run_sync_hooks }}
+               sls_channel: "{{ .Values.ibm_sls_standalone.sls_channel }}"
+               ibm_entitlement_key: "{{ .Values.ibm_sls_standalone.ibm_entitlement_key }}"
+               sls_mongo_secret_name: "{{ .Values.ibm_sls_standalone.sls_mongo_secret_name }}"
+               sls_mongo_username: "{{ .Values.ibm_sls_standalone.sls_mongo_username }}"
+               sls_mongo_password: "{{ .Values.ibm_sls_standalone.sls_mongo_password }}"
+               sls_entitlement_file: "{{ .Values.ibm_sls_standalone.sls_entitlement_file }}"
+               icr_cp_open: "{{ .Values.ibm_sls_standalone.icr_cp_open }}"
+               sls_install_plan: "{{ .Values.ibm_sls_standalone.sls_install_plan }}"
+               mongo_spec: {{ .Values.ibm_sls_standalone.mongo_spec | toYaml | nindent 14}}
+               {{- if .Values.custom_labels }}
+               custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+               {{- end }}
+               junitreporter:
+                 reporter_name: "ibm-sls-{{ .Values.instance.id }}"
+                 cluster_id: "{{ .Values.cluster.id }}"
+                 instance_id: "{{ .Values.instance.id }}"
+                 devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+                 devops_build_number: "{{ .Values.devops.build_number }}"
+                 gitops_version: "{{ .Values.source.revision }}"
+           - name: ARGOCD_APP_NAME
+             value: slsapp
+           {{- if not (empty .Values.avp.secret) }}
+           - name: AVP_SECRET
+             value: {{ .Values.avp.secret }}
+           {{- end }}
       syncPolicy:
         automated:
           {{- if .Values.auto_delete }}

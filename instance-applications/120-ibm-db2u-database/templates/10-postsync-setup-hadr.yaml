@@ -200,6 +200,8 @@ spec:
               STANDBY_HADR_STATE=''
               STANDBY_HADR_STATUS=''
               STANDBY_HADR_STATUS_TIME=''
+              IS_FRESH_HADR_SETUP_PRIMARY='true'
+              IS_FRESH_HADR_SETUP_STANDBY='true'
 
               function wait_for_resource {
                 RES_TYPE="$1"
@@ -231,17 +233,33 @@ spec:
 
               function restart_hadr {
                 PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
+                IS_FRESH_HADR_SETUP_PRIMARY="$1"
+                IS_FRESH_HADR_SETUP_STANDBY="$2"
                 # # Start hadr in standby
-                echo ""
-                echo "Starting HADR in standby"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; sleep 60; db2 start hadr on db bludb as standby" db2inst1 || exit $?
+                if [[ ${IS_FRESH_HADR_SETUP_STANDBY} == 'true' ]]; then
+                  echo ""
+                  echo "Starting HADR in standby"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; sleep 60; db2 start hadr on db bludb as standby" db2inst1 || exit $?
+                else
+                  echo ""
+                  echo "Restarting HADR in standby"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 deactivate db bludb; db2 stop hadr on db bludb; sleep 60; db2 start hadr on db bludb as standby" db2inst1 || exit $?
+                fi
 
                 # # Start hadr in Primary
-                echo ""
-                echo "Starting HADR in primary"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; sleep 60; db2 start hadr on db bludb as primary" db2inst1 || exit $?
+                if [[ ${IS_FRESH_HADR_SETUP_PRIMARY} == 'true' ]]; then
+                  echo ""
+                  echo "Starting HADR in primary"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2stop force; db2start; sleep 60; db2 start hadr on db bludb as primary" db2inst1 || exit $?
+                else
+                  echo ""
+                  echo "Restarting HADR in primary"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 stop hadr on db bludb; sleep 60; db2 start hadr on db bludb as primary" db2inst1 || exit $?
+                fi
 
                 echo "...... HADR services are started successfully"
               }
@@ -249,8 +267,10 @@ spec:
               function db2apply() {
                 PRIMARY_ROLE="$1"
                 STANDBY_ROLE="$2"
-                RETRIES=${3:-5}
-                RETRY_DELAY_SECONDS=${4:-30}
+                IS_FRESH_HADR_SETUP_PRIMARY="$3"
+                IS_FRESH_HADR_SETUP_STANDBY="$4"
+                RETRIES=${5:-5}
+                RETRY_DELAY_SECONDS=${6:-30}
 
                 mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
                 if [[ "$rc" == "0" && $PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY' ]]; then
@@ -269,7 +289,7 @@ spec:
                     mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
                     if [[ "$rc" == "0" ]]; then
                       echo "...... configs applied successfully"
-                      restart_hadr
+                      restart_hadr ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
                       return 0
                     fi
 
@@ -279,7 +299,7 @@ spec:
                     fi
                   done
                 else
-                  restart_hadr
+                  restart_hadr ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
                   return 0
                 fi
 
@@ -361,6 +381,12 @@ spec:
 
               # Get HADR ROLE and CONNECT STATUS for Primary and Standby
               get_existing_hadr_config
+              if [[ $PRIMARY_HADR_ROLE == 'PRIMARY' ]]; then
+                IS_FRESH_HADR_SETUP_PRIMARY='false'
+              fi
+              if [[ $STANDBY_HADR_ROLE == 'PRIMARY' ]]; then
+                IS_FRESH_HADR_SETUP_STANDBY='false'
+              fi
 
               is_backup_file_available='false'
               if [[ ! ($PRIMARY_HADR_ROLE == 'PRIMARY' && $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'CONNECTED') ]]; then
@@ -368,7 +394,7 @@ spec:
                 # If for some reason HADR got disconnected
                 if [[ $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'DISCONNECTED' ]]; then
                   echo "HADR is in DISCONNECTED state. Trying to restart the HADR service"
-                  restart_hadr
+                  restart_hadr ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
                   sleep 120
                   # validate the configs in primary and standby again
                   get_existing_hadr_config
@@ -391,7 +417,6 @@ spec:
                   timestamp=`echo ${backup_filename} | awk -F '.' '{print $(NF-1)}'`
                   echo "Timestamp of backup is $timestamp"
                 fi
-                timestamp=''
 
                 if [[ ${AUTO_BACKUP} == 'false' || -z ${timestamp} ]]; then
                   # checking if backup is already available in primary
@@ -525,6 +550,6 @@ spec:
               echo "================================================================================"
               echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "================================================================================"
-              db2apply ${PRIMARY_HADR_ROLE} ${STANDBY_HADR_ROLE}  || exit $?
+              db2apply ${PRIMARY_HADR_ROLE} ${STANDBY_HADR_ROLE} ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY} || exit $?
 
 {{ end }}

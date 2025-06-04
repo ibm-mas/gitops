@@ -233,8 +233,8 @@ spec:
 
               function restart_hadr {
                 PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
-                IS_FRESH_HADR_SETUP_PRIMARY="$1"
-                IS_FRESH_HADR_SETUP_STANDBY="$2"
+                # IS_FRESH_HADR_SETUP_PRIMARY="$1"
+                # IS_FRESH_HADR_SETUP_STANDBY="$2"
                 echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
                 # # Start hadr in standby
                 if [[ ${IS_FRESH_HADR_SETUP_STANDBY} == 'true' ]]; then
@@ -268,12 +268,12 @@ spec:
               function db2apply() {
                 PRIMARY_ROLE="$1"
                 STANDBY_ROLE="$2"
-                IS_FRESH_HADR_SETUP_PRIMARY="$3"
-                IS_FRESH_HADR_SETUP_STANDBY="$4"
+                # IS_FRESH_HADR_SETUP_PRIMARY="$3"
+                # IS_FRESH_HADR_SETUP_STANDBY="$4"
                 echo "db2apply received params"
                 echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
-                RETRIES=${5:-5}
-                RETRY_DELAY_SECONDS=${6:-30}
+                RETRIES=${3:-5}
+                RETRY_DELAY_SECONDS=${4:-30}
 
                 mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
                 if [[ "$rc" == "0" && $PRIMARY_ROLE == 'PRIMARY' && $STANDBY_ROLE == 'STANDBY' ]]; then
@@ -293,7 +293,7 @@ spec:
                     if [[ "$rc" == "0" ]]; then
                       echo "...... configs applied successfully"
                       echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
-                      restart_hadr "${IS_FRESH_HADR_SETUP_PRIMARY}" "${IS_FRESH_HADR_SETUP_STANDBY}"
+                      restart_hadr
                       return 0
                     fi
 
@@ -304,7 +304,7 @@ spec:
                   done
                 else
                   echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
-                  restart_hadr "${IS_FRESH_HADR_SETUP_PRIMARY}" "${IS_FRESH_HADR_SETUP_STANDBY}"
+                  restart_hadr
                   return 0
                 fi
 
@@ -403,7 +403,7 @@ spec:
                 if [[ $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'DISCONNECTED' ]]; then
                   echo "HADR is in DISCONNECTED state. Trying to restart the HADR service"
                   echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
-                  restart_hadr "${IS_FRESH_HADR_SETUP_PRIMARY}" "${IS_FRESH_HADR_SETUP_STANDBY}"
+                  restart_hadr
                   sleep 120
                   # validate the configs in primary and standby again
                   get_existing_hadr_config
@@ -561,6 +561,6 @@ spec:
               echo "================================================================================"
               echo "sending params to db2apply"
               echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
-              db2apply ${PRIMARY_HADR_ROLE} ${STANDBY_HADR_ROLE} "${IS_FRESH_HADR_SETUP_PRIMARY}" "${IS_FRESH_HADR_SETUP_STANDBY}" || exit $?
+              db2apply ${PRIMARY_HADR_ROLE} ${STANDBY_HADR_ROLE} || exit $?
 
 {{ end }}

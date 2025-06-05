@@ -1,0 +1,24 @@
+{{- if .Values.nonshared }}
+---
+apiVersion: addons.mas.ibm.com/v1
+kind: GenericAddon
+metadata:
+  name: "{{ .Values.instance_id }}-nonsharedcluster"
+  namespace: "mas-{{ .Values.instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/sync-wave: "555"
+  labels:
+    mas.ibm.com/configScope: system
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  displayName: "{{ .Values.instance_id }}-nonsharedcluster"
+  addonType: nonsharedcluster
+  config:
+    instances:
+    {{- range $key, $value := .Values.cluster.nonshared }}
+      - name: "{{ $.Values.instance_id }}-{{ $value.cluster_id }}"
+    {{- end }}
+{{- end }}

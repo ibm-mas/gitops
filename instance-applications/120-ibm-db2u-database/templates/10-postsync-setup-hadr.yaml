@@ -27,7 +27,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v5" }}
+{{- $_job_version := "v6" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -233,9 +233,6 @@ spec:
 
               function restart_hadr {
                 PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
-                # IS_FRESH_HADR_SETUP_PRIMARY="$1"
-                # IS_FRESH_HADR_SETUP_STANDBY="$2"
-                echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
                 # # Start hadr in standby
                 if [[ ${IS_FRESH_HADR_SETUP_STANDBY} == 'true' ]]; then
                   echo ""
@@ -268,10 +265,6 @@ spec:
               function db2apply() {
                 PRIMARY_ROLE="$1"
                 STANDBY_ROLE="$2"
-                # IS_FRESH_HADR_SETUP_PRIMARY="$3"
-                # IS_FRESH_HADR_SETUP_STANDBY="$4"
-                echo "db2apply received params"
-                echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
                 RETRIES=${3:-5}
                 RETRY_DELAY_SECONDS=${4:-30}
 
@@ -292,7 +285,6 @@ spec:
                     mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --database-role standby --log-level DEBUG || rc=$?
                     if [[ "$rc" == "0" ]]; then
                       echo "...... configs applied successfully"
-                      echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
                       restart_hadr
                       return 0
                     fi
@@ -303,7 +295,6 @@ spec:
                     fi
                   done
                 else
-                  echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
                   restart_hadr
                   return 0
                 fi
@@ -387,14 +378,11 @@ spec:
               # Get HADR ROLE and CONNECT STATUS for Primary and Standby
               get_existing_hadr_config
               if [[ $PRIMARY_HADR_ROLE == 'PRIMARY' ]]; then
-                echo "Primary"
                 IS_FRESH_HADR_SETUP_PRIMARY='false'
               fi
               if [[ $STANDBY_HADR_ROLE == 'STANDBY' ]]; then
-                echo "Standby"
                 IS_FRESH_HADR_SETUP_STANDBY='false'
               fi
-              echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
 
               is_backup_file_available='false'
               if [[ ! ($PRIMARY_HADR_ROLE == 'PRIMARY' && $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'CONNECTED') ]]; then
@@ -402,7 +390,6 @@ spec:
                 # If for some reason HADR got disconnected
                 if [[ $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'DISCONNECTED' ]]; then
                   echo "HADR is in DISCONNECTED state. Trying to restart the HADR service"
-                  echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
                   restart_hadr
                   sleep 120
                   # validate the configs in primary and standby again
@@ -420,11 +407,13 @@ spec:
                 timestamp=''
                 copy_to_cos='false'
                 if [[ ${AUTO_BACKUP} == 'true' ]]; then
-                  check_cos_op=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "~/bin/CheckCOS.sh | grep c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 | grep -v keystore | tail -1" db2inst1`
+                  check_cos_op=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "~/bin/CheckCOS.sh | grep c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-1 | grep -v keystore | tail -1" db2inst1`
                   backup_filename=`echo ${check_cos_op} | awk -F '/' '{print $NF}'`
-                  echo "Backup file from auto backup is ${backup_filename}"
-                  timestamp=`echo ${backup_filename} | awk -F '.' '{print $(NF-1)}'`
-                  echo "Timestamp of backup is $timestamp"
+                  if [[ ! -z ${backup_filename} ]]; then
+                    echo "Backup file from auto backup is ${backup_filename}"
+                    timestamp=`echo ${backup_filename} | awk -F '.' '{print $(NF-1)}'`
+                    echo "Timestamp of backup is $timestamp"
+                  fi
                 fi
 
                 if [[ ${AUTO_BACKUP} == 'false' || -z ${timestamp} ]]; then
@@ -559,8 +548,6 @@ spec:
               echo "================================================================================"
               echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "================================================================================"
-              echo "sending params to db2apply"
-              echo ${IS_FRESH_HADR_SETUP_PRIMARY} ${IS_FRESH_HADR_SETUP_STANDBY}
               db2apply ${PRIMARY_HADR_ROLE} ${STANDBY_HADR_ROLE} || exit $?
 
 {{ end }}

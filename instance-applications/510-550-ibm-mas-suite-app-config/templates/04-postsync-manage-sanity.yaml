@@ -234,7 +234,7 @@ data:
     MANAGE_JDBC_CERT = ""
     admin_api_key = ""
     version_number=""
-    foundationOnly=False
+    fullManage=False
     hasFoundation=False
     user_api_key = ""
     user_id="maxadmin"  #admin user
@@ -579,46 +579,24 @@ data:
         headers = {
             "Content-Type": "application/json"
         }
-        print("url is : ")
-        print(url)
-        print("headers is : ")
-        print(headers)
-        print("param is : ")
-        #print(querystring)
-        print(payload)
+        logger.info("url is : ")
+        logger.info(url)
+        logger.info("headers is : ")
+        logger.info(headers)
+        logger.info("param is : ")
+        #logger.info(querystring)
+        logger.info(payload)
         
         response = requests.post(url, json=payload, headers=headers, verify=False)
-        print("response is : ")
-        print(response)
+        logger.info("response is : ")
+        logger.info(response)
         global authToken
         authToken = response.json()["token"]
         logger.info(authToken)
-    @pytest.mark.order(4)
-    def test_get_manage_ping():
-        global hasFoundation,foundationOnly
-        print("manage url:")
-        print(MANAGE_URL)
-        ping_url = f'''{MANAGE_URL}/maximo/api/ping'''
-        
-        headers = {
-        "Content-Type": "application/json"
-        }
-        response = requests.request("GET", ping_url, headers=headers,verify=False)
-        print("ping ::")
-        print(response.text)
-        if "hasfoundation" in response.text :
-            print(response.json()['hasfoundation'])
-            hasFoundation= response.json()['hasfoundation']
-            foundationOnly= response.json()['manageorhealth']
-            print("hasfoundation flag:")
-            print(hasFoundation)  
-            print(foundationOnly)
             
 
     @pytest.fixture(scope="session")
     def client_cert(dyn_client):
-        if hasFoundation==False:
-            pytest.skip("Skipping because hasFoundation set to False")
         certSecretObj = dyn_client.resources.get(api_version='v1', kind='Secret')
         certSecret = certSecretObj.get(
             f"{mas_instance_id}-internal-manage-tls", f"mas-{mas_instance_id}-manage"
@@ -636,25 +614,25 @@ data:
         
         with open("internal.crt", "r") as f:
             cert_content = f.read()
-            print("Contents of cert:")
-            print(cert_content)
+            logger.info("Contents of cert:")
+            logger.info(cert_content)
         with open("internal.key", "r") as f:
             cert_content = f.read()
-            print("Contents of cert:")
-            print(cert_content)
+            logger.info("Contents of cert:")
+            logger.info(cert_content)
         return client_cert
-    @pytest.mark.order(5)
+    @pytest.mark.order(4)
     def test_generate_api_key_for_maxadmin_user(client_cert):
-        if hasFoundation==False:
-            pytest.skip("Skipping because hasFoundation set to False")
+        # if True==True:
+        #     pytest.skip("Skipping because version is below 9.1")
         user_id="maxadmin"
-        global user_api_key
+        global admin_api_key
         #user_id=manage_user
         api_key = get_api_key(user_id, client_cert, session)
         if api_key is None:
             url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
-            print("generate_api_key_URL: " + url)
-            print("generate_api_key_CERT" + str(client_cert))
+            logger.info("generate_api_key_URL: " + url)
+            logger.info("generate_api_key_CERT" + str(client_cert))
             resp = ""
             try:
                 # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert)
@@ -662,76 +640,103 @@ data:
                 payload = {'expiration': '-1', 'userid': user_id}
                 resp = session.post(url, headers=headers,
                                     json=payload, cert=client_cert, timeout=600)
-                print(resp.text)
+                logger.info(resp.text)
                 if resp.status_code <= 201:
                     data = resp.text
-                    print(str(data))
+                    logger.info(str(data))
                     api_key = get_api_key(user_id, client_cert, session)
-                    print(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
-                    user_api_key = api_key
+                    logger.info(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
+                    admin_api_key = api_key
                     return api_key
                 else:
-                    print("Failed to Create APIKEY: " + user_id)
-                    print(resp.status_code)
-                    print(resp.text)
+                    logger.info("Failed to Create APIKEY: " + user_id)
+                    logger.info(resp.status_code)
+                    logger.info(resp.text)
                     return None
 
             except Exception as ex:
-                print("Something wrong here")
-                print(ex)
+                logger.info("Something wrong here")
+                logger.info(ex)
         else:
-            print(f"RETRIEVED MXAPIKEY for {user_id} is: " + api_key)
-            user_api_key = api_key
+            logger.info(f"RETRIEVED MXAPIKEY for {user_id} is: " + api_key)
+            admin_api_key = api_key
             return api_key
 
     def get_api_key(user_id, client_cert, session):
         api_key = None
         try:
             get_api_key_url=f'''{MANAGE_URL}/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22{user_id}%22'''
-            print("get APIKEY URL: " + get_api_key_url)
+            logger.info("get APIKEY URL: " + get_api_key_url)
             resp = session.get(get_api_key_url, cert=client_cert, timeout=600)
             if resp.status_code == 200:
                 data = resp.json()
-                print(data)
+                logger.info(data)
                 api_key = data['member'][0]['apikey']
             else:
-                print("Failed to Get APIKEY for: " + user_id)
-                print(resp.status_code)
-                print(resp.text)
+                logger.info("Failed to Get APIKEY for: " + user_id)
+                logger.info(resp.status_code)
+                logger.info(resp.text)
         except Exception as ex:
-            print(ex)
+            logger.info(ex)
         return api_key
-    @pytest.mark.order(6)
+    @pytest.mark.order(5)
     def test_check_manage_version():
-        if hasFoundation==False:
-            pytest.skip("Skipping because hasFoundation set to False")
+        global admin_api_key
+        # admin_api_key="bd36nl7g3m67tqu9aesl973au2urhekla33kjebl"
+        logger.info(f"api key is :{admin_api_key}")
         global isVersionApplicable
         url = MANAGE_URL + "/maximo/api/systemInfo"
 
         headers = {    
             "Content-Type": "application/json",
-            "apikey": user_api_key}
+            "apikey": admin_api_key}
 
         response = requests.request("GET", url, headers=headers,verify=False)
-        print(response.text)
+        logger.info(response.text)
         version_str = get_manage_foundation_version(response.json())
         assert version_str is not None, "Manage Foundation version not found"
         version_number = version_str.split()[2]
-        isVersionApplicable=version.parse(version_number) <= version.parse("9.0.0")
-        print(isVersionApplicable)
-        print(version_number)
+        isVersionApplicable=version.parse(version_number) >= version.parse("9.1.0")
+        logger.info(f"is Applicable :{isVersionApplicable}")
+        logger.info(f"Manage Foundation version no:{version_number}")
 
     def get_manage_foundation_version(data):
         for item in data.get("appVersion", {}).get("rdfs:member", []):
             version_key = item.get("spi:versionKey", "")
             if "Manage Foundation" in version_key:
-                return version_key  # full string like "Manage Foundation 9.1.190 ..."
+                return version_key  
         return None
 
+    @pytest.mark.order(6)
+    def test_get_manage_ping():
+        if isVersionApplicable==False:
+            pytest.skip("Skipping because version is below 9.1")
+        global hasFoundation,fullManage
+        logger.info("manage url:")
+        logger.info(MANAGE_URL)
+        ping_url = f'''{MANAGE_URL}/maximo/api/ping'''
+        
+        headers = {
+        "Content-Type": "application/json"
+        }
+        response = requests.request("GET", ping_url, headers=headers,verify=False)
+        logger.info("ping ::")
+        logger.info(response.text)
+        if "hasfoundation" in response.text :
+            logger.info(response.json()['hasfoundation'])
+            if response.json()['hasfoundation']==True and response.json()['manageorhealth']==True :
+                fullManage= True
+            if response.json()['hasfoundation']==True and response.json()['manageorhealth'] ==False :
+                hasFoundation= True
+            
+            logger.info(f"Foundation Only: {hasFoundation}")  
+            logger.info(f"Full Manage: {fullManage}")
+
+
     @pytest.mark.order(7)
-    def test_v3_create_user():
-        if hasFoundation==False or isVersionApplicable==False:
-            pytest.skip("Skipping because hasFoundation set to False")
+    def test_create_user_through_manage():
+        if hasFoundation==False:
+            pytest.skip("Skipping because hasfoundation is false")
         # GET Same User first and verify whether it is already present or NOT!
         url = MANAGE_URL + "/maximo/api/os/masperuser"
         querystring = { "oslc.select":"*",
@@ -739,32 +744,186 @@ data:
         "lean":"1"}
         headers = {
             "Content-Type": "application/json",
-            "apikey": user_api_key
+            "apikey": admin_api_key
         }
         response = requests.get(url, headers=headers, params=querystring,verify=False)
-        print("response is :")
-        print(response)
+        logger.info("response is :")
+        logger.info(response)
         data = response.json()
-        print("data is :")
-        print(data)
+        logger.info("data is :")
+        logger.info(data)
         if not data.get('member'):
-            print("User not present, Create New user.....")
-            create_user()
+            logger.info("User not present, Create New user.....")
+            create_user_manage()
         else:
-            print(f"Validation failed: 'member' list contains {len(data['member'])} items.")
+            logger.info(f"Validation failed: 'member' list contains {len(data['member'])} items.")
+
     @pytest.mark.order(8)
+    def test_v3_create_user_mas():
+        if isVersionApplicable==True and hasFoundation==True:
+            pytest.skip("Skipping because version is 9.1 and above and hasfoundation is true")
+        # GET Same User first and verify whether it is already present or NOT!
+        url = MAS_APIURL + "v3/users/" + manage_user
+        querystring = {"lean": "1"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.get(url, headers=headers, params=querystring)
+
+        if response.status_code == 404:
+            logger.info("User was not present and being created.....")
+            create_user()
+        elif response.status_code == 200:
+            logger.info("User was already present, deleting first.....")
+            # Keep deleting the user until a 404 status code is received
+            while True:
+                delete_response = delete_user()
+                if delete_response.status_code == 404:
+                    break
+            # create the user as its deleted now
+            create_user()
+
+    def delete_user():
+        url = MAS_APIURL + "v3/users/" + manage_user
+        querystring = {"lean": "1"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.delete(url, headers=headers, params=querystring)
+        logger.info(response.text)
+        assert_that(response.status_code).is_in(204, 404)
+        return response
+
+    def create_user():
+        url = MAS_APIURL + "v3/users"
+        querystring = {"lean": "1"}
+        payload = {
+            "id": manage_user,
+            "status": {"active": True},
+            "username": manage_user,
+            "token": manage_user_password,
+            "owner": "local",
+            "emails": [
+                {
+                    "value": f"{manage_user}_email@ibm.com",
+                    "type": "Work",
+                    "primary": True
+                }
+            ],
+            "displayName": "Api default JSON User",
+            "issuer": "local",
+            "permissions": {
+                "systemAdmin": True,
+                "userAdmin": True
+            },
+            "entitlement": {
+                "application": "PREMIUM",
+                "admin": "ADMIN_PREMIUM",
+                "alwaysReserveLicense": True
+            },
+            "title": "Mr.Sanity",
+            "givenName": manage_user,
+            "familyName": manage_user
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.post(url, json=payload, headers=headers, params=querystring)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(201)
+
+    @pytest.mark.order(9)
+    def test_v3_user_link_to_idp():
+        if isVersionApplicable==True and hasFoundation==True:
+            pytest.skip("Skipping because version is 9.1 and above and hasfoundation is true")
+        url = MAS_APIURL+"v3/users/"+manage_user+"/idps/local"  # url = "https://api.fvtsaas.ibmmasfvt.com/v3/users/saasuser/idps/local"
+        querystring = {"emailPassword":"False"}
+        payload = {"idpUserId": manage_user}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.put(url, json=payload, headers=headers, params=querystring)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+
+    @pytest.mark.order(10)
+    def test_v3_user_add_user_to_workspace():
+        if isVersionApplicable==True and hasFoundation==True:
+            pytest.skip("Skipping because version is 9.1 and above and hasfoundation is true")
+        url = MAS_APIURL+"workspaces/"+mas_workspace_id+"/users/"+manage_user  #url = "https://api.fvtsaas.ibmmasfvt.com/workspaces/masdev/users/saasUser"
+        payload = {"permissions": {"workspaceAdmin": False}}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.put(url, json=payload, headers=headers)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+
+    @pytest.mark.order(11)
+    def test_v3_user_application_permission():
+        if isVersionApplicable==True and hasFoundation==True:
+            pytest.skip("Skipping because version is 9.1 and above and hasfoundation is true")
+        url = MAS_APIURL+"workspaces/"+mas_workspace_id+"/applications/manage/users/"+manage_user  #url = "https://api.fvtsaas.ibmmasfvt.com/workspaces/masdev/applications/manage/users/saasUser"
+        payload = {"role": "MANAGEUSER"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-access-token": authToken
+        }
+        response = requests.put(url, json=payload, headers=headers)
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+
+    @pytest.mark.order(12)
+    def test_check_user_sync():
+        if isVersionApplicable==True and hasFoundation==True:
+            pytest.skip("Skipping because version is 9.1 and above and hasfoundation is true")
+        headers = {"Authorization": f"Bearer {authToken}"}
+
+        def get_user():
+            url = f"{MAS_APIURL}/v3/users/{manage_user}"
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()  # Raises an exception for HTTP errors
+            return response.json()
+
+        # Obtain user just created to check sync status
+        test_user = get_user()
+
+        # Wait for sync status to become SUCCESS within 10 minutes
+        logger.debug("Waiting for user coordinator to update sync status")
+        t_end = time.time() + 60 * 10
+        while time.time() < t_end:
+            sync_state = test_user["applications"]["manage"]["sync"]["state"]
+            if sync_state == "SUCCESS":
+                break
+            else:
+                logger.debug(f"User sync has not been completed yet for app manage: {t_end - time.time():.2f} seconds remaining")
+                time.sleep(5)
+                # Re-check the user sync status
+                test_user = get_user()
+
+        # Verify the sync status is SUCCESS after timeout period
+        assert test_user["applications"]["manage"]["sync"]["state"] == "SUCCESS"
+
+
+
+    @pytest.mark.order(13)
     def test_generate_api_key_for_new_added_user(client_cert):
-        if hasFoundation==False  or isVersionApplicable==False:
-            pytest.skip("Skipping because hasFoundation set to False")
         #user_id="maxadmin"
         global user_api_key
         user_id=manage_user
-        print(f"New user api Key:{user_id}")
+        logger.info(f"New user ID:{user_id}")
+        logger.info(f"New user API key:{user_api_key}")
+        
         api_key = get_api_key(user_id, client_cert, session)
         if api_key is None:
             url = MANAGE_URL + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
-            print("generate_api_key_URL: " + url)
-            print("generate_api_key_CERT" + str(client_cert))
+            logger.info("generate_api_key_URL: " + url)
+            logger.info("generate_api_key_CERT" + str(client_cert))
             resp = ""
             try:
                 # resp=requests.post(url , data ={'expiration':'-1', 'user_id': user_id}, cert=client_cert)
@@ -772,70 +931,108 @@ data:
                 payload = {'expiration': '-1', 'userid': user_id}
                 resp = session.post(url, headers=headers,
                                         json=payload, cert=client_cert, timeout=600)
-                print(resp.text)
+                logger.info(resp.text)
                 if resp.status_code <= 201:
                     data = resp.text
-                    print(str(data))
+                    logger.info(str(data))
                     api_key = get_api_key(user_id, client_cert, session)
-                    print(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
+                    logger.info(f"GENERATED MXAPIKEY for {user_id} is: " + api_key)
                     user_api_key = api_key
                     return api_key
                 else:
-                    print("Failed to Create APIKEY: " + user_id)
-                    print(resp.status_code)
-                    print(resp.text)
+                    logger.info("Failed to Create APIKEY: " + user_id)
+                    logger.info(resp.status_code)
+                    logger.info(resp.text)
                     return None
 
             except Exception as ex:
-                print("Something wrong here")
-                print(ex)
+                logger.info("Something wrong here")
+                logger.info(ex)
         else:
-            print(f"RETRIEVED MXAPIKEY for {user_id} is: " + api_key)
+            logger.info(f"RETRIEVED MXAPIKEY for {user_id} is: " + api_key)
             user_api_key = api_key
             return api_key
     ###ASSET Object CRUD Operation using Newly created user as User is now added to maxadmin group
-    @pytest.mark.order(9)
-    def test_get_site_from_org():
-        if hasFoundation==False  or isVersionApplicable==False:
-            pytest.skip("Skipping because hasFoundation set to False")
-        global site_id
-        url = MANAGE_URL + '/maximo/api/os/MXAPIORGANIZATION'
+    # @pytest.mark.order(14)
+    # def test_get_site_from_org():
+        
+    #     global site_id
+    #     url = MANAGE_URL + '/maximo/api/os/MXAPIORGANIZATION'
 
-        querystring = {"oslc.select":"site.siteid","lean":"1","limit":"1"}
+    #     querystring = {"oslc.select":"site.siteid","lean":"1","limit":"1"}
 
-        headers = {
-        "apikey": user_api_key,
-        "Content-Type": "application/json"
+    #     headers = {
+    #     "apikey": user_api_key,
+    #     "Content-Type": "application/json"
+    #     }
+
+    #     response = requests.request("GET", url, headers=headers, params=querystring,verify=False)
+    #     logger.info("printing site.....")
+    #     logger.info(response.text)
+    #     assert_that(response.status_code).is_equal_to(200)
+    #     siteidmember = response.json().get('member')
+    #     if siteidmember:
+    #         site_id = siteidmember[0]['site']['siteid']
+    @pytest.mark.order(15)
+    def test_add_new_user_to_admin_group():
+        if isVersionApplicable==True and hasFoundation==True:
+            pytest.skip("Skipping because version is 9.1 and above and hasfoundation is true")
+        logger.info(f"admin api key in group:{admin_api_key}")
+        groupid= get_group_id(user_id, session)
+        user_group_url=f'''{MANAGE_URL}/maximo/api/os/mxapigroup/{groupid}?lean=1'''
+
+        payload = {
+            "groupuser": [
+                {
+                    "userid": f"{manage_user}"        
+                }
+            ]
         }
+        headers = {
+            "Content-Type": "application/json",
+            "x-method-override": "PATCH",
+            "patchtype": "MERGE",
+            "apikey": admin_api_key
+        }
+        response = session.post(user_group_url, json=payload, headers=headers)
+        print(f"Add User in group:{response.text}")
+        assert_that(response.status_code).is_equal_to(204)
 
-        response = requests.request("GET", url, headers=headers, params=querystring,verify=False)
-        print("printing site.....")
-        print(response.text)
-        siteidmember = response.json().get('member')
-        if siteidmember:
-            site_id = siteidmember[0]['site']['siteid']
-
-    @pytest.mark.order(10)
+    def get_group_id(user_id, session):
+        group_url = f'''{MANAGE_URL}/maximo/api/os/mxapigroup?lean=1&oslc.select=*&oslc.where=groupname%3D%22{user_id}%22'''
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": admin_api_key
+        }
+        response = session.get(group_url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            group_id = data['member'][0]['maxgroupid']
+            return group_id
+        
+    @pytest.mark.order(16)
     def test_asset_crud_operation_using_new_added_user():
         #Check if asset exists, delete it if present
-        if hasFoundation==False or foundationOnly==False  or isVersionApplicable==False:
-            pytest.skip("Skipping because hasFoundation set to False")
-        print(f"USER api key for ASSET : {user_api_key}")
+        if fullManage==False and isVersionApplicable==True:
+            pytest.skip("Skipping because manage 9.1 doesn't have full manage")
+        logger.info(f"USER api key for ASSET : {user_api_key}")
         assetid = get_asset(asset,session)
         if assetid is not None:
-            print("assetid not none")
+            logger.info("assetid not none")
             delete_asset(assetid,session)
         # Create Asset
         create_asset(asset,session)
         # Get Asset id for newly created Asset
         time.sleep(20)
         assetid = get_asset(asset,session)
-        print(f"ASSETID+{assetid}")
+        logger.info(f"ASSETID+{assetid}")
         time.sleep(20)
         # Update newly created Asset
         update_asset(assetid,session)
         # Delete newly created Asset
         delete_asset(assetid,session)
+
+
         
     def get_asset(asset,session):
         asset_url = f'''{MANAGE_URL}/maximo/api/os/mxapiasset?lean=1&oslc.select=assetnum&oslc.where=assetnum%3D%22{asset}%22'''
@@ -844,6 +1041,7 @@ data:
             "apikey": user_api_key
         }
         response = session.get(asset_url, headers=headers)
+        logger.info(f"get Asset details:{response.text}")
         assert_that(response.status_code).is_equal_to(200)
         
         # Check if the member array is empty
@@ -863,7 +1061,7 @@ data:
             "assetnum": f"{asset}",
             "description": "Sanity Test Asset",
             "priority": "1",
-            "siteid": site_id
+            "siteid": "BEDFORD"
         }
         headers = {
             "Content-Type": "application/json",
@@ -871,7 +1069,7 @@ data:
         }
         response = session.post(asset_url, json=payload, headers=headers,verify=False)
         assert_that(response.status_code).is_equal_to(201)
-        print(asset)
+        logger.info(asset)
 
     def update_asset(assetid,session):
         asset_url = MANAGE_URL+"/maximo/api/os/mxapiasset/"+assetid
@@ -887,7 +1085,7 @@ data:
             "apikey": user_api_key
         }
         response = session.post(asset_url, json=payload, headers=headers, params=querystring,verify=False)
-        print(response.text)
+        logger.info(response.text)
         assert_that(response.status_code).is_equal_to(204)
 
     def delete_asset(assetid,session):
@@ -917,27 +1115,7 @@ data:
         #     create_user()
 
 
-    def delete_user():
-        url = MANAGE_URL + "/maximo/api/os/masapiuser"
-        {"interactive":"1","lean":"1","relativeuri":"1","internalvalues":"1","checkesig":"1"}
-        headers = {
-            "Content-Type": "application/json",
-            "X-MAF-APPNAME": "masuser",
-            "x-method-override": "BULK",
-            "apikey": user_api_key
-        }
-        payload = [
-        {
-            "_action": "Delete",
-          "href": "api/os/masperuser/_SEFSREk4"
-        }]
-        response = requests.request("POST", url, json=payload, headers=headers, params=querystring,verify=False)
-        logger.info(response.text)
-        print(response.text)
-        assert_that(response.status_code).is_in(204, 404)
-        return response
-
-    def create_user():
+    def create_user_manage():
         url = MANAGE_URL + "/maximo/api/os/masperuser"
         querystring = {"lean": "1"}
         payload =   {
@@ -1005,10 +1183,12 @@ data:
               "apikey": user_api_key
         }
         response = requests.post(url, json=payload, headers=headers, params=querystring,verify=False)
-        print("create user response:")
-        print(response)
+        logger.info("create user response:")
+        logger.info(response)
         logger.info(response.text)
         assert_that(response.status_code).is_equal_to(201)
+
+
 
 ---
 kind: ConfigMap

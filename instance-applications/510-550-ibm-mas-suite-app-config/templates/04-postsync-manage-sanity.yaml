@@ -235,6 +235,7 @@ data:
     admin_api_key = ""
     version_number=""
     fullManage=False
+    foundationOnly=False
     hasFoundation=False
     user_api_key = ""
     user_id="maxadmin"  #admin user
@@ -260,7 +261,7 @@ data:
 
     manageNamespace = f"mas-{mas_instance_id}-manage"
     masNamespace = f"mas-{mas_instance_id}-core"
-    manage_route_name = f"{mas_instance_id}-manage-{mas_workspace_id}"
+    manage_route_name = f"{mas_instance_id}-{mas_workspace_id}"
 
     @pytest.fixture(scope="session")
     def dyn_client():
@@ -398,8 +399,8 @@ data:
         MAS_APIURL=f"https://{masapiUrl.spec.host}{masapiUrl.spec.path}"
         if manageUrl:
             #MANAGE_URL = f"https://{manageUrl}"
-            #MANAGE_URL="https://127.0.0.1:9080"    # Use when run from Local. Do port forwarding...
-            MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'  # Use for cluster
+            MANAGE_URL="https://127.0.0.1:9080"    # Use when run from Local. Do port forwarding...
+            #MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'  # Use for cluster
             
         global MANAGE_JDBC_URL, MANAGE_JDBC_USERNAME, MANAGE_JDBC_PASSWORD, MANAGE_JDBC_DRIVER, MANAGE_JDBC_SCHEMA, MANAGE_JDBC_CERT
 
@@ -711,7 +712,7 @@ data:
     def test_get_manage_ping():
         if isVersionApplicable==False:
             pytest.skip("Skipping because version is below 9.1")
-        global hasFoundation,fullManage
+        global hasFoundation,fullManage,foundationOnly
         logger.info("manage url:")
         logger.info(MANAGE_URL)
         ping_url = f'''{MANAGE_URL}/maximo/api/ping'''
@@ -727,9 +728,9 @@ data:
             if response.json()['hasfoundation']==True and response.json()['manageorhealth']==True :
                 fullManage= True
             if response.json()['hasfoundation']==True and response.json()['manageorhealth'] ==False :
-                hasFoundation= True
-            
-            logger.info(f"Foundation Only: {hasFoundation}")  
+                foundationOnly= True
+            hasFoundation=response.json()['hasfoundation']
+            logger.info(f"Foundation Only: {foundationOnly}")  
             logger.info(f"Full Manage: {fullManage}")
 
 
@@ -737,6 +738,7 @@ data:
     def test_create_user_through_manage():
         if hasFoundation==False:
             pytest.skip("Skipping because hasfoundation is false")
+        logger.info(f"api key inside create manage user is :{admin_api_key}")
         # GET Same User first and verify whether it is already present or NOT!
         url = MANAGE_URL + "/maximo/api/os/masperuser"
         querystring = { "oslc.select":"*",
@@ -755,6 +757,8 @@ data:
         if not data.get('member'):
             logger.info("User not present, Create New user.....")
             create_user_manage()
+            logger.info("30 sec wait added to sync.......")
+            time.sleep(30)
         else:
             logger.info(f"User already present... {len(data['member'])} items.")
 
@@ -953,26 +957,27 @@ data:
             user_api_key = api_key
             return api_key
     ###ASSET Object CRUD Operation using Newly created user as User is now added to maxadmin group
-    # @pytest.mark.order(14)
-    # def test_get_site_from_org():
-        
-    #     global site_id
-    #     url = MANAGE_URL + '/maximo/api/os/MXAPIORGANIZATION'
+    @pytest.mark.order(14)
+    def test_get_site_from_org():
+        if fullManage==False and isVersionApplicable==True:
+            pytest.skip("Skipping because manage 9.1 doesn't have full manage")
+        global site_id
+        url = MANAGE_URL + '/maximo/api/os/MXAPIORGANIZATION'
 
-    #     querystring = {"oslc.select":"site.siteid","lean":"1","limit":"1"}
+        querystring = {"oslc.select":"site.siteid","lean":"1","limit":"1"}
 
-    #     headers = {
-    #     "apikey": user_api_key,
-    #     "Content-Type": "application/json"
-    #     }
+        headers = {
+        "apikey": admin_api_key,
+        "Content-Type": "application/json"
+        }
 
-    #     response = requests.request("GET", url, headers=headers, params=querystring,verify=False)
-    #     logger.info("printing site.....")
-    #     logger.info(response.text)
-    #     assert_that(response.status_code).is_equal_to(200)
-    #     siteidmember = response.json().get('member')
-    #     if siteidmember:
-    #         site_id = siteidmember[0]['site']['siteid']
+        response = requests.request("GET", url, headers=headers, params=querystring,verify=False)
+        logger.info("printing site.....")
+        logger.info(response.text)
+        assert_that(response.status_code).is_equal_to(200)
+        siteidmember = response.json().get('member')
+        if siteidmember:
+            site_id = siteidmember[0]['site']['siteid']
     @pytest.mark.order(15)
     def test_add_new_user_to_admin_group():
         if isVersionApplicable==True and hasFoundation==True:
@@ -1061,13 +1066,14 @@ data:
             "assetnum": f"{asset}",
             "description": "Sanity Test Asset",
             "priority": "1",
-            "siteid": "BEDFORD"
+            "siteid": site_id
         }
         headers = {
             "Content-Type": "application/json",
             "apikey": user_api_key
         }
         response = session.post(asset_url, json=payload, headers=headers,verify=False)
+        print(f"Create asset:{response.text}")
         assert_that(response.status_code).is_equal_to(201)
         logger.info(asset)
 
@@ -1180,13 +1186,15 @@ data:
     }
         headers = {
             "Content-Type": "application/json",
-              "apikey": user_api_key
+              "apikey": admin_api_key
         }
         response = requests.post(url, json=payload, headers=headers, params=querystring,verify=False)
         logger.info("create user response:")
         logger.info(response)
         logger.info(response.text)
         assert_that(response.status_code).is_equal_to(201)
+
+
 
 
 

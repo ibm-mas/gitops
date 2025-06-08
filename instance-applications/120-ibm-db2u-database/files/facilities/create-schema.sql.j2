@@ -5,7 +5,18 @@ COMMIT WORK;
 -- CREATE SCHEMA --
 ------------------------------------
 
-CREATE SCHEMA { db2_schema } AUTHORIZATION { db2_user };
+DECLARE @sql_stmt VARCHAR(1024);
+SET @sql_stmt = 'CREATE SCHEMA ' + QUOTE(LOWER('{ db2_schema }')) + ' AUTHORIZATION ' + QUOTE(LOWER('{ db2_user }'));
+
+PREPARE stmt FROM @sql_stmt;
+
+IF (ROW_COUNT() = 0) THEN
+    SIGNAL SQLSTATE '01601' SET MESSAGE_TEXT = 'Schema already exists.';
+END IF;
+
+EXECUTE stmt;
+
+DEALLOCATE PREPARE stmt;
 
 COMMIT WORK;
 

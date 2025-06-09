@@ -102,10 +102,20 @@ spec:
               echo "================================================================================"
               echo
 
-              export CPD_ADMIN_USERNAME="cpadmin"
-              export SECRET_NAME="ibm-iam-bindinfo-platform-auth-idp-credentials"
-              export ADMIN_PASSWORD_PROPERTY="admin_password"
-              
+              echo "Lookup Cloud Pak for Data admin username"
+              USERNAME=$(oc get secret ibm-iam-bindinfo-platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -o json | jq -r '.data.admin_username' | base64 -d)
+
+              if [[ -z ${USERNAME} ]]; then
+                export CPD_ADMIN_USERNAME="admin"
+                export SECRET_NAME="admin-user-details"
+                export ADMIN_PASSWORD_PROPERTY="initial_admin_password"
+
+              else
+                export CPD_ADMIN_USERNAME="cpadmin"
+                export SECRET_NAME="ibm-iam-bindinfo-platform-auth-idp-credentials"
+                export ADMIN_PASSWORD_PROPERTY="admin_password"
+              fi
+
               echo
               echo "Lookup Cloud Pak for Data admin password"
               CPD_ADMIN_PASSWORD=$(oc get secret $SECRET_NAME -n ${CPD_INSTANCE_NAMESPACE} -o json | jq -r ".data.${ADMIN_PASSWORD_PROPERTY}" | base64 -d)

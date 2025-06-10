@@ -9,7 +9,8 @@ metadata:
   labels:
     app: km-controller
 data:
-  DOCKER_SERVER: "{{ .Values.mas_icr_cp }}/aibroker"
+  CONTAINER_REGISTRY: "{{ .Values.mas_icr_cp }}/aibroker"
+  #DOCKER_SERVER: "{{ .Values.mas_icr_cp }}/aibroker"
   PIPELINES_BUCKET: "{{ .Values.mas_aibroker_storage_pipelines_bucket }}"
   TENANTS_BUCKET: "{{ .Values.mas_aibroker_storage_tenants_bucket }}"
   DOCKER_SECRETS_NAME: "ibm-entitlement"
@@ -19,6 +20,12 @@ data:
   CONNECTOR_DEFAULT_TAG: "{{ .Values.mas_aibroker_connector_tag }}"
   DEFAULT_TENANTS: "{{ .Values.tenantNamespace }}"
   PLATFORM: openshift
+  PVC_STORAGE_CLASS_NAME: "{{ .Values.primary_storage_class }}"
+  LOG_FORMAT: "json"
+  MODEL_ID_UNIQUE_LENGTH: "{{ .Values.model_id_unique_length }}"
+  MODEL_ID_PREFIX: "{{ .Values.model_id_prefix }}"
+  AFFINITY_ENABLED: "false"
+  CONNECTOR_TTL: "10"
 
 
 ---
@@ -158,8 +165,8 @@ spec:
             - secretRef:
                 name: km-s3-secret
           volumeMounts:
-            - name: storage
-              mountPath: "/storage"
+            - name: workspace-volume
+              mountPath: /workspace
             - name: ssh-key
               mountPath: "/etc/ssl/certs"
               readOnly: true

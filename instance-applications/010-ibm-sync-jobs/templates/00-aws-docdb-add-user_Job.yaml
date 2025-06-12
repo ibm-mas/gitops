@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -110,6 +110,15 @@ spec:
                 secretKeyRef:
                   name: aws-docdb
                   key: docdb_master_password
+
+            # If this is set, it implies MONGODB-AWS authMechansim is in use (which this Job does not support)
+            # Creation of the Mongo user for the MAS instance will be handled by Terraform instead, this Job will exit as a no-op
+            - name: DOCDB_AWS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-docdb
+                  key: accessKey
+
             - name: DOCDB_INSTANCE_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -149,6 +158,12 @@ spec:
               echo "================================================================================"
               echo "/opt/app-root/src/run-role.sh aws_documentdb_user"
               echo "================================================================================"
+
+              if [[ -n "${DOCDB_AWS_ACCESS_KEY}" ]]; then
+                echo "accessKey is set in Mongo secret implying MONGODB-AWS auth mechanism is in use"
+                echo "Creation of the Mongo user for the MAS instance will be handled by Terraform instead, this Job will exit as a no-op"
+                exit 0
+              fi
 
               export MAS_CONFIG_DIR="/tmp/${MAS_INSTANCE_ID}/aws_documentdb_user"
               OUTPUT_FILE=${MAS_CONFIG_DIR}/docdb-${MAS_INSTANCE_ID}-instance-credentials.yml

@@ -1,4 +1,4 @@
-IBM Mas Provisioner
+IBM MAS Provisioner (For Internal Use Only)
 ===============================================================================
-Installs the Mas Provisioner service which sends a notification when an order comes through AWS market place.
+Installs the MAS Provisioner service which sends a notification when an order comes through AWS market place. The MAS provisioner service broker is intended for internal use only.
 

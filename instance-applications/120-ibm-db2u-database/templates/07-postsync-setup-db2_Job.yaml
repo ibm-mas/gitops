@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v10" }}
+{{- $_job_version := "v12" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -566,18 +566,18 @@ spec:
                 echo "================================================================================"
                 # Copy and run a script on the db2u pod to perform Facilities-specific setup tasks
 
-                export DB2_SCHEMA="tridata"
+                export DB2_SCHEMA="TRIDATA"
 
                 echo ""
                 echo "Templating out facilities db2 scripts"
                 echo "--------------------------------------------------------------------------------"
                 mkdir -p /tmp/db2-scripts-facilities-updated
                 FACILITIES_DB2_SETUP_PATH=/tmp/db2-scripts-facilities-updated/db2config.sh
-                FACILITIES_TABLESPACES_PATH=/tmp/db2-scripts-facilities-updated/create-tablespaces.sql
-                FACILITIES_SCHEMA_PATH=/tmp/db2-scripts-facilities-updated/create-schema.sql
+                FACILITIES_TABLESPACES_PATH=/tmp/db2-scripts-facilities-updated/create-tablespaces.sh
+                FACILITIES_SCHEMA_PATH=/tmp/db2-scripts-facilities-updated/create-schema.sh
                 sed "s/{ db2_dbname }/$DB2_DBNAME/g; s/{ db2_user }/$DB2_USER/g;" /tmp/db2-scripts-facilities/db2config.sh.j2 > ${FACILITIES_DB2_SETUP_PATH}
-                sed "s/{ db2_dbname }/$DB2_DBNAME/g;" /tmp/db2-scripts-facilities/create-tablespaces.sql.j2 > ${FACILITIES_TABLESPACES_PATH}
-                sed "s/{ db2_dbname }/$DB2_DBNAME/g; s/{ db2_user }/$DB2_USER/g; s/{ db2_schema }/$DB2_SCHEMA/g;" /tmp/db2-scripts-facilities/create-schema.sql.j2 > ${FACILITIES_SCHEMA_PATH}
+                sed "s/{ db2_dbname }/$DB2_DBNAME/g;" /tmp/db2-scripts-facilities/create-tablespaces.sh.j2 > ${FACILITIES_TABLESPACES_PATH}
+                sed "s/{ db2_dbname }/$DB2_DBNAME/g; s/{ db2_user }/$DB2_USER/g; s/{ db2_schema }/$DB2_SCHEMA/g;" /tmp/db2-scripts-facilities/create-schema.sh.j2 > ${FACILITIES_SCHEMA_PATH}
 
                 echo ""
                 echo "Copying all the required DB2 scripts in c-${DB2_INSTANCE_NAME}-db2u-0"
@@ -594,17 +594,17 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "/tmp/db2-scripts-facilities-updated/db2config.sh" db2inst1 || exit $?
 
-                # Execute create-tablespaces.sql
+                # Execute create-tablespaces.sh
                 echo ""
-                echo "Executing create-tablespaces.sql file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "Executing create-tablespaces.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 -tvf /tmp/db2-scripts-facilities-updated/create-tablespaces.sql" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "/tmp/db2-scripts-facilities-updated/create-tablespaces.sh" db2inst1 || exit $?
 
-                # Execute create-schema.sql 
+                # Execute create-schema.sh 
                 echo ""
-                echo "Executing create-schema.sql file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "Executing create-schema.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 -tvf /tmp/db2-scripts-facilities-updated/create-schema.sql" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "/tmp/db2-scripts-facilities-updated/create-schema.sh" db2inst1 || exit $?
 
               fi # [[ "$MAS_APP_ID" == "facilities" ]]
 

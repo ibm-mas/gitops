@@ -70,15 +70,6 @@ spec:
                   name: aws-docdb
                   key: docdb_instance_password
 
-            # If this is set, it implies MONGODB-AWS authMechansim is in use (which this Job does not support)
-            # Creation of the Mongo user for the MAS instance will be handled by Terraform instead, this Job will exit as a no-op
-            - name: DOCDB_AWS_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: aws-docdb
-                  key: accessKey
-
-
             - name: SM_AWS_REGION
               valueFrom:
                 secretKeyRef:
@@ -103,13 +94,6 @@ spec:
             - -c
             - |
 
-
-              if [[ -n "${DOCDB_AWS_ACCESS_KEY}" ]]; then
-                echo "accessKey is set in Mongo secret implying MONGODB-AWS auth mechanism is in use"
-                echo "Removal of the Mongo user for the MAS instance will be handled by Terraform instead, this Job will exit as a no-op"
-                echo "TODO: May still need to honour MAS_WIPE_MONGO_DATA here if set. In order to do so, we'll need to update this Job to support the MONGODB-AWS auth mechanism."
-                exit 0
-              fi
 
               if [[ "${MAS_WIPE_MONGO_DATA}" == "true" ]]; then
                 echo

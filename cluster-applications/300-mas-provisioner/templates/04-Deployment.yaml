@@ -1,0 +1,163 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mas-mcsp-provisioner
+  namespace: "{{ .Values.provisioner_namespace }}"
+  labels:
+    app: mas-provisioner
+    component: product-service-broker
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "06"
+spec:
+  selector:
+    matchLabels:
+      app: mas-provisioner
+      component: product-service-broker
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: mas-provisioner
+        component: product-service-broker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: mas-provisioner-operator
+          image: "docker-na-public.artifactory.swg-devops.com/wiotp-docker-local/maximoappsuite/ibm-mas-mcsp-provisioner:{{ .Values.provisioner_version }}"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: {{ .Values.service_port }}
+          env:
+            {{- if not (empty .Values.pd_key) }}
+            - name: PD_ROUTING_KEY
+              value: /opt/automation/mas-provisioner/pdkey/key
+            {{- end }}
+            - name: MTLS_ENABLED
+              value: "{{ .Values.enable_mtls }}"
+            {{- if not (empty .Values.csb_client_ca) }}
+            - name: CLIENT_CA_PATH
+              value: /opt/automation/mas-provisioner/cert
+            {{- end }}
+            - name: TLS_CERT_PATH
+              value: /opt/automation/mas-provisioner/tls/tls.crt
+            - name: TLS_KEY_PATH
+              value: /opt/automation/mas-provisioner/tls/tls.key
+            - name: SERVICE_PORT
+              value: "{{ .Values.service_port }}"
+            {{- if not (empty .Values.github_token) }}
+            - name: GITHUB_TOKEN
+              value: /opt/automation/mas-provisioner/git/token
+            {{- end }}
+            - name: STATUS_REPO_URL
+              value: "{{ .Values.status_repo_url }}"
+            - name: ASYNC_POLL_INTERVAL
+              value: "{{ .Values.async_poll_interval }}"
+            - name: ASYNC_POLL_MAX
+              value: "{{ .Values.async_poll_max }}"
+            - name: ACCOUNT_ALIAS
+              value: "{{ .Values.account_alias }}"
+            - name: BASE_BRANCH
+              value: "{{ .Values.base_branch }}"
+            - name: ENABLE_PD_ALERT
+              value: "{{ .Values.enable_pd_alert }}"
+            - name: ENABLE_OCM_ALERT
+              value: "{{ .Values.enable_ocm_alert }}"
+            {{- if not (empty .Values.ocm_api_key) }}
+            - name: OCM_API_KEY
+              value: /opt/automation/mas-provisioner/ocm/key
+            {{- end }}
+            {{- if not (empty .Values.instana_api_token) }}
+            - name: INSTANA_API_TOKEN
+              value: /opt/automation/mas-provisioner/instana/token
+            {{- end }}
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 20m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            timeoutSeconds: 180
+            periodSeconds: 600
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 10
+            timeoutSeconds: 30
+            periodSeconds: 60
+            failureThreshold: 1
+          volumeMounts:
+            - name: tls-certs
+              readOnly: true
+              mountPath: /opt/automation/mas-provisioner/tls
+            {{- if not (empty .Values.github_token) }}
+            - name: git
+              readOnly: true
+              mountPath: /opt/automation/mas-provisioner/git
+            {{- end }}
+            {{- if and .Values.enable_pd_alert (.Values.pd_key) }}
+            - name: pd-key
+              readOnly: true
+              mountPath: /opt/automation/mas-provisioner/pdkey
+            {{- end }}
+            {{- if not (empty .Values.csb_client_ca) }}
+            - name: csb-client-ca
+              readOnly: true
+              mountPath: /opt/automation/mas-provisioner/cert/clientca
+            {{- end }}
+            {{- if not (empty .Values.instana_api_token) }}
+            - name: instana-api
+              readOnly: true
+              mountPath: /opt/automation/mas-provisioner/instana
+            {{- end }}
+            {{- if and .Values.enable_ocm_alert (not (empty .Values.ocm_api_key)) }}
+            - name: ocm-api
+              readOnly: true
+              mountPath: /opt/automation/mas-provisioner/ocm
+            {{- end }}
+      serviceAccountName: mas-provisioner-sa
+      imagePullSecrets:
+        - name: ibm-entitlement
+      volumes:
+        - name: tls-certs
+          secret:
+            secretName: mas-provisioner-certificate
+        {{- if not (empty .Values.github_token) }}
+        - name: git
+          secret:
+            secretName: git-secret
+        {{- end }}
+        {{- if and .Values.enable_pd_alert (.Values.pd_key) }}
+        - name: pd-key
+          secret:
+            secretName: pd-routing-key-secret
+        {{- end }}
+        {{- if not (empty .Values.csb_client_ca) }}
+        - name: csb-client-ca
+          secret:
+            secretName: csb-ca
+        {{- end }}
+        {{- if not (empty .Values.instana_api_token) }}
+        - name: instana-api
+          secret:
+            secretName: instana-api-secret
+        {{- end }}
+        {{- if and .Values.enable_ocm_alert (not (empty .Values.ocm_api_key)) }}
+        - name: ocm-api
+          secret:
+            secretName: ocm-api-secret
+        {{- end }}
+      terminationGracePeriodSeconds: 60

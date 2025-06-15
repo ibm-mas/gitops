@@ -69,6 +69,9 @@ def define_env(env):
     return gitops_repo_dir_link("root-applications/ibm-mas-instance-root", "Instance Root Chart")
   env.macro(instance_root_chart)
 
+  def tenant_root_chart():
+    return gitops_repo_dir_link("root-applications/ibm-aibroker-tenant-root", "Tenant Root Chart")
+  env.macro(tenant_root_chart)
 
 
   def cluster_root_app_set():
@@ -82,5 +85,8 @@ def define_env(env):
   def aibroker_instance_root_app_set():
     return gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/099-aibroker-instance-appset.yaml", "AiBroker Instance Root Application Set")
   env.macro(aibroker_instance_root_app_set)
-
+  
+  def aibroker_tenant_root_app_set():
+    return gitops_repo_file_link("root-applications/ibm-aibroker-instance-root/templates/070-aibroker-tenant-appset.yaml", "AiBroker Tenant Root Application Set")
+  env.macro(aibroker_tenant_root_app_set)
 

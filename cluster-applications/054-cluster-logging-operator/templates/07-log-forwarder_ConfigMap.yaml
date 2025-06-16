@@ -1,0 +1,46 @@
+{{- if .Values.setup_log_forwarding }}
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: syslog-forwarder
+  namespace: openshift-logging
+  annotations:
+    argocd.argoproj.io/sync-wave: "055"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  config.yaml: |
+
+    clusteridpath: /wkdir/clusterid
+    logcharslimit: 23000
+    truncatelength: 22998
+    droplength: 23000
+    loglevel: debug
+    appname: myapp
+    maxerrorsend: 10
+
+    logs:
+      enable_receivemsg: false
+      enable_sendmsg: true
+      enable_dropmsg: true
+      enable_truncatemsg: true
+      
+    server:
+      tls:
+        certfilepath: "/tls/server/tls.crt"
+        keyfilepath: "/tls/server/tls.key"
+        enabled: false
+
+    client:
+      enabled: true
+      tls:
+        certfilepath: "/tls/client/tls.crt"
+        keyfilepath: "/tls/client/tls.key"
+        cabundlepath: "/tls/client/caBundle.crt"
+        enabled: true
+        insecureskipverify: true
+      url: "{{ .Values.log_forwarder_url }}"
+{{- end }}

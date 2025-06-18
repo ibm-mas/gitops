@@ -1,13 +1,9 @@
 {{- if eq .Values.mas_app_id "manage" }}
 {{- if and (.Values.mas_appws_spec.components) (.Values.mas_appws_spec.components.icd) }}
 
-{{- /*
-Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
-*/}}
-{{- $_cli_image_digest := "sha256:b3ecce096368c967bbc6bac2f074473a65418462417b6e550ad4777427c3b06b" }}
-
-# A verify test is one that is non disruptive i.e. it won't create new users, i won't call authenticated apis, and it won't creates resources 
-# in the application. This type of test is run on every environment and allows a layer of verification of the app
+# A sanity test is one that can be disruptive i.e. it can create new users, call authenticated apis, creates resources 
+# in the application. This type of test should only be run in a downstream environment such as a dev or staging env
+# The control over if these tests run or not is controlled by the `run_sanity_test` boolean in the values
 
 {{ $ns               :=  .Values.mas_app_namespace }}
 {{ $np_name          :=  "postsync-verify-maximoit-np" }}
@@ -344,59 +340,58 @@ data:
 
     
     #***********************Test Functions***************  
-    #TC#1 Test to verify system info has Maximo IT
-    def test_system_info(manage_host_ca_filepath, headers):
-        response = requests.get(MANAGE_URL + '/maximo/api/systeminfo', headers=headers, verify=manage_host_ca_filepath)
-        # Check if the response code is 200 OK
-        assert response.status_code == 200, "System Info fetch failed."
-        
-        # Check if 'Maximo IT' is present in the response text
-        assert 'Maximo IT' in response.text, "'Maximo IT' not found in the response."
-        print("'Maximo IT' found in the response.")
-        
-    #TC#2 Test to verify Self Serve is installed
-    def test_self_serve_installed_insystem(manage_host_ca_filepath, headers):
+    # Function to check system info has Maximo IT
+    def test_fetch_system_info(session, headers):
+        response = session.get(f"{MANAGE_URL}/maximo/api/systeminfo", headers=headers, verify=False)
+        assert response.status_code == 200, f"Unexpected status code: {response.status_code}"
+        print("System info fetched successfully")
 
-        response = requests.get(f'{MANAGE_URL}/maximo/api/os/mxapimaxapp?oslc.select=*', headers=headers, verify=manage_host_ca_filepath)
-        print("Response Code ", response.status_code)
-        assert response.status_code == 200, "Failed to Fetch system information."
-        systemsinfo = response.json()
-        systemsinfo.get('oslc:responseInfo')
-        app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
-
-        # iterate through the application list
-        for i in range(app_count):
-            j=0
-            app_name = systemsinfo['rdfs:member'][i].get('spi:app')
-            if app_name == "SELFSERVE":
-                print("SELFSERVE : Installed in System")
-                j=1
-                break
-        assert j == 1, "Self Serve is not installed"
-
-    #TC#3 Test to verify Service View is installed
-    def test_service_view_installed_insystem(manage_host_ca_filepath, headers):
-
-        response = requests.get(f'{MANAGE_URL}/maximo/api/os/mxapimaxapp?oslc.select=*', headers=headers, verify=manage_host_ca_filepath)
-        print("Response Code ", response.status_code)
-        assert response.status_code == 200, "Failed to Fetch system information."
-        systemsinfo = response.json()
-        systemsinfo.get('oslc:responseInfo')
-        app_count = systemsinfo['oslc:responseInfo']['oslc:totalCount']
-
-        # iterate through the application list
-
-        for i in range(app_count):
-            j=0
-            app_name = systemsinfo['rdfs:member'][i].get('spi:app')
-            if app_name == "SERVICEVIEW":
-                print("SERVICEVIEW : Installed in System")
-                j=1
-                break
-        assert j == 1, "SERVICEVIEW is not installed"
+        response_json = response.json()
+        response_text = str(response_json)
+        assert "Maximo-IT" in response_text, "Maximo-IT string is not present in system info response"
+        print("Maximo-IT is present in System Information")
 
 
+    # Function to check if an app exists in API response
+    def is_app_present(response_json, target_app):
+        if "member" in response_json and isinstance(response_json["member"], list):
+            return any(
+                "maxapps" in member and any(app["app"] == target_app for app in member["maxapps"])
+                for member in response_json["member"]
+            )
+        return False
 
+
+    # Check if SELFSERVE app exists
+    @pytest.mark.parametrize("user_id, app", [("maxadmin", "SELFSERVE")])
+    def test_selserve_app_presence(user_id, app, headers, session):
+        group_url = f"{MANAGE_URL}/maximo/api/os/mxapigroup?lean=1&oslc.select=*&oslc.where=groupname=%22{user_id}%22"
+
+        response = session.get(group_url, headers=headers, verify=False)
+        assert response.status_code == 200, f"Unexpected status code: {response.status_code}"
+
+        response_json = response.json()
+        app_found = is_app_present(response_json, app)
+
+        assert app_found, f"App {app} is not present in the response"
+        print(f"App {app} is present")
+
+
+    # Check if SERVICEVIEW app exists
+    @pytest.mark.parametrize("user_id, app", [("maxadmin", "SERVICEVIEW")])
+    def test_serviceview_app_presence(user_id, app, headers, session):
+        group_url = f"{MANAGE_URL}/maximo/api/os/mxapigroup?lean=1&oslc.select=*&oslc.where=groupname=%22{user_id}%22"
+
+        response = session.get(group_url, headers=headers, verify=False)
+        assert response.status_code == 200, f"Unexpected status code: {response.status_code}"
+
+        response_json = response.json()
+        app_found = is_app_present(response_json, app)
+
+        assert app_found, f"App {app} is not present in the response"
+        print(f"App {app} is present")
+
+    
 ---
 kind: ConfigMap
 apiVersion: v1
@@ -408,7 +403,7 @@ metadata:
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
   labels:
-    type: mas-app-verification-record
+    type: mas-app-sanity-record
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
@@ -444,7 +439,7 @@ spec:
       imagePullSecrets: []
       containers:
         - name: run
-          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          image: quay.io/ibmmas/cli:latest
           imagePullPolicy: IfNotPresent
           resources:
             limits:

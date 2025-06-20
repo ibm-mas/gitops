@@ -13,7 +13,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "070"
 spec:
-  # goTemplate: true
+  goTemplate: true
   generators:
     - merge:
         mergeKeys:
@@ -38,12 +38,12 @@ spec:
     applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
   template:
     metadata:
-      name: "aibroker-tenant.{{ .Values.cluster.id }}.{{ .Values.instance.id }}.{{ .Values.tenant.id }}"
+      name: "aibroker-tenant.{{ .Values.cluster.id }}.{{ .Values.instance.id }}.{{ `{{.tenant.id}}` }}"
       labels:
         environment: '{{ .Values.account.id }}'
         cluster: '{{ .Values.cluster.id }}'
         instance: '{{ .Values.instance.id }}'
-        tenant: '{{ .Values.tenant.id }}'
+        tenant: '{{ `{{.tenant.id}}` }}'
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
@@ -55,15 +55,12 @@ spec:
         notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
         {{- end }}
     spec:
-      project: "{{ .Values.argo.projects.apps }}"
-      destination:
-        server: {{ .Values.cluster.url }}
-        namespace: "{{ .Values.ibm_aibroker_tenant.openshift_namespace }}"
+      project: "{{ .Values.argo.projects.rootapps }}"
 
       source:
           repoURL: "{{ .Values.source.repo_url }}"
           targetRevision: "{{ .Values.source.revision }}"
-          path: instance-applications/115-ibm-aibroker-tenant
+          path: root-applications/ibm-aibroker-instance-root
           plugin:
             name: {{ .Values.avp.name }} 
             env:
@@ -129,18 +126,28 @@ spec:
               - name: AVP_SECRET
                 value: {{ .Values.avp.secret }}
               {{- end }}
+      destination:
+        server: 'https://kubernetes.default.svc'
+        namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
           {{- if .Values.auto_delete }}
           prune: true
           {{- end }}
           selfHeal: true
-        retry:
-          limit: 20
         syncOptions:
-          - CreateNamespace=true
-        managedNamespaceMetadata:
-          labels:
-    {{- if .Values.custom_labels }}
-    {{ .Values.custom_labels | toYaml | indent 8 }}
-    {{- end }}
+          - CreateNamespace=false
+          - RespectIgnoreDifferences=true
+        retry:
+          limit: -1
+      ignoreDifferences:
+        - group: '*'
+          kind: ServiceAccount
+          jsonPointers:
+            - /imagePullSecrets
+        - group: 'marketplace.redhat.com/v1alpha1'
+          kind: MarketplaceConfig
+          jsonPointers:
+            - /spec
+      # revisionHistoryLimit set to 1 due to size limit of what can be stored in etcd for anything larger
+      revisionHistoryLimit: 1

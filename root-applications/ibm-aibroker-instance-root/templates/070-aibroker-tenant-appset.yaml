@@ -10,6 +10,7 @@ metadata:
     environment: '{{ .Values.account.id }}'
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id}}'
+    tenant: '{{ .Values.tenant.id}}'
   annotations:
     argocd.argoproj.io/sync-wave: "070"
 spec:
@@ -24,26 +25,26 @@ spec:
           - 'merge-key'
         generators:
           # This is the "base" generator, it *must* be first in the list
+          # - git:
+          #     repoURL: "{{ .Values.generator.repo_url }}"
+          #     revision: "{{ .Values.generator.revision }}"
+          #     files:
+          #     - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/aibroker-tenant01/ibm-aibroker-tenant-base.yaml"
           - git:
               repoURL: "{{ .Values.generator.repo_url }}"
               revision: "{{ .Values.generator.revision }}"
               files:
-              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/*/ibm-aibroker-tenant-base.yaml"
-          - git:
-              repoURL: "{{ .Values.generator.repo_url }}"
-              revision: "{{ .Values.generator.revision }}"
-              files:
-              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/*/ibm-aibroker-tenant.yaml"                 
+              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/aibroker-tenant01/ibm-aibroker-tenant.yaml"                 
   syncPolicy:
     applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
   template:
     metadata:
-      name: "aibroker-tenant.{{ .Values.cluster.id }}.{{ .Values.instance.id }}.{{ `{{.tenant.id}}` }}"
+      name: "aibroker-tenant.{{ .Values.cluster.id }}.{{ .Values.instance.id }}.{{ .Values.tenant.id }}"
       labels:
         environment: '{{ .Values.account.id }}'
         cluster: '{{ .Values.cluster.id }}'
         instance: '{{ .Values.instance.id }}'
-        tenant: '{{ `{{ .tenant.id }}` }}'
+        tenant: '{{ .Values.tenant.id }}'
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
@@ -64,7 +65,16 @@ spec:
             name: {{ .Values.avp.name }} 
             env:
               - name: {{ .Values.avp.values_varname }}
-                value: '{{ .ibm_aibroker_tenant | toPrettyJson }}'
+                value: |
+                  tenant_id: "aibroker-tenant01"
+                  mas_instance_id: "{{ .ibm_aibroker_tenant.mas_instance_id }}"
+                  aibroker_namespace: "{{ .ibm_aibroker_tenant.aibroker_namespace }}"
+                  junitreporter:
+                    reporter_name: "ibm-aibroker-tenant-{{ .Values.instance.id }}"
+                    cluster_id: "{{ .Values.cluster.id }}"
+                    devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+                    devops_build_number: "{{ .Values.devops.build_number }}"
+                    gitops_version: "{{ .Values.source.revision }}"
               - name: ARGOCD_APP_NAME
                 value: aibrokertenantapp
               {{- if not (empty .Values.avp.secret) }}

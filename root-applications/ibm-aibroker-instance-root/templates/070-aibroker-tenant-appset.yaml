@@ -1,4 +1,3 @@
-
 ---
 # IBM AiBroker Tenant Application Set
 apiVersion: argoproj.io/v1alpha1
@@ -9,85 +8,70 @@ metadata:
   labels:
     environment: '{{ .Values.account.id }}'
     cluster: '{{ .Values.cluster.id }}'
-    instance: '{{ .Values.instance.id}}'
-    tenant: '{{ .Values.tenant.id}}'
+    instance: '{{ .Values.instance.id }}'
+    tenant: '{{ .Values.tenant.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "070"
 spec:
   goTemplate: true
   generators:
-    - merge:
-        mergeKeys:
-          # Would love to use ".path.path" here to merge the configs together
-          # but this is not possible currently with goTemplate: true - see https://github.com/argoproj/argo-cd/issues/12836
-          # (and we really want goTemplate: true so we can dump the entire config file into HELM_VALUES using toPrettyJson)
-          # instead, we are forced to explicitly provide a merge key in all of our config files to make them line up
-          - 'merge-key'
-        generators:
-          # This is the "base" generator, it *must* be first in the list
-          # - git:
-          #     repoURL: "{{ .Values.generator.repo_url }}"
-          #     revision: "{{ .Values.generator.revision }}"
-          #     files:
-          #     - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/aibroker-tenant01/ibm-aibroker-tenant-base.yaml"
-          - git:
-              repoURL: "{{ .Values.generator.repo_url }}"
-              revision: "{{ .Values.generator.revision }}"
-              files:
-              - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/aibroker-tenant01/ibm-aibroker-tenant.yaml"                 
-  syncPolicy:
-    applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
+    - git:
+        repoURL: "{{ .Values.generator.repo_url }}"
+        revision: "{{ .Values.generator.revision }}"
+        files:
+          - path: "{{ .Values.account.id }}/{{ .Values.cluster.id }}/{{ .Values.instance.id }}/aibroker-tenant*/ibm-aibroker-tenant.yaml"
   template:
     metadata:
-      name: "aibroker-tenant.{{ .Values.cluster.id }}.{{ .Values.instance.id }}.{{ .Values.tenant.id }}"
+      name: "aibroker-tenant.{{ .cluster_id }}.{{ .instance_id }}.{{ .tenant_id }}"
       labels:
-        environment: '{{ .Values.account.id }}'
-        cluster: '{{ .Values.cluster.id }}'
-        instance: '{{ .Values.instance.id }}'
-        tenant: '{{ .Values.tenant.id }}'
+        environment: '{{ .environment }}'
+        cluster: '{{ .cluster_id }}'
+        instance: '{{ .instance_id }}'
+        tenant: '{{ .tenant_id }}'
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
       annotations:
         healthCheckTimeout: "1800"
         argocd.argoproj.io/sync-wave: "070"
-        {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+{{- if and .Values.notifications .Values.notifications.slack_channel_id }}
         notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
         notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
-        {{- end }}
+{{- end }}
     spec:
       project: "{{ .Values.argo.projects.rootapps }}"
       source:
-          repoURL: "{{ .Values.source.repo_url }}"
-          targetRevision: "{{ .Values.source.revision }}"
-          path: instance-applications/115-ibm-aibroker-tenant
-          plugin:
-            name: {{ .Values.avp.name }} 
-            env:
-              - name: {{ .Values.avp.values_varname }}
-                value: |
-                  tenant_id: "aibroker-tenant01"
-                  aibroker_namespace: "{{ .ibm_aibroker_tenant.aibroker_namespace }}"
-                  junitreporter:
-                    reporter_name: "ibm-aibroker-tenant-{{ .Values.instance.id }}"
-                    cluster_id: "{{ .Values.cluster.id }}"
-                    devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
-                    devops_build_number: "{{ .Values.devops.build_number }}"
-                    gitops_version: "{{ .Values.source.revision }}"
-              - name: ARGOCD_APP_NAME
-                value: aibrokertenantapp
-              {{- if not (empty .Values.avp.secret) }}
-              - name: AVP_SECRET
-                value: {{ .Values.avp.secret }}
-              {{- end }}
+        repoURL: "{{ .Values.source.repo_url }}"
+        targetRevision: "{{ .Values.source.revision }}"
+        path: instance-applications/115-ibm-aibroker-tenant
+        plugin:
+          name: {{ .Values.avp.name }}
+          env:
+            - name: {{ .Values.avp.values_varname }}
+              value: |
+                tenant_id: "{{ .tenant_id }}"
+                mas_instance_id: "{{ .mas_instance_id }}"
+                aibroker_namespace: "{{ .aibroker_namespace }}"
+                junitreporter:
+                  reporter_name: "ibm-aibroker-tenant-{{ .instance_id }}"
+                  cluster_id: "{{ .cluster_id }}"
+                  devops_mongo_uri: "{{ .devops_mongo_uri }}"
+                  devops_build_number: "{{ .devops_build_number }}"
+                  gitops_version: "{{ .gitops_version }}"
+            - name: ARGOCD_APP_NAME
+              value: aibrokertenantapp
+{{- if not (empty .Values.avp.secret) }}
+            - name: AVP_SECRET
+              value: {{ .Values.avp.secret }}
+{{- end }}
       destination:
-        server: 'https://kubernetes.default.svc'
-        namespace: {{ .Values.argo.namespace }}
+        server: https://kubernetes.default.svc
+        namespace: {{ .aibroker_namespace }}
       syncPolicy:
         automated:
-          {{- if .Values.auto_delete }}
+{{- if .Values.auto_delete }}
           prune: true
-          {{- end }}
+{{- end }}
           selfHeal: true
         syncOptions:
           - CreateNamespace=false

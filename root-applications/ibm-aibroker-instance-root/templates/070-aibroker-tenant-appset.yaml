@@ -55,7 +55,11 @@ spec:
         notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
         {{- end }}
     spec:
-      project: "{{ .Values.argo.projects.rootapps }}"
+      project: "{{ .Values.argo.projects.apps }}"
+      destination:
+        server: {{ .Values.cluster.url }}
+        namespace: "{{ .Values.ibm_aibroker_tenant.openshift_namespace }}"
+
       source:
           repoURL: "{{ .Values.source.repo_url }}"
           targetRevision: "{{ .Values.source.revision }}"
@@ -125,27 +129,19 @@ spec:
               - name: AVP_SECRET
                 value: {{ .Values.avp.secret }}
               {{- end }}
-      destination:
-        server: 'https://kubernetes.default.svc'
-        namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
           {{- if .Values.auto_delete }}
           prune: true
           {{- end }}
           selfHeal: true
-        syncOptions:
-          - CreateNamespace=false
-          - RespectIgnoreDifferences=true
         retry:
-          limit: -1
-      ignoreDifferences:
-        - group: '*'
-          kind: ServiceAccount
-          jsonPointers:
-            - /imagePullSecrets
-        - group: 'marketplace.redhat.com/v1alpha1'
-          kind: MarketplaceConfig
-          jsonPointers:
-            - /spec
-      revisionHistoryLimit: 1
+          limit: 20
+        syncOptions:
+          - CreateNamespace=true
+        managedNamespaceMetadata:
+          labels:
+    {{- if .Values.custom_labels }}
+    {{ .Values.custom_labels | toYaml | indent 8 }}
+    {{- end }}
+    {{- end }}

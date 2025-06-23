@@ -19,6 +19,14 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "144"
 stringData:
-  ca.crt: "{{ .Values.drocfg_ca }}"
+  ca.crt: >-
+    {{ .Values.drocfg_ca
+        | replace "BEGIN CERTIFICATE" "BEGIN_CERTIFICATE"
+        | replace "END CERTIFICATE" "END_CERTIFICATE"
+        | regexReplaceAll "\\s+" "\n"
+        | replace "BEGIN_CERTIFICATE" "BEGIN CERTIFICATE"
+        | replace "END_CERTIFICATE" "END CERTIFICATE"
+    }}
+
 type: Opaque
 

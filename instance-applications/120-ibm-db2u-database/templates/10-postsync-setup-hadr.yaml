@@ -417,7 +417,7 @@ spec:
 
                   # check if it is a full backup
                   backup_type=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 connect to ${DB2_DBNAME};db2 -x \"select OPERATIONTYPE from sysibmadm.db_history where OPERATION='B' and START_TIME=${timestamp}\"" db2inst1`
-                  BACKUP_TYPE_SCRIPT='/tmp/keystore_generation.sh'
+                  BACKUP_TYPE_SCRIPT='/tmp/backup_type_script.sh'
 
                   cat > ${BACKUP_TYPE_SCRIPT} << EOF
                     #!/bin/bash
@@ -427,9 +427,10 @@ spec:
                       exit 1
                     fi
                     backup_type=\$(db2 -x "select OPERATIONTYPE from sysibmadm.db_history where OPERATION='B' and START_TIME=${timestamp}")
-                    echo "Backup type is ${backup_type}"
+                    echo "Backup type is \${backup_type}"
 
-                EOF
+              EOF
+
                   chmod +x ${BACKUP_TYPE_SCRIPT}
                   echo ""
                   echo "Copy ${BACKUP_TYPE_SCRIPT} to ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
@@ -441,7 +442,7 @@ spec:
                   echo "--------------------------------------------------------------------------------"
                   oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUP_TYPE_SCRIPT} | tee /tmp/backuptype.log" db2inst1 || exit $?
                   backup_type=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /tmp/backuptype.log | grep 'Backup type is'" db2inst1`
-                  echo ${backup_type}
+                  backup_type=`echo ${backup_type} | tr -d '' | awk '{print $NF}'`
                   echo "Backup type is ${backup_type}"
                   if [[ $backup_type == 'F' || $backup_type == 'N' ]]; then
                     echo "The latest backup ${timestamp} is full backup"

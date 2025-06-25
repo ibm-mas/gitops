@@ -414,6 +414,16 @@ spec:
                     timestamp=`echo ${backup_filename} | awk -F '.' '{print $(NF-1)}'`
                     echo "Timestamp of backup is $timestamp"
                   fi
+
+                  # check if it is a full backup
+                  backup_type=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 connect to ${DB2_DBNAME};db2 -x \"select OPERATIONTYPE from sysibmadm.db_history where OPERATION='B' and START_TIME=${timestamp}\"" db2inst1
+                  echo "Backup type is ${backup_type}"
+                  if [[ $backup_type == 'F' || $backup_type == 'N' ]]; then
+                    echo "The latest backup ${timestamp} is full backup"
+                  else
+                    echo "The latest backup ${timestamp} is not a full backup"
+                    timestamp=''
+                  fi
                 fi
 
                 if [[ ${AUTO_BACKUP} == 'false' || -z ${timestamp} ]]; then

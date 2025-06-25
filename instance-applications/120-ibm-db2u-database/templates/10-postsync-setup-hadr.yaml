@@ -27,7 +27,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v6" }}
+{{- $_job_version := "v7" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -417,6 +417,31 @@ spec:
 
                   # check if it is a full backup
                   backup_type=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 connect to ${DB2_DBNAME};db2 -x \"select OPERATIONTYPE from sysibmadm.db_history where OPERATION='B' and START_TIME=${timestamp}\"" db2inst1`
+                  BACKUP_TYPE_SCRIPT='/tmp/keystore_generation.sh'
+
+                  cat > ${BACKUP_TYPE_SCRIPT} << EOF
+                    #!/bin/bash
+                    db2 connect to ${DB2_DBNAME};
+                    if [ \$? != 0 ]; then
+                      echo "Failed to connect to database!"
+                      exit 1
+                    fi
+                    backup_type=\$(db2 -x "select OPERATIONTYPE from sysibmadm.db_history where OPERATION='B' and START_TIME=${timestamp}")
+                    echo "Backup type is ${backup_type}"
+
+                EOF
+                  chmod +x ${BACKUP_TYPE_SCRIPT}
+                  echo ""
+                  echo "Copy ${BACKUP_TYPE_SCRIPT} to ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc cp ${BACKUP_TYPE_SCRIPT} ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:${BACKUP_TYPE_SCRIPT} -c db2u || exit $?
+
+                  echo ""
+                  echo "Executing ${BACKUP_TYPE_SCRIPT} file on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUP_TYPE_SCRIPT} | tee /tmp/backuptype.log" db2inst1 || exit $?
+                  backup_type=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /tmp/backuptype.log | grep 'Backup type is'" db2inst1`
+                  echo ${backup_type}
                   echo "Backup type is ${backup_type}"
                   if [[ $backup_type == 'F' || $backup_type == 'N' ]]; then
                     echo "The latest backup ${timestamp} is full backup"

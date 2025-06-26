@@ -73,6 +73,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "04"
 spec:
+  restartPolicy: OnFailure
+  serviceAccountName: "ecr-token-updater-sa"
   containers:
   - name: "ecr-token-updater"
     image: public.ecr.aws/aws-cli/aws-cli:latest
@@ -111,8 +113,7 @@ spec:
           -n openshift-config \
           --from-literal=.dockerconfigjson="${UPDATED_DOCKERCONFIGJSON_B64}"
 
-restartPolicy: OnFailure
-serviceAccountName: "ecr-token-updater-sa"
+  
 
 
 
@@ -141,6 +142,8 @@ spec:
 {{ .Values.custom_labels | toYaml | indent 12 }}
 {{- end }}
         spec:
+          restartPolicy: OnFailure
+          serviceAccountName: "ecr-token-updater-sa"
           containers:
             - name: "ecr-token-updater"
               image: public.ecr.aws/aws-cli/aws-cli:latest
@@ -178,7 +181,4 @@ spec:
                   oc set data secret/pull-secret \
                     -n openshift-config \
                     --from-literal=.dockerconfigjson="${UPDATED_DOCKERCONFIGJSON_B64}"
-
-          restartPolicy: OnFailure
-          serviceAccountName: "ecr-token-updater-sa"
 {{- end }}

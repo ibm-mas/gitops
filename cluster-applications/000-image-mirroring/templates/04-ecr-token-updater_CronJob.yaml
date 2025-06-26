@@ -1,0 +1,182 @@
+{{- if not (empty .Values.ecr_host) }}
+
+{{- $ns := "openshift-config" }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ecr-token-updater-role
+  annotations:
+    argocd.argoproj.io/sync-wave: "02"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - apiGroups:
+      - ""
+    resources: 
+      - secrets
+    verbs: 
+      - get
+      - update
+      - patch
+
+---
+# Service account that is authorized to read k8s secrets (needed by the job)
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "ecr-token-updater-sa"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "02"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ecr-token-updater-rolebinding
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "03"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: ecr-token-updater-sa
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ecr-token-updater-role
+  namespace: {{ $ns }}
+
+
+
+---
+# temporary pod for testing cronjob logic
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "ecr-token-updater"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "04"
+spec:
+  containers:
+  - name: "ecr-token-updater"
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    imagePullPolicy: IfNotPresent
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -euo pipefail
+        
+        echo "- GET ECR Token"
+        ECR_TOKEN=$(aws ecr get-login-password --region ${REGION_ID})
+        ECR_AUTH="AWS:${ECR_TOKEN}"
+        ECR_AUTH_B64=$(echo "${ECR_AUTH}" | base64 -w0 )
+
+        echo "- Update .dockerconfigjson"
+        # Get the current pull-secret and update .dockerconfigjson with the ECR auth
+        UPDATED_DOCKERCONFIGJSON=$(
+          oc get secret pull-secret  \
+            -n openshift-config \
+            -o json | \
+            jq -r '.data[".dockerconfigjson"]' | \
+            base64 -d | \
+            jq '.auths["'${ECR_HOST}'"] = {"auth": "'${ECR_AUTH}'"}'
+        )
+
+        UPDATED_DOCKERCONFIGJSON_B64=$(echo "${UPDATED_DOCKERCONFIGJSON}" | base64 -w0 )
+
+        echo "- update pull-secret"
+        oc set data secret/pull-secret \
+          -n openshift-config \
+          --from-literal=.dockerconfigjson="${UPDATED_DOCKERCONFIGJSON_B64}"
+
+restartPolicy: OnFailure
+serviceAccountName: "ecr-token-updater-sa"
+env:
+  - name: REGION_ID
+    value: {{ .Values.region_id }}
+  - name: ECR_HOST
+    value: {{ .Values.ecr_host }}
+
+
+---
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: "ecr-token-updater"
+  namespace: "{{ $ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "04"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  schedule: '0 */11 * * *'
+  suspend: false
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+{{- if .Values.custom_labels }}
+          labels:
+{{ .Values.custom_labels | toYaml | indent 12 }}
+{{- end }}
+        spec:
+          containers:
+            - name: "ecr-token-updater"
+              image: public.ecr.aws/aws-cli/aws-cli:latest
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  
+                  echo "- GET ECR Token"
+                  ECR_TOKEN=$(aws ecr get-login-password --region ${REGION_ID})
+                  ECR_AUTH="AWS:${ECR_TOKEN}"
+                  ECR_AUTH_B64=$(echo "${ECR_AUTH}" | base64 -w0 )
+
+                  echo "- Update .dockerconfigjson"
+                  # Get the current pull-secret and update .dockerconfigjson with the ECR auth
+                  UPDATED_DOCKERCONFIGJSON=$(
+                    oc get secret pull-secret  \
+                      -n openshift-config \
+                      -o json | \
+                      jq -r '.data[".dockerconfigjson"]' | \
+                      base64 -d | \
+                      jq '.auths["'${ECR_HOST}'"] = {"auth": "'${ECR_AUTH}'"}'
+                  )
+
+                  UPDATED_DOCKERCONFIGJSON_B64=$(echo "${UPDATED_DOCKERCONFIGJSON}" | base64 -w0 )
+
+                  echo "- update pull-secret"
+                  oc set data secret/pull-secret \
+                    -n openshift-config \
+                    --from-literal=.dockerconfigjson="${UPDATED_DOCKERCONFIGJSON_B64}"
+
+          restartPolicy: OnFailure
+          serviceAccountName: "ecr-token-updater-sa"
+          env:
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: ECR_HOST
+              value: {{ .Values.ecr_host }}
+{{- end }}

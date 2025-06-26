@@ -99,7 +99,7 @@ spec:
       - |
         set -euo pipefail
         
-        echo "- GET ECR Token"
+        echo "- Get ECR Token"
         ECR_TOKEN=$(aws ecr get-login-password --region ${REGION_ID})
         ECR_AUTH="AWS:${ECR_TOKEN}"
         ECR_AUTH_B64=$(echo "${ECR_AUTH}" | base64 -w0 )
@@ -112,12 +112,12 @@ spec:
             -o json | \
             jq -r '.data[".dockerconfigjson"]' | \
             base64 -d | \
-            jq '.auths["'${ECR_HOST}'"] = {"auth": "'${ECR_AUTH}'"}'
+            jq '.auths["'${ECR_HOST}'"] = {"auth": "'${ECR_AUTH_B64}'"}'
         )
 
         UPDATED_DOCKERCONFIGJSON_B64=$(echo "${UPDATED_DOCKERCONFIGJSON}" | base64 -w0 )
 
-        echo "- update pull-secret"
+        echo "- Update pull-secret"
         oc set data secret/pull-secret \
           -n openshift-config \
           --from-literal=.dockerconfigjson="${UPDATED_DOCKERCONFIGJSON_B64}"

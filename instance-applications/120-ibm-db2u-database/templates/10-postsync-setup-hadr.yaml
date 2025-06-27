@@ -388,20 +388,20 @@ spec:
               if [[ ! ($PRIMARY_HADR_ROLE == 'PRIMARY' && $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'CONNECTED') ]]; then
 
                 # If for some reason HADR got disconnected
-                # if [[ $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'DISCONNECTED' ]]; then
-                #   echo "HADR is in DISCONNECTED state. Trying to restart the HADR service"
-                #   restart_hadr
-                #   sleep 120
-                #   # validate the configs in primary and standby again
-                #   get_existing_hadr_config
-                #   if [[ $PRIMARY_HADR_ROLE == 'PRIMARY' && $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'CONNECTED' ]]; then
-                #     echo "HADR services are restored"
-                #     exit 0
-                #   else
-                #     echo "HADR services are not restored. Kindly check"
-                #     exit 1
-                #   fi
-                # fi
+                if [[ $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'DISCONNECTED' ]]; then
+                  echo "HADR is in DISCONNECTED state. Trying to restart the HADR service"
+                  restart_hadr
+                  sleep 120
+                  # validate the configs in primary and standby again
+                  get_existing_hadr_config
+                  if [[ $PRIMARY_HADR_ROLE == 'PRIMARY' && $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'CONNECTED' ]]; then
+                    echo "HADR services are restored"
+                    exit 0
+                  else
+                    echo "HADR services are not restored. Kindly check"
+                    exit 1
+                  fi
+                fi
 
                 # checking for latest backup if auto backup if enabled
                 timestamp=''
@@ -416,13 +416,11 @@ spec:
                   fi
 
                   if [[ $(( `date +%Y%m%d` - ${timestamp:0:8} )) -lt 2 || -z ${timestamp} ]]; then
-                  timestamp=12345678 # to be removed
                   # check if it is a full backup
                   BACKUP_TYPE_SCRIPT='/tmp/backup_type_script.sh'
 
                   cat > ${BACKUP_TYPE_SCRIPT} << EOF
                     #!/bin/bash
-                    db2start #to be removed
                     db2 connect to ${DB2_DBNAME};
                     if [ \$? != 0 ]; then
                       echo "Failed to connect to database!"

@@ -1,3 +1,4 @@
+{{- if eq .Values.cluster_logging_operator_channel "stable-5.9" }}
 ---
 apiVersion: logging.openshift.io/v1
 kind: ClusterLogForwarder
@@ -36,7 +37,7 @@ spec:
         groupBy: logType
         groupPrefix: '{{ .Values.cluster_id }}'
         region: '{{ .Values.region_id }}'
-{{- if eq .Values.cluster_logging_operator_use_syslog_forwarder "true" }}
+{{- if .Values.use_syslog_forwarder }}
     - name: rsyslog-local
       type: syslog
       url: 'tcp://syslog-forwarder:9200'
@@ -70,6 +71,7 @@ spec:
         - audit
       outputRefs:
         - cloudwatch-1
-{{- if eq .Values.cluster_logging_operator_use_syslog_forwarder "true" }}
+{{- if .Values.use_syslog_forwarder }}
         - rsyslog-local
+{{- end }}
 {{- end }}

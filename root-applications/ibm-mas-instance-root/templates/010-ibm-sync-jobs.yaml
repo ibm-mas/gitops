@@ -45,9 +45,6 @@ spec:
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             sm_aws_region: "{{ .Values.region.id }}"
-            {{- if not (empty .Values.ibm_cp4d) }}
-            cpd_product_version: "{{ .Values.ibm_cp4d.cpd_product_version }}"
-            {{- end }}
             {{- if not (empty .Values.ibm_sls) }}
             {{- if eq .Values.ibm_sls.mongodb_provider "aws" }}
             docdb:
@@ -76,9 +73,40 @@ spec:
             cis_waf: "{{ .Values.ibm_mas_suite.cis_waf }}"
             cis_proxy: "{{ .Values.ibm_mas_suite.cis_proxy }}"
             cis_service_name: "{{ .Values.ibm_mas_suite.cis_service_name }}"
+
+            {{- $health := .Values.ibm_suite_app_health_install -}}
+            {{- $iot := .Values.ibm_suite_app_iot_install -}}
+            {{- $core := .Values.ibm_mas_suite -}}
+            {{- $manage := .Values.ibm_suite_app_manage_install -}}
+            {{- $monitor := .Values.ibm_suite_app_monitor_install -}}
+            {{- $predict := .Values.ibm_suite_app_predict_install -}}
+            {{- $visualinspection := .Values.ibm_suite_app_visualinspection_install -}}
+            {{- $optimizer := .Values.ibm_suite_app_optimizer_install -}}
+            {{- $facilities := .Values.ibm_suite_app_facilities_install -}}
+
+            {{- $health_str := ternary "" "health" (empty $health) -}}
+            {{- $iot_str := ternary "" "iot" (empty $iot) -}}
+            {{- $core_str := ternary "" "core" (empty $core) -}}
+            {{- $manage_str := ternary "" "manage" (empty $manage) -}}
+            {{- $reportdb_str := ternary "" "reportdb" (empty $manage) -}}
+            {{- $monitor_str := ternary "" "monitor" (empty $monitor) -}}
+            {{- $predict_str := ternary "" "predict" (empty $predict) -}}
+            {{- $visualinspection_str := ternary "" "visualinspection" (empty $visualinspection) -}}
+            {{- $optimizer_str := ternary "" "optimizer" (empty $optimizer) -}}
+            {{- $facilities_str := ternary "" "facilities" (empty $facilities) -}}
+
+            {{- $list := list $health_str $iot_str $core_str $manage_str $reportdb_str $monitor_str $predict_str $visualinspection_str $optimizer_str $facilities_str | compact }}
+            cis_entries_to_add: {{ printf "%s" (join "," $list) }}
+
+            {{- if .Values.override_dns_cis_flags_to_false }}
+            update_dns_entries: "false"
+            delete_wildcards: "false"
+            override_edge_certs: "false"
+            {{- else }}
             update_dns_entries: "{{ .Values.ibm_mas_suite.update_dns_entries }}"
             delete_wildcards: "{{ .Values.ibm_mas_suite.delete_wildcards }}"
             override_edge_certs: "{{ .Values.ibm_mas_suite.override_edge_certs }}"
+            {{- end}}
 
             {{- if .Values.ibm_mas_suite.manual_certs }}
             manual_certs: {{ .Values.ibm_mas_suite.manual_certs | toYaml | nindent 14 }}
@@ -93,11 +121,13 @@ spec:
             junitreporter:
               reporter_name: "ibm-sync-jobs-{{ .Values.instance.id }}"
               cluster_id: "{{ .Values.cluster.id }}"
+              instance_id: "{{ .Values.instance.id }}"
               devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
               devops_build_number: "{{ .Values.devops.build_number }}"
               gitops_version: "{{ .Values.source.revision }}"
 
             mas_wipe_mongo_data: {{ .Values.mas_wipe_mongo_data }}
+
 
         - name: ARGOCD_APP_NAME
           value: syncres

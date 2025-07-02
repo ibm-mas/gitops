@@ -63,25 +63,19 @@ The set of Custom Resource Healthchecks required by MAS GitOps can be found in t
 Resource Hooks
 -------------------------------------------------------------------------------
 
-Configuration tasks have to be performed at various points during the MAS synchronization procedure. We achieve this via the use of ArgoCD [Resource Hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/resource_hooks/).
+Configuration tasks have to be performed at various points during the MAS synchronization procedure. We achieve this via the use of Kubernetes Jobs (and supporting resources) annotated as ArgoCD [Resource Hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/resource_hooks/).
 
 
-#### PreSync Hooks
-Tasks that must be performed **before** an Application begins syncing are defined as `PreSync` hooks. These are used, for example, to verify that cluster CRDs are present before proceeding with an installation (e.g. {{ gitops_repo_file_link("instance-applications/120-ibm-db2u-database/templates/00-presync-await-crd_Job.yaml", "00-presync-await-crd_Job") }}).
+### PreSync Hooks
+Jobs that must execute **before** an Application begins syncing are defined as `PreSync` hooks. These are used, for example, to verify that cluster CRDs are present before proceeding with an installation (e.g. {{ gitops_repo_file_link("instance-applications/120-ibm-db2u-database/templates/00-presync-await-crd_Job.yaml", "00-presync-await-crd_Job") }}).
 
 
-### "PostSync" Hooks
-Tasks that must be performed **after** an Application finishes syncing (before **before** it can report `Healthy`) are performed by Kubernetes Jobs in the final sync wave of the Application.
+### PostSync Hooks
+Jobs that must be execute **after** an Application finishes syncing are defined as `PostSync` hooks. We make use of `PostSync` hooks only in limited cases where the Job is not performing a critical task that another Application in a later syncwave depends upon. This is because ArgoCD deliberately excludes hooks resources -- including `PostSync` hook Jobs -- from the health evaluation of the Application that owns it, meaning that sibling Applications in later syncwaves will be permitted to begin syncing regardless of the `PostSync` hook's completion status.
 
-Jobs of this kind typically perform some post-install configuration (e.g. {{ gitops_repo_file_link("instance-applications/120-ibm-db2u-database/templates/05-postsync-setup-db2_Job.yaml", "05-postsync-setup-db2_Job") }}) and/or register some runtime-generated information as a secret in the {{ secrets_vault() }} for use by downstream applications (e.g. {{ gitops_repo_file_link("cluster-applications/020-ibm-dro/templates/08-postsync-update-sm_Job.yaml", "08-postsync-update-sm_Job") }}).
-
-
-!!! info
-
-    You may notice that we do not actually use the `PostSync` ArgoCD annotation on many of these Jobs. This is because the completion status of Jobs annotated as `PostSync` is not taken into account when computing the overall health status of an application. Since the tasks we perform are typically required steps that must be performed before downstream applications in later sync waves are allowed to sync, we instead use "ordinary" Kuberenetes Jobs. Since the health status of "ordinary" Kubernetes Jobs **is** taken into account, subsequent sync waves will not be allowed to start until the Job has completed successfully.
-
-
+Where the task being performed *must* occur before Applications in later sync waves are permitted to begin syncing, we use "ordinary" Kubernetes Jobs (i.e. no `argocd.argoproj.io/hook` annotation) assigned to the final sync wave of the Application. When configured in this manner, the completion status of the Job *is* taken into account when evaluating the health of the Application it belongs to; and so will block synchronization of Applications in later sync waves until it completes successfully. Jobs of this kind typically perform post-install configuration (e.g. {{ gitops_repo_file_link("instance-applications/120-ibm-db2u-database/templates/05-postsync-setup-db2_Job.yaml", "05-postsync-setup-db2_Job") }}) and/or register some runtime-generated information as a secret in the {{ secrets_vault() }} for use by Applications in later sync waves (e.g. {{ gitops_repo_file_link("cluster-applications/020-ibm-dro/templates/08-postsync-update-sm_Job.yaml", "08-postsync-update-sm_Job") }}).
 
 ### PostDelete Hooks
 
 Tasks that must be performed to ensure an orderly teardown of resources when configuration files are deleted from the {{ config_repo() }}.  For example, Suite Config CRs (e.g. `MongoCfg`) cannot be pruned by ArgoCD since they are assigned the `Suite` as an owner during reconciliation. To work around this, we use PostDelete hooks to issue `oc delete` commands (e.g. {{ gitops_repo_file_link("instance-applications/130-ibm-mas-mongo-config/templates/postdelete-delete-cr.yaml", "postdelete-delete-cr") }}). 
+

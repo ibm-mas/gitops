@@ -1,12 +1,17 @@
 {{- if and (eq .Values.mas_app_id "visualinspection") (.Values.run_sanity_test) }}
 
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:b3ecce096368c967bbc6bac2f074473a65418462417b6e550ad4777427c3b06b" }}
+
 {{ $ns               :=  .Values.mas_app_namespace }}
 {{ $np_name          :=  "postsync-sanity-mvi-np" }}
 {{ $role_name        :=  "postsync-sanity-mvi-role" }}
 {{ $sa_name          :=  "postsync-sanity-mvi-sa" }}
 {{ $rb_name          :=  "postsync-sanity-mvi-rb" }}
 {{ $tests_cm_name    :=  "postsync-sanity-tests-mvi-cm" }}
-{{ $record_cm_name   :=  "postsync-sanity-tests-mvi-record-cm" }}
+{{ $record_cm_name   :=  "postsync-sanity-tests-visualinspection-record-cm" }}
 {{ $job_name         :=  "postsync-sanity-mvi-job" }}
 
 
@@ -281,23 +286,30 @@ data:
       if mvi_version.compare("8.9.2") < 0:
         pytest.skip("MVI API Key secret required by this test is only currently available in MVI >= 8.9.2")
 
-      mvi_apikey_secret = v1_secrets.get(label_selector="app.kubernetes.io/name=visualinspection-dnn-secret", namespace=mvi_namespace)
+      if mvi_version.compare("9.1.0") >= 0:
+        mvi_apikey_secret = v1_secrets.get(label_selector="app.kubernetes.io/name=visualinspection-superuser-secret", namespace=mvi_namespace)
+      else:
+        mvi_apikey_secret = v1_secrets.get(label_selector="app.kubernetes.io/name=visualinspection-dnn-secret", namespace=mvi_namespace)
+
       if not mvi_apikey_secret:
-        assert False, f"Could not find any visual inspection dnn secret in {mvi_namespace}"
+        assert False, f"Could not find any visual inspection xxx secret in {mvi_namespace}"
 
       mvi_apikey_secret_name = mvi_apikey_secret.items[0]['metadata']['name']
       try:
-        dnn_apikey_b64 = mvi_apikey_secret.items[0]['data']['dnn-apikey']
+        if mvi_version.compare("9.1.0") >= 0:
+          superuser_apikey_b64 = mvi_apikey_secret.items[0]['data']['superuser-apikey']
+        else:
+          superuser_apikey_b64 = mvi_apikey_secret.items[0]['data']['dnn-apikey']
       except:
-        assert False, "Expected data.dnn-apikey field not present in secret {mvi_apikey_secret_name} in {mvi_namespace}"
-      yield base64.b64decode(dnn_apikey_b64)
+        assert False, "Expected data.xxx-apikey field not present in secret {mvi_apikey_secret_name} in {mvi_namespace}"
+      yield base64.b64decode(superuser_apikey_b64)
 
     def get_usage_pod(v1_pods):
-        usage_pod = v1_pods.get(label_selector="app.kubernetes.io/name=usage-hourly-job", namespace=mvi_namespace)
-        if not usage_pod.items:
-            assert False, f"Could not find any usage-hourly-job in {mvi_namespace}"
-        return usage_pod
-
+      usage_pod = v1_pods.get(label_selector="app.kubernetes.io/name=usage-hourly-job", namespace=mvi_namespace)
+      if not usage_pod.items:
+        assert False, f"Could not find any usage-hourly-job in {mvi_namespace}"
+      return usage_pod
+      
     def test_usage_reporter(mvi_workspace_cr, v1_pods):
       print("Test usage reporter")
       mvi_create_time = datetime.strptime(mvi_workspace_cr['metadata']['creationTimestamp'], '%Y-%m-%dT%H:%M:%SZ')
@@ -347,7 +359,7 @@ data:
       )
       assert resp.status_code == 200
 
-    def test_apikeys_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+    def test_apikeys_api(mvi_host, mvi_host_ca_filepath, mvi_apikey, mvi_version):
       resp = requests.get(
         f"https://{mvi_host}/api/apikeys",
         headers={
@@ -356,7 +368,11 @@ data:
         verify=mvi_host_ca_filepath
       )
       assert resp.status_code == 404
-      assert resp.json()['fault'] == "AIVVS0351E: Could not find an API Key for user \"__dnn_user\"."
+      if mvi_version.compare("9.1.0") >= 0:
+        assert resp.json()['fault'] == "AIVVS0351E: Could not find an API Key for user \"__super_user\"."
+      else:
+        assert resp.json()['fault'] == "AIVVS0351E: Could not find an API Key for user \"__dnn_user\"."
+
 
     def test_dlm_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
       resp = requests.get(
@@ -526,7 +542,7 @@ spec:
       imagePullSecrets: []
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:latest
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
           resources:
             limits:

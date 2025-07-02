@@ -1,5 +1,10 @@
 {{- if .Values.devops_mongo_uri }}
 
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:b3ecce096368c967bbc6bac2f074473a65418462417b6e550ad4777427c3b06b" }}
+
 
 {{ $prefix := printf "pre-jreporter-%s" .Values.reporter_name }}
 {{ $secret := printf "%s-devopsuri" $prefix }}
@@ -122,8 +127,8 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli:latest
-          imagePullPolicy: Always
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
           resources:
             limits:
               cpu: 200m
@@ -136,8 +141,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+{{- if .Values.instance_id }}
+            - name: DEVOPS_ENVIRONMENT
+              value: "{{ .Values.instance_id }}"
+{{- else }}
             - name: DEVOPS_ENVIRONMENT
               value: "{{ .Values.cluster_id }}"
+{{- end }}
             - name: DEVOPS_SUITE_NAME
               value: "{{ .Values.reporter_name }}"
             - name: DEVOPS_BUILD_NUMBER

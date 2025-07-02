@@ -33,3 +33,5 @@ Below is a table to show the expected elapsed time for the argocd application to
 | ibm-manage-cfg | 240 minutes |
 | ibm-predict | 2 minutes |
 | ibm-predict-cfg | 15 minutes |
+| ibm-facilities | 20 minutes |
+| ibm-facilities-cfg | 180 minutes |

@@ -1,0 +1,80 @@
+{{ if or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (not (empty .Values.ibm_db2u_databases)) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: addons.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "551"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+    argocd.argoproj.io/sync-options: PruneLast=true
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/550-ibm-mas-addons-config
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            instance_id: "{{ .Values.instance.id }}"
+            allow_list: "{{ .Values.allow_list }}"
+            enhanced_dr: "{{ .Values.enhanced_dr }}"
+            extensions: '{{ .Values.extensions }}'
+            additional_vpn: "{{ .Values.additional_vpn }}"
+            databases:
+            {{- range $val := .Values.ibm_db2u_databases }}
+            {{- if and (contains "sdb" $val.db2_instance_name) ($val.replica_db) }}
+            - mas_application_id: {{ $val.mas_application_id }}
+              replica_db: {{ $val.replica_db }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+            junitreporter:
+              reporter_name: addons-{{ .Values.instance.id }}
+              cluster_id: "{{ .Values.cluster.id }}"
+              instance_id: "{{ .Values.instance.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+
+        - name: ARGOCD_APP_NAME
+          value: addons-{{ .Values.cluster.id }}-{{ .Values.instance.id }}
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+{{ end }}

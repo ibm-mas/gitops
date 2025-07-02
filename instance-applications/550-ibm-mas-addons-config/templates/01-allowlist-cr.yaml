@@ -1,0 +1,22 @@
+{{- if not (empty .Values.allow_list) }}
+---
+apiVersion: addons.mas.ibm.com/v1
+kind: GenericAddon
+metadata:
+  name: "{{ .Values.instance_id }}-addons-allowlist"
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "551"
+  labels:
+    mas.ibm.com/configScope: system
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  displayName: "{{ .Values.instance_id }}-AllowListing"
+  addonType: allowlist
+  config:
+    instances:
+      - name: "{{ .Values.instance_id }}-AllowList"
+{{- end }}

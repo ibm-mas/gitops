@@ -14,6 +14,132 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-application-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "054"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - collect
+    apiGroups:
+      - logging.openshift.io
+      - observability.openshift.io
+    resources:
+      - logs
+    resourceNames:
+      - application
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-audit-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "054"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - collect
+    apiGroups:
+      - logging.openshift.io
+      - observability.openshift.io
+    resources:
+      - logs
+    resourceNames:
+      - audit
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-infrastructure-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "054"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - collect
+    apiGroups:
+      - logging.openshift.io
+      - observability.openshift.io
+    resources:
+      - logs
+    resourceNames:
+      - infrastructure
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-infrastructure-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "055"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: collector
+    namespace: openshift-logging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: collect-infrastructure-logs
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-audit-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "055"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: collector
+    namespace: openshift-logging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: collect-audit-logs
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-application-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "055"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: collector
+    namespace: openshift-logging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: collect-application-logs
+
 {{- end }}
 
 

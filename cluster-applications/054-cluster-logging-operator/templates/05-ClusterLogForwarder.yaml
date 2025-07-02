@@ -1,9 +1,17 @@
 {{- if eq .Values.cluster_logging_operator_channel "stable-5.9" }}
 ---
 apiVersion: logging.openshift.io/v1
+{{- else }}
+---
+apiVersion: observability.openshift.io/v1
+{{- end }}
 kind: ClusterLogForwarder
 metadata:
+{{- if eq .Values.cluster_logging_operator_channel "stable-5.9" }}
   name: instance
+{{- else }}
+  name: collector
+{{- end }}
   namespace: openshift-logging
   annotations:
     argocd.argoproj.io/sync-wave: "055"
@@ -73,5 +81,4 @@ spec:
         - cloudwatch-1
 {{- if .Values.use_syslog_forwarder }}
         - rsyslog-local
-{{- end }}
 {{- end }}

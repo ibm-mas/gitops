@@ -3,20 +3,6 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: override-logforwarder
-  namespace: openshift-logging
-  annotations:
-    argocd.argoproj.io/sync-wave: "054"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-
-
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
   name: syslog-forwarder
   namespace: openshift-logging
   annotations:
@@ -25,28 +11,6 @@ metadata:
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
-
-
----
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: override-logforwarder
-  namespace: openshift-logging
-  annotations:
-    argocd.argoproj.io/sync-wave: "054"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-  - verbs:
-      - '*'
-    apiGroups:
-      - logging.openshift.io
-    resources:
-      - '*'
-
 
 ---
 kind: ClusterRole
@@ -67,29 +31,6 @@ rules:
       - config.openshift.io
     resources:
       - clusterversions
-
----
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: override-logforwarder
-  namespace: openshift-logging
-  annotations:
-    argocd.argoproj.io/sync-wave: "055"
-  labels:
-    app: override_logforwarder
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: override-logforwarder
-    namespace: openshift-logging
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: override-logforwarder
-
 
 ---
 kind: ClusterRoleBinding

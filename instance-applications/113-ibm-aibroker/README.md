@@ -1,3 +1,3 @@
-IBM Kmodels
+IBM AIBROKER
 ===============================================================================
-Deploy and configure kmodels storage with configurable version
+Deploy and configure AIBROKER with configurable version

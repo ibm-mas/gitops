@@ -1,0 +1,117 @@
+{{- if .Values.setup_log_forwarding }}
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: syslog-forwarder
+  namespace: openshift-logging
+  annotations:
+    argocd.argoproj.io/sync-wave: "056"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: syslog-forwarder
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: syslog-forwarder
+    spec:
+      restartPolicy: Always
+      serviceAccountName: syslog-forwarder
+      imagePullSecrets:
+        - name: syslog-pullsecret
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - resources:
+            limits:
+              cpu: '1'
+              memory: 1Gi
+            requests:
+              cpu: 500m
+              memory: 500Mi
+          readinessProbe:
+            tcpSocket:
+              port: syslog-server
+            initialDelaySeconds: 12
+            timeoutSeconds: 6
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 5
+          terminationMessagePath: /dev/termination-log
+          name: syslog-forwarder
+          livenessProbe:
+            tcpSocket:
+              port: syslog-server
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 5
+          env:
+            - name: CONFIGPATH
+              value: /config/config.yaml
+            - name: GODEBUG
+              value: x509ignoreCN=0
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+          ports:
+            - name: syslog-server
+              containerPort: 6514
+              protocol: TCP
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: tls-server-secret
+              readOnly: true
+              mountPath: /tls/server
+              mountPropagation: None
+            - name: tls-client-secret
+              readOnly: true
+              mountPath: /tls/client
+              mountPropagation: None
+            - name: config
+              readOnly: true
+              mountPath: /config
+              mountPropagation: None
+          terminationMessagePolicy: File
+          image: 'icr.io/sreauto/syslog-forwarder:{{ .Values.syslog_forwarder_version }}'
+      serviceAccount: syslog-forwarder
+      volumes:
+        - name: tls-server-secret
+          secret:
+            secretName: syslog-forwarder
+            defaultMode: 420
+            optional: false
+        - name: tls-client-secret
+          secret:
+            secretName: dlc-cert
+            defaultMode: 420
+            optional: false
+        - name: config
+          configMap:
+            name: syslog-forwarder
+            items:
+              - key: config.yaml
+                path: config.yaml
+            defaultMode: 420
+      dnsPolicy: ClusterFirst
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+
+{{- end }}

@@ -1,0 +1,200 @@
+{{ $channel_version := (split "-" .Values.cluster_logging_operator_channel)._1 }}
+# Authorization for cluster logging operator versions 6.0 and up
+{{- if ge $channel_version "6.0" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: collector
+  namespace: openshift-logging
+  annotations:
+    argocd.argoproj.io/sync-wave: "054"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-application-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "054"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - collect
+    apiGroups:
+      - logging.openshift.io
+      - observability.openshift.io
+    resources:
+      - logs
+    resourceNames:
+      - application
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-audit-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "054"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - collect
+    apiGroups:
+      - logging.openshift.io
+      - observability.openshift.io
+    resources:
+      - logs
+    resourceNames:
+      - audit
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-infrastructure-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "054"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - collect
+    apiGroups:
+      - logging.openshift.io
+      - observability.openshift.io
+    resources:
+      - logs
+    resourceNames:
+      - infrastructure
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-infrastructure-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "055"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: collector
+    namespace: openshift-logging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: collect-infrastructure-logs
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-audit-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "055"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: collector
+    namespace: openshift-logging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: collect-audit-logs
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: collect-application-logs
+  annotations:
+    argocd.argoproj.io/sync-wave: "055"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: collector
+    namespace: openshift-logging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: collect-application-logs
+
+{{- end }}
+
+
+# RBAC for syslog forwarder
+{{- if .Values.setup_log_forwarding }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: syslog-forwarder
+  namespace: openshift-logging
+  annotations:
+    argocd.argoproj.io/sync-wave: "054"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: syslog-forwarder
+  annotations:
+    argocd.argoproj.io/sync-wave: "054"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - config.openshift.io
+    resources:
+      - clusterversions
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: syslog-forwarder
+  annotations:
+    argocd.argoproj.io/sync-wave: "055"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: syslog-forwarder
+    namespace: openshift-logging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: syslog-forwarder
+{{- end }}

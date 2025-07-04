@@ -1,0 +1,131 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: odh-sa
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "135"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: patch-serviceaccount-role
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "136"
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: patch-serviceaccount-binding
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "137"
+subjects:
+  - kind: ServiceAccount
+    name: odh-sa
+    namespace: "{{ .Values.aibroker_namespace }}"
+roleRef:
+  kind: Role
+  name: patch-serviceaccount-role
+  apiGroup: rbac.authorization.k8s.io
+
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: odh-sa-knative-patch-role
+  namespace: knative-serving
+  annotations:
+    argocd.argoproj.io/sync-wave: "136"
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: odh-sa-knative-patch-binding
+  namespace: knative-serving
+  annotations:
+    argocd.argoproj.io/sync-wave: "137"
+subjects:
+  - kind: ServiceAccount
+    name: odh-sa
+    namespace: "{{ .Values.aibroker_namespace }}"  # Still referencing from your values
+roleRef:
+  kind: Role
+  name: odh-sa-knative-patch-role
+  apiGroup: rbac.authorization.k8s.io
+
+
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: odh-sa-patch-job-v1-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "138"
+spec:
+  template:
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: AIBROKER_NAMESPACE
+              value: "{{ .Values.aibroker_namespace }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo
+              echo "================================================================================"
+              echo "Provide ibm-entitlement-key image pull secret for 'pipeline-runner-instance' service accounts"
+              echo "================================================================================"
+              echo
+
+              sleep 60
+
+              RESOURCE_NAME=$(oc get serviceaccount pipeline-runner-instance -n ${AIBROKER_NAMESPACE} -o=jsonpath="{.metadata.name}" --ignore-not-found)
+              if [[ -n "${RESOURCE_NAME}" ]]; then
+                echo "Patching 'pipeline-runner-instance' sa..."
+                oc patch serviceaccount pipeline-runner-instance -n ${AIBROKER_NAMESPACE}  --type='merge' -p '{"imagePullSecrets":[{"name":"ibm-entitlement"}]}'
+              else
+                echo "'pipeline-runner-instance' service account not found."
+              fi
+
+              echo
+              echo "================================================================================"
+              echo "Patching config-features in knative-serving"
+              echo "================================================================================"
+              echo
+
+              oc patch --namespace knative-serving configmap/config-features --type merge --patch '{"data":{"kubernetes.podspec-persistent-volume-claim":"enabled", "kubernetes.podspec-persistent-volume-write":"enabled"}}'
+
+              echo "Finished patching config-features in knative-serving"
+
+      restartPolicy: Never
+      serviceAccountName: odh-sa
+  backoffLimit: 3

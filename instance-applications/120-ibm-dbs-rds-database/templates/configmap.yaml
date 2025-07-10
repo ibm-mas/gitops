@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.scriptConfigMapName }}
+data:
+  db2_init.py: |
+    import ibm_db
+    import os
+    import sys
+
+    conn_str = (
+        f"DATABASE={os.environ['DB_NAME']};"
+        f"HOSTNAME={os.environ['DB_HOST']};"
+        f"PORT={os.environ['DB_PORT']};"
+        f"UID={os.environ['DB_USER']};"
+        f"PWD={os.environ['DB_PASSWORD']};"
+    )
+
+    try:
+        conn = ibm_db.connect(conn_str, "", "")
+        print("✅ Connected to Db2")
+    except Exception as e:
+        print(f"❌ Connection failed: {e}")
+        sys.exit(1)
+
+    def bufferpool_exists(name):
+        stmt = ibm_db.exec_immediate(conn, f"SELECT COUNT(*) FROM syscat.bufferpools WHERE bpname = '{name}'")
+        return int(ibm_db.fetch_tuple(stmt)[0]) > 0
+
+    def create_bufferpool(name, pagesize=32768):
+        sql = f"""
+        CALL rdsadmin.create_bufferpool(
+            bpname => '{name}',
+            pagesize => {pagesize},
+            numpages => -1,
+            immediate => TRUE
+        )
+        """
+        ibm_db.exec_immediate(conn, sql)
+        print(f"✅ Created bufferpool: {name}")
+
+    def tablespace_exists(name):
+        stmt = ibm_db.exec_immediate(conn, f"SELECT COUNT(*) FROM syscat.tablespaces WHERE tbspace = '{name}'")
+        return int(ibm_db.fetch_tuple(stmt)[0]) > 0
+
+    def create_tablespace(name, bufferpool, pagesize=32768):
+        sql = f"""
+        CALL rdsadmin.create_tablespace(
+            tbspname => '{name}',
+            pagesize => {pagesize},
+            managedby => 'AUTOMATIC STORAGE',
+            bufferpool => '{bufferpool}'
+        )
+        """
+        ibm_db.exec_immediate(conn, sql)
+        print(f"✅ Created tablespace: {name}")
+
+    created_any = False
+
+    # 1. Bufferpools
+    bufferpools = ['MAXBUFPOOL', 'MAXBUFPOOLINDX', 'MAXTEMPBP']
+    for bp in bufferpools:
+        if bufferpool_exists(bp):
+            print(f"ℹ️ Bufferpool '{bp}' already exists")
+        else:
+            create_bufferpool(bp)
+            created_any = True
+
+    # 2. Tablespaces
+    tablespaces = [
+        ('MAXDATA', 'MAXBUFPOOL'),
+        ('MAXINDEX', 'MAXBUFPOOLINDX'),
+        ('MAXTEMP', 'MAXTEMPBP'),
+    ]
+    for tsp, bp in tablespaces:
+        if tablespace_exists(tsp):
+            print(f"ℹ️ Tablespace '{tsp}' already exists")
+        else:
+            create_tablespace(tsp, bp)
+            created_any = True
+
+    if created_any:
+        print("✅ Db2 RDS bufferpools and tablespaces created or updated.")
+    else:
+        print("✅ All bufferpools and tablespaces already existed — nothing to do.")
+
+    ibm_db.close(conn)

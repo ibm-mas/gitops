@@ -6,7 +6,7 @@ Each ArgoCD Application will take a number of minutes to complete syncing and to
 Below is a table to show the expected elapsed time for the argocd application to finish syncing. Times are approximate and other factors can vary these times such as performance of the cluster or external dependencies.
 
 | Application | Approximate Duration |
-|-|-|
+|-|----------|
 | operator-catalog | 3 minutes |
 | redhat-cert-manager | 2 minutes |
 | dro | 5 minutes |
@@ -35,3 +35,4 @@ Below is a table to show the expected elapsed time for the argocd application to
 | ibm-predict-cfg | 15 minutes |
 | ibm-facilities | 20 minutes |
 | ibm-facilities-cfg | 180 minutes |
+| ibm-dbs-rds-database |10 minutes |

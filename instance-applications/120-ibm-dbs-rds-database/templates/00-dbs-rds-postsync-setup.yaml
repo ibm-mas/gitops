@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db2-init-job
+  annotations:
+    argocd.argoproj.io/sync-wave: "135"
+spec:
+  template:
+    spec:
+      containers:
+        - name: db2-init
+          image: {{ .Values.image }}
+          command: ["python", "/scripts/db2_init.py"]
+          env:
+            - name: MAS_APP_ID
+            - value: {{ .Values.mas_application_id }}
+            - name: DB_HOST
+              value: {{ .Values.db2.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.db2.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.db2.dbname | quote }}
+            - name: DB_USER
+              value: {{ .Values.db2.user | quote }}
+            - name: DB_PASSWORD
+              value: {{ .Values.db2.password | quote }}
+          volumeMounts:
+            - name: script-vol
+              mountPath: /scripts
+      restartPolicy: Never
+      volumes:
+        - name: script-vol
+          configMap:
+            name: {{ .Values.scriptConfigMapName }}
+  backoffLimit: 1

@@ -9,36 +9,21 @@ spec:
     spec:
       containers:
         - name: db2-init
-          image: {{ .Values.image | quote }}
+          image: {{ .Values.image }}
           command: ["python", "/scripts/db2_init.py"]
           env:
             - name: MAS_APP_ID
-              value: {{ .Values.mas_application_id | quote }}
+            - value: {{ .Values.mas_application_id }}
             - name: DB_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName | quote }}
-                  key: db2_endpoint
+              value: {{ .Values.db2.host | quote }}
             - name: DB_PORT
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName | quote }}
-                  key: db2_port
+              value: {{ .Values.db2.port | quote }}
             - name: DB_NAME
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName | quote }}
-                  key: db2_name
+              value: {{ .Values.db2.dbname | quote }}
             - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName | quote }}
-                  key: username
+              value: {{ .Values.db2.user | quote }}
             - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName | quote }}
-                  key: password
+              value: {{ .Values.db2.password | quote }}
           volumeMounts:
             - name: script-vol
               mountPath: /scripts
@@ -46,5 +31,5 @@ spec:
       volumes:
         - name: script-vol
           configMap:
-            name: {{ .Values.scriptConfigMapName | quote }}
+            name: {{ .Values.scriptConfigMapName }}
   backoffLimit: 1

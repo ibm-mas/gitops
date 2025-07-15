@@ -44,13 +44,16 @@ spec:
             region_id: "{{ $.Values.region.id }}"
             cluster_id: "{{ $.Values.cluster.id }}"
             instance_id: "{{ $.Values.instance.id }}"
-            sm_aws_access_key_id: "{{ $.Values.sm.aws_access_key_id }}"
-            sm_aws_secret_access_key: "{{ $.Values.sm.aws_secret_access_key }}"
+            host: "{{ $.Values.db.host }}"
+            port: "{{ $.Values.db.port }}"
+            dbname: "{{ $.Values.db.dbname }}"
+            user: "{{ $.Values.db.user }}"
+            password: "{{ $.Values.db.password }}"
             {{- if $.Values.custom_labels }}
             custom_labels: {{ $.Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
             junitreporter:
-              reporter_name: db2-db-{{ $.Values.instance.id }}-{{ $value.db2_instance_name | replace (cat "db2wh-" $.Values.instance.id "-" | replace " " "") "" }}
+              reporter_name: dbs-db-{{ $.Values.instance.id }}-{{ $value.db2_rds_instance_name | replace (cat "db2wh-" $.Values.instance.id "-" | replace " " "") "" }}
               cluster_id: "{{ $.Values.cluster.id }}"
               instance_id: "{{ $.Values.instance.id }}"
               devops_mongo_uri: "{{ $.Values.devops.mongo_uri }}"
@@ -58,7 +61,7 @@ spec:
               gitops_version: "{{ $.Values.source.revision }}"
             {{ $value | toYaml | nindent 12 }}
         - name: ARGOCD_APP_NAME
-          value: "db2-rds"
+          value: "dbs-rds"
         {{- if not (empty $.Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ $.Values.avp.secret }}

@@ -3,7 +3,7 @@
   For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
   */}}
 
-  {{- range $i, $value := .Values.ibm_db2u_databases }}
+  {{- range $i, $value := .Values.ibm_dbs-rds_databases }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -15,7 +15,7 @@ metadata:
     region: '{{ $.Values.region.id }}'
     cluster: '{{ $.Values.cluster.id }}'
     instance: '{{ $.Values.instance.id }}'
-    appId: '{{ $value.mas_application_id }}'
+    appId: '{{ values.mas_application_id }}'
   annotations:
 {{ if eq $value.db2_rds_instance_name "rds" }}
     argocd.argoproj.io/sync-wave: "135"
@@ -44,11 +44,12 @@ spec:
             region_id: "{{ $.Values.region.id }}"
             cluster_id: "{{ $.Values.cluster.id }}"
             instance_id: "{{ $.Values.instance.id }}"
-            host: "{{ $.Values.db2.host }}"
-            port: "{{ $.Values.db2.port }}"
-            dbname: "{{ $.Values.db2.dbname }}"
-            user: "{{ $.Values.db2.username }}"
-            password: "{{ $.Values.db2.password }}"
+            account_id: "{{ $.values.mas_application_id }}"
+            host: "{{ $.values.host }}"
+            port: "{{ $.values.port }}"
+            dbname: "{{ $.values.dbname }}"
+            user: "{{ $.values.username }}"
+            password: "{{ $.values.password }}"
             junitreporter:
               reporter_name: dbs-db-{{ $.Values.instance.id }}-{{ $value.db2_rds_instance_name | replace (cat "db2wh-" $.Values.instance.id "-" | replace " " "") "" }}
               cluster_id: "{{ $.Values.cluster.id }}"

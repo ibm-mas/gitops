@@ -1,0 +1,148 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.scriptConfigMapName | quote }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "135"
+data:
+  dbs-rds-init.py: |
+    import ibm_db
+    import os
+    import sys
+
+    mas_application_id = os.getenv("MAS_APP_ID")
+    conn_str = (
+        f"DATABASE={os.environ['DB_NAME']};"
+        f"HOSTNAME={os.environ['DB_HOST']};"
+        f"PORT={os.environ['DB_PORT']};"
+        f"UID={os.environ['DB_USER']};"
+        f"PWD={os.environ['DB_PASSWORD']};"
+    )
+
+    try:
+        conn = ibm_db.connect(conn_str, "", "")
+        print("✅ Connected to Db2")
+    except Exception as e:
+        print(f"❌ Connection failed: {e}")
+        sys.exit(1)
+    
+    created_any = False
+    def bufferpool_exists(name):
+        stmt = ibm_db.exec_immediate(conn, f"SELECT COUNT(*) FROM syscat.bufferpools WHERE bpname = '{name}'")
+        return int(ibm_db.fetch_tuple(stmt)[0]) > 0
+
+    def create_bufferpool(name, pagesize=32768):
+        sql = f"""
+        CALL rdsadmin.create_bufferpool(
+            bpname => '{name}',
+            pagesize => {pagesize},
+            numpages => -1,
+            immediate => TRUE
+        )
+        """
+        ibm_db.exec_immediate(conn, sql)
+        print(f"✅ Created bufferpool: {name}")
+
+    def tablespace_exists(name):
+        stmt = ibm_db.exec_immediate(conn, f"SELECT COUNT(*) FROM syscat.tablespaces WHERE tbspace = '{name}'")
+        return int(ibm_db.fetch_tuple(stmt)[0]) > 0
+
+    def create_tablespace(name, bufferpool, pagesize=32768):
+        sql = f"""
+        CALL rdsadmin.create_tablespace(
+            tbspname => '{name}',
+            pagesize => {pagesize},
+            managedby => 'AUTOMATIC STORAGE',
+            bufferpool => '{bufferpool}'
+        )
+        """
+        ibm_db.exec_immediate(conn, sql)
+        print(f"✅ Created tablespace: {name}")
+    
+    def create_facilities_tablespace(conn, tspname, bufferpool, groupname, droppedtablerecovery, pagesize=32768, tablespace_type='LARGE',
+                      initialsize='5000 M', autoresize='YES', increasesize='1 G', maxsize='NONE'):
+      print(f"Checking if tablespace {tspname} exists...")
+      if not check_exists(conn, "SELECT TBSPACE FROM SYSCAT.TABLESPACES", tspname):
+          print(f"Creating tablespace {tspname}...")
+          sql = f"""
+          CALL rdsadmin.create_tablespace(
+              tbspname => '{tspname}',
+              pagesize => {pagesize},
+              managedby => 'AUTOMATIC STORAGE',
+              bufferpool => '{bufferpool}',
+              autoresize => '{autoresize}',
+              initialsize => '{initialsize}',
+              increasesize => '{increasesize}',
+              maxsize => '{maxsize}',
+              dbpartitiongroup => '{groupname}',
+              tbsp_type => '{tablespace_type}',
+              droppedtablerecovery => '{droppedtablerecovery}'
+          )
+          """
+          ibm_db.exec_immediate(conn, sql)
+          print(f"Tablespace {tspname} created.")
+          created_any = True
+      else:
+          print(f"Tablespace {tspname} already exists.")
+
+    # 1. Bufferpools
+    manage_bufferpools = ['MAXBUFPOOL', 'MAXBUFPOOLINDX', 'MAXTEMPBP']
+    facilities_bufferpools = ['TRIBUFPOOL', 'TRIBUFPOOLINDEX', 'TRITEMPBP', 'DEDICATEDBPDATA', 'DEDICATEDBPINDX', 'DEDICATEDBPLOB']
+    
+    if mas_application_id == 'manage':
+      for bp in manage_bufferpools:
+          if bufferpool_exists(bp):
+              print(f"ℹ️ Bufferpool '{bp}' already exists")
+          else:
+              create_bufferpool(bp)
+              created_any = True
+    elif mas_application_id == 'facilites':
+      for bp in facilities_bufferpools:
+          if bufferpool_exists(bp):
+              print(f"ℹ️ Bufferpool '{bp}' already exists")
+          else:
+              create_bufferpool(bp)
+              created_any = True
+    else:
+      print(f"ℹ️ mas_application_id is not provided ")
+    
+    # 2. Tablespaces
+    manage_tablespaces = [
+        ('MAXDATA', 'MAXBUFPOOL'),
+        ('MAXINDEX', 'MAXBUFPOOLINDX'),
+        ('MAXTEMP', 'MAXTEMPBP'),
+    ]
+    facilities_tablespaces = [
+        ('TRIDATA_DATA', 'TRIBUFPOOL'),
+        ('TRIDATA_INDX', 'TRIBUFPOOLINDEX'),
+        ('TRITEMP', 'TRITEMPBP'),
+        ('DEDICATED_DATA', 'DEDICATEDBPDATA'),
+        ('DEDICATED_INDEX', 'DEDICATEDBPINDX'),
+        ('DEDICATED_LOBS', 'DEDICATEDBPLOB'),
+    ]
+    
+    if mas_application_id == 'manage':
+      for tsp, bp in manage_tablespaces:
+          if tablespace_exists(tsp):
+              print(f"ℹ️ Tablespace '{tsp}' already exists")
+          else:
+              create_tablespace(tsp, bp)
+              created_any = True
+    elif mas_application_id == 'facilities':
+      for tsp, bp in facilities_tablespaces:
+          create_facilities_tablespace(conn, 'TRIDATA_DATA', 'TRIBUFPOOL', 'IBMDEFAULTGROUP', 'ON')
+          create_facilities_tablespace(conn, 'TRIDATA_INDX', 'TRIBUFPOOLINDEX', 'IBMDEFAULTGROUP', 'ON')
+          create_facilities_tablespace(conn, 'TRITEMP', 'TRITEMPBP', 'IBMTEMPGROUP', 'OFF', tablespace_type='TEMPORARY')
+          create_facilities_tablespace(conn, 'DEDICATED_DATA', 'DEDICATEDBPDATA', 'IBMDEFAULTGROUP', 'ON')
+          create_facilities_tablespace(conn, 'DEDICATED_INDEX', 'DEDICATEDBPINDX', 'IBMDEFAULTGROUP', 'ON')
+          create_facilities_tablespace(conn, 'DEDICATED_LOBS', 'DEDICATEDBPLOB', 'IBMDEFAULTGROUP', 'ON')
+    else:
+      print(f"ℹ️ mas_application_id is not provided ")
+    
+    if created_any:
+        print("✅ Db2 RDS bufferpools and tablespaces created or updated.")
+    else:
+        print("✅ All bufferpools and tablespaces already existed — nothing to do.")
+
+    ibm_db.close(conn)

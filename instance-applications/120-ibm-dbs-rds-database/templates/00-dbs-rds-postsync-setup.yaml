@@ -1,0 +1,43 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db2-init-job
+  annotations:
+    argocd.argoproj.io/sync-wave: "135"
+spec:
+  template:
+    spec:
+      containers:
+        - name: dbs-rds-init
+          image: {{ .Values.image }}
+          command: [ "/bin/sh", "-c" ]
+          args:
+            - |
+              apt-get update && \
+              apt-get install -y gcc libaio1 python3-dev build-essential && \
+              pip install ibm_db && \
+              python /scripts/dbs-rds-init.py
+          env:
+            - name: MAS_APP_ID
+              value: {{ .Values.mas_application_id }}
+            - name: DB_HOST
+              value: {{ .Values.host | quote }}
+            - name: DB_PORT
+              value: "50000"
+            - name: DB_NAME
+              value: {{ .Values.dbname | quote }}
+            - name: DB_USER
+              value: {{ .Values.user | quote }}
+            - name: DB_PASSWORD
+              value: {{ .Values.password | quote }}
+          volumeMounts:
+            - name: script-vol
+              mountPath: /scripts
+      restartPolicy: Never
+      volumes:
+        - name: script-vol
+          configMap:
+            name: {{ .Values.scriptConfigMapName | quote }}
+  backoffLimit: 10
+

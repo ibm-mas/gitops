@@ -221,7 +221,7 @@ spec:
             - name: sls-suite-registration
               mountPath: /etc/mas/creds/sls-suite-registration
           command:
-            - /bin/sh
+            - /bin/bash
             - -c
             - |
 
@@ -233,7 +233,7 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
-              echo "Fetching registrationKey from sls-suite-registration ConfigMap in mas-${ICN}-${SUBSCRIPTION_ID}-sls"
+              echo "Fetching registrationKey from sls-suite-registration ConfigMap in mas-${ICN,,}-${SUBSCRIPTION_ID,,}-sls"
               SLS_REGISTRATION_KEY=$(cat /etc/mas/creds/sls-suite-registration/registrationKey)
               if [[ -z "${SLS_REGISTRATION_KEY}" ]]; then
                 echo "Failed to fetch registrationKey"
@@ -259,8 +259,8 @@ spec:
 
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
               ## Why is the secreet name here sls and not license as it is in gitops_license function
-              SECRET_NAME_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/sls
-              TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
+              SECRET_NAME_SLS=${ACCOUNT_ID}/${ICN,,}/${SUBSCRIPTION_ID,,}/sls
+              TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID,,}\"}]"
               sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\" }" "${TAGS}"
 
 

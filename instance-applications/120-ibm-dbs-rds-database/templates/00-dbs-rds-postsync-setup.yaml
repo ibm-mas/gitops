@@ -10,8 +10,14 @@ spec:
     spec:
       containers:
         - name: db2-init
-          image: "{{ .Values.image }}"
-          command: ["python", "/scripts/db2_init.py"]
+          image: {{ .Values.image }}
+          command: [ "/bin/sh", "-c" ]
+          args:
+            - |
+              apt-get update && \
+              apt-get install -y gcc libaio1 python3-dev build-essential && \
+              pip install ibm_db && \
+              python /scripts/db2_init.py
           env:
             - name: MAS_APP_ID
               value: {{ .Values.mas_application_id }}

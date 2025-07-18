@@ -1,0 +1,73 @@
+{{- if not (empty .Values.ibm_minio) }}
+---
+# IBM Maximo Minio 
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "020"
+    healthCheckTimeout: "1800"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: "{{ .Values.ibm_minio.minio_namespace }}"
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/111-ibm-minio
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            minio_namespace: "{{ .Values.ibm_minio.minio_namespace }}"
+            minio_instance_name: "{{ .Values.ibm_minio.minio_instance_name }}"
+            minio_root_user: "{{ .Values.ibm_minio.minio_root_user }}"
+            minio_root_password: "{{ .Values.ibm_minio.minio_root_password }}"
+            minio_storage_class: "{{ .Values.ibm_minio.minio_storage_class }}"
+            minio_storage_size: "{{ .Values.ibm_minio.minio_storage_size }}"
+            minio_image: "{{ .Values.ibm_minio.minio_image }}"
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+            junitreporter:
+              reporter_name: "ibm-minio-{{ .Values.instance.id }}"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+        - name: ARGOCD_APP_NAME
+          value: minioapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+{{- end }}

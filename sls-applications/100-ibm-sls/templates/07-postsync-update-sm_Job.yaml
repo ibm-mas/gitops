@@ -211,6 +211,8 @@ spec:
               value: '{{ .Values.ibm_customer_number }}'
             - name: SUBSCRIPTION_ID
               value: '{{ .Values.subscription_id }}'
+            - name: DOMAIN
+              value: '{{ .Values.slsdomain }}'
 
             # Hard-coded for now:
             - name: AVP_TYPE
@@ -247,6 +249,9 @@ spec:
                 exit 1
               fi
 
+              echo "Setting SLS URL"
+              SLS_URL="sls.mas-${ICN}-${SUBSCRIPTION_ID}-sls.${DOMAIN}"
+              
               # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
               source /mascli/functions/gitops_utils
 
@@ -261,7 +266,7 @@ spec:
               ## Why is the secreet name here sls and not license as it is in gitops_license function
               SECRET_NAME_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/sls
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
-              sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\" }" "${TAGS}"
+              sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\",\"$SLS_URL\" }" "${TAGS}"
 
 
       restartPolicy: Never

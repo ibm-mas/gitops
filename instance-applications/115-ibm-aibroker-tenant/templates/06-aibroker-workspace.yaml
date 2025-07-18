@@ -1,0 +1,53 @@
+---
+apiVersion: apps.mas.ibm.com/v1
+kind: AiBrokerWorkspace
+metadata:
+  name: "{{ .Values.tenantNamespace }}"
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "307"
+  labels: 
+    mas.ibm.com/applicationId: "aibroker"
+    mas.ibm.com/instanceId: "{{ .Values.aibroker_instance_id }}"
+    {{- if .Values.custom_labels }}
+    {{- range $key, $val := .Values.custom_labels }}
+    {{ $key | quote }}: {{ $val | quote }}
+    {{- end }}
+    {{- end }}
+spec:
+  settings:
+    # cluster_domain: "{{ .Values.cluster_domain }}"
+    # in_saas_env: "{{ .Values.in_saas_env }}"
+    icr:
+      cp: "{{ .Values.mas_icr_cp }}"
+      cpopen: "{{ .Values.mas_icr_cpopen }}"
+    dro:
+      url: "{{ .Values.drocfg_url }}"
+      secretName: "{{ .Values.tenantNamespace }}----dro-secret"
+      ca: "{{ .Values.drocfg_ca }}"
+    sls:
+      url: "{{ .Values.slscfg_url }}"
+      secretName: "{{ .Values.tenantNamespace }}----sls-secret"
+      ca: "{{ .Values.slscfg_ca_tenant }}"
+    # rsl added new in ansible ##review what is value of gitops-envs
+    rsl:
+      url: "{{ .Values.rsl_url }}"
+      orgId: "{{ .Values.rsl_org_id }}"
+      secretName: "{{ .Values.tenantNamespace }}----rsl-secret"
+    watsonxai:
+      url: "{{ .Values.mas_aibroker_watsonxai_url }}"
+      secretName: "{{ .Values.tenantNamespace }}----wx-secret"
+      project_id: "{{ .Values.mas_aibroker_watsonxai_project_id }}"
+    tenant:
+      tenant_id: "{{ .Values.tenantNamespace }}"
+      subscription_id: "{{ .Values.mas_aibroker_sls_subscription_id }}"
+      instance_id: "{{ .Values.aibroker_instance_id }}"
+      entitlement:
+          type: "{{ .Values.tenant_entitlement_type }}"
+          startDate: "{{ .Values.tenant_entitlement_start_date }}"
+          endDate: "{{ .Values.tenant_entitlement_end_date }}"
+    s3:
+        region: "{{ .Values.mas_aibroker_s3_region }}"
+        bucketPrefix: "{{ .Values.mas_aibroker_s3_bucket_prefix }}"
+        endpointUrl: "{{ .Values.mas_aibroker_s3_endpoint_url }}"
+        secretName: "{{ .Values.tenantNamespace }}----s3-secret"

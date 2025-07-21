@@ -825,10 +825,14 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | tee /tmp/checkcos.log" db2inst1 || exit $?
 
-                echo ""
-                echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+                backup_images=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | grep c-${DB2_INSTANCE_NAME}-db2u-0 | grep -v keystore | wc -l" db2inst1`
+                echo "Number of backup images in COS bucket - ${backup_images}"
+                if [[ ${backup_images} == 0 ]]; then
+                  echo ""
+                  echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+                fi
 
                 DROP_TEMPTS="/tmp/db2-scripts/dropTempts.sh"
                 echo ""
@@ -836,8 +840,6 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${DROP_TEMPTS} | tee /tmp/dropTempts.log" db2inst1 || exit $?
 
-                backup_images=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | grep c-${DB2_INSTANCE_NAME}-db2u-0 | grep -v keystore | wc -l" db2inst1`
-                echo "Number of backup images in COS bucket - ${backup_images}"
                 if [[ ${backup_images} == 0 ]]; then
                   echo ""
                   echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"

@@ -69,7 +69,8 @@ subjects:
 roleRef:
   kind: Role
   name: mas-manage-aiservice-job-role
-  apiGroup: rbac.authorization.k8s.io---
+  apiGroup: rbac.authorization.k8s.io
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -86,11 +87,13 @@ spec:
   template:
     metadata:
       labels:
-        app: "sync-job"
+        app: sync-job
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
+      serviceAccountName: mas-manage-aiservice-job
+      restartPolicy: Never
       containers:
         - name: mas-manage-aiservice-run
           image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
@@ -103,15 +106,15 @@ spec:
             - name: AIBROKER_INSTANCE_ID
               value: "{{ .Values.aibroker_instance_id }}"
             - name: SECRETS_KEY_SEPERATOR
-              value: "/"            
+              value: "/"
             - name: AIBROKER_TENANT
-              value: "{{ .Values.tenantNamespace }}"            
+              value: "{{ .Values.tenantNamespace }}"
             - name: SM_AWS_REGION
               value: "{{ .Values.sm_aws_region }}"
             - name: SM_AWS_ACCESS_KEY_ID
               value: "{{ .Values.aws_access_key_id }}"
             - name: SM_AWS_SECRET_ACCESS_KEY
-              value: "{{ .Values.aws_secret_access_key }}"            
+              value: "{{ .Values.aws_secret_access_key }}"
             - name: AVP_TYPE
               value: "aws"
           command:
@@ -119,52 +122,56 @@ spec:
             - -c
             - |
               set -e
-            
+
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/suite_dns/sm_aws_access_key_id)
-              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/suite_dns/sm_aws_secret_access_key)              SECRETS_KEY_SEPERATOR="/"
-              SECRET_NAME_AISERVICE=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}aiservice              echo ""
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/suite_dns/sm_aws_secret_access_key)
+
+              SECRETS_KEY_SEPERATOR="/"
+              SECRET_NAME_AISERVICE=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}aiservice
+
               echo "================================================================================"
               echo "Settings"
               echo "================================================================================"
-              echo "Account Id .......................... ${COLOR_MAGENTA}${ACCOUNT_ID}"
-              echo "Cluster Id .......................... ${COLOR_MAGENTA}${CLUSTER_ID}"
-              echo "AIBROKER Instance Id ..................... ${COLOR_MAGENTA}${AIBROKER_INSTANCE_ID}"
-              echo "MAS Workspace ID .................... ${COLOR_MAGENTA}${MAS_WORKSPACE_ID}"
-              echo "SM_AWS_REGION ....................... ${COLOR_MAGENTA}${SM_AWS_REGION}"
-              echo "SM_AWS_ACCESS_KEY_ID ................ ${COLOR_MAGENTA}${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
-              echo "SM_AWS_SECRET_ACCESS_KEY ............ ${COLOR_MAGENTA}${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"              echo ""
-              echo "================================================================================"              echo ""
+              echo "Account Id ....................... ${ACCOUNT_ID}"
+              echo "Cluster Id ....................... ${CLUSTER_ID}"
+              echo "AIBROKER Instance Id ............. ${AIBROKER_INSTANCE_ID}"
+              echo "MAS Workspace ID ................. ${MAS_WORKSPACE_ID}"
+              echo "SM_AWS_REGION .................... ${SM_AWS_REGION}"
+              echo "SM_AWS_ACCESS_KEY_ID ............ ${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
+              echo "SM_AWS_SECRET_ACCESS_KEY ........ ${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"
+
               echo "================================================================================"
               echo "Retrieve AIBroker API Key for tenant: ${AIBROKER_TENANT}"
-              echo "================================================================================"              export AIBROKER_APIKEY=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-${AIBROKER_INSTANCE_ID}-aibroker \
-                -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)              if [ -z "$AIBROKER_APIKEY" ]; then
+              echo "================================================================================"
+
+              export AIBROKER_APIKEY=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
+
+              if [ -z "$AIBROKER_APIKEY" ]; then
                 echo "Failed to retrieve AIBroker API Key"
                 exit 1
-              fi              echo "AIBROKER_APIKEY = ${AIBROKER_APIKEY:0:4}<snip>"              echo "==============================================================================="
+              fi
+
+              echo "AIBROKER_APIKEY = ${AIBROKER_APIKEY:0:4}<snip>"
+
               echo "Retrieve TLS Secrets"
-              echo "==============================================================================="
-              export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker \
-                -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
-              echo "CA_CERT = ${CA_CERT:0:20}<snip>"              export TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker \
-                -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
-              echo "TLS_CERT = ${TLS_CERT:0:20}<snip>"              export TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker \
-                -o jsonpath="{.data.tls\\.key}" | base64 --decode)
+              export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
+              export TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
+              export TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.tls\\.key}" | base64 --decode)
+
+              echo "CA_CERT = ${CA_CERT:0:20}<snip>"
+              echo "TLS_CERT = ${TLS_CERT:0:20}<snip>"
               echo "TLS_KEY = ${TLS_KEY:0:20}<snip>"
-              echo "==============================================================================="
-              
+
               source /mascli/functions/gitops_utils
               sm_login
-              TAGS="[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              # Update secret in Secrets Manager
-              echo "==============================================================================="
-              sm_update_secret $SECRET_NAME_AISERVICE "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" "${TAGS}" || exit $?
-              echo "==============================================================================="
-      restartPolicy: Never      
-      serviceAccountName: mas-manage-aiservice-job
+
+              TAGS='[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]'
+
+              sm_update_secret $SECRET_NAME_AISERVICE "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" "$TAGS" || exit $?
       volumes:
-        - name: "mas-manage-aiservice"
+        - name: mas-manage-aiservice
           secret:
-            secretName: "mas-manage-aiservice"
+            secretName: mas-manage-aiservice
             defaultMode: 420
-            optional: false    
-            backoffLimit: 4 
+            optional: false
+    backoffLimit: 4

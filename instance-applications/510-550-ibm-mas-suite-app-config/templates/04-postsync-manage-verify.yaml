@@ -147,6 +147,7 @@ data:
     from openshift.dynamic import DynamicClient
     import pytest
     import os
+    import requests
 
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
     if mas_instance_id is None:
@@ -222,6 +223,22 @@ data:
 
       if status_serverbundles is not None:
         assert spec_serverbundles == status_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the serverbundles in the status: {status_serverbundles}"
+
+    def test_get_manage_ai_service_ping():
+        if isVersionApplicable==False:
+            pytest.skip("Skipping because version is below 9.1")
+
+      resp = requests.get(
+        f"{MANAGE_URL}/maximo/api/ping",
+        headers={
+        "Content-Type": "application/json"
+        },
+      )
+      resp_json = resp.json()
+      logger.info("ping to ai service ::")
+      logger.info(response.text)
+
+      assert resp.status_code == 200, f"Expected status 200 from GET /api/version-info, but got {resp.status_code}. Body: {resp_json}."
 
 ---
 kind: ConfigMap

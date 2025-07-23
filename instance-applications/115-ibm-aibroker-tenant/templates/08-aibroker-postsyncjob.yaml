@@ -105,6 +105,8 @@ spec:
               value: "{{ .Values.cluster_id }}"
             - name: AIBROKER_INSTANCE_ID
               value: "{{ .Values.aibroker_instance_id }}"
+            - name: AIBROKER_NAMESPACE
+              value: "{{ .Values.aibroker_namespace }}"
             - name: SECRETS_KEY_SEPERATOR
               value: "/"
             - name: AIBROKER_TENANT
@@ -141,7 +143,7 @@ spec:
               echo "Retrieve AIBroker API Key for tenant: ${AIBROKER_TENANT}"
               echo "================================================================================"
               oc get secret provision-tenant----apikey-secret -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode
-              export AIBROKER_APIKEY_SECRET=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
+              export AIBROKER_APIKEY_SECRET=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
               echo "AIBROKER_APIKEY_SECRET .................... ${AIBROKER_APIKEY_SECRET}"
               if [ -z "$AIBROKER_APIKEY_SECRET" ]; then
                 echo "Failed to retrieve AIBroker API Key"
@@ -151,9 +153,9 @@ spec:
               echo "AIBROKER_APIKEY_SECRET = ${AIBROKER_APIKEY_SECRET:0:4}<snip>"
 
               echo "Retrieve TLS Secrets"
-              export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
-              export TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
-              export TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.tls\\.key}" | base64 --decode)
+              export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
+              export TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
+              export TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.tls\\.key}" | base64 --decode)
 
               echo "CA_CERT = ${CA_CERT:0:20}<snip>"
               echo "TLS_CERT = ${TLS_CERT:0:20}<snip>"

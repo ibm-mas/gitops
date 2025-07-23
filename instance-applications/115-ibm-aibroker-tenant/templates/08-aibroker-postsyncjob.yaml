@@ -161,9 +161,9 @@ spec:
               echo "AIBROKER_APIKEY_SECRET = ${AIBROKER_APIKEY_SECRET:0:4}<snip>"
 
               echo "Retrieve TLS Secrets"
-              export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
-              export TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
-              export TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.tls\\.key}" | base64 --decode)
+              CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
+              TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
+              TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.tls\\.key}" | base64 --decode)
               echo "CA_CERT = ${CA_CERT:0:20}<snip>"
               echo "TLS_CERT = ${TLS_CERT:0:20}<snip>"
               echo "TLS_KEY = ${TLS_KEY:0:20}<snip>"
@@ -171,9 +171,15 @@ spec:
               source /mascli/functions/gitops_utils
               sm_login
 
-              TAGS='[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"'${ACCOUNT_ID}'\"}, {\"Key\": \"cluster\", \"Value\": \"'${CLUSTER_ID}'\"}]'
+              TAGS="[\
+                {\"Key\": \"source\", \"Value\": \"mas-ai-service\"},\
+                {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"},\
+                {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}\
+              ]"
 
-              sm_update_secret $SECRET_NAME_AISERVICE "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY_SECRET\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" "$TAGS" || exit $?
+              sm_update_secret "$SECRET_NAME_AISERVICE" \
+                "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY_SECRET\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" \
+                "$TAGS" || exit $?
       volumes:
         - name: mas-manage-aiservice
           secret:

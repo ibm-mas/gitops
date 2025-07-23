@@ -138,7 +138,7 @@ spec:
             - |
               set -e
               SECRETS_KEY_SEPERATOR="/"
-              SECRET_NAME_AISERVICE=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}aiservice
+              SECRET_NAME_AISERVICE=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_TENANT}
               echo "================================================================================"
               echo "Account Id ....................... ${ACCOUNT_ID}"
               echo "Cluster Id ....................... ${CLUSTER_ID}"
@@ -171,20 +171,10 @@ spec:
               source /mascli/functions/gitops_utils
               sm_login
 
-              TAGS="[\
-                {\"Key\": \"source\", \"Value\": \"mas-ai-service\"},\
-                {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"},\
-                {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}\
-              ]"
+              TAGS="[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
 
               sm_update_secret "$SECRET_NAME_AISERVICE" \
-                "{ \
-                  \"aibroker_tenant\": \"$AIBROKER_TENANT\", \
-                  \"aibroker_apikey\": \"$AIBROKER_APIKEY_SECRET\", \
-                  \"cas_cert\": \"$CA_CERT\", \
-                  \"tls_cert\": \"$TLS_CERT\", \
-                  \"tls_key\": \"$TLS_KEY\" \
-                }" \
+                "{\"aibroker_tenant\": \"$AIBROKER_TENANT\", \"aibroker_apikey\": \"$AIBROKER_APIKEY_SECRET\", \"cas_cert\": \"$CA_CERT\", \"tls_cert\": \"$TLS_CERT\", \"tls_key\": \"$TLS_KEY\"}" \
                 "$TAGS" || exit $?
       volumes:
         - name: mas-manage-aiservice

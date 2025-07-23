@@ -140,15 +140,15 @@ spec:
               echo "================================================================================"
               echo "Retrieve AIBroker API Key for tenant: ${AIBROKER_TENANT}"
               echo "================================================================================"
-
-              export AIBROKER_APIKEY=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
-
-              if [ -z "$AIBROKER_APIKEY" ]; then
+              #oc get secret provision-tenant----apikey-secret -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode
+              export AIBROKER_APIKEY_SECRET=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
+              echo "AIBROKER_APIKEY_SECRET .................... ${AIBROKER_APIKEY_SECRET}"
+              if [ -z "$AIBROKER_APIKEY_SECRET" ]; then
                 echo "Failed to retrieve AIBroker API Key"
                 exit 1
               fi
 
-              echo "AIBROKER_APIKEY = ${AIBROKER_APIKEY:0:4}<snip>"
+              echo "AIBROKER_APIKEY_SECRET = ${AIBROKER_APIKEY_SECRET:0:4}<snip>"
 
               echo "Retrieve TLS Secrets"
               export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
@@ -164,7 +164,7 @@ spec:
 
               TAGS='[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]'
 
-              sm_update_secret $SECRET_NAME_AISERVICE "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" "$TAGS" || exit $?
+              sm_update_secret $SECRET_NAME_AISERVICE "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY_SECRET\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" "$TAGS" || exit $?
       volumes:
         - name: mas-manage-aiservice
           secret:

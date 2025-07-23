@@ -51,8 +51,8 @@ metadata:
     argocd.argoproj.io/sync-wave: "310"
 rules:
   - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list"]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -140,42 +140,40 @@ spec:
               SECRETS_KEY_SEPERATOR="/"
               SECRET_NAME_AISERVICE=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}aiservice
               echo "================================================================================"
-              oc get pods -n mas-aibroker-inst-1-aibroker
-              # echo "Settings"
-              # echo "================================================================================"
-              # echo "Account Id ....................... ${ACCOUNT_ID}"
-              # echo "Cluster Id ....................... ${CLUSTER_ID}"
-              # echo "AIBROKER Instance Id ............. ${AIBROKER_INSTANCE_ID}"
-              # echo "MAS Workspace ID ................. ${MAS_WORKSPACE_ID}"
-              # echo "SM_AWS_REGION .................... ${SM_AWS_REGION}"
-              # echo "SM_AWS_ACCESS_KEY_ID ............ ${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
-              # echo "SM_AWS_SECRET_ACCESS_KEY ........ ${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"
-              # echo "SECRET_NAME_AISERVICE .................... ${SECRET_NAME_AISERVICE}"
+              #oc get pods -n mas-aibroker-inst-1-aibroker
+              echo "Settings"
+              echo "================================================================================"
+              echo "Account Id ....................... ${ACCOUNT_ID}"
+              echo "Cluster Id ....................... ${CLUSTER_ID}"
+              echo "AIBROKER Instance Id ............. ${AIBROKER_INSTANCE_ID}"
+              echo "SM_AWS_REGION .................... ${SM_AWS_REGION}"
+              echo "SM_AWS_ACCESS_KEY_ID ............ ${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
+              echo "SM_AWS_SECRET_ACCESS_KEY ........ ${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"
+              echo "SECRET_NAME_AISERVICE .................... ${SECRET_NAME_AISERVICE}"
 
-              # echo "================================================================================"
-              # echo "Retrieve AIBroker API Key for tenant: ${AIBROKER_TENANT}"
-              # echo "================================================================================"
+              echo "================================================================================"
+              echo "Retrieve AIBroker API Key for tenant: ${AIBROKER_TENANT}"
+              echo "================================================================================"
 
-              # export AIBROKER_APIKEY=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
+              export AIBROKER_APIKEY_SECRET=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
 
-              # if [ -z "$AIBROKER_APIKEY" ]; then
-              # #oc get secret provision-tenant----apikey-secret -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode
-              # export AIBROKER_APIKEY_SECRET=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
-              # echo "AIBROKER_APIKEY_SECRET .................... ${AIBROKER_APIKEY_SECRET}"
-              # if [ -z "$AIBROKER_APIKEY_SECRET" ]; then
-              #   echo "Failed to retrieve AIBroker API Key"
-              #   exit 1
-              # fi
+              if [ -z "$AIBROKER_APIKEY_SECRET" ]; then
+              #oc get secret provision-tenant----apikey-secret -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.AIBROKER_APIKEY_SECRET}" | base64 --decode
+              export AIBROKER_APIKEY_SECRET=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.AIBROKER_APIKEY_SECRET}" | base64 --decode)
+              echo "AIBROKER_APIKEY_SECRET .................... ${AIBROKER_APIKEY_SECRET}"
+              if [ -z "$AIBROKER_APIKEY_SECRET" ]; then
+                echo "Failed to retrieve AIBroker API Key"
+                exit 1
+              fi
 
-              # echo "AIBROKER_APIKEY = ${AIBROKER_APIKEY:0:4}<snip>"
-              # echo "AIBROKER_APIKEY_SECRET = ${AIBROKER_APIKEY_SECRET:0:4}<snip>"
+              echo "AIBROKER_APIKEY_SECRET = ${AIBROKER_APIKEY_SECRET:0:4}<snip>"
+              echo "AIBROKER_APIKEY_SECRET = ${AIBROKER_APIKEY_SECRET:0:4}<snip>"
 
-              # echo "Retrieve TLS Secrets"
-              # export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
-              # TAGS='[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]'
+              echo "Retrieve TLS Secrets"
+              export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
+              TAGS='[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]'
 
-              # sm_update_secret $SECRET_NAME_AISERVICE "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" "$TAGS" || exit $?
-              # sm_update_secret $SECRET_NAME_AISERVICE "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY_SECRET\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" "$TAGS" || exit $?
+              sm_update_secret $SECRET_NAME_AISERVICE "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY_SECRET\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" "$TAGS" || exit $?
       volumes:
         - name: mas-manage-aiservice
           secret:

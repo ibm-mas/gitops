@@ -1,178 +1,178 @@
-{{- /*
-Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
-*/}}
-{{- $_job_name_prefix := "mas-manage-ai-tenant" }}{{- /*
-Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
-Included in $_job_hash (see below).
-*/}}
-{{- $_cli_image_digest := "sha256:834dffd4da534c01daea4e0a6d9db7d00a9ad9b18b054cc034985fcaceedeacd" }}{{- /*
-A dict of values that influence the behaviour of the job in some way.
-Any changes to values in this dict will trigger a rerun of the job.
-Since jobs must be idemopotent, it's generally safe to pass in values here that are not
-strictly necessary (i.e. including some values that don't actually influence job behaviour).
-We may want to refine this further though for jobs that can take a long time to complete.
-Included in $_job_hash (see below).
-*/}}
-{{- $_job_config_values := omit .Values "junitreporter" }}{{- /*
-Increment this value whenever you make a change to an immutable field of the Job resource.
-E.g. passing in a new environment variable.
-Included in $_job_hash (see below).
-*/}}
-{{- $_job_version := "v3" }}{{- /*
-10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
-This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
-immutable field of any existing Job resource.
-*/}}
-{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}{{- /*
-Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.When the auto_delete flag is not set on the root application, a CronJob in the cluster uses this label 
-to identify old Job resources that should be pruned on behalf of ArgoCD.Any Job resources in the same namespace that have the mas.ibm.com/job-cleanup-group with this value
-will be considered to belong to the same cleanup group. All but the most recent (i.e. with the latest "creation_timestamp")
-Jobs will be automatically deleted.$_job_cleanup_group can usually just be based on $_job_name_prefix. There are some special cases
-where multiple Jobs are created in our templates using a Helm loop. In those cases, additional descriminators
-must be added to $_job_cleanup_group.By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators
-are required here.*/}}
-{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: mas-manage-aiservice-job
-  namespace: "{{ .Values.aibroker_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "309"
+# {{- /*
+# Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+# */}}
+# {{- $_job_name_prefix := "mas-manage-ai-tenant" }}{{- /*
+# Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+# Included in $_job_hash (see below).
+# */}}
+# {{- $_cli_image_digest := "sha256:834dffd4da534c01daea4e0a6d9db7d00a9ad9b18b054cc034985fcaceedeacd" }}{{- /*
+# A dict of values that influence the behaviour of the job in some way.
+# Any changes to values in this dict will trigger a rerun of the job.
+# Since jobs must be idemopotent, it's generally safe to pass in values here that are not
+# strictly necessary (i.e. including some values that don't actually influence job behaviour).
+# We may want to refine this further though for jobs that can take a long time to complete.
+# Included in $_job_hash (see below).
+# */}}
+# {{- $_job_config_values := omit .Values "junitreporter" }}{{- /*
+# Increment this value whenever you make a change to an immutable field of the Job resource.
+# E.g. passing in a new environment variable.
+# Included in $_job_hash (see below).
+# */}}
+# {{- $_job_version := "v3" }}{{- /*
+# 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
+# This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
+# immutable field of any existing Job resource.
+# */}}
+# {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}{{- /*
+# Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.When the auto_delete flag is not set on the root application, a CronJob in the cluster uses this label 
+# to identify old Job resources that should be pruned on behalf of ArgoCD.Any Job resources in the same namespace that have the mas.ibm.com/job-cleanup-group with this value
+# will be considered to belong to the same cleanup group. All but the most recent (i.e. with the latest "creation_timestamp")
+# Jobs will be automatically deleted.$_job_cleanup_group can usually just be based on $_job_name_prefix. There are some special cases
+# where multiple Jobs are created in our templates using a Helm loop. In those cases, additional descriminators
+# must be added to $_job_cleanup_group.By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators
+# are required here.*/}}
+# {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+# ---
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: mas-manage-aiservice-job
+#   namespace: "{{ .Values.aibroker_namespace }}"
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "309"
 
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: mas-manage-aiservice-job-role
-  namespace: "{{ .Values.aibroker_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "310"
-rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "list", "watch"]
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: Role
+# metadata:
+#   name: mas-manage-aiservice-job-role
+#   namespace: "{{ .Values.aibroker_namespace }}"
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "310"
+# rules:
+#   - apiGroups: [""]
+#     resources: ["secrets"]
+#     verbs: ["get", "list", "watch"]
 
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: mas-manage-aiservice-job-rolebinding
-  namespace: "{{ .Values.aibroker_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "311"
-subjects:
-  - kind: ServiceAccount
-    name: mas-manage-aiservice-job
-    namespace: "{{ .Values.aibroker_namespace }}"
-roleRef:
-  kind: Role
-  name: mas-manage-aiservice-job-role
-  apiGroup: rbac.authorization.k8s.io
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: {{ $_job_name }}
-  namespace: "{{ .Values.aibroker_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "312"
-  labels:
-    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  template:
-    metadata:
-      labels:
-        app: sync-job
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 8 }}
-{{- end }}
-    spec:
-      serviceAccountName: mas-manage-aiservice-job
-      restartPolicy: Never
-      containers:
-        - name: mas-manage-aiservice-run
-          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
-          imagePullPolicy: IfNotPresent
-          env:
-            - name: ACCOUNT_ID
-              value: "{{ .Values.account_id }}"
-            - name: CLUSTER_ID
-              value: "{{ .Values.cluster_id }}"
-            - name: AIBROKER_INSTANCE_ID
-              value: "{{ .Values.aibroker_instance_id }}"
-            - name: AIBROKER_NAMESPACE
-              value: "{{ .Values.aibroker_namespace }}"
-            - name: SECRETS_KEY_SEPERATOR
-              value: "/"
-            - name: AIBROKER_TENANT
-              value: "{{ .Values.tenantNamespace }}"
-            - name: SM_AWS_REGION
-              value: "{{ .Values.mas_aibroker_storage_region }}"
-            - name: SM_AWS_ACCESS_KEY_ID
-              value: "{{ .Values.mas_aibroker_storage_accesskey }}"
-            - name: SM_AWS_SECRET_ACCESS_KEY
-              value: "{{ .Values.mas_aibroker_storage_secretkey }}"
-            - name: AVP_TYPE
-              value: "aws"
-          command:
-            - /bin/sh
-            - -c
-            - |
-              set -e
-              SECRETS_KEY_SEPERATOR="/"
-              SECRET_NAME_AISERVICE=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}aiservice
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: RoleBinding
+# metadata:
+#   name: mas-manage-aiservice-job-rolebinding
+#   namespace: "{{ .Values.aibroker_namespace }}"
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "311"
+# subjects:
+#   - kind: ServiceAccount
+#     name: mas-manage-aiservice-job
+#     namespace: "{{ .Values.aibroker_namespace }}"
+# roleRef:
+#   kind: Role
+#   name: mas-manage-aiservice-job-role
+#   apiGroup: rbac.authorization.k8s.io
+# ---
+# apiVersion: batch/v1
+# kind: Job
+# metadata:
+#   name: {{ $_job_name }}
+#   namespace: "{{ .Values.aibroker_namespace }}"
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "312"
+#   labels:
+#     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+# {{- if .Values.custom_labels }}
+# {{ .Values.custom_labels | toYaml | indent 4 }}
+# {{- end }}
+# spec:
+#   template:
+#     metadata:
+#       labels:
+#         app: sync-job
+# {{- if .Values.custom_labels }}
+# {{ .Values.custom_labels | toYaml | indent 8 }}
+# {{- end }}
+#     spec:
+#       serviceAccountName: mas-manage-aiservice-job
+#       restartPolicy: Never
+#       containers:
+#         - name: mas-manage-aiservice-run
+#           image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+#           imagePullPolicy: IfNotPresent
+#           env:
+#             - name: ACCOUNT_ID
+#               value: "{{ .Values.account_id }}"
+#             - name: CLUSTER_ID
+#               value: "{{ .Values.cluster_id }}"
+#             - name: AIBROKER_INSTANCE_ID
+#               value: "{{ .Values.aibroker_instance_id }}"
+#             - name: AIBROKER_NAMESPACE
+#               value: "{{ .Values.aibroker_namespace }}"
+#             - name: SECRETS_KEY_SEPERATOR
+#               value: "/"
+#             - name: AIBROKER_TENANT
+#               value: "{{ .Values.tenantNamespace }}"
+#             - name: SM_AWS_REGION
+#               value: "{{ .Values.mas_aibroker_storage_region }}"
+#             - name: SM_AWS_ACCESS_KEY_ID
+#               value: "{{ .Values.mas_aibroker_storage_accesskey }}"
+#             - name: SM_AWS_SECRET_ACCESS_KEY
+#               value: "{{ .Values.mas_aibroker_storage_secretkey }}"
+#             - name: AVP_TYPE
+#               value: "aws"
+#           command:
+#             - /bin/sh
+#             - -c
+#             - |
+#               set -e
+#               SECRETS_KEY_SEPERATOR="/"
+#               SECRET_NAME_AISERVICE=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}aiservice
 
-              echo "================================================================================"
-              echo "Settings"
-              echo "================================================================================"
-              echo "Account Id ....................... ${ACCOUNT_ID}"
-              echo "Cluster Id ....................... ${CLUSTER_ID}"
-              echo "AIBROKER Instance Id ............. ${AIBROKER_INSTANCE_ID}"
-              echo "AIBROKER NAMESPACE ................. ${AIBROKER_NAMESPACE}"
-              echo "SM_AWS_REGION .................... ${SM_AWS_REGION}"
-              echo "SM_AWS_ACCESS_KEY_ID ............ ${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
-              echo "SM_AWS_SECRET_ACCESS_KEY ........ ${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"
-              echo "SECRET_NAME_AISERVICE .................... ${SECRET_NAME_AISERVICE}"
+#               echo "================================================================================"
+#               echo "Settings"
+#               echo "================================================================================"
+#               echo "Account Id ....................... ${ACCOUNT_ID}"
+#               echo "Cluster Id ....................... ${CLUSTER_ID}"
+#               echo "AIBROKER Instance Id ............. ${AIBROKER_INSTANCE_ID}"
+#               echo "AIBROKER NAMESPACE ................. ${AIBROKER_NAMESPACE}"
+#               echo "SM_AWS_REGION .................... ${SM_AWS_REGION}"
+#               echo "SM_AWS_ACCESS_KEY_ID ............ ${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
+#               echo "SM_AWS_SECRET_ACCESS_KEY ........ ${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"
+#               echo "SECRET_NAME_AISERVICE .................... ${SECRET_NAME_AISERVICE}"
 
-              echo "================================================================================"
-              echo "Retrieve AIBroker API Key for tenant: ${AIBROKER_TENANT}"
-              echo "================================================================================"
-              oc get secret provision-tenant----apikey-secret -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode
-              export AIBROKER_APIKEY_SECRET=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
-              #oc get secret provision-tenant----apikey-secret -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode
-              export AIBROKER_APIKEY_SECRET=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
-              echo "AIBROKER_APIKEY_SECRET .................... ${AIBROKER_APIKEY_SECRET}"
-              if [ -z "$AIBROKER_APIKEY_SECRET" ]; then
-                echo "Failed to retrieve AIBroker API Key"
-              echo "AIBROKER_APIKEY_SECRET = ${AIBROKER_APIKEY_SECRET:0:4}<snip>"
+#               echo "================================================================================"
+#               echo "Retrieve AIBroker API Key for tenant: ${AIBROKER_TENANT}"
+#               echo "================================================================================"
+#               oc get secret provision-tenant----apikey-secret -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode
+#               export AIBROKER_APIKEY_SECRET=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
+#               #oc get secret provision-tenant----apikey-secret -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode
+#               export AIBROKER_APIKEY_SECRET=$(oc get secret ${AIBROKER_TENANT}----apikey-secret -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
+#               echo "AIBROKER_APIKEY_SECRET .................... ${AIBROKER_APIKEY_SECRET}"
+#               if [ -z "$AIBROKER_APIKEY_SECRET" ]; then
+#                 echo "Failed to retrieve AIBroker API Key"
+#               echo "AIBROKER_APIKEY_SECRET = ${AIBROKER_APIKEY_SECRET:0:4}<snip>"
 
-              echo "Retrieve TLS Secrets"
-              export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
-              export TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
-              export TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.tls\\.key}" | base64 --decode)
-              export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
-              export TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
-              export TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.tls\\.key}" | base64 --decode)
+#               echo "Retrieve TLS Secrets"
+#               export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
+#               export TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
+#               export TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n ${AIBROKER_NAMESPACE} -o jsonpath="{.data.tls\\.key}" | base64 --decode)
+#               export CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
+#               export TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
+#               export TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-aibroker-inst-1-aibroker -o jsonpath="{.data.tls\\.key}" | base64 --decode)
 
-              echo "CA_CERT = ${CA_CERT:0:20}<snip>"
-              echo "TLS_CERT = ${TLS_CERT:0:20}<snip>"
-              echo "TLS_KEY = ${TLS_KEY:0:20}<snip>"
+#               echo "CA_CERT = ${CA_CERT:0:20}<snip>"
+#               echo "TLS_CERT = ${TLS_CERT:0:20}<snip>"
+#               echo "TLS_KEY = ${TLS_KEY:0:20}<snip>"
 
-              source /mascli/functions/gitops_utils
-              sm_login
+#               source /mascli/functions/gitops_utils
+#               sm_login
 
-              TAGS='[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]'
+#               TAGS='[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]'
 
-              sm_update_secret $SECRET_NAME_AISERVICE "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY_SECRET\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" "$TAGS" || exit $?
-      volumes:
-        - name: mas-manage-aiservice
-          secret:
-            secretName: mas-manage-aiservice
-            defaultMode: 420
-            optional: false
-    backoffLimit: 4
+#               sm_update_secret $SECRET_NAME_AISERVICE "{\"aibroker_tenant\":\"$AIBROKER_TENANT\", \"aibroker_apikey\":\"$AIBROKER_APIKEY_SECRET\", \"cas_cert\":\"$CA_CERT\", \"tls_cert\":\"$TLS_CERT\", \"tls_key\":\"$TLS_KEY\"}" "$TAGS" || exit $?
+#       volumes:
+#         - name: mas-manage-aiservice
+#           secret:
+#             secretName: mas-manage-aiservice
+#             defaultMode: 420
+#             optional: false
+#     backoffLimit: 4

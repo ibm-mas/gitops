@@ -53,10 +53,13 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "310"
 rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "list", "watch"]
-
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - list
+    - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -73,22 +76,22 @@ roleRef:
   kind: Role
   name: mas-manage-aiservice-job-role
   apiGroup: rbac.authorization.k8s.io
-#---
-# apiVersion: networking.k8s.io/v1
-# kind: NetworkPolicy
-# metadata:
-#   name: allow-mas-manage-ai-tenant-job
-#   namespace: "{{ .Values.aibroker_namespace }}"
-#   annotations:
-#     argocd.argoproj.io/sync-wave: "312"
-# spec:
-#   podSelector:
-#     matchLabels:
-#       app: {{ $job_name }}
-#   egress:
-#     - {}
-#   policyTypes:
-#     - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mas-manage-ai-tenant-job
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "312"
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_name }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
 
 ---
 apiVersion: batch/v1
@@ -98,7 +101,6 @@ metadata:
   namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "313"
-    argocd.argoproj.io/sync-options: Replace=true
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}

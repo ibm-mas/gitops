@@ -71,13 +71,29 @@ roleRef:
   name: mas-manage-aiservice-job-role
   apiGroup: rbac.authorization.k8s.io
 ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mas-manage-ai-tenant-job
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "312"
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $_job_name }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ $_job_name }}
   namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "312"
+    argocd.argoproj.io/sync-wave: "313"
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -87,7 +103,7 @@ spec:
   template:
     metadata:
       labels:
-        app: sync-job
+        app: {{ $_job_name }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
@@ -124,8 +140,8 @@ spec:
               set -e
               SECRETS_KEY_SEPERATOR="/"
               SECRET_NAME_AISERVICE=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}aiservice
-
               echo "================================================================================"
+              oc get pods -n mas-aibroker-inst-1-aibroker
               # echo "Settings"
               # echo "================================================================================"
               # echo "Account Id ....................... ${ACCOUNT_ID}"

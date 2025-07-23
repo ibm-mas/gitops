@@ -77,13 +77,46 @@ roleRef:
   name: mas-manage-aiservice-job-role
   apiGroup: rbac.authorization.k8s.io
 ---
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mas-manage-ai-tenant-job
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "312"
+spec:
+  podSelector:
+    matchLabels:
+      app: sync-job
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 6 }}
+{{- end }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+          namespaceSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+          namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ $_job_name }}
   namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "312"
+    argocd.argoproj.io/sync-wave: "313"
     argocd.argoproj.io/sync-options: Replace=true
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}

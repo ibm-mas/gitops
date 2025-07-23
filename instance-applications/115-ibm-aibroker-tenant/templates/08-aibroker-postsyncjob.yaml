@@ -50,15 +50,9 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "310"
 rules:
-- apiGroups:
-    - ""
-  resources:
-    - pods
-  verbs:
-    - get
-  # - apiGroups: [""]
-  #   resources: ["secrets"]
-  #   verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -77,7 +71,6 @@ roleRef:
   name: mas-manage-aiservice-job-role
   apiGroup: rbac.authorization.k8s.io
 ---
----
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -89,25 +82,11 @@ spec:
   podSelector:
     matchLabels:
       app: sync-job
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 6 }}
-{{- end }}
   policyTypes:
     - Ingress
     - Egress
-  ingress:
-    - from:
-        - podSelector: {}
-          namespaceSelector: {}
   egress:
-    - to:
-        - podSelector: {}
-          namespaceSelector: {}
-      ports:
-        - protocol: TCP
-          port: 443
-        - protocol: TCP
-          port: 80
+    - {}
 
 ---
 apiVersion: batch/v1

@@ -71,44 +71,13 @@ roleRef:
   name: mas-manage-aiservice-job-role
   apiGroup: rbac.authorization.k8s.io
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: mas-manage-aiservice-job-role
-  namespace: "{{ .Values.aibroker_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "312"
-
-rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: mas-manage-aiservice-job-rolebinding
-  namespace: "{{ .Values.aibroker_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "313"
-
-subjects:
-  - kind: ServiceAccount
-    name: mas-manage-aiservice-job
-    namespace: "{{ .Values.aibroker_namespace }}"
-roleRef:
-  kind: ClusterRole
-  name: mas-manage-aiservice-job-role
-  apiGroup: rbac.authorization.k8s.io
-
-
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ $_job_name }}
   namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "314"
+    argocd.argoproj.io/sync-wave: "312"
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -125,13 +94,6 @@ spec:
     spec:
       serviceAccountName: mas-manage-aiservice-job
       restartPolicy: Never
-
-initContainers:
-- name: network-check
-  image: curlimages/curl
-  command: ["curl", "-v", "https://kubernetes.default.svc"]
-
-
       containers:
         - name: mas-manage-aiservice-run
           image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}

@@ -201,6 +201,67 @@ data:
     def mange_app_cr(v1_manageapp):
       yield v1_manageapp.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
 
+    @pytest.fixture(scope="session")
+    def v1_routes(dyn_client):
+        yield dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+
+    @pytest.fixture(scope="session")
+    def manage_route(v1_routes):
+        yield v1_routes.get(name=manage_route_name, namespace=manageNamespace)
+
+    @pytest.fixture(scope="session")
+    def manage_host_ca_filepath(manage_route):
+
+      # Read the certificate field from the Manage Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the external Manage endpoint.
+      try:
+        manage_route_certificate = manage_route['spec']['tls']['certificate']
+      except KeyError as e:
+        pass
+
+      # Read the caCertificate field from the Manage Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the external Manage endpoint.
+      try:
+        manage_route_caCertificate = manage_route['spec']['tls']['caCertificate']
+      except KeyError as e:
+        pass
+
+      # Read the destinationCACertificate field from the Manage Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the internal Manage services.
+      try:
+        manage_route_destinationCACertificate = manage_route['spec']['tls']['destinationCACertificate']
+      except KeyError as e:
+        pass
+
+      # Load default CA bundle. This will include certs for well-known CAs. This ensures that we will
+      # trust the certificates presented by the external Manage endpoints when MAS is configured to use
+      # an external frontend like CIS.
+      with open(certifi.where(), 'rb') as default_ca:
+        default_ca_content = default_ca.read()
+
+      # Combine all of the above into a single .pem file that we can use when issuing HTTP requests
+      chain_file = tempfile.NamedTemporaryFile(delete=False)
+      try:
+        
+        if manage_route_certificate:
+          chain_file.write(manage_route_certificate.encode())
+        
+        if manage_route_caCertificate:
+          chain_file.write(manage_route_certificate.encode())
+
+        if manage_route_destinationCACertificate:
+          chain_file.write(manage_route_destinationCACertificate.encode())
+
+        chain_file.write(default_ca_content)
+
+        chain_file.flush()
+        chain_file.close()
+
+        yield chain_file.name
+
+      finally:
+        os.remove(chain_file.name)
+
     def test_expected_reconciled_version(mange_workspace_reconciled_version, manage_version):
       assert manage_version == mange_workspace_reconciled_version, f"Expected ManageWorkspace Reconciled version: {mange_workspace_reconciled_version} to match Manage Operator version: {manage_version}"
 
@@ -225,20 +286,34 @@ data:
         assert spec_serverbundles == status_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the serverbundles in the status: {status_serverbundles}"
 
     def test_get_manage_ai_service_ping():
-        if isVersionApplicable==False:
-            pytest.skip("Skipping because version is below 9.1")
+        # if isVersionApplicable==False:
+        #    pytest.skip("Skipping because version is below 9.1")
+
+      try:
+            manageRouteObject = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+            manageRouteDetails = manageRouteObject.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=manageNamespace)
+            manageUrl = manageRouteDetails.spec.host
+      except Exception as e:
+            if e.status == 404:
+                logger.info(f"Unable to find route {mas_instance_id}-manage-{mas_workspace_id} in {manageNamespace}")
+            else:
+                logger.info(f"Error retrieving route: {str(e)}")
+
+      if manageUrl:
+          MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'
 
       resp = requests.get(
-        f"{MANAGE_URL}/maximo/api/ping",
+        f"{MANAGE_URL}/maximo/api/pingaiservice",
         headers={
         "Content-Type": "application/json"
         },
+        verify=manage_host_ca_filepath
       )
       resp_json = resp.json()
       logger.info("ping to ai service ::")
       logger.info(response.text)
 
-      assert resp.status_code == 200, f"Expected status 200 from GET /api/version-info, but got {resp.status_code}. Body: {resp_json}."
+      assert resp.status_code == 200, f"Expected status 200 from GET /maximo/api/pingaiservice, but got {resp.status_code}. Body: {resp_json}."
 
 ---
 kind: ConfigMap

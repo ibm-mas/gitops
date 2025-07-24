@@ -1,0 +1,185 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.scriptConfigMapName | quote }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "135"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  dbs-rds-init.py: |
+    import ibm_db as db2
+    import os
+    import sys
+
+    # Initialization of 
+    #mas_application_id = os.getenv("MAS_APP_ID")
+    mas_application_id = 'facilities'
+    database_name = os.getenv("DB_NAME")
+    created_any = False
+    
+    with open("/etc/mas/dbs-rds-creds/username", 'r') as f:
+      username = f.read().strip()
+    
+    with open("/etc/mas/dbs-rds-creds/password", 'r') as f:
+      password = f.read().strip()
+    
+    # Creating database connection string for rdsadmin user
+    conn_rds_admin_str = (
+        f"DATABASE={os.environ['RDS_ADMIN_DB']};"
+        f"HOSTNAME={os.environ['DB_HOST']};"
+        f"PORT={os.environ['DB_PORT']};"
+        f"UID={username};"
+        f"PWD={password};"
+    )
+    
+    # Creating database connection string for db2rds user
+    conn_rds_db2_str = (
+        f"DATABASE={os.environ['DB_NAME']};"
+        f"HOSTNAME={os.environ['DB_HOST']};"
+        f"PORT={os.environ['DB_PORT']};"
+        f"UID={username};"
+        f"PWD={password};"
+    )
+
+    try:
+        admin_conn = db2.connect(conn_rds_admin_str, "", "")
+        print("✅ Connected to Db2 as rdsadmin user")
+    
+        db2_conn   = db2.connect(conn_rds_db2_str, "", "")
+        print("✅ Connected to Db2 as db2rds user")
+    except Exception as e:
+        print(f"❌ Connection failed: {e}")
+        sys.exit(1)
+
+    # Call the RDS admin procedure to list tablespaces
+    def list_tablespaces():
+        stmt = db2.exec_immediate(conn_str, "CALL rdsadmin.list_tablespaces()")
+        return stmt
+
+
+    def bufferpool_exists(name):
+      # Use parameterized SQL to avoid injection
+      query = "SELECT COUNT(*) FROM syscat.bufferpools WHERE bpname = ?"
+      stmt = db2.prepare(db2_conn, query)
+      db2.execute(stmt, (name.upper(),))  # Ensure uppercase as bpname is stored in uppercase
+      result = db2.fetch_tuple(stmt)
+      return int(result[0]) > 0
+
+    def tablespace_exists(tablespace_name):
+      stmt = db2.prepare(db2_conn, "SELECT COUNT(*) FROM syscat.tablespaces WHERE tbspace = ?")
+      db2.execute(stmt, (tablespace_name.upper(),))
+      return int(db2.fetch_tuple(stmt)[0]) > 0
+    
+
+    def create_bufferpool(bpname, pagesize=32768):
+        sql = f"""
+          CALL rdsadmin.create_bufferpool(
+              '{database_name}',
+              '{bpname}',
+               NULL,
+              'Y',
+              'N',
+              {pagesize},
+              -1
+          )
+          """
+        db2.exec_immediate(admin_conn, sql)
+        print(f"✅ Created bufferpool: {bpname}")
+
+    def create_tablespace(
+        tbname,
+        bufferpool,
+        pagesize=16384,
+        initialsize=5000,
+        increasesize=10000,
+        tablespace_type="U",
+    ):
+        sql = f"""
+          CALL rdsadmin.create_tablespace(
+              '{database_name}',
+              '{tbname}',
+              '{bufferpool}',
+              {pagesize},
+              '{initialsize}',
+              '{increasesize}',
+              '{tablespace_type}'
+          )
+          """
+        db2.exec_immediate(admin_conn, sql)
+        print(f"✅ Created tablespace: {tbname}")
+
+
+    # 1. Bufferpools
+    manage_bufferpools = ["MAXBUFPOOL", "MAXBUFPOOLINDX", "MAXTEMPBP"]
+    facilities_bufferpools = [
+        "TRIBUFPOOL",
+        "TRIBUFPOOLINDEX",
+        "TRITEMPBP",
+        "DEDICATEDBPDATA",
+        "DEDICATEDBPINDX",
+        "DEDICATEDBPLOB",
+    ]
+
+    if mas_application_id == "manage":
+        for bp in manage_bufferpools:
+            if bufferpool_exists(bp):
+                print(f"ℹ️ Bufferpool '{bp}' already exists")
+            else:
+                create_bufferpool(bp)
+                created_any = True
+    elif mas_application_id == "facilities":
+        for bp in facilities_bufferpools:
+            if bufferpool_exists(bp):
+                print(f"ℹ️ Bufferpool '{bp}' already exists")
+            else:
+                create_bufferpool(bp)
+                created_any = True
+    else:
+        print(f"ℹ️ BUFFERPOOL CHAIN : mas_application_id is not provided ")
+    
+    # 2. Tablespaces
+    manage_tablespaces = [
+        ("MAXDATA", "MAXBUFPOOL"),
+        ("MAXINDEX", "MAXBUFPOOLINDX"),
+        ("MAXTEMP", "MAXTEMPBP"),
+    ]
+    facilities_tablespaces = [
+        ("TRIDATA_DATA", "TRIBUFPOOL"),
+        ("TRIDATA_INDX", "TRIBUFPOOLINDEX"),
+        ("TRITEMP", "TRITEMPBP"),
+        ("DEDICATED_DATA", "DEDICATEDBPDATA"),
+        ("DEDICATED_INDEX", "DEDICATEDBPINDX"),
+        ("DEDICATED_LOBS", "DEDICATEDBPLOB"),
+    ]
+
+    if mas_application_id == "manage":
+        for tsp, bp in manage_tablespaces:
+          if tablespace_exists(tsp):
+              print(f"ℹ️ Tablespace '{tsp}' already exists")
+          else:
+              create_tablespace(tsp, bp)
+              created_any = True
+    elif mas_application_id == "facilities":
+        for tsp, bp in facilities_tablespaces:
+          if tablespace_exists(tsp):
+              print(f"ℹ️ Tablespace '{tsp}' already exists")
+          else:
+              if tsp == "TRITEMP":
+                  create_tablespace(tsp, bp, tablespace_type="T")
+              else:
+                  create_tablespace(tsp, bp)
+              created_any = True
+    else:
+        print(f"ℹ️ TABLESPACE CHAIN: mas_application_id is not provided ")
+
+    if created_any:
+        print("✅ Db2 RDS bufferpools and tablespaces created or updated.")
+    else:
+        print("✅ All bufferpools and tablespaces already existed or not created — please check.")
+
+    db2.close(admin_conn)
+    db2.close(db2_conn)

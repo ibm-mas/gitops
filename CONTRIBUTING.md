@@ -12,7 +12,7 @@ Documentation source is located in the `docs` folder.
 To view your local documentation updates before pushing to git, run the following:
 
 ```
-python3.9 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install mkdocs

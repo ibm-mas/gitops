@@ -158,6 +158,8 @@ data:
     if mas_workspace_id is None:
       raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
 
+    aibroker_api_key = os.getenv("AIBROKERAPIKEY")
+
     manage_namespace = f"mas-{mas_instance_id}-manage"
 
     @pytest.fixture(scope="session")
@@ -289,6 +291,10 @@ data:
         # if isVersionApplicable==False:
         #    pytest.skip("Skipping because version is below 9.1")
 
+      if aibroker_api_key is None:
+        print("AI Broker API key not found.")
+        return none;
+
       try:
             manageRouteObject = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
             manageRouteDetails = manageRouteObject.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=manageNamespace)
@@ -302,13 +308,19 @@ data:
       if manageUrl:
           MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'
 
-      resp = requests.get(
-        f"{MANAGE_URL}/maximo/api/pingaiservice",
-        headers={
-        "Content-Type": "application/json"
-        },
-        verify=manage_host_ca_filepath
-      )
+      try:
+        resp = requests.get(
+          f"{MANAGE_URL}/maximo/api/pingaiservice",
+          headers={
+          "Content-Type": "application/json"
+          },
+          verify=manage_host_ca_filepath
+        )
+        resp.raise_for_status()  # Raise an error for bad responses
+      except requests.exceptions.RequestException as e:
+          print("Error during requests to Maximo Ping AI service:", e)
+          return None
+
       resp_json = resp.json()
       logger.info("ping to ai service ::")
       logger.info(response.text)
@@ -384,6 +396,10 @@ spec:
               value: "{{ .Values.mas_workspace_id }}"
             - name: TEST_RECORD_CM
               value: "{{ $record_cm_name }}"
+{{- if and (hasKey .Values "global_secrets") (hasKey .Values.global_secrets "MXE_INT_AIBROKERAPIKEY") }}
+            - name: AIBROKERAPIKEY
+              value: "{{ .Values.global_secrets.MXE_INT_AIBROKERAPIKEY }}"
+{{- end }}
           volumeMounts:
             - name: tests
               mountPath: /tmp/tests

@@ -161,6 +161,7 @@ data:
     aibroker_api_key = os.getenv("AIBROKERAPIKEY")
 
     manage_namespace = f"mas-{mas_instance_id}-manage"
+    manage_route_name = f"{mas_instance_id}-manage-{mas_workspace_id}"
 
     @pytest.fixture(scope="session")
     def dyn_client():
@@ -210,6 +211,13 @@ data:
     @pytest.fixture(scope="session")
     def manage_route(v1_routes):
         yield v1_routes.get(name=manage_route_name, namespace=manageNamespace)
+
+    @pytest.fixture(scope="session")
+    def manage_host(manage_route)
+      try:
+        yield manage_route[spec][host]
+      except KeyError as e;
+        assert False, f"Unable to determine manage host; spec.host key not present in {manage_route_name}/{manageNamespace}: {manage_route}. Error details: {e}"
 
     @pytest.fixture(scope="session")
     def manage_host_ca_filepath(manage_route):
@@ -287,25 +295,14 @@ data:
       if status_serverbundles is not None:
         assert spec_serverbundles == status_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the serverbundles in the status: {status_serverbundles}"
 
-    def test_get_manage_ai_service_ping():
+    def test_get_manage_ai_service_ping(manage_host):
         # if isVersionApplicable==False:
         #    pytest.skip("Skipping because version is below 9.1")
 
-      if aibroker_api_key is None:
-        print("AI Broker API key not found.")
-        return none;
+      if aibroker_api_key == False:
+        pytest.skip("AI Broker API key not found.")
 
-      try:
-            manageRouteObject = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
-            manageRouteDetails = manageRouteObject.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=manageNamespace)
-            manageUrl = manageRouteDetails.spec.host
-      except Exception as e:
-            if e.status == 404:
-                logger.info(f"Unable to find route {mas_instance_id}-manage-{mas_workspace_id} in {manageNamespace}")
-            else:
-                logger.info(f"Error retrieving route: {str(e)}")
-
-      if manageUrl:
+      if manage_host:
           MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'
 
       try:
@@ -319,7 +316,7 @@ data:
         resp.raise_for_status()  # Raise an error for bad responses
       except requests.exceptions.RequestException as e:
           print("Error during requests to Maximo Ping AI service:", e)
-          return None
+          assert False, "Error calling  GET /maximo/api/pingaiservice. Error details: {e}"
 
       resp_json = resp.json()
       logger.info("ping to ai service ::")
@@ -331,6 +328,11 @@ data:
         assert resp_json['aiservicehealth'] == True, f"Expected healthy field from GET /maximo/api/pingaiservice to be true, but was {resp_json['aiservicehealth']}. Body: {resp_json}"
       except KeyError as e:
         assert False, f"Expected aiservicehealth key not found in response from GET /maximo/api/pingaiservice. Body: {resp_json}"
+
+      try:
+        assert resp_json['aiserviceapikey'] == True, f"Expected healthy field from GET /maximo/api/pingaiservice to be true, but was {resp_json['aiserviceapikey']}. Body: {resp_json}"
+      except KeyError as e:
+        assert False, f"Expected aiserviceapikey key not found in response from GET /maximo/api/pingaiservice. Body: {resp_json}"
 
 ---
 kind: ConfigMap
@@ -398,7 +400,7 @@ spec:
               value: "{{ $record_cm_name }}"
 {{- if and (hasKey .Values "global_secrets") (hasKey .Values.global_secrets "MXE_INT_AIBROKERAPIKEY") }}
             - name: AIBROKERAPIKEY
-              value: "{{ .Values.global_secrets.MXE_INT_AIBROKERAPIKEY }}"
+              value: "True"
 {{- end }}
           volumeMounts:
             - name: tests

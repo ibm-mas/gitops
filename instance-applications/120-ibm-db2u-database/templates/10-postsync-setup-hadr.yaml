@@ -578,6 +578,15 @@ spec:
                 echo "HADR is already setup. Hence skipping the restore on standby"
               fi
 
+              # check if config LOGARCHMETH1 is defined
+              config_op=`oc get db2uinstances db2wh-${MAS_INSTANCE_ID}-${MAS_APP_ID}-sdb -n ${DB2_NAMESPACE} -o json | jq -r '.spec.environment.databases' | jq ".[] | select(.name==\"${DB2_DBNAME}\")" | jq '.dbConfig.LOGARCHMETH1' | sed 's/DISK://'`
+              if [[ "${config_op}" != "null" ]]; then
+                echo ""
+                echo "Creating directory ${config_op} for LOGARCHMETH1 on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "sudo mkdir -p ${config_op}; sudo chown -R db2inst1:db2iadm1 ${config_op}" db2inst1 || exit $?
+              fi
+
               echo ""
               echo "================================================================================"
               echo "Calling apply-db2cfg-settings.sh file on c-${DB2_INSTANCE_NAME}-db2u-0"

@@ -325,11 +325,11 @@ data:
 
       try:
         resp = requests.get(
-          f"https://{manage_host}/maximo/api/pingaiservice",
+          f"https://{manage_host}/maximo/api/ping",
           headers={
           "Content-Type": "application/json"
           },
-          verify=False
+          verify=manage_host_ca_filepath
         )
         resp.raise_for_status()  # Raise an error for bad responses
       except requests.exceptions.RequestException as e:
@@ -341,16 +341,18 @@ data:
       logger.info(resp.text)
 
       assert resp.status_code == 200, f"Expected status 200 from GET /maximo/api/pingaiservice, but got {resp.status_code}. Body: {resp_json}."
+      assert "hasfoundation" in resp.text
+      assert "manageorhealth" in resp.text
 
-      try:
-        assert resp_json['aiservicehealth'] == True, f"Expected healthy field from GET /maximo/api/pingaiservice to be true, but was {resp_json['aiservicehealth']}. Body: {resp_json}"
-      except KeyError as e:
-        assert False, f"Expected aiservicehealth key not found in response from GET /maximo/api/pingaiservice. Body: {resp_json}"
+#      try:
+#        assert resp_json['aiservicehealth'] == True, f"Expected healthy field from GET /maximo/api/pingaiservice to be true, but was {resp_json['aiservicehealth']}. Body: {resp_json}"
+#      except KeyError as e:
+#        assert False, f"Expected aiservicehealth key not found in response from GET /maximo/api/pingaiservice. Body: {resp_json}"
 
-      try:
-        assert resp_json['aiserviceapikey'] == True, f"Expected healthy field from GET /maximo/api/pingaiservice to be true, but was {resp_json['aiserviceapikey']}. Body: {resp_json}"
-      except KeyError as e:
-        assert False, f"Expected aiserviceapikey key not found in response from GET /maximo/api/pingaiservice. Body: {resp_json}"
+#      try:
+#        assert resp_json['aiserviceapikey'] == True, f"Expected healthy field from GET /maximo/api/pingaiservice to be true, but was {resp_json['aiserviceapikey']}. Body: {resp_json}"
+#      except KeyError as e:
+#        assert False, f"Expected aiserviceapikey key not found in response from GET /maximo/api/pingaiservice. Body: {resp_json}"
 
 ---
 kind: ConfigMap

@@ -1,12 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: csv-cleaner
+  namespace: openshift-operators
+  annotations:
+    argocd.argoproj.io/sync-wave: "116"
+spec:
+  template:
+    spec:
+      serviceAccountName: csv-cleaner
+      restartPolicy: Never
+      containers:
+        - name: csv-cleaner
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Checking for Subscriptions..."
+              subs=$(oc get subscription -n openshift-operators -o jsonpath='{.items[*].metadata.name}' | grep -E 'authorino-operator|redhat-openshift-pipelines-operator|servicemeshoperator' || true)
+              
+              if [ -n "$subs" ]; then
+                echo "Subscriptions still present: $subs"
+                echo "Skipping CSV cleanup."
+                exit 0
+              fi
+              
+              echo "No Subscriptions found. Deleting related CSVs..."
+              for csv in $(oc get csv -n openshift-operators \
+                -o jsonpath='{.items[*].metadata.name}' | \
+                tr ' ' '\n' | \
+                grep -E 'authorino|openshift-pipelines|servicemesh'); do
+                echo "Deleting $csv..."
+                oc delete csv $csv -n openshift-operators --ignore-not-found=true
+              done
+              echo "CSV cleanup complete."
 ---
-
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: csv-cleaner
+  namespace: openshift-operators
+  annotations:
+   argocd.argoproj.io/sync-wave: "124"
+rules:
+  - apiGroups: ["operators.coreos.com"]
+    resources: ["clusterserviceversions"]
+    verbs: ["get", "list", "delete"]
+---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
   name: {{ .Values.odh_pipeline_name }}
   namespace: {{ .Values.odh_pipeline_namespace}}
   annotations:
-    argocd.argoproj.io/sync-wave: "116"
+    argocd.argoproj.io/sync-wave: "117"
 spec:
   channel: {{ .Values.odh_pipeline_channel }}
   installPlanApproval: {{ .Values.odh_pipeline_installplan }}

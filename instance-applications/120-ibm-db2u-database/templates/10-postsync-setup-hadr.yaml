@@ -338,28 +338,27 @@ spec:
               }
 
               function setup_catalog_database_path() {
+                local MLNDIR=${2:-/mnt/bludata0/db2/databases}
                 SETUP_CATALOG_DATABASE_PATH="/tmp/setup_catalog_database_path.sh"
-
                 echo ""
                 echo "Create ${SETUP_CATALOG_DATABASE_PATH}"
                 echo "--------------------------------------------------------------------------------"
 
                 cat > ${SETUP_CATALOG_DATABASE_PATH} << EOF
-                  local MLNDIR=${2:-/mnt/bludata0/db2/databases}
-                  [[ -z "${DB_PATH}" ]] && source /etc/profile
-                  chmod 775 ${DB_PATH}
-                  mkdir ${DB_PATH}/${DB2INSTANCE}
-                  chmod 775 ${DB_PATH}/${DB2INSTANCE}
-                  chown ${DB2INSTANCE}:${INST_GROUP} ${DB_PATH}/${DB2INSTANCE}
-                  mkdir -p ${MLNDIR}/${DB2INSTANCE}
-                  DATADIR=${MLNDIR}/${DB2INSTANCE}/NODE0000
-                  mkdir ${DATADIR}
-                  chmod 775 ${DATADIR}
-                  if [[ (! -L ${DB_PATH}/${DB2INSTANCE}/NODE0000) && (! -d ${DB_PATH}/${DB2INSTANCE}/NODE0000) ]]; then
-                    ln -s ${DATADIR} ${DB_PATH}/${DB2INSTANCE}
-                    chown -h ${DB2INSTANCE}:${INST_GROUP} ${DB_PATH}/${DB2INSTANCE}/NODE0000
+                  [[ -z "\${DB_PATH}" ]] && source /etc/profile
+                  chmod 775 \${DB_PATH}
+                  mkdir \${DB_PATH}/\${DB2INSTANCE}
+                  chmod 775 \${DB_PATH}/\${DB2INSTANCE}
+                  chown \${DB2INSTANCE}:\${INST_GROUP} \${DB_PATH}/\${DB2INSTANCE}
+                  mkdir -p ${MLNDIR}/\${DB2INSTANCE}
+                  DATADIR=${MLNDIR}/\${DB2INSTANCE}/NODE0000
+                  mkdir \${DATADIR}
+                  chmod 775 \${DATADIR}
+                  if [[ (! -L \${DB_PATH}/\${DB2INSTANCE}/NODE0000) && (! -d \${DB_PATH}/\${DB2INSTANCE}/NODE0000) ]]; then
+                    ln -s \${DATADIR} \${DB_PATH}/\${DB2INSTANCE}
+                    chown -h \${DB2INSTANCE}:\${INST_GROUP} \${DB_PATH}/\${DB2INSTANCE}/NODE0000
                   fi
-                  chown -R ${DB2INSTANCE}:${INST_GROUP} ${MLNDIR}/${DB2INSTANCE}
+                  chown -R \${DB2INSTANCE}:\${INST_GROUP} ${MLNDIR}/\${DB2INSTANCE}
               EOF
 
                 chmod +x ${SETUP_CATALOG_DATABASE_PATH}

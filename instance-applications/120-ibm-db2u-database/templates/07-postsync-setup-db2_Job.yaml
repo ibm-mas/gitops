@@ -247,6 +247,7 @@ spec:
             - |
 
               set -e
+              set -o pipefail
 
               source /mascli/functions/gitops_utils
             
@@ -318,6 +319,45 @@ spec:
 
                 echo "...... failed, no attempts remain"
                 return 1
+              }
+
+              function setup_catalog_database_path() {
+                SETUP_CATALOG_DATABASE_PATH="/tmp/setup_catalog_database_path.sh"
+
+                echo ""
+                echo "Create ${SETUP_CATALOG_DATABASE_PATH}"
+                echo "--------------------------------------------------------------------------------"
+
+                cat > ${SETUP_CATALOG_DATABASE_PATH} << EOF
+                  local MLNDIR=${2:-/mnt/bludata0/db2/databases}
+                  [[ -z "${DB_PATH}" ]] && source /etc/profile
+                  chmod 775 ${DB_PATH}
+                  mkdir ${DB_PATH}/${DB2INSTANCE}
+                  chmod 775 ${DB_PATH}/${DB2INSTANCE}
+                  chown ${DB2INSTANCE}:${INST_GROUP} ${DB_PATH}/${DB2INSTANCE}
+                  mkdir -p ${MLNDIR}/${DB2INSTANCE}
+                  DATADIR=${MLNDIR}/${DB2INSTANCE}/NODE0000
+                  mkdir ${DATADIR}
+                  chmod 775 ${DATADIR}
+                  if [[ (! -L ${DB_PATH}/${DB2INSTANCE}/NODE0000) && (! -d ${DB_PATH}/${DB2INSTANCE}/NODE0000) ]]; then
+                    ln -s ${DATADIR} ${DB_PATH}/${DB2INSTANCE}
+                    chown -h ${DB2INSTANCE}:${INST_GROUP} ${DB_PATH}/${DB2INSTANCE}/NODE0000
+                  fi
+                  chown -R ${DB2INSTANCE}:${INST_GROUP} ${MLNDIR}/${DB2INSTANCE}
+              EOF
+
+                chmod +x ${SETUP_CATALOG_DATABASE_PATH}
+
+                echo ""
+                echo "Copy ${SETUP_CATALOG_DATABASE_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc cp ${SETUP_CATALOG_DATABASE_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${SETUP_CATALOG_DATABASE_PATH} -c db2u || exit $?
+
+                echo ""
+                echo "Executing ${SETUP_CATALOG_DATABASE_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUP_CATALOG_DATABASE_PATH} | tee /tmp/setupcatalogdbpath.log" db2inst1 || exit $?
+
               }
 
               export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/${DB2_INSTANCE_NAME}/config
@@ -417,7 +457,7 @@ spec:
                 zip -r db2-scripts.zip db2-scripts/
                 oc cp /tmp/db2-scripts.zip ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2-scripts.zip -c db2u || exit $?
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cd /tmp; unzip -o db2-scripts.zip; chmod -R +x /tmp/db2-scripts" db2inst1 || exit $?
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "/tmp/db2-scripts/CopyDBScripts.sh | tee /tmp/copydbscripts.log" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "/tmp/db2-scripts/CopyDBScripts.sh 2>&1 | tee /tmp/copydbscripts.log" db2inst1 || exit $?
               fi
 
               if [[ "$MAS_APP_ID" == "manage" ]]; then
@@ -546,14 +586,14 @@ spec:
                 echo ""
                 echo "Executing ${SETUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} | tee /tmp/setupdb.log" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUPDB_SH_PATH} 2>&1 | tee /tmp/setupdb.log" db2inst1 || exit $?
 
                 if [[ -n $BUCKET_NAME ]]; then
                   CREATE_ROLES_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/CreateRoles.sh"
                   echo ""
                   echo "Executing ${CREATE_ROLES_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                   echo "--------------------------------------------------------------------------------"
-                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd ${DB2_INSTANCE_HOME_PATH}/bin; ${CREATE_ROLES_SH_PATH} | tee /tmp/createroles.log" db2inst1 || exit $?
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd ${DB2_INSTANCE_HOME_PATH}/bin; ${CREATE_ROLES_SH_PATH} 2>&1 | tee /tmp/createroles.log" db2inst1 || exit $?
                 fi
 
                   
@@ -608,12 +648,14 @@ spec:
 
               fi # [[ "$MAS_APP_ID" == "facilities" ]]
 
+              setup_catalog_database_path
+
               if [[ -n $BUCKET_NAME ]]; then
                 POST_BACKFLOW_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/PostBackFlow.sh"
                 echo ""
                 echo "Executing ${POST_BACKFLOW_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${POST_BACKFLOW_SH_PATH} | tee /tmp/postbackflowscriptcreation.log" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${POST_BACKFLOW_SH_PATH} 2>&1 | tee /tmp/postbackflowscriptcreation.log" db2inst1 || exit $?
               fi
 
               # check if config LOGARCHMETH1 is defined
@@ -723,7 +765,7 @@ spec:
               echo ""
               echo "Executing ${BACKUPDB_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
               echo "--------------------------------------------------------------------------------"
-              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUPDB_SH_PATH} | tee /tmp/backupdb.log" db2inst1 || exit $?
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUPDB_SH_PATH} 2>&1 | tee /tmp/backupdb.log" db2inst1 || exit $?
 
               echo ""
               echo "================================================================================"
@@ -772,7 +814,7 @@ spec:
                 echo ""
                 echo "Executing ${FIX_INVALID_OBJECTS_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${FIX_INVALID_OBJECTS_SH_PATH} | tee /tmp/fixInvalidObjects.log" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${FIX_INVALID_OBJECTS_SH_PATH} 2>&1 | tee /tmp/fixInvalidObjects.log" db2inst1 || exit $?
 
                 SQL_FILES_AVAILABLE=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "find ${INSTHOME} -name \"ALL_*.sql\"" db2inst1 || exit $?`
 
@@ -788,7 +830,7 @@ spec:
                   echo ""
                   echo "Executing ${LARGE_TBSP_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                   echo "--------------------------------------------------------------------------------"
-                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${LARGE_TBSP_SH_PATH} | tee /tmp/regLargeTbsp.log" db2inst1 || exit $?
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${LARGE_TBSP_SH_PATH} 2>&1 | tee /tmp/regLargeTbsp.log" db2inst1 || exit $?
 
                 fi
 
@@ -817,13 +859,13 @@ spec:
                 echo ""
                 echo "Executing ${SET_COS_STORAGE_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SET_COS_STORAGE_SH_PATH} | tee /tmp/setcosstorage.log" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SET_COS_STORAGE_SH_PATH} 2>&1 | tee /tmp/setcosstorage.log" db2inst1 || exit $?
 
                 CHECK_COS_STORAGE_SH_PATH="CheckCOS.sh"
                 echo ""
                 echo "Executing ${INSTHOME}/bin/CheckCOS.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | tee /tmp/checkcos.log" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh 2>&1 | tee /tmp/checkcos.log" db2inst1 || exit $?
 
                 backup_images=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | grep c-${DB2_INSTANCE_NAME}-db2u-0 | grep -v keystore | wc -l" db2inst1`
                 echo "Number of backup images in COS bucket - ${backup_images}"

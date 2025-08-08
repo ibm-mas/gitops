@@ -189,6 +189,7 @@ spec:
             - |
 
               set -e
+              set -o pipefail
 
               source /mascli/functions/gitops_utils
 
@@ -278,7 +279,7 @@ spec:
                   for (( c=1; c<="${RETRIES}"; c++ )); do
                     echo ""
                     echo "... attempt ${c} of ${RETRIES}"
-                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
+                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all 2>&1 | tee /tmp/apply-db2cfg-settings.log' db2inst1
                     # no useful info in return code of this script
 
                     rc=0
@@ -336,6 +337,45 @@ spec:
                 echo "================================================================================"
               }
 
+              function setup_catalog_database_path() {
+                SETUP_CATALOG_DATABASE_PATH="/tmp/setup_catalog_database_path.sh"
+
+                echo ""
+                echo "Create ${SETUP_CATALOG_DATABASE_PATH}"
+                echo "--------------------------------------------------------------------------------"
+
+                cat > ${SETUP_CATALOG_DATABASE_PATH} << EOF
+                  local MLNDIR=${2:-/mnt/bludata0/db2/databases}
+                  [[ -z "${DB_PATH}" ]] && source /etc/profile
+                  chmod 775 ${DB_PATH}
+                  mkdir ${DB_PATH}/${DB2INSTANCE}
+                  chmod 775 ${DB_PATH}/${DB2INSTANCE}
+                  chown ${DB2INSTANCE}:${INST_GROUP} ${DB_PATH}/${DB2INSTANCE}
+                  mkdir -p ${MLNDIR}/${DB2INSTANCE}
+                  DATADIR=${MLNDIR}/${DB2INSTANCE}/NODE0000
+                  mkdir ${DATADIR}
+                  chmod 775 ${DATADIR}
+                  if [[ (! -L ${DB_PATH}/${DB2INSTANCE}/NODE0000) && (! -d ${DB_PATH}/${DB2INSTANCE}/NODE0000) ]]; then
+                    ln -s ${DATADIR} ${DB_PATH}/${DB2INSTANCE}
+                    chown -h ${DB2INSTANCE}:${INST_GROUP} ${DB_PATH}/${DB2INSTANCE}/NODE0000
+                  fi
+                  chown -R ${DB2INSTANCE}:${INST_GROUP} ${MLNDIR}/${DB2INSTANCE}
+              EOF
+
+                chmod +x ${SETUP_CATALOG_DATABASE_PATH}
+
+                echo ""
+                echo "Copy ${SETUP_CATALOG_DATABASE_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc cp ${SETUP_CATALOG_DATABASE_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${SETUP_CATALOG_DATABASE_PATH} -c db2u || exit $?
+
+                echo ""
+                echo "Executing ${SETUP_CATALOG_DATABASE_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SETUP_CATALOG_DATABASE_PATH} 2>&1 | tee /tmp/setupcatalogdbpath.log" db2inst1 || exit $?
+
+              }
+
               PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
 
               echo ""
@@ -374,6 +414,7 @@ spec:
               echo "================================================================================"
               wait_for_resource "svc" "c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
 
+              setup_catalog_database_path
 
               # Get HADR ROLE and CONNECT STATUS for Primary and Standby
               get_existing_hadr_config
@@ -440,7 +481,7 @@ spec:
                     echo ""
                     echo "Executing ${BACKUP_TYPE_SCRIPT} file on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
                     echo "--------------------------------------------------------------------------------"
-                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUP_TYPE_SCRIPT} | tee /tmp/backuptype.log" db2inst1 || exit $?
+                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${BACKUP_TYPE_SCRIPT} 2>&1 | tee /tmp/backuptype.log" db2inst1 || exit $?
                     backup_type=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /tmp/backuptype.log | grep 'Backup type is'" db2inst1`
                     backup_type=`echo ${backup_type} | tr -d '' | awk '{print $NF}'`
                     echo "Backup type is ${backup_type}"
@@ -476,7 +517,7 @@ spec:
                     echo ""
                     echo "Taking backup on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
                     echo "--------------------------------------------------------------------------------"
-                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/standby; db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby | tee /mnt/backup/standby/dbbackup.log" db2inst1 || exit $?
+                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/standby; db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby 2>&1 | tee /mnt/backup/standby/dbbackup.log" db2inst1 || exit $?
                     echo ""
                     timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
                     echo "Timestamp of backup is ${timestamp}"
@@ -523,11 +564,11 @@ spec:
                     SOURCE=backups-manage/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0/${backup_filename}
                     if [[ ${copy_to_cos} == 'true' ]]; then
                       SOURCE1=/mnt/backup/standby/${backup_filename}
-                      oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager ALIAS PUT source=${SOURCE1} target=DB2REMOTE://AWSCOS//${SOURCE} | tee /tmp/backupupload.log" db2inst1 || exit $?
+                      oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager ALIAS PUT source=${SOURCE1} target=DB2REMOTE://AWSCOS//${SOURCE} 2>&1 | tee /tmp/backupupload.log" db2inst1 || exit $?
                     fi
 
                     # copy backup from cos bucket to standby
-                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "export AWS_ACCESS_KEY_ID=${PARM1}; export AWS_SECRET_ACCESS_KEY=${PARM2}; mkdir -p /mnt/backup/primary-backup; /mnt/backup/aws/dist/aws s3 cp s3://${CONTAINER}/${SOURCE} /mnt/backup/primary-backup/${backup_filename} | tee /tmp/backupdownload.log" db2inst1 || exit $?
+                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "export AWS_ACCESS_KEY_ID=${PARM1}; export AWS_SECRET_ACCESS_KEY=${PARM2}; mkdir -p /mnt/backup/primary-backup; /mnt/backup/aws/dist/aws s3 cp s3://${CONTAINER}/${SOURCE} /mnt/backup/primary-backup/${backup_filename} 2>&1 | tee /tmp/backupdownload.log" db2inst1 || exit $?
 
 
                   else
@@ -563,7 +604,7 @@ spec:
                 echo ""
                 echo "Executing ${KEYSTORE_GENERATION_SCRIPT} file on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${KEYSTORE_GENERATION_SCRIPT} | tee /tmp/keystoregeneration.log" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${KEYSTORE_GENERATION_SCRIPT} 2>&1 | tee /tmp/keystoregeneration.log" db2inst1 || exit $?
                 oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /tmp/keystore; cp /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
                 oc rsync ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/keystore /tmp
                 oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp

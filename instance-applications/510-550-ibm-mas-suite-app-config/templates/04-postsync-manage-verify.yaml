@@ -317,89 +317,83 @@ data:
       if status_serverbundles is not None:
         assert spec_serverbundles == status_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the serverbundles in the status: {status_serverbundles}"
 
-    def test_get_manage_ai_service_ping(manage_service,manage_host_ca_filepath):
+    def test_get_manage_ai_service_ping(manage_service, manage_host_ca_filepath):
+        if not aibroker_api_key:
+            pytest.skip("AI Broker API key not found.")
 
-      if aibroker_api_key == False:
-        pytest.skip("AI Broker API key not found.")
+        if manage_service:
+            logger.info("Using manage service: %s", manage_service)
+            manage_url = f'https://{manage_service}.mas-{mas_instance_id}-manage.svc.cluster.local'
 
-      if manage_service:
-        print("service")
-        print(manage_service)
-        MANAGE_URL = f'https://{manage_service}.mas-{mas_instance_id}-manage.svc.cluster.local'
+        try:
+            logger.info("Sending request to ping AI service")
+            resp = request_with_retry(manage_url, manage_host_ca_filepath)
+        except RuntimeError as err:
+            logger.error("Error during request: %s", err)
+            assert False, f"Error calling GET /maximo/api/pingaiservice. Error details: {err}"
 
-      try:
-        print(f"assertion")
-        logger.info("assertion:")
-        resp = request_with_retry(manage_host_ca_filepath)
-      except RuntimeError as err:
-        print(err)
-        assert False, "Error calling  GET /maximo/api/pingaiservice. Error details: {err}"
+        logger.info("Response Data: %s", resp.text)
 
-      print(f"Response Data: {resp}" )
+        resp_json = resp.json()
 
-      resp_json = resp.json()
-      logger.info("ping to ai service ::")
-      logger.info(resp.text)
+        assert resp.status_code == 200, (
+            f"Expected status 200 from GET /maximo/api/pingaiservice, but got {resp.status_code}. Body: {resp_json}"
+        )
 
-      assert resp.status_code == 200, f"Expected status 200 from GET /maximo/api/pingaiservice, but got {resp.status_code}. Body: {resp_json}."
+        try:
+            assert resp_json['aiservicehealth'] is True, (
+                f"Expected 'aiservicehealth' to be true, but was {resp_json.get('aiservicehealth')}. Body: {resp_json}"
+            )
+        except KeyError:
+            assert False, f"'aiservicehealth' key not found in response. Body: {resp_json}"
 
-      try:
-        assert resp_json['aiservicehealth'] == True, f"Expected healthy field from GET /maximo/api/pingaiservice to be true, but was {resp_json['aiservicehealth']}. Body: {resp_json}"
-      except KeyError as e:
-        assert False, f"Expected aiservicehealth key not found in response from GET /maximo/api/pingaiservice. Body: {resp_json}"
+        try:
+            assert resp_json['aiserviceapikey'] is True, (
+                f"Expected 'aiserviceapikey' to be true, but was {resp_json.get('aiserviceapikey')}. Body: {resp_json}"
+            )
+        except KeyError:
+            assert False, f"'aiserviceapikey' key not found in response. Body: {resp_json}"
 
-      try:
-        assert resp_json['aiserviceapikey'] == True, f"Expected healthy field from GET /maximo/api/pingaiservice to be true, but was {resp_json['aiserviceapikey']}. Body: {resp_json}"
-      except KeyError as e:
-        assert False, f"Expected aiserviceapikey key not found in response from GET /maximo/api/pingaiservice. Body: {resp_json}"
-
-    def request_with_retry(manage_host_ca_filepath):
+    def request_with_retry(manage_url, manage_host_ca_filepath):
         attempts = 0
-        resp = None
-        logger.info("Requests with retry")
+        logger.info("Sending requests with retry")
 
         while attempts < MAX_RETRY:
             try:
-                resp = make_request(manage_host_ca_filepath)
+                resp = make_request(manage_url, manage_host_ca_filepath)
                 resp_json = resp.json()
                 logger.info(f"Attempt {attempts + 1}: Status Code {resp.status_code}")
 
                 if resp.status_code == 200:
-                    if resp_json.get('aiservicehealth') is False or resp_json.get('aiserviceapikey') is False:
+                    if not resp_json.get('aiservicehealth') or not resp_json.get('aiserviceapikey'):
                         attempts += 1
-                        logger.warning(f"Unhealthy service or missing API key. Retrying... (Attempt {attempts})")
+                        logger.warning("Unhealthy service or missing API key. Retrying... (Attempt %d)", attempts)
                         time.sleep(5)
                     else:
                         return resp
                 else:
                     attempts += 1
-                    logger.warning(f"Unexpected status {resp.status_code}. Retrying... (Attempt {attempts})")
+                    logger.warning("Unexpected status %d. Retrying... (Attempt %d)", resp.status_code, attempts)
                     time.sleep(5)
 
             except requests.exceptions.RequestException as e:
-                logger.error("Error during request to Maximo Ping AI service:", exc_info=e)
+                logger.error("Error during request to Maximo Ping AI service: %s", e)
                 attempts += 1
                 time.sleep(5)
 
         logger.error("All retry attempts failed.")
-        return resp   
+        raise RuntimeError("Failed to get a valid response after retries.")
 
-    def make_request(manage_host_ca_filepath):
-      # Replace 'get' with whichever method you're using, and the URL with the actual API URL
-      print(f"actual request")
-      logger.info("actual request:")
-      r = requests.get(
-          f"{MANAGE_URL}/maximo/api/pingaiservice",
-          headers={
-          "Content-Type": "application/json"
-          },
-          verify=manage_host_ca_filepath
-      )
-      r.raise_for_status()
-      # If r.status_code is not 200, treat it as an error.
-      logger.info("ping to ai service ::")
-      logger.info(r.text)
-      return r
+    def make_request(manage_url, manage_host_ca_filepath):
+        logger.info("Making actual request to AI service")
+
+        response = requests.get(
+            f"{manage_url}/maximo/api/pingaiservice",
+            headers={"Content-Type": "application/json"},
+            verify=manage_host_ca_filepath
+        )
+        response.raise_for_status()
+        return response
 
 ---
 kind: ConfigMap

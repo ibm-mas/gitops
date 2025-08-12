@@ -1,7 +1,7 @@
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
-{{- $_job_name_prefix := "mas-manage-ai-tenant" }}
+{{- $_job_name_prefix := "postsync-manage-ai-tenant" }}
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
@@ -37,7 +37,7 @@ are required here.*/}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: mas-manage-aiservice-job
+  name: postsync-manage-aiservice-job
   namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "309"
@@ -46,7 +46,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: mas-manage-aiservice-job-role
+  name: postsync-manage-aiservice-job-role
   namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "310"
@@ -58,23 +58,23 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: mas-manage-aiservice-job-rolebinding
+  name: postsync-manage-aiservice-job-rolebinding
   namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "311"
 subjects:
   - kind: ServiceAccount
-    name: mas-manage-aiservice-job
+    name: postsync-manage-aiservice-job
     namespace: "{{ .Values.aibroker_namespace }}"
 roleRef:
   kind: Role
-  name: mas-manage-aiservice-job-role
+  name: postsync-manage-aiservice-job-role
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-mas-manage-ai-tenant-job
+  name: allow-postsync-manage-ai-tenant-job
   namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "312"
@@ -108,10 +108,10 @@ spec:
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
-      serviceAccountName: mas-manage-aiservice-job
+      serviceAccountName: postsync-manage-aiservice-job
       restartPolicy: Never
       containers:
-        - name: mas-manage-aiservice-run
+        - name: postsync-manage-aiservice-run
           image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
           env:
@@ -161,23 +161,15 @@ spec:
 
               echo "AIBROKER_APIKEY_SECRET = ${AIBROKER_APIKEY_SECRET:0:4}<snip>"
 
-              echo "Retrieve TLS Secrets"
-              CA_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.ca\\.crt}" | base64 --decode)
-              TLS_CERT=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.tls\\.crt}" | base64 --decode)
-              TLS_KEY=$(oc get secret ${AIBROKER_INSTANCE_ID}-public-aibroker-tls -n mas-${AIBROKER_INSTANCE_ID}-aibroker -o jsonpath="{.data.tls\\.key}" | base64 --decode)
-              echo "CA_CERT = ${CA_CERT:0:20}<snip>"
-              echo "TLS_CERT = ${TLS_CERT:0:20}<snip>"
-              echo "TLS_KEY = ${TLS_KEY:0:20}<snip>"
-
               source /mascli/functions/gitops_utils
               sm_login
 
               TAGS="[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret ${SECRET_NAME_AISERVICE} "{ \"aibroker_apikey\": \"${AIBROKER_APIKEY_SECRET}\" }" "${TAGS}" || exit $?
       volumes:
-        - name: mas-manage-aiservice
+        - name: postsync-manage-aiservice
           secret:
-            secretName: mas-manage-aiservice
+            secretName: postsync-manage-aiservice
             defaultMode: 420
             optional: false
     backoffLimit: 4

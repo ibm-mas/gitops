@@ -354,23 +354,35 @@ data:
         assert False, f"Expected aiserviceapikey key not found in response from GET /maximo/api/pingaiservice. Body: {resp_json}"
 
     def request_with_retry(manage_host_ca_filepath):
-        attempts = 1
-        print(f"Requests with retry")
-        logger.info("Requests with retry:")
+        attempts = 0
+        resp = None
+        logger.info("Requests with retry")
+
         while attempts < MAX_RETRY:
             try:
                 resp = make_request(manage_host_ca_filepath)
                 resp_json = resp.json()
-                if resp.status_code == 200 and (resp_json['aiservicehealth'] == False or resp_json['aiserviceapikey'] == False):
-                  attempts += 1
-                  print(f"attempts : {attempts}")
-                  time.sleep(5)
-                  print(resp)
-                elif resp.status_code == 200:
-                  return resp
+                logger.info(f"Attempt {attempts + 1}: Status Code {resp.status_code}")
+
+                if resp.status_code == 200:
+                    if resp_json.get('aiservicehealth') is False or resp_json.get('aiserviceapikey') is False:
+                        attempts += 1
+                        logger.warning(f"Unhealthy service or missing API key. Retrying... (Attempt {attempts})")
+                        time.sleep(5)
+                    else:
+                        return resp
+                else:
+                    attempts += 1
+                    logger.warning(f"Unexpected status {resp.status_code}. Retrying... (Attempt {attempts})")
+                    time.sleep(5)
+
             except requests.exceptions.RequestException as e:
-                print("Error during requests to Maximo Ping AI service:", e)
-        return resp    
+                logger.error("Error during request to Maximo Ping AI service:", exc_info=e)
+                attempts += 1
+                time.sleep(5)
+
+        logger.error("All retry attempts failed.")
+        return resp   
 
     def make_request(manage_host_ca_filepath):
       # Replace 'get' with whichever method you're using, and the URL with the actual API URL

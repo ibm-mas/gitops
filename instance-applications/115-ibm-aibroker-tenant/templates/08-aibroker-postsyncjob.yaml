@@ -1,7 +1,8 @@
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
-{{- $_job_name_prefix := "mas-manage-ai-tenant" }}{{- /*
+{{- $_job_name_prefix := "mas-manage-ai-tenant" }}
+{{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
@@ -138,7 +139,7 @@ spec:
             - |
               set -e
               SECRETS_KEY_SEPERATOR="/"
-              SECRET_NAME_AISERVICE=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}${AIBROKER_TENANT}
+              SECRET_NAME_AISERVICE=${ACCOUNT_ID}$/${CLUSTER_ID}/${AIBROKER_INSTANCE_ID}/${AIBROKER_TENANT}
               echo "================================================================================"
               echo "Account Id ....................... ${ACCOUNT_ID}"
               echo "Cluster Id ....................... ${CLUSTER_ID}"
@@ -172,7 +173,7 @@ spec:
               sm_login
 
               TAGS="[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              sm_update_secret ${SECRET_NAME_AISERVICE} "{ \"aibroker_apikey\": \"${$AIBROKER_APIKEY_SECRET}\" }" "${TAGS}" || exit $?
+              sm_update_secret ${SECRET_NAME_AISERVICE} "{ \"aibroker_apikey\": \"${AIBROKER_APIKEY_SECRET}\" }" "${TAGS}" || exit $?
       volumes:
         - name: mas-manage-aiservice
           secret:

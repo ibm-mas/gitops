@@ -171,6 +171,7 @@ data:
     aibroker_api_key = os.getenv("AIBROKERAPIKEY")
     manage_namespace = f"mas-{mas_instance_id}-manage"
     manage_route_name = f"{mas_instance_id}-manage-{mas_workspace_id}"
+    MANAGE_URL = ""
 
     @pytest.fixture(scope="session")
     def dyn_client():
@@ -325,17 +326,14 @@ data:
         MANAGE_URL = f'https://{manage_service}.mas-{mas_instance_id}-manage.svc.cluster.local'
 
       try:
-        resp = requests.get(
-          f"{MANAGE_URL}/maximo/api/pingaiservice",
-          headers={
-          "Content-Type": "application/json"
-          },
-          verify=manage_host_ca_filepath
-        )
-        resp.raise_for_status()  # Raise an error for bad responses
-      except requests.exceptions.RequestException as e:
-          print("Error during requests to Maximo Ping AI service:", e)
-          assert False, "Error calling  GET /maximo/api/pingaiservice. Error details: {e}"
+        print(f"assertion")
+        logger.info("assertion:")
+        data = request_with_retry(manage_host_ca_filepath)
+      except RuntimeError as err:
+        print(err)
+        assert False, "Error calling  GET /maximo/api/pingaiservice. Error details: {err}"
+
+      print(f"Response Data: {data}" )
 
       resp_json = resp.json()
       logger.info("ping to ai service ::")
@@ -352,6 +350,43 @@ data:
         assert resp_json['aiserviceapikey'] == True, f"Expected healthy field from GET /maximo/api/pingaiservice to be true, but was {resp_json['aiserviceapikey']}. Body: {resp_json}"
       except KeyError as e:
         assert False, f"Expected aiserviceapikey key not found in response from GET /maximo/api/pingaiservice. Body: {resp_json}"
+
+    def request_with_retry(manage_host_ca_filepath):
+        attempts = 1
+        print(f"Requests with retry")
+        logger.info("Requests with retry:")
+        while attempts < MAX_RETRY:
+            try:
+                resp = make_request(manage_host_ca_filepath)
+                resp_json = resp.json()
+                if resp.status_code == 200 and resp_json['aiservicehealth'] == False or resp_json['aiserviceapikey'] == False:              
+                  attempts += 1
+                  print(f"attempts : {attempts}")
+                  time.sleep(180)
+                  print(resp)
+                elif resp.status_code == 200:
+                  return resp
+            except requests.exceptions.RequestException as e:
+                print("Error during requests to Maximo Ping AI service:", e)
+        return resp    
+
+    def make_request(manage_host_ca_filepath):
+      # Replace 'get' with whichever method you're using, and the URL with the actual API URL
+      print(f"actual request")
+      logger.info("actual request:")
+      r = requests.get(
+          f"{MANAGE_URL}/maximo/api/pingaiservice",
+          headers={
+          "Content-Type": "application/json"
+          },
+          verify=manage_host_ca_filepath
+      )
+      r.raise_for_status()
+      # If r.status_code is not 200, treat it as an error.
+      logger.info("ping to ai service ::")
+      logger.info(r.text)
+      return r
+
 ---
 kind: ConfigMap
 apiVersion: v1

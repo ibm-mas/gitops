@@ -172,7 +172,6 @@ data:
     aibroker_api_key = os.getenv("AIBROKERAPIKEY")
     manage_namespace = f"mas-{mas_instance_id}-manage"
     manage_route_name = f"{mas_instance_id}-manage-{mas_workspace_id}"
-    MANAGE_URL = ""
     MAX_RETRY = 20
 
     @pytest.fixture(scope="session")
@@ -225,13 +224,6 @@ data:
         yield v1_routes.get(name=manage_route_name, namespace=manage_namespace)
 
     @pytest.fixture(scope="session")
-    def manage_host(manage_route):
-      try:
-        yield manage_route['spec']['host']
-      except KeyError as e:
-        assert False, f"Unable to determine manage host; spec.host key not present in {manage_route_name}/{manage_namespace}: {manage_route}. Error details: {e}"
-
-    @pytest.fixture(scope="session")
     def manage_service(manage_route):
       try:
         yield manage_route['spec']['to']['name']
@@ -245,7 +237,6 @@ data:
       # This may include CA certificates that we need in order to trust the certificates presented by the external Manage endpoint.
       try:
         manage_route_certificate = manage_route['spec']['tls']['certificate']
-        # print(f"Contents of 'manage_route_certificate': {manage_route_certificate}")
       except KeyError as e:
         pass
 
@@ -253,7 +244,6 @@ data:
       # This may include CA certificates that we need in order to trust the certificates presented by the external Manage endpoint.
       try:
         manage_route_caCertificate = manage_route['spec']['tls']['key']
-        # print(f"Contents of 'manage_route_caCertificate': {manage_route_caCertificate}")
       except KeyError as e:
         pass
 
@@ -261,7 +251,6 @@ data:
       # This may include CA certificates that we need in order to trust the certificates presented by the internal Manage services.
       try:
         manage_route_destinationCACertificate = manage_route['spec']['tls']['destinationCACertificate']
-        # print(f"Contents of 'manage_route_destinationCACertificate': {manage_route_destinationCACertificate}")
       except KeyError as e:
         pass
 

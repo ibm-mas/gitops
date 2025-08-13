@@ -318,6 +318,8 @@ data:
         assert spec_serverbundles == status_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the serverbundles in the status: {status_serverbundles}"
 
     def test_get_manage_ai_service_ping(manage_service, manage_host_ca_filepath):
+
+        # skip test if no api key found in environment
         if not aibroker_api_key:
             pytest.skip("AI Broker API key not found.")
 
@@ -325,6 +327,7 @@ data:
             logger.info("Using manage service: %s", manage_service)
             manage_url = f'https://{manage_service}.mas-{mas_instance_id}-manage.svc.cluster.local'
 
+        # Call the api through retry method and assertion logic for all the scenarios
         try:
             logger.info("Sending request to ping AI service")
             resp = request_with_retry(manage_url, manage_host_ca_filepath)
@@ -333,9 +336,7 @@ data:
             assert False, f"Error calling GET /maximo/api/pingaiservice. Error details: {err}"
 
         logger.info("Response Data: %s", resp.text)
-
         resp_json = resp.json()
-
         assert resp.status_code == 200, (
             f"Expected status 200 from GET /maximo/api/pingaiservice, but got {resp.status_code}. Body: {resp_json}"
         )
@@ -358,6 +359,7 @@ data:
         attempts = 0
         logger.info("Sending requests with retry")
 
+        # Make attempts until max retry threshold of 20 calls is reached with a sleep interval of 3 minutes between retries
         while attempts < MAX_RETRY:
             try:
                 resp = make_request(manage_url, manage_host_ca_filepath)
@@ -374,19 +376,20 @@ data:
                 else:
                     attempts += 1
                     logger.warning("Unexpected status %d. Retrying... (Attempt %d)", resp.status_code, attempts)
-                    time.sleep(5)
+                    time.sleep(180)
 
             except requests.exceptions.RequestException as e:
                 logger.error("Error during request to Maximo Ping AI service: %s", e)
                 attempts += 1
-                time.sleep(5)
+                time.sleep(180)
 
         logger.error("All retry attempts failed.")
         raise RuntimeError("Failed to get a valid response after retries.")
 
     def make_request(manage_url, manage_host_ca_filepath):
-        logger.info("Making actual request to AI service")
 
+        # Actual api call to AI ping service
+        logger.info("Making actual request to AI service")
         response = requests.get(
             f"{manage_url}/maximo/api/pingaiservice",
             headers={"Content-Type": "application/json"},

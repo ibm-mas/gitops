@@ -90,6 +90,12 @@ rules:
       - manageapps
   - verbs:
       - get
+    apiGroups:
+      - "route.openshift.io"
+    resources:
+      - routes
+  - verbs:
+      - get
       - list
       - patch
     apiGroups:
@@ -147,7 +153,13 @@ data:
     from openshift.dynamic import DynamicClient
     import pytest
     import os
+    import requests
+    import certifi
+    import tempfile
+    import logging
+    import time
 
+    logger = logging.getLogger()
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
     if mas_instance_id is None:
       raise Exception(f"Required MAS_INSTANCE_ID environment variable is not set")
@@ -157,7 +169,10 @@ data:
     if mas_workspace_id is None:
       raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
 
+    aibroker_api_key = os.getenv("AIBROKERAPIKEY")
     manage_namespace = f"mas-{mas_instance_id}-manage"
+    manage_route_name = f"{mas_instance_id}-manage-{mas_workspace_id}"
+    MAX_RETRY = 20
 
     @pytest.fixture(scope="session")
     def dyn_client():
@@ -200,6 +215,74 @@ data:
     def mange_app_cr(v1_manageapp):
       yield v1_manageapp.get(namespace=manage_namespace, label_selector=f"mas.ibm.com/instanceId={mas_instance_id}").items[0]
 
+    @pytest.fixture(scope="session")
+    def v1_routes(dyn_client):
+        yield dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+
+    @pytest.fixture(scope="session")
+    def manage_route(v1_routes):
+        yield v1_routes.get(name=manage_route_name, namespace=manage_namespace)
+
+    @pytest.fixture(scope="session")
+    def manage_service(manage_route):
+      try:
+        yield manage_route['spec']['to']['name']
+      except KeyError as e:
+        assert False, f"Unable to determine manage host; spec.host key not present in {manage_route_name}/{manage_namespace}: {manage_route}. Error details: {e}"
+
+    @pytest.fixture(scope="session")
+    def manage_host_ca_filepath(manage_route):
+
+      # Read the certificate field from the Manage Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the external Manage endpoint.
+      try:
+        manage_route_certificate = manage_route['spec']['tls']['certificate']
+      except KeyError as e:
+        pass
+
+      # Read the caCertificate field from the Manage Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the external Manage endpoint.
+      try:
+        manage_route_caCertificate = manage_route['spec']['tls']['key']
+      except KeyError as e:
+        pass
+
+      # Read the destinationCACertificate field from the Manage Route. 
+      # This may include CA certificates that we need in order to trust the certificates presented by the internal Manage services.
+      try:
+        manage_route_destinationCACertificate = manage_route['spec']['tls']['destinationCACertificate']
+      except KeyError as e:
+        pass
+
+      # Load default CA bundle. This will include certs for well-known CAs. This ensures that we will
+      # trust the certificates presented by the external Manage endpoints when MAS is configured to use
+      # an external frontend like CIS.
+      with open(certifi.where(), 'rb') as default_ca:
+        default_ca_content = default_ca.read()
+
+      # Combine all of the above into a single .pem file that we can use when issuing HTTP requests
+      chain_file = tempfile.NamedTemporaryFile(delete=False)
+      try:
+        
+        if manage_route_certificate:
+          chain_file.write(manage_route_certificate.encode())
+        
+        if manage_route_caCertificate:
+          chain_file.write(manage_route_caCertificate.encode())
+
+        if manage_route_destinationCACertificate:
+          chain_file.write(manage_route_destinationCACertificate.encode())
+
+        chain_file.write(default_ca_content)
+
+        chain_file.flush()
+        chain_file.close()
+
+        yield chain_file.name
+
+      finally:
+        os.remove(chain_file.name)
+
     def test_expected_reconciled_version(mange_workspace_reconciled_version, manage_version):
       assert manage_version == mange_workspace_reconciled_version, f"Expected ManageWorkspace Reconciled version: {mange_workspace_reconciled_version} to match Manage Operator version: {manage_version}"
 
@@ -215,13 +298,97 @@ data:
         assert mange_workspace_cr['status']['components'][component[0]]["enabled"], f"Expected component {component} to be enabled in status"
 
     def test_bundle_sizes(mange_workspace_cr):
-      spec_serverbundles = mange_workspace_cr['spec']['settings']['deployment']['serverBundles']
+      spec_serverbundles = mange_workspace_cr['spec']['settings']['deployment'][' ']
       status_serverbundles = mange_workspace_cr['status']['settings']['deployment']['serverBundles']
       spec_serverbundles = [item for item in spec_serverbundles if item['bundleType'] != 'foundation']
       status_serverbundles = [item for item in status_serverbundles if item['bundleType'] != 'foundation']
 
       if status_serverbundles is not None:
         assert spec_serverbundles == status_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the serverbundles in the status: {status_serverbundles}"
+
+    #This is actual Test case method to ping AI service from Manage with retryable attempts
+    def test_get_manage_ai_service_ping(manage_service, manage_host_ca_filepath):
+
+        # skip test if no api key found in environment
+        if not aibroker_api_key:
+            pytest.skip("AI Broker API key not found.")
+
+        if manage_service:
+            logger.info("Using manage service: %s", manage_service)
+            manage_url = f'https://{manage_service}.mas-{mas_instance_id}-manage.svc.cluster.local'
+
+        # Call the api through retry method and assertion logic for all the scenarios
+        try:
+            logger.info("Sending request to ping AI service")
+            resp = request_with_retry(manage_url, manage_host_ca_filepath)
+        except RuntimeError as err:
+            logger.error("Error during request: %s", err)
+            assert False, f"Error calling GET /maximo/api/pingaiservice. Error details: {err}"
+
+        logger.info("Response Data: %s", resp.text)
+        resp_json = resp.json()
+        assert resp.status_code == 200, (
+            f"Expected status 200 from GET /maximo/api/pingaiservice, but got {resp.status_code}. Body: {resp_json}"
+        )
+
+        try:
+            assert resp_json['aiservicehealth'] is True, (
+                f"Expected 'aiservicehealth' to be true, but was {resp_json.get('aiservicehealth')}. Body: {resp_json}"
+            )
+        except KeyError:
+            assert False, f"'aiservicehealth' key not found in response. Body: {resp_json}"
+
+        try:
+            assert resp_json['aiserviceapikey'] is True, (
+                f"Expected 'aiserviceapikey' to be true, but was {resp_json.get('aiserviceapikey')}. Body: {resp_json}"
+            )
+        except KeyError:
+            assert False, f"'aiserviceapikey' key not found in response. Body: {resp_json}"
+
+    # Retry method having retry strategy logic
+    def request_with_retry(manage_url, manage_host_ca_filepath):
+        attempts = 0
+        logger.info("Sending requests with retry")
+
+        # Make attempts until max retry threshold of 20 calls is reached with a sleep interval of 3 minutes between retries
+        while attempts < MAX_RETRY:
+            try:
+                resp = make_request(manage_url, manage_host_ca_filepath)
+                resp_json = resp.json()
+                logger.info(f"Attempt {attempts + 1}: Status Code {resp.status_code}")
+
+                if resp.status_code == 200:
+                    if not resp_json.get('aiservicehealth') or not resp_json.get('aiserviceapikey'):
+                        attempts += 1
+                        logger.warning("Unhealthy service or missing API key. Retrying... (Attempt %d)", attempts)
+                        time.sleep(180)
+                    else:
+                        return resp
+                else:
+                    attempts += 1
+                    logger.warning("Unexpected status %d. Retrying... (Attempt %d)", resp.status_code, attempts)
+                    time.sleep(180)
+
+            except requests.exceptions.RequestException as e:
+                logger.error("Error during request to Maximo Ping AI service: %s", e)
+                attempts += 1
+                time.sleep(180)
+
+        logger.error("All retry attempts failed.")
+        raise RuntimeError("Failed to get a valid response after retries.")
+
+    # Method to call api using the requests library
+    def make_request(manage_url, manage_host_ca_filepath):
+
+        # Actual api call to AI ping service
+        logger.info("Making actual request to AI service")
+        response = requests.get(
+            f"{manage_url}/maximo/api/pingaiservice",
+            headers={"Content-Type": "application/json"},
+            verify=manage_host_ca_filepath
+        )
+        response.raise_for_status()
+        return response
 
 ---
 kind: ConfigMap
@@ -287,6 +454,10 @@ spec:
               value: "{{ .Values.mas_workspace_id }}"
             - name: TEST_RECORD_CM
               value: "{{ $record_cm_name }}"
+{{- if and (hasKey .Values "global_secrets") (hasKey .Values.global_secrets "mxe.int.aibrokerapikey") }}
+            - name: AIBROKERAPIKEY
+              value: "True"
+{{- end }}
           volumeMounts:
             - name: tests
               mountPath: /tmp/tests

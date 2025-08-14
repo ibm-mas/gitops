@@ -1,0 +1,111 @@
+---
+# IBM Maximo Application Suite Instance Application Set
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: sls-appset.{{ .Values.cluster.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "065"
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: "{{ .Values.generator.repo_url }}"
+        revision: "{{ .Values.generator.revision }}"
+        files:
+        - path: "{{ .Values.account.id }}/icn/*/ibm-sls.yaml"
+  syncPolicy:
+    applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
+  template:
+    metadata:
+      name: "sls.root.{{ `{{.ibm_sls_standalone.ibm_customer_number}}` }}.{{ `{{.ibm_sls_standalone.subscription_id}}` }}"
+      labels:
+        environment: '{{ .Values.account.id }}'
+        region: '{{ .Values.region.id }}'
+        cluster: '{{ .Values.cluster.id }}'
+        icn: "{{ `{{.ibm_sls_standalone.ibm_customer_number}}` }}"
+        subscription-id: "{{ `{{.ibm_sls_standalone.subscription_id}}` }}"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+      annotations:
+        healthCheckTimeout: "1800"
+        argocd.argoproj.io/sync-wave: "065"
+        {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+        notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+        notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+        {{- end }}
+    spec:
+      project: "{{ .Values.argo.projects.rootapps }}"
+      source:
+        repoURL: "{{ .Values.source.repo_url }}"
+        targetRevision: "{{ .Values.source.revision }}"
+        path: root-applications/ibm-mas-sls-root
+        helm:
+          releaseName: slsappset
+          values: "{{ `{{ toYaml . }}` }}"
+          parameters:
+              - name: "generator.repo_url"
+                value: "{{ .Values.generator.repo_url }}"
+              - name: "generator.revision"
+                value: "{{ .Values.generator.revision }}"
+              - name: "source.revision"
+                value: "{{ .Values.source.revision }}"
+              - name: "source.repo_url"
+                value: "{{ .Values.source.repo_url }}"
+              - name: argo.namespace
+                value: "{{ .Values.argo.namespace }}"
+                {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+              - name: "notifications.slack_channel_id"
+                value: "{{ .Values.notifications.slack_channel_id }}"
+                {{- end }}
+              - name: "mas_catalog_version"
+                value: "{{ .Values.ibm_operator_catalog.mas_catalog_version }}"
+              - name: argo.projects.rootapps
+                value: "{{ .Values.argo.projects.rootapps }}"
+              - name: argo.projects.apps
+                value: "{{ .Values.argo.projects.apps }}"
+              - name: avp.name
+                value: "{{ .Values.avp.name }}"
+              - name: avp.secret
+                value: "{{ .Values.avp.secret }}"
+              - name: avp.values_varname
+                value: "{{ .Values.avp.values_varname }}"
+              - name: auto_delete
+                value: "{{ .Values.auto_delete }}"
+              - name: devops.mongo_uri
+                value: "{{ .Values.devops.mongo_uri }}"
+              - name: devops.build_number
+                value: "{{ .Values.devops.build_number }}"
+              - name: override_dns_cis_flags_to_false
+                value: "{{ .Values.override_dns_cis_flags_to_false }}"
+      destination:
+        server: 'https://kubernetes.default.svc'
+        namespace: {{ .Values.argo.namespace }}
+      syncPolicy:
+        automated:
+          {{- if .Values.auto_delete }}
+          prune: true
+          {{- end }}
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=false
+          - RespectIgnoreDifferences=true
+        retry:
+          limit: -1
+      ignoreDifferences:
+        - group: '*'
+          kind: ServiceAccount
+          jsonPointers:
+            - /imagePullSecrets
+        - group: 'marketplace.redhat.com/v1alpha1'
+          kind: MarketplaceConfig
+          jsonPointers:
+            - /spec
+      # revisionHistoryLimit set to 1 due to size limit of what can be stored in etcd for anything larger
+      revisionHistoryLimit: 1

@@ -1,7 +1,4 @@
-{{- /*
-Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
-*/}}
-{{- $_job_name_prefix := "spark-control-plane-patch" }}
+{{- $_job_name_prefix := "odh-sa-patch-job-v1" }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
@@ -24,7 +21,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v3" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -34,6 +31,7 @@ immutable field of any existing Job resource.
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
 
 {{- /*
 Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
@@ -55,79 +53,89 @@ are required here.
 */}}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
+
 ---
-kind: ServiceAccount
 apiVersion: v1
+kind: ServiceAccount
 metadata:
-  name: spark-cp-sa
-  namespace: "{{ .Values.cpd_operators_namespace }}"
+  name: odh-sa
+  namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "093"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
+    argocd.argoproj.io/sync-wave: "135"
 
 ---
-kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
 metadata:
-  name: spark-cp-role-{{ .Values.instance_id }}
+  name: patch-serviceaccount-role
+  namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "093"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
+    argocd.argoproj.io/sync-wave: "136"
 rules:
-  - verbs:
-      - get
-      - patch
-    apiGroups:
-      - apps
-    resources:
-      - deployments
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "patch"]
 
 ---
-kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
 metadata:
-  name: spark-cp-rb-{{ .Values.instance_id }}
+  name: patch-serviceaccount-binding
+  namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "094"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
+    argocd.argoproj.io/sync-wave: "137"
 subjects:
   - kind: ServiceAccount
-    name: spark-cp-sa
-    namespace: "{{ .Values.cpd_operators_namespace }}"
+    name: odh-sa
+    namespace: "{{ .Values.aibroker_namespace }}"
 roleRef:
+  kind: Role
+  name: patch-serviceaccount-role
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: spark-cp-role-{{ .Values.instance_id }}
+
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: odh-sa-knative-patch-role
+  namespace: knative-serving
+  annotations:
+    argocd.argoproj.io/sync-wave: "136"
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: odh-sa-knative-patch-binding
+  namespace: knative-serving
+  annotations:
+    argocd.argoproj.io/sync-wave: "137"
+subjects:
+  - kind: ServiceAccount
+    name: odh-sa
+    namespace: "{{ .Values.aibroker_namespace }}"  # Still referencing from your values
+roleRef:
+  kind: Role
+  name: odh-sa-knative-patch-role
+  apiGroup: rbac.authorization.k8s.io
 
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $_job_name }}
-  namespace: "{{ .Values.cpd_operators_namespace }}"
+  name: {{ $_job_name }}-{{ omit .Values "junitreporter" | toYaml | adler32sum }}
+  namespace: "{{ .Values.aibroker_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "095"
+    argocd.argoproj.io/sync-wave: "138"
   labels:
-    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
+  mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 spec:
   template:
-{{- if .Values.custom_labels }}
-    metadata:
-      labels:
-{{ .Values.custom_labels | toYaml | indent 8 }}
-{{- end }}
     spec:
       containers:
         - name: run
@@ -141,29 +149,41 @@ spec:
               cpu: 10m
               memory: 64Mi
           env:
-            - name: CPD_INSTANCE_NAMESPACE
-              value: {{ .Values.cpd_instance_namespace }}
+            - name: AIBROKER_NAMESPACE
+              value: "{{ .Values.aibroker_namespace }}"
           command:
             - /bin/sh
             - -c
             - |
-
               set -e
               echo
               echo "================================================================================"
-              echo "Check if spark-hb-control-plane deployment is available and patch it"
+              echo "Provide ibm-entitlement-key image pull secret for 'pipeline-runner-instance' service accounts"
               echo "================================================================================"
               echo
 
-              SPARK_CP_LOOKUP=$(oc get deployment spark-hb-control-plane -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
-              if [[ ! -z $SPARK_CP_LOOKUP ]]; then
-                echo "patching spark-hb-control-plane deployment..."
-                oc patch deployment spark-hb-control-plane -n ${CPD_INSTANCE_NAMESPACE} -p '{"spec":{ "template":{ "spec":{ "containers":[{ "name":"spark-hb-control-plane","resources":{ "limits":{ "cpu":"2"}}}]}}}}'
-                echo "patch complete..."
+              sleep 60
+
+              RESOURCE_NAME=$(oc get serviceaccount pipeline-runner-instance -n ${AIBROKER_NAMESPACE} -o=jsonpath="{.metadata.name}" --ignore-not-found)
+              if [[ -n "${RESOURCE_NAME}" ]]; then
+                echo "Patching 'pipeline-runner-instance' sa..."
+                oc patch serviceaccount pipeline-runner-instance -n ${AIBROKER_NAMESPACE}  --type='merge' -p '{"imagePullSecrets":[{"name":"ibm-entitlement"}]}'
+              else
+                echo "'pipeline-runner-instance' service account not found."
               fi
 
+              echo
+              echo "================================================================================"
+              echo "Patching config-features in knative-serving"
+              echo "================================================================================"
+              echo
+
+              oc patch --namespace knative-serving configmap/config-features --type merge --patch '{"data":{"kubernetes.podspec-persistent-volume-claim":"enabled", "kubernetes.podspec-persistent-volume-write":"enabled"}}'
+
+              echo "Finished patching config-features in knative-serving"
+
       restartPolicy: Never
-      serviceAccountName: spark-cp-sa
-  backoffLimit: 4
-
-
+      serviceAccountName: odh-sa
+      automountServiceAccountToken: true
+      dnsPolicy: ClusterFirst
+  backoffLimit: 3

@@ -1,68 +1,68 @@
-#---
-#apiVersion: batch/v1
-#kind: Job
-#metadata:
-#  name: increment-instance-counter-{{ .Values.instance_id }}
-#  namespace: {{ .Values.argo.namespace }}
-#  annotations:
-#    argocd.argoproj.io/sync-wave: "999"
-#    argocd.argoproj.io/hook: PostSync
-#    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-#spec:
-#  template:
-#    spec:
-#      serviceAccountName: argocd-server
-#      containers:
-#      - name: increment-counter
-#        image: bitnami/kubectl:latest
-#        command:
-#        - /bin/bash
-#        - -c
-#        - |
-#          # Get the current values.yaml content
-#          VALUES_FILE="root-applications/ibm-mas-cluster-root/values.yaml"
-#
-#          # Clone the GitOps repository
-#          git clone {{ .Values.source.repo_url }} /tmp/gitops
-#          cd /tmp/gitops
-#          git checkout {{ .Values.source.revision }}
-#
-#          # Get the current number_of_instances value
-#          CURRENT_COUNT=$(grep -A 1 "number_of_instances:" $VALUES_FILE | tail -1 | awk '{print $1}')
-#
-#          # Check if this instance is already counted
-#          # We'll create a marker file in the config repo for each instance
-#          INSTANCE_MARKER_DIR="instances/markers"
-#          INSTANCE_MARKER_FILE="$INSTANCE_MARKER_DIR/{{ .Values.instance_id }}.marker"
-#
-#          # Create the markers directory if it doesn't exist
-#          mkdir -p $INSTANCE_MARKER_DIR
-#
-#          # Check if the marker file exists
-#          if [ ! -f "$INSTANCE_MARKER_FILE" ]; then
-#            echo "This appears to be a new instance ({{ .Values.instance_id }}). Incrementing counter."
-#
-#            # Increment the counter
-#            NEW_COUNT=$((CURRENT_COUNT + 1))
-#
-#            # Update the values file
-#            sed -i "s/number_of_instances: $CURRENT_COUNT/number_of_instances: $NEW_COUNT/" $VALUES_FILE
-#
-#            # Create the marker file
-#            echo "Instance {{ .Values.instance_id }} provisioned on $(date)" > $INSTANCE_MARKER_FILE
-#
-#            # Configure Git
-#            git config --global user.email "gitops-automation@example.com"
-#            git config --global user.name "GitOps Automation"
-#
-#            # Commit and push the changes
-#            git add $VALUES_FILE $INSTANCE_MARKER_FILE
-#            git commit -m "Increment instance counter to $NEW_COUNT for new instance {{ .Values.instance_id }}"
-#            git push origin {{ .Values.source.revision }}
-#
-#            echo "Counter incremented from $CURRENT_COUNT to $NEW_COUNT"
-#          else
-#            echo "Instance {{ .Values.instance_id }} already counted. No action needed."
-#          fi
-#      restartPolicy: Never
-#  backoffLimit: 3
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: increment-instance-counter-{{ .Values.instance_id }}
+  namespace: {{ .Values.argo.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "999"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      serviceAccountName: argocd-server
+      containers:
+      - name: increment-counter
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Get the current values.yaml content
+          VALUES_FILE="root-applications/ibm-mas-cluster-root/values.yaml"
+
+          # Clone the GitOps repository
+          git clone {{ .Values.source.repo_url }} /tmp/gitops
+          cd /tmp/gitops
+          git checkout {{ .Values.source.revision }}
+
+          # Get the current number_of_instances value
+          CURRENT_COUNT=$(grep -A 1 "number_of_instances:" $VALUES_FILE | tail -1 | awk '{print $1}')
+
+          # Check if this instance is already counted
+          # We'll create a marker file in the config repo for each instance
+          INSTANCE_MARKER_DIR="instances/markers"
+          INSTANCE_MARKER_FILE="$INSTANCE_MARKER_DIR/{{ .Values.instance_id }}.marker"
+
+          # Create the markers directory if it doesn't exist
+          mkdir -p $INSTANCE_MARKER_DIR
+
+          # Check if the marker file exists
+          if [ ! -f "$INSTANCE_MARKER_FILE" ]; then
+            echo "This appears to be a new instance ({{ .Values.instance_id }}). Incrementing counter."
+
+            # Increment the counter
+            NEW_COUNT=$((CURRENT_COUNT + 1))
+
+            # Update the values file
+            sed -i "s/number_of_instances: $CURRENT_COUNT/number_of_instances: $NEW_COUNT/" $VALUES_FILE
+
+            # Create the marker file
+            echo "Instance {{ .Values.instance_id }} provisioned on $(date)" > $INSTANCE_MARKER_FILE
+
+            # Configure Git
+            git config --global user.email "gitops-automation@example.com"
+            git config --global user.name "GitOps Automation"
+
+            # Commit and push the changes
+            git add $VALUES_FILE $INSTANCE_MARKER_FILE
+            git commit -m "Increment instance counter to $NEW_COUNT for new instance {{ .Values.instance_id }}"
+            git push origin {{ .Values.source.revision }}
+
+            echo "Counter incremented from $CURRENT_COUNT to $NEW_COUNT"
+          else
+            echo "Instance {{ .Values.instance_id }} already counted. No action needed."
+          fi
+      restartPolicy: Never
+  backoffLimit: 3

@@ -11,10 +11,23 @@ metadata:
 spec:
   template:
     spec:
-      serviceAccountName: argocd-server
+      serviceAccountName: git-access
       containers:
       - name: increment-counter
         image: bitnami/kubectl:latest
+        env:
+        - name: GIT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: git-credentials
+              key: username
+              optional: true
+        - name: GIT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: git-credentials
+              key: password
+              optional: true
         command:
         - /bin/bash
         - -c
@@ -22,9 +35,25 @@ spec:
           # Get the current values.yaml content
           VALUES_FILE="root-applications/ibm-mas-cluster-root/values.yaml"
 
-          # Clone the GitOps repository
-          echo "Cloning repository {{ .Values.source.repo_url }} and checking out branch {{ .Values.source.revision }}"
-          git clone {{ .Values.source.repo_url }} /tmp/gitops
+          # Set up Git credentials if available
+          if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_PASSWORD" ]; then
+            echo "Setting up Git credentials"
+            # Extract the protocol and domain from the repo URL
+            REPO_URL="{{ .Values.source.repo_url }}"
+            REPO_DOMAIN=$(echo $REPO_URL | sed -E 's|^(https?://)([^/]+).*|\2|')
+            
+            # Create URL with credentials
+            REPO_URL_WITH_CREDS="https://$GIT_USERNAME:$GIT_PASSWORD@$REPO_DOMAIN$(echo $REPO_URL | sed -E 's|^https?://[^/]+(.*)|\1|')"
+            
+            # Clone with credentials
+            echo "Cloning repository using credentials"
+            git clone $REPO_URL_WITH_CREDS /tmp/gitops
+          else
+            # Clone without credentials
+            echo "Cloning repository {{ .Values.source.repo_url }} (without credentials)"
+            git clone {{ .Values.source.repo_url }} /tmp/gitops
+          fi
+          
           cd /tmp/gitops
           git checkout {{ .Values.source.revision }}
           echo "Current directory: $(pwd)"
@@ -84,6 +113,20 @@ spec:
             git commit -m "Increment instance counter to $NEW_COUNT for new instance {{ .Values.instance_id }}"
             
             echo "Pushing changes to {{ .Values.source.revision }}"
+            
+            # Set up Git credentials for push if available
+            if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_PASSWORD" ]; then
+              echo "Using credentials for push"
+              # Extract the protocol and domain from the repo URL
+              REPO_URL="{{ .Values.source.repo_url }}"
+              REPO_DOMAIN=$(echo $REPO_URL | sed -E 's|^(https?://)([^/]+).*|\2|')
+              
+              # Configure Git to use credentials
+              git config --global credential.helper store
+              echo "https://$GIT_USERNAME:$GIT_PASSWORD@$REPO_DOMAIN" > ~/.git-credentials
+              chmod 600 ~/.git-credentials
+            fi
+            
             # Try to push with error handling
             if ! git push origin {{ .Values.source.revision }}; then
               echo "Push failed. This could be due to authentication issues or conflicts."

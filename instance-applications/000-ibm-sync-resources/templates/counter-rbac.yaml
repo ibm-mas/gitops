@@ -1,0 +1,30 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configmap-updater
+  namespace: {{ .Values.argo.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "997"  # Run before the counter job
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: configmap-updater-binding
+  namespace: {{ .Values.argo.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "997"  # Run before the counter job
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: {{ .Values.argo.namespace }}
+roleRef:
+  kind: Role
+  name: configmap-updater
+  apiGroup: rbac.authorization.k8s.io
+
+# Made with Bob

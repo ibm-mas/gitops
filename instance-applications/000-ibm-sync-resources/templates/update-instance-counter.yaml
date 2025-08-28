@@ -3,7 +3,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: update-instance-counter-{{ .Values.instance_id }}
-  namespace: mas-{{ .Values.instance_id }}-syncres
+  namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "999"
     argocd.argoproj.io/hook: PostSync
@@ -22,7 +22,7 @@ spec:
         - |
           # Get the current count from ConfigMap
           echo "Getting current count from ConfigMap"
-          CURRENT_COUNT=$(kubectl get configmap instance-counter -n mas-{{ .Values.instance_id }}-syncres -o jsonpath='{.data.count}' || echo "0")
+          CURRENT_COUNT=$(kubectl get configmap instance-counter -n openshift-gitops -o jsonpath='{.data.count}' || echo "0")
           echo "Current count: $CURRENT_COUNT"
           
           # Check if this instance is already counted
@@ -30,7 +30,7 @@ spec:
           INSTANCE_MARKER_NAME="instance-marker-{{ .Values.instance_id }}"
           
           # Check if the marker ConfigMap exists
-          if ! kubectl get configmap $INSTANCE_MARKER_NAME -n mas-{{ .Values.instance_id }}-syncres &>/dev/null; then
+          if ! kubectl get configmap $INSTANCE_MARKER_NAME -n openshift-gitops &>/dev/null; then
             echo "This appears to be a new instance ({{ .Values.instance_id }}). Incrementing counter."
             
             # Increment the counter
@@ -38,11 +38,11 @@ spec:
             
             # Update the counter ConfigMap
             echo "Updating count from $CURRENT_COUNT to $NEW_COUNT"
-            kubectl patch configmap instance-counter -n mas-{{ .Values.instance_id }}-syncres --type=merge -p "{\"data\":{\"count\":\"$NEW_COUNT\"}}"
+            kubectl patch configmap instance-counter -n openshift-gitops --type=merge -p "{\"data\":{\"count\":\"$NEW_COUNT\"}}"
             
             # Create a marker ConfigMap for this instance
             echo "Creating marker for instance {{ .Values.instance_id }}"
-            kubectl create configmap $INSTANCE_MARKER_NAME -n mas-{{ .Values.instance_id }}-syncres --from-literal=instance_id="{{ .Values.instance_id }}" --from-literal=provisioned_at="$(date)"
+            kubectl create configmap $INSTANCE_MARKER_NAME -n openshift-gitops --from-literal=instance_id="{{ .Values.instance_id }}" --from-literal=provisioned_at="$(date)"
             
             echo "Counter incremented from $CURRENT_COUNT to $NEW_COUNT"
           else

@@ -1,0 +1,129 @@
+{{- if not (empty .Values.ibm_aiservice) }}
+---
+# IBM Maximo aiservice 
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aiservice.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "040"
+    healthCheckTimeout: "1800"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: "{{ .Values.ibm_aiservice.aiservice_namespace }}"
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/113-ibm-aiservice
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            aiservice_namespace: "{{ .Values.ibm_aiservice.aiservice_namespace }}"
+            aiservice_instance_id: "{{ .Values.ibm_aiservice.aiservice_instance_id }}"
+
+            mas_aiservice_storage_secret: "{{ .Values.ibm_aiservice.mas_aiservice_storage_secret }}"
+            mas_aiservice_mariadb_secret: "{{ .Values.ibm_aiservice.mas_aiservice_mariadb_secret }}"
+            mas_aiservice_db_user: "{{ .Values.ibm_aiservice.mas_aiservice_db_user }}"
+            mas_aiservice_db_secret_value: "{{ .Values.ibm_aiservice.mas_aiservice_db_secret_value }}"
+
+            mas_aiservice_watsonx_secret: "{{ .Values.ibm_aiservice.mas_aiservice_watsonx_secret }}"
+            mas_aiservice_watsonxai_apikey: "{{ .Values.ibm_aiservice.mas_aiservice_watsonxai_apikey }}"
+            mas_aiservice_watsonxai_url: "{{ .Values.ibm_aiservice.mas_aiservice_watsonxai_url }}"
+            mas_aiservice_watsonxai_project_id: "{{ .Values.ibm_aiservice.mas_aiservice_watsonxai_project_id }}"
+
+            s3_apikey: "{{ .Values.ibm_aiservice.s3_apikey }}"
+            mas_aiservice_storage_accesskey: "{{ .Values.ibm_aiservice.mas_aiservice_storage_accesskey }}"
+            mas_aiservice_storage_secretkey: "{{ .Values.ibm_aiservice.mas_aiservice_storage_secretkey }}"
+
+            mas_aiservice_storage_host: "{{ .Values.ibm_aiservice.mas_aiservice_storage_host }}"
+            mas_aiservice_storage_port: "{{ .Values.ibm_aiservice.mas_aiservice_storage_port }}"
+
+            mas_aiservice_sls_registration_key_secret: "{{ .Values.ibm_aiservice.mas_aiservice_sls_registration_key_secret }}"
+            slscfg_registration_key: "{{ .Values.ibm_aiservice.slscfg_registration_key }}"
+            
+            mas_aiservice_db_host: "{{ .Values.ibm_aiservice.mas_aiservice_db_host }}"
+            mas_aiservice_db_port: "{{ .Values.ibm_aiservice.mas_aiservice_db_port }}"
+            mas_aiservice_db_secret_name: "{{ .Values.ibm_aiservice.mas_aiservice_db_secret_name }}"
+
+            mas_aiservice_storage_pipelines_bucket: "{{ .Values.ibm_aiservice.mas_aiservice_storage_pipelines_bucket }}"
+            mas_aiservice_storage_tenants_bucket: "{{ .Values.ibm_aiservice.mas_aiservice_storage_tenants_bucket }}"
+            mas_aiservice_storage_templates_bucket: "{{ .Values.ibm_aiservice.mas_aiservice_storage_templates_bucket }}"
+
+            mas_aiservice_dro_token_secret: "{{ .Values.ibm_aiservice.mas_aiservice_dro_token_secret }}"
+            mas_aiservice_dro_cacert_secret: "{{ .Values.ibm_aiservice.mas_aiservice_dro_cacert_secret }}"
+
+            drocfg_ca: "{{ .Values.ibm_aiservice.drocfg_ca }}"
+            drocfg_ca_tenant: "{{ .Values.ibm_aiservice.drocfg_ca_tenant }}"
+            drocfg_registration_key: "{{ .Values.ibm_aiservice.drocfg_registration_key }}"
+            drocfg_url: "{{ .Values.ibm_aiservice.drocfg_url }}"
+            mas_aiservice_db2_jdbc_secret: "{{ .Values.ibm_aiservice.mas_aiservice_db2_jdbc_secret }}"
+            
+            jdbccfg_username: "{{ .Values.ibm_aiservice.jdbccfg_username }}"
+            jdbccfg_password: "{{ .Values.ibm_aiservice.jdbccfg_password }}"
+            jdbccfg_url: "{{ .Values.ibm_aiservice.jdbccfg_url }}"
+            jdbccfg_sslenabled: "{{ .Values.ibm_aiservice.jdbccfg_sslenabled }}"
+            jdbccfg_ca: "{{ .Values.ibm_aiservice.jdbccfg_ca }}"
+            
+            mas_entitlement_username: "{{ .Values.ibm_aiservice.mas_entitlement_username }}"
+            mas_entitlement_key: "{{ .Values.ibm_aiservice.mas_entitlement_key }}"
+            artifactory_username: "{{ .Values.ibm_aiservice.artifactory_username }}"
+            artifactory_token: "{{ .Values.ibm_aiservice.artifactory_token }}"
+            mas_app_channel: "{{ .Values.ibm_aiservice.mas_app_channel }}"
+
+            mas_catalog_source: "{{ .Values.ibm_aiservice.mas_catalog_source }}"
+
+            mas_icr_cp: "{{ .Values.ibm_aiservice.mas_icr_cp }}"
+            mas_icr_cpopen: "{{ .Values.ibm_aiservice.mas_icr_cpopen }}"
+            in_saas_env: "{{ .Values.ibm_aiservice.in_saas_env }}"
+            is_external_route: "{{ .Values.ibm_aiservice.is_external_route }}"
+            cluster_domain: "{{ .Values.ibm_aiservice.cluster_domain }}"
+            environment_type: "{{ .Values.ibm_aiservice.environment_type }}"
+            mas_aiservice_s3_endpoint_url: "{{ .Values.ibm_aiservice.mas_aiservice_s3_endpoint_url }}"
+            mas_aiservice_s3_region: "{{ .Values.ibm_aiservice.mas_aiservice_s3_region }}"
+            mas_aiservice_s3_bucket_prefix: "{{ .Values.ibm_aiservice.mas_aiservice_s3_bucket_prefix }}"
+
+
+            junitreporter:
+              reporter_name: "ibm-aiservice-{{ .Values.instance.id }}"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+        - name: ARGOCD_APP_NAME
+          value: aiserviceapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+{{- end }}

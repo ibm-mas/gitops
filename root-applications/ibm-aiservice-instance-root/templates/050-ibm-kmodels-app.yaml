@@ -1,0 +1,95 @@
+{{- if not (empty .Values.ibm_kmodel) }}
+---
+# IBM Maximo Kmodels 
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kmodel.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "050"
+    healthCheckTimeout: "1800"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: "{{ .Values.ibm_kmodel.openshift_namespace }}"
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/114-ibm-kmodels
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            openshift_namespace: "{{ .Values.ibm_kmodel.openshift_namespace }}"
+            run_sync_hooks: "{{ .Values.ibm_kmodel.run_sync_hooks }}"
+            aiservice_namespace: "{{ .Values.ibm_kmodel.aiservice_namespace }}"
+            mas_aiservice_storage_provider: "{{ .Values.ibm_kmodel.mas_aiservice_storage_provider }}"
+            mas_aiservice_storage_ssl: "{{ .Values.ibm_kmodel.mas_aiservice_storage_ssl }}"
+            mas_aiservice_storage_accesskey: "{{ .Values.ibm_kmodel.mas_aiservice_storage_accesskey }}"
+            mas_aiservice_storage_secretkey: "{{ .Values.ibm_kmodel.mas_aiservice_storage_secretkey }}"
+            mas_aiservice_storage_host: "{{ .Values.ibm_kmodel.mas_aiservice_storage_host }}"
+            mas_aiservice_storage_port: "{{ .Values.ibm_kmodel.mas_aiservice_storage_port }}"
+            mas_aiservice_storage_region: "{{ .Values.ibm_kmodel.mas_aiservice_storage_region }}"
+            ssh_secret_name: "{{ .Values.ibm_kmodel.ssh_secret_name }}"
+            pullSecretName: "{{ .Values.ibm_kmodel.pullSecretName }}"
+            docker_server: "{{ .Values.ibm_kmodel.docker_server }}"
+            tenantNamespace: "{{ .Values.ibm_kmodel.tenantNamespace }}"
+            mas_aiservice_provision_tenant: "{{ .Values.ibm_kmodel.mas_aiservice_provision_tenant }}"
+            primary_storage_class: "{{ .Values.ibm_kmodel.primary_storage_class }}"
+            mas_aiservice_storage_templates_bucket: "{{ .Values.ibm_kmodel.mas_aiservice_storage_templates_bucket }}"
+            mas_aiservice_storage_tenants_bucket: "{{ .Values.ibm_kmodel.mas_aiservice_storage_tenants_bucket }}"
+            mas_aiservice_storage_pipelines_bucket: "{{ .Values.ibm_kmodel.mas_aiservice_storage_pipelines_bucket }}"
+            image_store: "{{ .Values.ibm_kmodel.image_store }}"
+            image_watcher: "{{ .Values.ibm_kmodel.image_watcher }}"
+            image_controller: "{{ .Values.ibm_kmodel.image_controller }}"
+            mas_aiservice_pipeline_steps_tag: "{{ .Values.ibm_kmodel.mas_aiservice_pipeline_steps_tag }}"
+            mas_aiservice_connector_tag: "{{ .Values.ibm_kmodel.mas_aiservice_connector_tag }}"
+            aiservice_internal_tls: "{{ .Values.ibm_kmodel.aiservice_internal_tls }}"
+            mas_instance_id: "{{ .Values.ibm_kmodel.mas_instance_id }}"
+            model_id_unique_length: "{{ .Values.ibm_kmodel.model_id_unique_length }}"
+            model_id_prefix: "{{ .Values.ibm_kmodel.model_id_prefix }}"
+            ds_pipelines_enabled: "{{ .Values.ibm_kmodel.ds_pipelines_enabled }}"
+            mas_icr_cp: "{{ .Values.ibm_aiservice.mas_icr_cp }}"
+
+            junitreporter:
+              reporter_name: "ibm-kmodel-{{ .Values.instance.id }}"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+        - name: ARGOCD_APP_NAME
+          value: kmodelapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+{{- end }}

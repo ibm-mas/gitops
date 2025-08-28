@@ -3,20 +3,20 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: km-controller
-  namespace: "{{ .Values.aibroker_namespace }}"
+  namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "178"
   labels:
     app: km-controller
 data:
-  CONTAINER_REGISTRY: "{{ .Values.mas_icr_cp }}/aibroker"
-  PIPELINES_BUCKET: "{{ .Values.mas_aibroker_storage_pipelines_bucket }}"
-  TENANTS_BUCKET: "{{ .Values.mas_aibroker_storage_tenants_bucket }}"
+  CONTAINER_REGISTRY: "{{ .Values.mas_icr_cp }}/aiservice"
+  PIPELINES_BUCKET: "{{ .Values.mas_aiservice_storage_pipelines_bucket }}"
+  TENANTS_BUCKET: "{{ .Values.mas_aiservice_storage_tenants_bucket }}"
   DOCKER_SECRETS_NAME: "ibm-entitlement"
   CONNECTOR_IMAGE_PREFIX: ''
   PIPELINE_STEP_IMAGE_PREFIX: '' 
-  PIPELINE_DEFAULT_STEP_TAG: "{{ .Values.mas_aibroker_pipeline_steps_tag }}"
-  DEFAULT_TENANTS: "{{ .Values.mas_aibroker_provision_tenant }}"
+  PIPELINE_DEFAULT_STEP_TAG: "{{ .Values.mas_aiservice_pipeline_steps_tag }}"
+  DEFAULT_TENANTS: "{{ .Values.mas_aiservice_provision_tenant }}"
   PIPELINE_DEPLOYMENT_MODE: raw
   PLATFORM: openshift
   PVC_STORAGE_CLASS_NAME: "{{ .Values.primary_storage_class }}"
@@ -30,7 +30,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: km-controller
-  namespace: "{{ .Values.aibroker_namespace }}"
+  namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "179"
 spec:
@@ -47,7 +47,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: km-controller-pvc
-  namespace: "{{ .Values.aibroker_namespace }}"
+  namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "180"
 spec:
@@ -64,7 +64,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: km-controller
-  namespace: "{{ .Values.aibroker_namespace }}"
+  namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "181"
 
@@ -73,7 +73,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: km-controller
-  namespace: "{{ .Values.aibroker_namespace }}"
+  namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "182"
   labels:
@@ -97,7 +97,7 @@ spec:
           emptyDir: {}
         - name: ssh-key
           secret:
-            secretName: "{{ .Values.aibroker_internal_tls }}"
+            secretName: "{{ .Values.aiservice_internal_tls }}"
       imagePullSecrets:
         - name: "{{ .Values.pullSecretName }}"
       containers:

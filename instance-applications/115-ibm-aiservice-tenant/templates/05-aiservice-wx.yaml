@@ -1,0 +1,41 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: "{{ .Values.tenantNamespace }}----wx-secret"
+  namespace: "{{ .Values.aiservice_namespace }}"
+  {{- if .Values.custom_labels }}
+  labels:
+  {{- range $key, $val := .Values.custom_labels }}
+    {{ $key | quote }}: {{ $val | quote }}
+  {{- end }}
+  {{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "305"
+type: Opaque
+stringData:
+  wx_apikey: "{{ .Values.mas_aiservice_watsonxai_apikey }}"
+  wx_url: "{{ .Values.mas_aiservice_watsonxai_url }}"
+  wx_project_id: "{{ .Values.mas_aiservice_watsonxai_project_id }}"
+
+
+# Copy secrets to tenant namespace
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: "{{ .Values.tenantNamespace }}----wx-secret"
+  namespace: "{{ .Values.tenantNamespace }}"
+  {{- if .Values.custom_labels }}
+  labels:
+  {{- range $key, $val := .Values.custom_labels }}
+    {{ $key | quote }}: {{ $val | quote }}
+  {{- end }}
+  {{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "306"
+type: Opaque
+stringData:
+  wx_apikey: "{{ .Values.mas_aiservice_watsonxai_apikey }}"
+  wx_url: "{{ .Values.mas_aiservice_watsonxai_url }}"
+  wx_project_id: "{{ .Values.mas_aiservice_watsonxai_project_id }}"

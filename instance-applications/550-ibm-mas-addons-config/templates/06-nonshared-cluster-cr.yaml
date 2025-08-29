@@ -25,7 +25,6 @@ metadata:
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "556"
-    argocd.argoproj.io/sync-options: Prune=false
     # This annotation tells ArgoCD not to compare extraneous fields
     argocd.argoproj.io/compare-options: IgnoreExtraneous
   labels:
@@ -33,8 +32,6 @@ metadata:
     mas.ibm.com/clusterResource: "true"
     # This label indicates this is a shared cluster resource
     mas.ibm.com/sharedResource: "true"
-    # This label will toggle between instances but doesn't affect functionality
-    # app.kubernetes.io/instance is automatically added by ArgoCD
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
@@ -45,11 +42,12 @@ spec:
     instances:
       - name: "NonsharedCluster"
 ---
-# Job to check if the GenericAddon should be deleted when an instance is deprovisioned
+# Job to handle instance deletion - ensures the GenericAddon remains if other instances exist
+# Each instance needs its own PostDelete hook job with a unique name
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "nonshared-cleanup-{{ .Values.instance_id }}"
+  name: "nonshared-instance-cleanup-{{ .Values.instance_id }}"
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/hook: "PostDelete"

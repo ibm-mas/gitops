@@ -1,0 +1,129 @@
+{{- if .Values.nonshared }}
+---
+# Create a marker ConfigMap to track that this instance has contributed to the shared resource
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "nonshared-marker-{{ .Values.instance_id }}"
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "555"
+  labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+    mas.ibm.com/nonsharedMarker: "true"
+data:
+  instance_id: "{{ .Values.instance_id }}"
+  provisioned_at: "{{ now | date "2006-01-02T15:04:05Z07:00" }}"
+---
+# The shared GenericAddon resource
+# Note: The app.kubernetes.io/instance label will toggle between instances during syncs.
+# This is expected behavior and doesn't affect functionality.
+apiVersion: addons.mas.ibm.com/v1
+kind: GenericAddon
+metadata:
+  name: "cluster-addons-nonsharedcluster"
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "556"
+    # Combined sync options to prevent recreation and deletion
+    argocd.argoproj.io/sync-options: Prune=false,ServerSideApply=true,Replace=false
+    # This annotation tells ArgoCD not to compare extraneous fields
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
+  labels:
+    mas.ibm.com/configScope: system
+    mas.ibm.com/clusterResource: "true"
+    # This label indicates this is a shared cluster resource
+    mas.ibm.com/sharedResource: "true"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  displayName: "NonsharedCluster"
+  addonType: nonsharedcluster
+  config:
+    instances:
+      - name: "NonsharedCluster"
+---
+# Job to handle instance deletion - ensures the GenericAddon remains if other instances exist
+# Each instance needs its own PostDelete hook job with a unique name
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "nonshared-instance-cleanup-{{ .Values.instance_id }}"
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/hook: "PostDelete"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+  labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+spec:
+  template:
+    spec:
+      serviceAccountName: default
+      containers:
+      - name: cleanup
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Starting cleanup check for instance {{ .Values.instance_id }}"
+          
+          # Delete the marker ConfigMap for this instance
+          kubectl delete configmap nonshared-marker-{{ .Values.instance_id }} -n openshift-gitops --ignore-not-found
+          
+          # Check if there are any other instances using this resource
+          MARKER_COUNT=$(kubectl get configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --no-headers | wc -l)
+          
+          if [ "$MARKER_COUNT" -eq "0" ]; then
+            echo "No other instances found using the nonshared cluster resource. Deleting the GenericAddon."
+            kubectl delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
+            echo "GenericAddon deleted."
+          else
+            echo "Found $MARKER_COUNT other instances still using the nonshared cluster resource. Keeping the GenericAddon."
+          fi
+      restartPolicy: Never
+  backoffLimit: 3
+{{- else }}
+---
+# Job to clean up resources when nonshared is set to false
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "nonshared-disable-cleanup-{{ .Values.instance_id }}"
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "555"
+    argocd.argoproj.io/hook: "Sync"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+  labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+spec:
+  template:
+    spec:
+      serviceAccountName: default
+      containers:
+      - name: cleanup
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Starting cleanup for nonshared=false"
+          
+          # Delete the marker ConfigMap for this instance
+          kubectl delete configmap nonshared-marker-{{ .Values.instance_id }} -n openshift-gitops --ignore-not-found
+          
+          # Delete the GenericAddon regardless of whether other instances are using it
+          # When nonshared is false, the resource should not exist
+          kubectl delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
+          
+          # Delete all marker ConfigMaps
+          kubectl delete configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --ignore-not-found
+          
+          echo "Cleanup completed."
+      restartPolicy: Never
+  backoffLimit: 3
+{{- end }}
+
+# Made with Bob

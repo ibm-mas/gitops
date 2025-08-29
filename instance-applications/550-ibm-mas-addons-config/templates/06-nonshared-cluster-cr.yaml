@@ -23,11 +23,20 @@ metadata:
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "556"
-    argocd.argoproj.io/compare-options: IgnoreExtraneous
     argocd.argoproj.io/sync-options: Prune=false
+    argocd.argoproj.io/compare-options: IgnoreExtraneous,IgnoreResourceVersion,IgnoreAggregatedRoles
+    argocd.argoproj.io/resource-customizations: |
+      addons.mas.ibm.com/GenericAddon:
+        ignoreDifferences:
+          - group: addons.mas.ibm.com
+            kind: GenericAddon
+            jsonPointers:
+              - /metadata/labels/app.kubernetes.io~1instance
   labels:
     mas.ibm.com/configScope: system
     mas.ibm.com/clusterResource: "true"
+    # Use a fixed label that doesn't include the instance ID
+    app.kubernetes.io/managed-by: "mas-gitops"
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}

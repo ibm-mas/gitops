@@ -15,56 +15,34 @@ data:
   instance_id: "{{ .Values.instance_id }}"
   provisioned_at: "{{ now | date "2006-01-02T15:04:05Z07:00" }}"
 ---
-# PreSync job to check if the GenericAddon exists and create it if needed
-apiVersion: batch/v1
-kind: Job
+# The shared GenericAddon resource
+# Note: The app.kubernetes.io/instance label will toggle between instances during syncs.
+# This is expected behavior and doesn't affect functionality.
+apiVersion: addons.mas.ibm.com/v1
+kind: GenericAddon
 metadata:
-  name: "nonshared-presync-{{ .Values.instance_id }}"
+  name: "cluster-addons-nonsharedcluster"
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "556"
-    argocd.argoproj.io/hook: "PreSync"
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    # Combined sync options to prevent recreation and deletion
+    argocd.argoproj.io/sync-options: Prune=false,ServerSideApply=true,Replace=false
+    # This annotation tells ArgoCD not to compare extraneous fields
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
   labels:
-    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+    mas.ibm.com/configScope: system
+    mas.ibm.com/clusterResource: "true"
+    # This label indicates this is a shared cluster resource
+    mas.ibm.com/sharedResource: "true"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
 spec:
-  template:
-    spec:
-      serviceAccountName: default
-      containers:
-      - name: create-if-needed
-        image: bitnami/kubectl:latest
-        command:
-        - /bin/bash
-        - -c
-        - |
-          echo "Checking if GenericAddon exists..."
-          
-          if ! kubectl get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops &>/dev/null; then
-            echo "GenericAddon does not exist. Creating it..."
-            cat <<EOF | kubectl apply -f -
-          apiVersion: addons.mas.ibm.com/v1
-          kind: GenericAddon
-          metadata:
-            name: "cluster-addons-nonsharedcluster"
-            namespace: openshift-gitops
-            labels:
-              mas.ibm.com/configScope: system
-              mas.ibm.com/clusterResource: "true"
-              mas.ibm.com/sharedResource: "true"
-          spec:
-            displayName: "NonsharedCluster"
-            addonType: nonsharedcluster
-            config:
-              instances:
-                - name: "NonsharedCluster"
-          EOF
-            echo "GenericAddon created."
-          else
-            echo "GenericAddon already exists. No action needed."
-          fi
-      restartPolicy: Never
-  backoffLimit: 3
+  displayName: "NonsharedCluster"
+  addonType: nonsharedcluster
+  config:
+    instances:
+      - name: "NonsharedCluster"
 ---
 # Job to handle instance deletion - ensures the GenericAddon remains if other instances exist
 # Each instance needs its own PostDelete hook job with a unique name
@@ -147,3 +125,5 @@ spec:
       restartPolicy: Never
   backoffLimit: 3
 {{- end }}
+
+# Made with Bob

@@ -29,6 +29,9 @@ metadata:
     argocd.argoproj.io/sync-options: Prune=false
     # This annotation tells ArgoCD not to compare extraneous fields
     argocd.argoproj.io/compare-options: IgnoreExtraneous
+  # Add finalizer directly to the resource
+  finalizers:
+    - mas.ibm.com/protect-nonshared
   labels:
     mas.ibm.com/configScope: system
     mas.ibm.com/clusterResource: "true"
@@ -43,55 +46,6 @@ spec:
   config:
     instances:
       - name: "NonsharedCluster"
----
-# PreSync job to add a finalizer to the GenericAddon if it exists
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: "nonshared-presync-{{ .Values.instance_id }}"
-  namespace: openshift-gitops
-  annotations:
-    argocd.argoproj.io/sync-wave: "555"
-    argocd.argoproj.io/hook: "PreSync"
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
-  labels:
-    mas.ibm.com/instanceId: {{ .Values.instance_id }}
-spec:
-  template:
-    spec:
-      serviceAccountName: default
-      containers:
-      - name: presync
-        image: registry.redhat.io/openshift4/ose-cli:latest
-        command:
-        - /bin/bash
-        - -c
-        - |
-          echo "Starting PreSync job for instance {{ .Values.instance_id }}"
-          
-          # Check if the GenericAddon exists
-          if oc get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops &>/dev/null; then
-            echo "GenericAddon exists. Adding finalizer to protect it..."
-            
-            # Get current state
-            echo "Current state of GenericAddon:"
-            oc get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops -o yaml
-            
-            # Add a finalizer to prevent deletion
-            echo "Attempting to add finalizer..."
-            oc patch genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --type=merge -p '{"metadata":{"finalizers":["mas.ibm.com/protect-nonshared"]}}' || echo "Failed to add finalizer"
-            
-            # Verify finalizer was added
-            echo "Verifying finalizer was added:"
-            oc get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops -o jsonpath='{.metadata.finalizers}'
-            echo
-            
-            echo "Finalizer operation completed."
-          else
-            echo "GenericAddon does not exist yet. No action needed."
-          fi
-      restartPolicy: Never
-  backoffLimit: 3
 ---
 # Job to handle instance deletion - ensures the GenericAddon remains if other instances exist
 # Each instance needs its own PostDelete hook job with a unique name
@@ -187,3 +141,4 @@ spec:
   backoffLimit: 3
 {{- end }}
 
+# Made with Bob

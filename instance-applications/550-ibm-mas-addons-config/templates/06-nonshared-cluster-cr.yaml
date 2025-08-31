@@ -62,7 +62,7 @@ spec:
       serviceAccountName: default
       containers:
       - name: presync
-        image: bitnami/kubectl:latest
+        image: registry.redhat.io/openshift4/ose-cli:latest
         command:
         - /bin/bash
         - -c
@@ -70,13 +70,23 @@ spec:
           echo "Starting PreSync job for instance {{ .Values.instance_id }}"
           
           # Check if the GenericAddon exists
-          if kubectl get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops &>/dev/null; then
+          if oc get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops &>/dev/null; then
             echo "GenericAddon exists. Adding finalizer to protect it..."
             
-            # Add a finalizer to prevent deletion
-            kubectl patch genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --type=merge -p '{"metadata":{"finalizers":["mas.ibm.com/protect-nonshared"]}}' || true
+            # Get current state
+            echo "Current state of GenericAddon:"
+            oc get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops -o yaml
             
-            echo "Finalizer added."
+            # Add a finalizer to prevent deletion
+            echo "Attempting to add finalizer..."
+            oc patch genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --type=merge -p '{"metadata":{"finalizers":["mas.ibm.com/protect-nonshared"]}}' || echo "Failed to add finalizer"
+            
+            # Verify finalizer was added
+            echo "Verifying finalizer was added:"
+            oc get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops -o jsonpath='{.metadata.finalizers}'
+            echo
+            
+            echo "Finalizer operation completed."
           else
             echo "GenericAddon does not exist yet. No action needed."
           fi
@@ -101,7 +111,7 @@ spec:
       serviceAccountName: default
       containers:
       - name: cleanup
-        image: bitnami/kubectl:latest
+        image: registry.redhat.io/openshift4/ose-cli:latest
         command:
         - /bin/bash
         - -c
@@ -109,19 +119,19 @@ spec:
           echo "Starting cleanup check for instance {{ .Values.instance_id }}"
           
           # Delete the marker ConfigMap for this instance
-          kubectl delete configmap nonshared-marker-{{ .Values.instance_id }} -n openshift-gitops --ignore-not-found
+          oc delete configmap nonshared-marker-{{ .Values.instance_id }} -n openshift-gitops --ignore-not-found
           
           # Check if there are any other instances using this resource
-          MARKER_COUNT=$(kubectl get configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --no-headers | wc -l)
+          MARKER_COUNT=$(oc get configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --no-headers | wc -l)
           
           if [ "$MARKER_COUNT" -eq "0" ]; then
             echo "No other instances found using the nonshared cluster resource. Removing finalizer and deleting the GenericAddon."
             
             # Remove the finalizer to allow deletion
-            kubectl patch genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' || true
+            oc patch genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' || true
             
             # Delete the GenericAddon
-            kubectl delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
+            oc delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
             
             echo "GenericAddon deleted."
           else
@@ -149,7 +159,7 @@ spec:
       serviceAccountName: default
       containers:
       - name: cleanup
-        image: bitnami/kubectl:latest
+        image: registry.redhat.io/openshift4/ose-cli:latest
         command:
         - /bin/bash
         - -c
@@ -157,20 +167,20 @@ spec:
           echo "Starting cleanup for nonshared=false"
           
           # Delete the marker ConfigMap for this instance
-          kubectl delete configmap nonshared-marker-{{ .Values.instance_id }} -n openshift-gitops --ignore-not-found
+          oc delete configmap nonshared-marker-{{ .Values.instance_id }} -n openshift-gitops --ignore-not-found
           
           # Remove the finalizer if it exists
-          if kubectl get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops &>/dev/null; then
+          if oc get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops &>/dev/null; then
             echo "Removing finalizer from GenericAddon..."
-            kubectl patch genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' || true
+            oc patch genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' || true
           fi
           
           # Delete the GenericAddon regardless of whether other instances are using it
           # When nonshared is false, the resource should not exist
-          kubectl delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
+          oc delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
           
           # Delete all marker ConfigMaps
-          kubectl delete configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --ignore-not-found
+          oc delete configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --ignore-not-found
           
           echo "Cleanup completed."
       restartPolicy: Never

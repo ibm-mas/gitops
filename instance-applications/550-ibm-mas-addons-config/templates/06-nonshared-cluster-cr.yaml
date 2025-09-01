@@ -25,13 +25,14 @@ metadata:
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "556"
-    # Prevent ArgoCD from deleting this resource during deprovisioning
-    argocd.argoproj.io/sync-options: Prune=false,Delete=false,Replace=false
-    # This annotation tells ArgoCD not to compare extraneous fields
+    # Strong annotations to prevent ArgoCD from modifying the resource
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false,Replace=false,ApplyOnly=true
     argocd.argoproj.io/compare-options: IgnoreExtraneous
-  # Add finalizer directly to the resource
-  finalizers:
-    - mas.ibm.com/protect-nonshared
+    # This annotation tells ArgoCD this is a resource that should be skipped during sync
+    argocd.argoproj.io/resource-customizations: |
+      addons.mas.ibm.com/GenericAddon:
+        health.lua: |
+          return { status = "Healthy", message = "GenericAddon is managed outside of normal sync" }
   labels:
     mas.ibm.com/configScope: system
     mas.ibm.com/clusterResource: "true"
@@ -47,15 +48,15 @@ spec:
     instances:
       - name: "NonsharedCluster"
 ---
-# Job to handle instance deletion - ensures the GenericAddon remains if other instances exist
-# Each instance needs its own PostDelete hook job with a unique name
+# Job to create the GenericAddon if it doesn't exist
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "nonshared-instance-cleanup-{{ .Values.instance_id }}"
+  name: "nonshared-ensure-{{ .Values.instance_id }}"
   namespace: openshift-gitops
   annotations:
-    argocd.argoproj.io/hook: "PostDelete"
+    argocd.argoproj.io/sync-wave: "557"
+    argocd.argoproj.io/hook: "Sync"
     argocd.argoproj.io/hook-delete-policy: HookSucceeded
   labels:
     mas.ibm.com/instanceId: {{ .Values.instance_id }}
@@ -64,7 +65,63 @@ spec:
     spec:
       serviceAccountName: default
       containers:
-      - name: cleanup
+      - name: ensure
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Starting ensure job for instance {{ .Values.instance_id }}"
+          
+          # Check if the GenericAddon exists
+          if ! oc get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops &>/dev/null; then
+            echo "GenericAddon does not exist. Creating it..."
+            cat <<EOF | oc apply -f -
+          apiVersion: addons.mas.ibm.com/v1
+          kind: GenericAddon
+          metadata:
+            name: "cluster-addons-nonsharedcluster"
+            namespace: openshift-gitops
+            annotations:
+              argocd.argoproj.io/sync-options: Prune=false,Delete=false,Replace=false,ApplyOnly=true
+              argocd.argoproj.io/compare-options: IgnoreExtraneous
+            labels:
+              mas.ibm.com/configScope: system
+              mas.ibm.com/clusterResource: "true"
+              mas.ibm.com/sharedResource: "true"
+              app.kubernetes.io/managed-by: "mas-gitops"
+          spec:
+            displayName: "NonsharedCluster"
+            addonType: nonsharedcluster
+            config:
+              instances:
+                - name: "NonsharedCluster"
+          EOF
+            echo "GenericAddon created."
+          else
+            echo "GenericAddon already exists. No action needed."
+          fi
+      restartPolicy: Never
+  backoffLimit: 3
+---
+# Job to check if the GenericAddon should be deleted when nonshared instances are gone
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "nonshared-cleanup-check-{{ .Values.instance_id }}"
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "558"
+    argocd.argoproj.io/hook: "Sync"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+  labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+spec:
+  template:
+    spec:
+      serviceAccountName: default
+      containers:
+      - name: cleanup-check
         image: registry.redhat.io/openshift4/ose-cli:latest
         command:
         - /bin/bash
@@ -72,25 +129,13 @@ spec:
         - |
           echo "Starting cleanup check for instance {{ .Values.instance_id }}"
           
-          # Delete the marker ConfigMap for this instance
-          oc delete configmap nonshared-marker-{{ .Values.instance_id }} -n openshift-gitops --ignore-not-found
+          # Check if there are any marker ConfigMaps other than this instance's
+          OTHER_MARKERS=$(oc get configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --no-headers | grep -v nonshared-marker-{{ .Values.instance_id }} | wc -l)
           
-          # Check if there are any other instances using this resource
-          MARKER_COUNT=$(oc get configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --no-headers | wc -l)
+          echo "Found $OTHER_MARKERS other instances using the GenericAddon"
           
-          if [ "$MARKER_COUNT" -eq "0" ]; then
-            echo "No other instances found using the nonshared cluster resource. Removing finalizer and deleting the GenericAddon."
-            
-            # Remove the finalizer to allow deletion
-            oc patch genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' || true
-            
-            # Delete the GenericAddon
-            oc delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
-            
-            echo "GenericAddon deleted."
-          else
-            echo "Found $MARKER_COUNT other instances still using the nonshared cluster resource. Keeping the GenericAddon."
-          fi
+          # No action needed - the GenericAddon will be managed by the ensure job
+          # and will be deleted by the disable-cleanup job when nonshared=false
       restartPolicy: Never
   backoffLimit: 3
 {{- else }}
@@ -123,21 +168,18 @@ spec:
           # Delete the marker ConfigMap for this instance
           oc delete configmap nonshared-marker-{{ .Values.instance_id }} -n openshift-gitops --ignore-not-found
           
-          # Remove the finalizer if it exists
-          if oc get genericaddon cluster-addons-nonsharedcluster -n openshift-gitops &>/dev/null; then
-            echo "Removing finalizer from GenericAddon..."
-            oc patch genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' || true
+          # Check if there are any other instances using this resource
+          MARKER_COUNT=$(oc get configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --no-headers | wc -l)
+          
+          if [ "$MARKER_COUNT" -eq "0" ]; then
+            echo "No other instances found using the nonshared cluster resource. Deleting the GenericAddon."
+            # Delete the GenericAddon
+            oc delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
+            
+            echo "GenericAddon deleted."
+          else
+            echo "Found $MARKER_COUNT other instances still using the nonshared cluster resource. Keeping the GenericAddon."
           fi
-          
-          # Delete the GenericAddon regardless of whether other instances are using it
-          # When nonshared is false, the resource should not exist
-          oc delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
-          
-          # Delete all marker ConfigMaps
-          oc delete configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --ignore-not-found
-          
-          echo "Cleanup completed."
       restartPolicy: Never
   backoffLimit: 3
 {{- end }}
-

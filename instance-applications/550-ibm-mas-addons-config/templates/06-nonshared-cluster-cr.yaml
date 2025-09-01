@@ -26,7 +26,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "556"
     # Strong annotations to prevent ArgoCD from modifying the resource
-    argocd.argoproj.io/sync-options: Prune=false,Delete=false,Replace=false,ApplyOnly=true
+    argocd.argoproj.io/sync-options: Prune=false,Replace=false,ApplyOnly=true
     argocd.argoproj.io/compare-options: IgnoreExtraneous
   labels:
     mas.ibm.com/configScope: system
@@ -160,21 +160,42 @@ spec:
         - |
           echo "Starting cleanup for nonshared=false"
           
+          # Create a log file
+          LOG_FILE="/tmp/cleanup.log"
+          exec > >(tee -a "$LOG_FILE") 2>&1
+          
+          echo "$(date): Cleanup job running for instance {{ .Values.instance_id }}"
+          
           # Delete the marker ConfigMap for this instance
+          echo "$(date): Deleting marker ConfigMap for this instance..."
           oc delete configmap nonshared-marker-{{ .Values.instance_id }} -n openshift-gitops --ignore-not-found
           
           # Check if there are any other instances using this resource
+          echo "$(date): Checking for other marker ConfigMaps..."
           MARKER_COUNT=$(oc get configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --no-headers | wc -l)
+          echo "$(date): Found $MARKER_COUNT marker ConfigMaps"
           
-          if [ "$MARKER_COUNT" -eq "0" ]; then
-            echo "No other instances found using the nonshared cluster resource. Deleting the GenericAddon."
-            # Delete the GenericAddon
-            oc delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
-            
-            echo "GenericAddon deleted."
+          # Force delete the GenericAddon regardless of marker count when nonshared=false
+          echo "$(date): nonshared=false, deleting GenericAddon regardless of marker count..."
+          oc delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --ignore-not-found
+          DELETE_RESULT=$?
+          echo "$(date): Delete command result: $DELETE_RESULT"
+          
+          if [ $DELETE_RESULT -eq 0 ]; then
+            echo "$(date): GenericAddon deleted successfully."
           else
-            echo "Found $MARKER_COUNT other instances still using the nonshared cluster resource. Keeping the GenericAddon."
+            echo "$(date): Failed to delete GenericAddon. Trying with force..."
+            oc delete genericaddon cluster-addons-nonsharedcluster -n openshift-gitops --force --grace-period=0 --ignore-not-found
           fi
-      restartPolicy: Never
+          
+          # Delete all marker ConfigMaps
+          echo "$(date): Deleting all marker ConfigMaps..."
+          oc delete configmap -n openshift-gitops -l mas.ibm.com/nonsharedMarker=true --ignore-not-found
+          
+          echo "$(date): Cleanup completed."
+          
+          # Save the log to a ConfigMap for debugging
+          echo "$(date): Creating log ConfigMap..."
+          oc create configmap nonshared-cleanup-log-{{ .Values.instance_id }} --from-file=cleanup.log="$LOG_FILE" -n openshift-gitops || true      restartPolicy: Never
   backoffLimit: 3
 {{- end }}

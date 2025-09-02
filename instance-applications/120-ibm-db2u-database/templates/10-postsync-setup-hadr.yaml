@@ -10,7 +10,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:b3ecce096368c967bbc6bac2f074473a65418462417b6e550ad4777427c3b06b" }}
+{{- $_cli_image_digest := "sha256:aa3972d1777c01a86ab21a47854f1f5fbffc09452adfb0c734e245b3d46e6ffb" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -27,7 +27,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v7" }}
+{{- $_job_version := "v8" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -407,7 +407,7 @@ spec:
                 timestamp=''
                 copy_to_cos='false'
                 if [[ ${AUTO_BACKUP} == 'true' ]]; then
-                  check_cos_op=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "~/bin/CheckCOS.sh | grep c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 | grep -v keystore | tail -1" db2inst1`
+                  check_cos_op=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "~/bin/CheckCOS.sh | grep c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 | grep -iv keystore | tail -1" db2inst1`
                   backup_filename=`echo ${check_cos_op} | awk -F '/' '{print $NF}'`
                   if [[ ! -z ${backup_filename} ]]; then
                     echo "Backup file from auto backup is ${backup_filename}"
@@ -450,6 +450,8 @@ spec:
                       echo "The latest backup ${timestamp} is not a full backup"
                       timestamp=''
                     fi
+                  else
+                    timestamp=''
                   fi
                 fi
 
@@ -512,6 +514,11 @@ spec:
                       export $prop
                     done
 
+                    aws_is_installed=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "/mnt/backup/aws/dist/aws --version 2>&1 || true" db2inst1`
+                    if [[ $aws_is_installed =~ 'not found' ]]; then
+                      # Setup AWS CLI
+                      oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd /mnt/backup; curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'; unzip awscliv2.zip -d /mnt/backup/;" db2inst1 || exit $?
+                    fi
                     # copy backup from primary to cos bucket
                     SOURCE=backups-manage/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0/${backup_filename}
                     if [[ ${copy_to_cos} == 'true' ]]; then
@@ -520,17 +527,7 @@ spec:
                     fi
 
                     # copy backup from cos bucket to standby
-                    storage_access=''
-                    echo "Getting storage access details in standby"
-                    storage_access=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 list storage access || true" db2inst1` || exit $?
-                    if echo ${storage_access} | grep PRIMARYCOS; then
-                        echo "PRIMARYCOS is available already."
-                        oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 uncatalog storage access alias PRIMARYCOS" db2inst1 || exit $?
-                    else
-                        echo "PRIMARYCOS is not available. Creating"
-                    fi
-                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 catalog storage access alias PRIMARYCOS VENDOR S3 server ${SERVER} user ${PARM1} password ${PARM2} container ${CONTAINER} | tee /tmp/storageaccess.log" db2inst1 || exit $?
-                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/primary-backup; db2RemStgManager ALIAS GET source=DB2REMOTE://PRIMARYCOS//${SOURCE} target=/mnt/backup/primary-backup/${backup_filename} | tee /tmp/backupdownload.log" db2inst1 || exit $?
+                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "export AWS_ACCESS_KEY_ID=${PARM1}; export AWS_SECRET_ACCESS_KEY=${PARM2}; mkdir -p /mnt/backup/primary-backup; /mnt/backup/aws/dist/aws s3 cp s3://${CONTAINER}/${SOURCE} /mnt/backup/primary-backup/${backup_filename} | tee /tmp/backupdownload.log" db2inst1 || exit $?
 
 
                   else
@@ -579,6 +576,15 @@ spec:
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "db2 force applications all; db2 terminate; db2 deactivate db ${DB2_DBNAME}; db2 drop db ${DB2_DBNAME}; db2 restore db ${DB2_DBNAME} from /mnt/backup/primary-backup taken at ${timestamp} with 15 buffers buffer 4096 parallelism 15 encrypt without prompting" db2inst1 || exit $?
               else
                 echo "HADR is already setup. Hence skipping the restore on standby"
+              fi
+
+              # check if config LOGARCHMETH1 is defined
+              config_op=`oc get db2uinstances db2wh-${MAS_INSTANCE_ID}-${MAS_APP_ID}-sdb -n ${DB2_NAMESPACE} -o json | jq -r '.spec.environment.databases' | jq ".[] | select(.name==\"${DB2_DBNAME}\")" | jq '.dbConfig.LOGARCHMETH1' | sed 's/DISK://'`
+              if [[ "${config_op}" != "null" ]]; then
+                echo ""
+                echo "Creating directory ${config_op} for LOGARCHMETH1 on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "sudo mkdir -p ${config_op}; sudo chown -R db2inst1:db2iadm1 ${config_op}" db2inst1 || exit $?
               fi
 
               echo ""

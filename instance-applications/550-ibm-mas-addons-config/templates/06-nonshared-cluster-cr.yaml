@@ -1,32 +1,57 @@
 {{- /* Only proceed if nonshared is true */ -}}
 {{- if .Values.nonshared }}
 
-{{- /* Use a deterministic approach to select an owner - the instance with the lexicographically smallest ID */ -}}
-{{- $allNamespaces := (lookup "v1" "Namespace" "" "") -}}
-{{- $instanceNamespaces := list -}}
-
-{{- /* Find all MAS instance namespaces */ -}}
-{{- range $namespace := $allNamespaces.items -}}
-  {{- if hasPrefix "mas-" $namespace.metadata.name -}}
-    {{- if hasSuffix "-core" $namespace.metadata.name -}}
-      {{- $instanceId := trimSuffix "-core" (trimPrefix "mas-" $namespace.metadata.name) -}}
-      {{- $instanceNamespaces = append $instanceNamespaces $instanceId -}}
-    {{- end -}}
-  {{- end -}}
-{{- end -}}
-
-{{- /* Sort the instance IDs lexicographically */ -}}
-{{- $sortedInstances := $instanceNamespaces | sortAlpha -}}
+{{- /* Create a central registry ConfigMap to track which instance owns the GenericAddon */ -}}
+{{- $registryCM := (lookup "v1" "ConfigMap" "openshift-gitops" "nonshared-registry") -}}
 {{- $ownerInstance := "" -}}
 {{- $isOwner := false -}}
 
-{{- /* The first instance in the sorted list is the owner */ -}}
-{{- if $sortedInstances -}}
-  {{- $ownerInstance = index $sortedInstances 0 -}}
-  {{- if eq $ownerInstance .Values.instance_id -}}
+{{- /* Determine the current owner or if we need to become the owner */ -}}
+{{- if $registryCM -}}
+  {{- if hasKey $registryCM.data "owner_instance" -}}
+    {{- $ownerInstance = $registryCM.data.owner_instance -}}
+    
+    {{- /* Check if the owner instance still exists */ -}}
+    {{- $ownerExists := false -}}
+    {{- $ownerNamespace := printf "mas-%s-core" $ownerInstance -}}
+    {{- $namespaces := (lookup "v1" "Namespace" "" $ownerNamespace) -}}
+    {{- if $namespaces -}}
+      {{- $ownerExists = true -}}
+    {{- end -}}
+    
+    {{- if not $ownerExists -}}
+      {{- /* Previous owner is gone, we'll take ownership */ -}}
+      {{- $ownerInstance = .Values.instance_id -}}
+      {{- $isOwner = true -}}
+    {{- else if eq $ownerInstance .Values.instance_id -}}
+      {{- /* We are already the owner */ -}}
+      {{- $isOwner = true -}}
+    {{- end -}}
+  {{- else -}}
+    {{- /* No owner defined yet, we'll take ownership */ -}}
+    {{- $ownerInstance = .Values.instance_id -}}
     {{- $isOwner = true -}}
   {{- end -}}
+{{- else -}}
+  {{- /* Registry doesn't exist, we'll create it and take ownership */ -}}
+  {{- $ownerInstance = .Values.instance_id -}}
+  {{- $isOwner = true -}}
 {{- end -}}
+
+---
+# Create or update the registry ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "nonshared-registry"
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "554"
+  labels:
+    mas.ibm.com/nonsharedRegistry: "true"
+data:
+  owner_instance: "{{ $ownerInstance }}"
+  last_updated: "{{ now | date "2006-01-02T15:04:05Z07:00" }}"
 
 {{- /* Only create the GenericAddon if we are the owner */ -}}
 {{- if $isOwner }}
@@ -59,37 +84,33 @@ spec:
 {{- end }}
 
 {{- else }}
-{{- /* If nonshared is false, we need to clean up the GenericAddon */ -}}
+{{- /* If nonshared is false, we need to clean up the registry and GenericAddon */ -}}
 
-{{- /* Use the same deterministic approach to find the owner */ -}}
-{{- $allNamespaces := (lookup "v1" "Namespace" "" "") -}}
-{{- $instanceNamespaces := list -}}
-
-{{- /* Find all MAS instance namespaces */ -}}
-{{- range $namespace := $allNamespaces.items -}}
-  {{- if hasPrefix "mas-" $namespace.metadata.name -}}
-    {{- if hasSuffix "-core" $namespace.metadata.name -}}
-      {{- $instanceId := trimSuffix "-core" (trimPrefix "mas-" $namespace.metadata.name) -}}
-      {{- $instanceNamespaces = append $instanceNamespaces $instanceId -}}
+{{- /* Check if we are the current owner */ -}}
+{{- $registryCM := (lookup "v1" "ConfigMap" "openshift-gitops" "nonshared-registry") -}}
+{{- $isOwner := false -}}
+{{- if $registryCM -}}
+  {{- if hasKey $registryCM.data "owner_instance" -}}
+    {{- if eq $registryCM.data.owner_instance .Values.instance_id -}}
+      {{- $isOwner = true -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}
 
-{{- /* Sort the instance IDs lexicographically */ -}}
-{{- $sortedInstances := $instanceNamespaces | sortAlpha -}}
-{{- $ownerInstance := "" -}}
-{{- $isOwner := false -}}
-
-{{- /* The first instance in the sorted list is the owner */ -}}
-{{- if $sortedInstances -}}
-  {{- $ownerInstance = index $sortedInstances 0 -}}
-  {{- if eq $ownerInstance .Values.instance_id -}}
-    {{- $isOwner = true -}}
-  {{- end -}}
-{{- end -}}
-
-{{- /* Only delete the GenericAddon if we are the owner */ -}}
+{{- /* If we are the owner, delete the GenericAddon and registry */ -}}
 {{- if $isOwner }}
+---
+# Delete the registry since nonshared=false
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "nonshared-registry"
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "555"
+    argocd.argoproj.io/hook: "Sync"
+    argocd.argoproj.io/hook-delete-policy: "BeforeHookCreation"
+
 ---
 # Delete the GenericAddon since nonshared=false
 apiVersion: addons.mas.ibm.com/v1
@@ -105,4 +126,18 @@ metadata:
 
 {{- end }}
 
-# Made with Bob
+# Add debug information to help troubleshoot
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "nonshared-debug-{{ .Values.instance_id }}"
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "557"
+data:
+  instance_id: "{{ .Values.instance_id }}"
+  is_owner: "{{ if $isOwner }}true{{ else }}false{{ end }}"
+  owner_instance: "{{ $ownerInstance }}"
+  nonshared_value: "{{ .Values.nonshared }}"
+  timestamp: "{{ now | date "2006-01-02T15:04:05Z07:00" }}"

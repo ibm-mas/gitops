@@ -81,6 +81,22 @@ spec:
   config:
     instances:
       - name: "nonsharedcluster"
+
+---
+# Add debug information to help troubleshoot
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "nonshared-debug-{{ .Values.instance_id }}"
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "557"
+data:
+  instance_id: "{{ .Values.instance_id }}"
+  is_owner: "true"
+  owner_instance: "{{ $ownerInstance }}"
+  nonshared_value: "{{ .Values.nonshared }}"
+  timestamp: "{{ now | date "2006-01-02T15:04:05Z07:00" }}"
 {{- end }}
 
 {{- else }}
@@ -122,12 +138,9 @@ metadata:
     argocd.argoproj.io/sync-wave: "556"
     argocd.argoproj.io/hook: "Sync"
     argocd.argoproj.io/hook-delete-policy: "BeforeHookCreation"
-{{- end }}
 
-{{- end }}
-
-# Add debug information to help troubleshoot
 ---
+# Add debug information to help troubleshoot
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -137,7 +150,11 @@ metadata:
     argocd.argoproj.io/sync-wave: "557"
 data:
   instance_id: "{{ .Values.instance_id }}"
-  is_owner: "{{ if $isOwner }}true{{ else }}false{{ end }}"
-  owner_instance: "{{ $ownerInstance }}"
+  is_owner: "true"
   nonshared_value: "{{ .Values.nonshared }}"
   timestamp: "{{ now | date "2006-01-02T15:04:05Z07:00" }}"
+  action: "cleanup"
+{{- end }}
+
+{{- end }}
+

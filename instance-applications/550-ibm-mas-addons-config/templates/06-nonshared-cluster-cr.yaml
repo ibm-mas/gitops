@@ -1,142 +1,44 @@
-{{- /* Only proceed if nonshared is true */ -}}
 {{- if .Values.nonshared }}
-
-{{- /* Use a deterministic approach to select an owner - the instance with the lexicographically smallest ID */ -}}
-{{- $allNamespaces := (lookup "v1" "Namespace" "" "") -}}
-{{- $instanceNamespaces := list -}}
-
-{{- /* Find all MAS instance namespaces */ -}}
-{{- range $namespace := $allNamespaces.items -}}
-  {{- if hasPrefix "mas-" $namespace.metadata.name -}}
-    {{- if hasSuffix "-core" $namespace.metadata.name -}}
-      {{- $instanceId := trimSuffix "-core" (trimPrefix "mas-" $namespace.metadata.name) -}}
-      {{- $instanceNamespaces = append $instanceNamespaces $instanceId -}}
-    {{- end -}}
-  {{- end -}}
-{{- end -}}
-
-{{- /* Sort the instance IDs lexicographically */ -}}
-{{- $sortedInstances := $instanceNamespaces | sortAlpha -}}
-{{- $ownerInstance := "" -}}
-{{- $isOwner := false -}}
-
-{{- /* The first instance in the sorted list is the owner */ -}}
-{{- if $sortedInstances -}}
-  {{- $ownerInstance = index $sortedInstances 0 -}}
-  {{- if eq $ownerInstance .Values.instance_id -}}
-    {{- $isOwner = true -}}
-  {{- end -}}
-{{- end -}}
-
-{{- /* Only create the GenericAddon if we are the owner */ -}}
-{{- if $isOwner }}
 ---
-# The shared GenericAddon resource - only created by the owner instance
+# Create a marker ConfigMap to track that this instance has contributed to the shared resource
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "nonshared-marker-{{ .Values.instance_id }}"
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "555"
+  labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+    mas.ibm.com/nonsharedMarker: "true"
+data:
+  instance_id: "{{ .Values.instance_id }}"
+  provisioned_at: "{{ now | date "2006-01-02T15:04:05Z07:00" }}"
+---
+# The shared GenericAddon resource
+# Note: The app.kubernetes.io/instance label will toggle between instances during syncs.
+# This is expected behavior and doesn't affect functionality.
 apiVersion: addons.mas.ibm.com/v1
 kind: GenericAddon
 metadata:
-  name: "{{ .Values.instance_id }}-addons-nonsharedcluster"
-  namespace: mas-{{ .Values.instance_id }}-core
+  name: "cluster-addons-nonsharedcluster"
+  namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-wave: "556"
-    argocd.argoproj.io/sync-options: Prune=false
+    # Prevent deletion when an instance is deprovisioned
+    argocd.argoproj.io/sync-options: Prune=false,Replace=false,ApplyOnly=true
     argocd.argoproj.io/compare-options: IgnoreExtraneous
   labels:
     mas.ibm.com/configScope: system
     mas.ibm.com/clusterResource: "true"
     mas.ibm.com/sharedResource: "true"
-    mas.ibm.com/ownerInstance: "{{ .Values.instance_id }}"
-    mas.ibm.com/instanceId: "{{ .Values.instance_id }}"
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
+  {{- if .Values.custom_labels }}
+  {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
 spec:
   displayName: "nonsharedcluster"
   addonType: nonsharedcluster
   config:
     instances:
       - name: "nonsharedcluster"
-{{- end }}
-
----
-# Add debug information to help troubleshoot
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: "nonshared-debug-{{ .Values.instance_id }}"
-  namespace: openshift-gitops
-  annotations:
-    argocd.argoproj.io/sync-wave: "557"
-data:
-  instance_id: "{{ .Values.instance_id }}"
-  is_owner: "{{ if $isOwner }}true{{ else }}false{{ end }}"
-  owner_instance: "{{ $ownerInstance }}"
-  nonshared_value: "{{ .Values.nonshared }}"
-  timestamp: "{{ now | date "2006-01-02T15:04:05Z07:00" }}"
-  sorted_instances: "{{ $sortedInstances | join "," }}"
-
-{{- else }}
-{{- /* If nonshared is false, we need to clean up the GenericAddon */ -}}
-
-{{- /* Use the same deterministic approach to find the owner */ -}}
-{{- $allNamespaces := (lookup "v1" "Namespace" "" "") -}}
-{{- $instanceNamespaces := list -}}
-
-{{- /* Find all MAS instance namespaces */ -}}
-{{- range $namespace := $allNamespaces.items -}}
-  {{- if hasPrefix "mas-" $namespace.metadata.name -}}
-    {{- if hasSuffix "-core" $namespace.metadata.name -}}
-      {{- $instanceId := trimSuffix "-core" (trimPrefix "mas-" $namespace.metadata.name) -}}
-      {{- $instanceNamespaces = append $instanceNamespaces $instanceId -}}
-    {{- end -}}
-  {{- end -}}
-{{- end -}}
-
-{{- /* Sort the instance IDs lexicographically */ -}}
-{{- $sortedInstances := $instanceNamespaces | sortAlpha -}}
-{{- $ownerInstance := "" -}}
-{{- $isOwner := false -}}
-
-{{- /* The first instance in the sorted list is the owner */ -}}
-{{- if $sortedInstances -}}
-  {{- $ownerInstance = index $sortedInstances 0 -}}
-  {{- if eq $ownerInstance .Values.instance_id -}}
-    {{- $isOwner = true -}}
-  {{- end -}}
-{{- end -}}
-
-{{- /* Only delete the GenericAddon if we are the owner */ -}}
-{{- if $isOwner }}
----
-# Delete the GenericAddon since nonshared=false
-apiVersion: addons.mas.ibm.com/v1
-kind: GenericAddon
-metadata:
-  name: "{{ .Values.instance_id }}-addons-nonsharedcluster"
-  namespace: mas-{{ .Values.instance_id }}-core
-  annotations:
-    argocd.argoproj.io/sync-wave: "556"
-    argocd.argoproj.io/hook: "Sync"
-    argocd.argoproj.io/hook-delete-policy: "BeforeHookCreation"
-{{- end }}
-
----
-# Add debug information to help troubleshoot
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: "nonshared-debug-{{ .Values.instance_id }}"
-  namespace: openshift-gitops
-  annotations:
-    argocd.argoproj.io/sync-wave: "557"
-data:
-  instance_id: "{{ .Values.instance_id }}"
-  is_owner: "{{ if $isOwner }}true{{ else }}false{{ end }}"
-  owner_instance: "{{ $ownerInstance }}"
-  nonshared_value: "{{ .Values.nonshared }}"
-  timestamp: "{{ now | date "2006-01-02T15:04:05Z07:00" }}"
-  sorted_instances: "{{ $sortedInstances | join "," }}"
-  action: "cleanup"
-
-{{- end }}
-
+  {{- end }}

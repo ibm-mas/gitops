@@ -1,9 +1,6 @@
-# This file creates a marker ConfigMap for each instance and manages the GenericAddon resource
-# Note: This file will only be processed when nonshared=true at the cluster level
-# When nonshared=false, the entire Application won't be created
-
+{{- if .Values.nonshared }}
 ---
-# Create a marker ConfigMap to track that this instance exists
+# Create a marker ConfigMap to track that this instance has contributed to the shared resource
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -17,9 +14,10 @@ metadata:
 data:
   instance_id: "{{ .Values.instance_id }}"
   provisioned_at: "{{ now | date "2006-01-02T15:04:05Z07:00" }}"
-
 ---
-# The GenericAddon resource - shared among all instances
+# The shared GenericAddon resource
+# Note: The app.kubernetes.io/instance label will toggle between instances during syncs.
+# This is expected behavior and doesn't affect functionality.
 apiVersion: addons.mas.ibm.com/v1
 kind: GenericAddon
 metadata:
@@ -43,3 +41,4 @@ spec:
   config:
     instances:
       - name: "nonsharedcluster"
+{{- end }}

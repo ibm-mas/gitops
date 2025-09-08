@@ -1,14 +1,15 @@
 ---
-apiVersion: apps.mas.ibm.com/v1
+apiVersion: aiservice.ibm.com/v1
 kind: AIServiceTenant
 metadata:
   name: "{{ .Values.tenantNamespace }}"
   namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "307"
+    ansible.sdk.operatorframework.io/verbosity: "{{ aiservice_operator_log_level }}"
   labels: 
-    mas.ibm.com/applicationId: "aiservice"
-    mas.ibm.com/instanceId: "{{ .Values.aiservice_instance_id }}"
+    aiservice.ibm.com/instanceId: "{{ .Values.aiservice_instance_id }}"
+    app.kubernetes.io/instance: "{{ .Values.aiservice_instance_id }}"
     {{- if .Values.custom_labels }}
     {{- range $key, $val := .Values.custom_labels }}
     {{ $key | quote }}: {{ $val | quote }}
@@ -16,8 +17,6 @@ metadata:
     {{- end }}
 spec:
   settings:
-    # cluster_domain: "{{ .Values.cluster_domain }}"
-    # in_saas_env: "{{ .Values.in_saas_env }}"
     icr:
       cp: "{{ .Values.mas_icr_cp }}"
       cpopen: "{{ .Values.mas_icr_cpopen }}"
@@ -29,25 +28,19 @@ spec:
       url: "{{ .Values.slscfg_url }}"
       secretName: "{{ .Values.tenantNamespace }}----sls-secret"
       ca: "{{ .Values.slscfg_ca_tenant }}"
-    # rsl added new in ansible ##review what is value of gitops-envs
     rsl:
       url: "{{ .Values.rsl_url }}"
       orgId: "{{ .Values.rsl_org_id }}"
       secretName: "{{ .Values.tenantNamespace }}----rsl-secret"
     watsonxai:
-      url: "{{ .Values.mas_aiservice_watsonxai_url }}"
+      url: "{{ .Values.aiservice_watsonxai_url }}"
       secretName: "{{ .Values.tenantNamespace }}----wx-secret"
-      project_id: "{{ .Values.mas_aiservice_watsonxai_project_id }}"
+      project_id: "{{ .Values.aiservice_watsonxai_project_id }}"
     tenant:
-      tenant_id: "{{ .Values.tenantNamespace }}"
-      subscription_id: "{{ .Values.mas_aiservice_sls_subscription_id }}"
-      instance_id: "{{ .Values.aiservice_instance_id }}"
+      tenantId: "{{ .Values.tenantNamespace }}"
+      subscriptionId: "{{ .Values.aiservice_sls_subscription_id }}"
+      instanceId: "{{ .Values.aiservice_instance_id }}"
       entitlement:
           type: "{{ .Values.tenant_entitlement_type }}"
           startDate: "{{ .Values.tenant_entitlement_start_date }}"
           endDate: "{{ .Values.tenant_entitlement_end_date }}"
-    s3:
-        region: "{{ .Values.mas_aiservice_s3_region }}"
-        bucketPrefix: "{{ .Values.mas_aiservice_s3_bucket_prefix }}"
-        endpointUrl: "{{ .Values.mas_aiservice_s3_endpoint_url }}"
-        secretName: "{{ .Values.tenantNamespace }}----s3-secret"

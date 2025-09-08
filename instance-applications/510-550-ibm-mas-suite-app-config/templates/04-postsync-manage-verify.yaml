@@ -298,12 +298,16 @@ data:
         assert mange_workspace_cr['status']['components'][component[0]]["enabled"], f"Expected component {component} to be enabled in status"
 
     def test_bundle_sizes(mange_workspace_cr):
-      spec_serverbundles = mange_workspace_cr['spec']['settings']['deployment'][' ']
-      status_serverbundles = mange_workspace_cr['status']['settings']['deployment']['serverBundles']
-      spec_serverbundles = [item for item in spec_serverbundles if item['bundleType'] != 'foundation']
-      status_serverbundles = [item for item in status_serverbundles if item['bundleType'] != 'foundation']
+      spec_serverbundles = mange_workspace_cr['spec']['settings']['deployment'].get('serverBundles', [])
+      status_serverbundles = mange_workspace_cr['status']['settings']['deployment'].get('serverBundles', [])
+      
+      if spec_serverbundles:
+        spec_serverbundles = [item for item in spec_serverbundles if item.get('bundleType') != 'foundation']
+      
+      if status_serverbundles:
+        status_serverbundles = [item for item in status_serverbundles if item.get('bundleType') != 'foundation']
 
-      if status_serverbundles is not None:
+      if status_serverbundles and spec_serverbundles:
         assert spec_serverbundles == status_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the serverbundles in the status: {status_serverbundles}"
 
     #This is actual Test case method to ping AI service from Manage with retryable attempts

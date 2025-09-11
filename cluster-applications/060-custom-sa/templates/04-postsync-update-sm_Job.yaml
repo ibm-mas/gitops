@@ -127,9 +127,13 @@ spec:
               # Get name of secret generated for the custom service account
               echo "Fetching name of secret generated for custom service account ${CUSTOM_SA_NAME}"
               SECRET_NAME=$(oc get secret -n ${CUSTOM_SA_NAMESPACE} | grep ${CUSTOM_SA_NAME}-token | head -1 | cut -d' ' -f1)
+              # As of kubernetes 1.27, the token required is no longer generated
+              # OCP 4.18 ships with Kubernetes 1.31
+              # Create the token and the secret manually if it doesn't already exist.
               if [[ -z "${SECRET_NAME}" ]]; then
-                echo "Failed to fetch secret name"
-                exit 1
+                SECRET_NAME="${CUSTOM_SA_NAME}-token"
+                SECRET_TOKEN=$(oc create token ${CUSTOM_SA_NAME} --duration=$((24*365*10))h)
+                oc create secret generic ${SECRET_NAME} --from-literal=token=${SECRET_TOKEN}
               fi
               
               # Get secret token to store in sm

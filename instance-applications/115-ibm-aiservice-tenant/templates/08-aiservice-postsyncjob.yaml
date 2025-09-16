@@ -41,7 +41,7 @@ are required here.*/}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: postsync-manage-aiservice-job
+  name: postsync-manage-aiservice-job-{{ .Values.tenantNamespace }}
   namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "309"
@@ -50,7 +50,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: postsync-manage-aiservice-job-role
+  name: postsync-manage-aiservice-job-role-{{ .Values.tenantNamespace }}
   namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "310"
@@ -62,23 +62,23 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: postsync-manage-aiservice-job-rolebinding
+  name: postsync-manage-aiservice-job-rolebinding-{{ .Values.tenantNamespace }}
   namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "311"
 subjects:
   - kind: ServiceAccount
-    name: postsync-manage-aiservice-job
+    name: postsync-manage-aiservice-job-{{ .Values.tenantNamespace }}
     namespace: "{{ .Values.aiservice_namespace }}"
 roleRef:
   kind: Role
-  name: postsync-manage-aiservice-job-role
+  name: postsync-manage-aiservice-job-role-{{ .Values.tenantNamespace }}
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-postsync-manage-ai-tenant-job
+  name: allow-postsync-manage-ai-tenant-job-{{ .Values.tenantNamespace }}
   namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "312"
@@ -112,7 +112,7 @@ spec:
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
-      serviceAccountName: postsync-manage-aiservice-job
+      serviceAccountName: postsync-manage-aiservice-job-{{ .Values.tenantNamespace }}
       restartPolicy: Never
       containers:
         - name: postsync-manage-aiservice-run
@@ -129,12 +129,6 @@ spec:
               value: "/"
             - name: AISERVICE_TENANT
               value: "{{ .Values.tenantNamespace }}"
-            - name: SM_AWS_REGION
-              value: "{{ .Values.mas_aiservice_storage_region }}"
-            - name: SM_AWS_ACCESS_KEY_ID
-              value: "{{ .Values.mas_aiservice_storage_accesskey }}"
-            - name: SM_AWS_SECRET_ACCESS_KEY
-              value: "{{ .Values.mas_aiservice_storage_secretkey }}"
             - name: AVP_TYPE
               value: "aws"
           command:
@@ -148,12 +142,9 @@ spec:
               echo "Account Id ....................... ${ACCOUNT_ID}"
               echo "Cluster Id ....................... ${CLUSTER_ID}"
               echo "AISERVICE Instance Id ............. ${AISERVICE_INSTANCE_ID}"
-              echo "SM_AWS_REGION .................... ${SM_AWS_REGION}"
-              echo "SM_AWS_ACCESS_KEY_ID ............ ${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
-              echo "SM_AWS_SECRET_ACCESS_KEY ........ ${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"
               echo "SECRET_NAME_AISERVICE ........... ${SECRET_NAME_AISERVICE}"
               echo "================================================================================"
-              echo "Retrieve AISERVICE API Key for tenant: ${AISERVICE_TENANT}"
+              echo "Retrieve AIBroker API Key for tenant: ${AISERVICE_TENANT}"
               echo "================================================================================"
 
               AISERVICE_APIKEY_SECRET=$(oc get secret ${AISERVICE_TENANT}----apikey-secret -n mas-${AISERVICE_INSTANCE_ID}-aiservice -o jsonpath="{.data.AISERVICE_APIKEY}" | base64 --decode)
@@ -171,9 +162,9 @@ spec:
               TAGS="[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret ${SECRET_NAME_AISERVICE} "{ \"aiservice_apikey\": \"${AISERVICE_APIKEY_SECRET}\" }" "${TAGS}" || exit $?
       volumes:
-        - name: postsync-manage-aiservice
+        - name: postsync-manage-aiservice-{{ .Values.tenantNamespace }}
           secret:
-            secretName: postsync-manage-aiservice
+            secretName: postsync-manage-aiservice-{{ .Values.tenantNamespace }}
             defaultMode: 420
             optional: false
     backoffLimit: 4

@@ -1,0 +1,91 @@
+{{- if not (empty .Values.ibm_sls_standalone) }}
+---
+# IBM Maximo Operator Catalog
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sls.{{ .Values.ibm_sls_standalone.ibm_customer_number }}.{{ .Values.ibm_sls_standalone.subscription_id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: mas-{{ .Values.ibm_sls_standalone.ibm_customer_number }}-{{ .Values.ibm_sls_standalone.subscription_id }}-sls
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: sls-applications/100-ibm-sls
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }} 
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            ibm_customer_number: "{{ .Values.ibm_sls_standalone.ibm_customer_number }}"
+            subscription_id: "{{ .Values.ibm_sls_standalone.subscription_id }}"
+            sls_domain: "{{ .Values.ibm_sls_standalone.sls_domain }}"
+            argo_namespace: "{{ .Values.argo.namespace }}"
+            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
+            run_sync_hooks: {{.Values.ibm_sls_standalone.run_sync_hooks }}
+            sls_channel: "{{ .Values.ibm_sls_standalone.sls_channel }}"
+            ibm_entitlement_key: "{{ .Values.ibm_sls_standalone.ibm_entitlement_key }}"
+            sls_mongo_secret_name: "{{ .Values.ibm_sls_standalone.sls_mongo_secret_name }}"
+            sls_mongo_username: "{{ .Values.ibm_sls_standalone.sls_mongo_username }}"
+            sls_mongo_password: "{{ .Values.ibm_sls_standalone.sls_mongo_password }}"
+            sls_entitlement_file: "{{ .Values.ibm_sls_standalone.sls_entitlement_file }}"
+            icr_cp_open: "{{ .Values.ibm_sls_standalone.icr_cp_open }}"
+            sls_install_plan: "{{ .Values.ibm_sls_standalone.sls_install_plan }}"
+            mongo_spec: {{ .Values.ibm_sls_standalone.mongo_spec | toYaml | nindent 14}}
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+            junitreporter:
+              reporter_name: "ibm-sls-{{ .Values.ibm_sls_standalone.ibm_customer_number }}-{{ .Values.ibm_sls_standalone.subscription_id}}"
+              cluster_id: "{{ .Values.cluster.id }}"
+              customer_id: "{{ .Values.ibm_sls_standalone.ibm_customer_number }}"
+              subscription_id: "{{ .Values.ibm_sls_standalone.subscription_id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+        - name: ARGOCD_APP_NAME
+          value: slsapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    managedNamespaceMetadata:
+      labels:
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+{{- end }}

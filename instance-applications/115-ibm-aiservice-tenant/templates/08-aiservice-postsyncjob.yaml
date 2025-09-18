@@ -159,9 +159,20 @@ spec:
               sm_login
 
               TAGS="[{\"Key\": \"source\", \"Value\": \"mas-ai-service\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              echo ${TAGS}
-              sm_update_secret ${SECRET_NAME_AISERVICE} "{ \"aiservice_apikey\": \"${AISERVICE_APIKEY_SECRET}\" }" "${TAGS}" || exit $?
-              echo "Secret update Successfully ..........."
+
+              echo "SECRET_NAME_AISERVICE=${SECRET_NAME_AISERVICE}"
+              echo "AISERVICE_APIKEY_SECRET=${AISERVICE_APIKEY_SECRET}"
+              echo "TAGS=${TAGS}"
+
+              if [[ -z "${SECRET_NAME_AISERVICE}" || -z "${AISERVICE_APIKEY_SECRET}" ]]; then
+                echo "Missing secret name or API key"
+                exit 1
+              fi
+
+              # Update AWS Secrets Manager
+              sm_update_secret "${SECRET_NAME_AISERVICE}" \
+                "{\"aiservice_apikey\": \"${AISERVICE_APIKEY_SECRET}\"}" \
+                "${TAGS}" || exit $?
               exit 0
       volumes:
         - name: postsync-manage-aiservice-{{ .Values.tenantNamespace }}

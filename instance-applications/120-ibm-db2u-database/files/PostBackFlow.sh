@@ -23,7 +23,6 @@ SCRIPT=/mnt/backup/bin/PostBF_Scripts.sh
   echo "db2 \"commit\" " >> ${SCRIPT}
   echo "  "
   echo "  " 
-  cat ${INSTHOME}/Managed/OwnerCheck.txt >> ${SCRIPT}
 
   echo "db2set db2comm=tcpip,ssl" >> ${SCRIPT}
   echo "db2stop force ; ipclean ; db2start" >> ${SCRIPT}

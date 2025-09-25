@@ -1,0 +1,46 @@
+---
+apiVersion: aiservice.ibm.com/v1
+kind: AIServiceTenant
+metadata:
+  name: "{{ .Values.tenantNamespace }}"
+  namespace: "{{ .Values.aiservice_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "307"
+    ansible.sdk.operatorframework.io/verbosity: "{{ .Values.aiservice_operator_log_level }}"
+  labels: 
+    aiservice.ibm.com/instanceId: "{{ .Values.aiservice_instance_id }}"
+    app.kubernetes.io/instance: "{{ .Values.aiservice_instance_id }}"
+    {{- if .Values.custom_labels }}
+    {{- range $key, $val := .Values.custom_labels }}
+    {{ $key | quote }}: {{ $val | quote }}
+    {{- end }}
+    {{- end }}
+spec:
+  settings:
+    icr:
+      cp: "{{ .Values.mas_icr_cp }}"
+      cpopen: "{{ .Values.mas_icr_cpopen }}"
+    dro:
+      url: "{{ .Values.drocfg_url }}"
+      secretName: "{{ .Values.tenantNamespace }}----dro-secret"
+      ca: "{{ .Values.drocfg_ca_b64enc }}"
+    sls:
+      url: "{{ .Values.slscfg_url }}"
+      secretName: "{{ .Values.tenantNamespace }}----sls-secret"
+      ca: "{{ .Values.slscfg_ca_b64enc }}"
+    rsl:
+      url: "{{ .Values.rsl_url }}"
+      orgId: "{{ .Values.rsl_org_id }}"
+      secretName: "{{ .Values.tenantNamespace }}----rsl-secret"
+    watsonxai:
+      url: "{{ .Values.aiservice_watsonxai_url }}"
+      secretName: "{{ .Values.tenantNamespace }}----wx-secret"
+      projectId: "{{ .Values.aiservice_watsonxai_project_id }}"
+    tenant:
+      tenantId: "{{ .Values.tenantNamespace }}"
+      subscriptionId: "{{ .Values.aiservice_sls_subscription_id }}"
+      instanceId: "{{ .Values.aiservice_instance_id }}"
+      entitlement:
+          type: "{{ .Values.tenant_entitlement_type }}"
+          startDate: "{{ .Values.tenant_entitlement_start_date }}"
+          endDate: "{{ .Values.tenant_entitlement_end_date }}"

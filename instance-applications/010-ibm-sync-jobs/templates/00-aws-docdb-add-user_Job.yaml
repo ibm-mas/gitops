@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -110,12 +110,6 @@ spec:
                 secretKeyRef:
                   name: aws-docdb
                   key: docdb_master_password
-            - name: DOCDB_INSTANCE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: aws-docdb
-                  key: docdb_instance_password
-                  optional: true
             - name: DOCDB_MASTER_INFO
               valueFrom:
                 secretKeyRef:
@@ -165,6 +159,14 @@ spec:
               # remove trailing comma
               export DOCDB_HOSTS=${DOCDB_HOSTS%,}
 
+              # Get docdb instance password from aws secrets manager
+              SECRETS_KEY_SEPERATOR="/"
+              SECRET_NAME_MONGO=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}mongo
+              source /mascli/functions/gitops_utils
+              sm_login
+              docdb_instance_secret=$(sm_get_secret "${SECRET_NAME_MONGO}")
+              export DOCDB_INSTANCE_PASSWORD=$(echo "${docdb_instance_secret}" | yq .password)
+
               echo "Params:"
               echo "    - MAS_INSTANCE_ID         ................... ${MAS_INSTANCE_ID}"
               echo "    - MAS_CONFIG_DIR          ................... ${MAS_CONFIG_DIR}"
@@ -192,8 +194,6 @@ spec:
               echo "Updating Instance Mongo Secret"
               echo "================================================================================"
 
-              SECRETS_KEY_SEPERATOR="/"
-              SECRET_NAME_MONGO=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}mongo
               DOCDB_MASTER_INFO_ESCAPED=${DOCDB_MASTER_INFO//\"/\\\"}
               DOCDB_MASTER_INFO_ESCAPED=${DOCDB_MASTER_INFO_ESCAPED//$'\n'/\\n}
 
@@ -211,8 +211,6 @@ spec:
               echo
 
 
-              source /mascli/functions/gitops_utils
-              sm_login
               TAGS="[{\"Key\": \"source\", \"Value\": \"aws-docdb-add-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret $SECRET_NAME_MONGO "{\"info\":\"$DOCDB_MASTER_INFO_ESCAPED\", \"username\":\"$DOCDB_INSTANCE_USERNAME\", \"password\":\"$DOCDB_INSTANCE_PASSWORD\"}" "${TAGS}" || exit $?
 

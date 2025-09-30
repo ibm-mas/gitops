@@ -1,49 +1,27 @@
+{{- $namespaces := list .Values.aiservice_namespace .Values.tenantNamespace }}
+{{- range $ns := $namespaces }}
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: "{{ .Values.tenantNamespace }}----wx-secret"
-  namespace: "{{ .Values.aiservice_namespace }}"
-  {{- if .Values.custom_labels }}
+  name: "{{ $.Values.tenantNamespace }}----wx-secret"
+  namespace: "{{ $ns }}"
+  {{- with $.Values.custom_labels }}
   labels:
-  {{- range $key, $val := .Values.custom_labels }}
+    {{- range $key, $val := . }}
     {{ $key | quote }}: {{ $val | quote }}
-  {{- end }}
+    {{- end }}
   {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "304"
 type: Opaque
 data:
-  wx_apikey: {{ .Values.aiservice_watsonxai_apikey  default "" | toString | b64enc | quote }}
-  wx_url: {{ .Values.aiservice_watsonxai_url | b64enc | quote }}
-  wx_project_id: {{ .Values.aiservice_watsonxai_project_id | b64enc | quote }}
-  {{- if and (eq .Values.aiservice_watsonx_full "true") .Values.aiservice_watsonx_instance_id .Values.aiservice_watsonx_version .Values.aiservice_watsonx_username }}
-  wx_instance_id: {{ .Values.aiservice_watsonx_instance_id | b64enc | quote }}
-  wx_version: {{ .Values.aiservice_watsonx_version | b64enc | quote }}
-  wx_username: {{ .Values.aiservice_watsonx_username | b64enc | quote }}
+  wx_apikey: {{ $.Values.aiservice_watsonxai_apikey | default "" | toString | b64enc | quote }}
+  wx_url: {{ $.Values.aiservice_watsonxai_url | default "" | toString | b64enc | quote }}
+  wx_project_id: {{ $.Values.aiservice_watsonxai_project_id | default "" | toString | b64enc | quote }}
+  {{- if and (eq $.Values.aiservice_watsonx_full "true") $.Values.aiservice_watsonx_instance_id $.Values.aiservice_watsonx_version $.Values.aiservice_watsonx_username }}
+  wx_instance_id: {{ $.Values.aiservice_watsonx_instance_id | toString | b64enc | quote }}
+  wx_version: {{ $.Values.aiservice_watsonx_version | toString | b64enc | quote }}
+  wx_username: {{ $.Values.aiservice_watsonx_username | toString | b64enc | quote }}
   {{- end }}
-
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: "{{ .Values.tenantNamespace }}----wx-secret"
-  namespace: "{{ .Values.tenantNamespace }}"
-  {{- if .Values.custom_labels }}
-  labels:
-  {{- range $key, $val := .Values.custom_labels }}
-    {{ $key | quote }}: {{ $val | quote }}
-  {{- end }}
-  {{- end }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "304"
-type: Opaque
-data:
-  wx_apikey: {{ .Values.aiservice_watsonxai_apikey | b64enc | quote }}
-  wx_url: {{ .Values.aiservice_watsonxai_url | b64enc | quote }}
-  wx_project_id: {{ .Values.aiservice_watsonxai_project_id | b64enc | quote }}
-  {{- if and (eq .Values.aiservice_watsonx_full "true") .Values.aiservice_watsonx_instance_id .Values.aiservice_watsonx_version .Values.aiservice_watsonx_username }}
-  wx_instance_id: {{ .Values.aiservice_watsonx_instance_id | b64enc | quote }}
-  wx_version: {{ .Values.aiservice_watsonx_version | b64enc | quote }}
-  wx_username: {{ .Values.aiservice_watsonx_username | b64enc | quote }}
-  {{- end }}
+{{- end }}

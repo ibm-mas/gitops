@@ -1,0 +1,142 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: km-watcher
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "172"
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: km-watcher-role
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "173"
+rules:
+  - verbs:
+      - list
+      - watch
+    apiGroups:
+      - ''
+    resources:
+      - events
+      - pods
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: km-watcher-binding
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "174"
+subjects:
+  - kind: ServiceAccount
+    name: km-watcher
+    namespace: "{{ .Values.aibroker_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: km-watcher-role
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: km-watcher
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "175"
+  labels:
+    app: km-watcher
+data:
+  EXCLUDE_TENANTS: provision-tenant
+  TENANTS_BUCKET: {{ .Values.mas_aibroker_storage_tenants_bucket }}
+  PIPELINES: "{{ .Values.aibroker_namespace }}"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: km-watcher
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "176"
+spec:
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+  selector:
+    app: km-watcher
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: km-watcher
+  namespace: "{{ .Values.aibroker_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "177"
+  labels:
+    app: km-watcher
+    component: watcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: km-watcher
+  template:
+    metadata:
+      labels:
+        app: km-watcher
+        component: watcher
+    spec:
+      serviceAccountName: km-watcher
+      imagePullSecrets:
+        - name: "{{ .Values.pullSecretName }}"
+      containers:
+        - name: watcher
+          image: "{{ .Values.image_watcher }}"
+          imagePullPolicy: Always
+          securityContext:
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+            privileged: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 3000
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+              ephemeral-storage: "1Gi"
+            limits:
+              memory: "256Mi"
+              cpu: "100m"
+              ephemeral-storage: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /version
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 500
+          readinessProbe:
+            httpGet:
+              path: /version
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 500
+          envFrom:
+            - configMapRef:
+                name: km-watcher
+            - secretRef:
+                name: km-s3-secret

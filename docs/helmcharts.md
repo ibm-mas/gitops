@@ -42,18 +42,19 @@ The {{ cluster_root_chart() }} also installs the {{ instance_root_app_set() }}. 
 
 ##### Instance-level MAS dependencies:
 
-| Application | Template | Helm Chart |
-|-|-|-|
-|Db2u Operator | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/110-ibm-db2u-app.yaml", "110-ibm-db2u-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/110-ibm-db2u", "110-ibm-db2u") }} |
-|Cloudpak 4 Data (CP4D) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/110-ibm-cp4d-app.yaml", "110-ibm-cp4d-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/110-ibm-cp4d", "110-ibm-cp4d") }} |
-|Cloudpak 4 Data (CP4D) Operators | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/110-ibm-cp4d-operator-app.yaml", "110-ibm-cp4d-operator-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/110-ibm-cp4d-operators", "110-ibm-cp4d-operators") }} |
-|Cloudpak 4 Data (CP4D) CS Control| {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/110-ibm-cs-control-app.yaml", "110-ibm-cs-control-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/110-ibm-cs-control", "110-ibm-cs-control") }} |
-|Suite License Service (SLS) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/100-ibm-sls-app.yaml", "100-ibm-sls-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/100-ibm-sls", "100-ibm-sls") }}
-|DB2 Databases | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml", "120-db2-databases-app.yaml") }}[^1] | {{ gitops_repo_dir_link("instance-applications/120-ibm-db2u-database", "120-ibm-db2u-database") }} |
-|Watson Studio Local (WSL) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-ibm-wsl-app.yaml", "120-ibm-wsl-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/120-ibm-wsl", "120-ibm-wsl") }} |
-|Watson Machine Learning (WML) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-ibm-wml-app.yaml", "120-ibm-wml-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/120-ibm-wml", "120-ibm-wml") }} |
-|Analytics Engine powered by Apache Spark (Spark) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-ibm-spark-app.yaml", "120-ibm-spark-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/120-ibm-spark", "120-ibm-spark") }} |
-|SPSS Modeler | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-ibm-spss-app.yaml", "120-ibm-spss-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/120-ibm-spss", "120-ibm-spss") }} |
+| Application                                      | Template | Helm Chart |
+|--------------------------------------------------|-|-|
+| Db2u Operator                                    | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/110-ibm-db2u-app.yaml", "110-ibm-db2u-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/110-ibm-db2u", "110-ibm-db2u") }} |
+| Cloudpak 4 Data (CP4D)                           | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/110-ibm-cp4d-app.yaml", "110-ibm-cp4d-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/110-ibm-cp4d", "110-ibm-cp4d") }} |
+| Cloudpak 4 Data (CP4D) Operators                 | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/110-ibm-cp4d-operator-app.yaml", "110-ibm-cp4d-operator-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/110-ibm-cp4d-operators", "110-ibm-cp4d-operators") }} |
+| Cloudpak 4 Data (CP4D) CS Control                | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/110-ibm-cs-control-app.yaml", "110-ibm-cs-control-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/110-ibm-cs-control", "110-ibm-cs-control") }} |
+| Suite License Service (SLS)                      | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/100-ibm-sls-app.yaml", "100-ibm-sls-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/100-ibm-sls", "100-ibm-sls") }}
+| DB2 Databases                                    | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-db2-databases-app.yaml", "120-db2-databases-app.yaml") }}[^1] | {{ gitops_repo_dir_link("instance-applications/120-ibm-db2u-database", "120-ibm-db2u-database") }} |
+| DBS RDS Databases                                | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-dbs-rds-databases-app.yaml", "120-dbs-rds-databases-app.yaml") }}[^1] | {{ gitops_repo_dir_link("instance-applications/120-ibm-dbs-rds-database", "120-ibm-dbs-rds-database") }} |
+| Watson Studio Local (WSL)                        | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-ibm-wsl-app.yaml", "120-ibm-wsl-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/120-ibm-wsl", "120-ibm-wsl") }} |
+| Watson Machine Learning (WML)                    | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-ibm-wml-app.yaml", "120-ibm-wml-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/120-ibm-wml", "120-ibm-wml") }} |
+| Analytics Engine powered by Apache Spark (Spark) | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-ibm-spark-app.yaml", "120-ibm-spark-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/120-ibm-spark", "120-ibm-spark") }} |
+| SPSS Modeler                                     | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/120-ibm-spss-app.yaml", "120-ibm-spss-app.yaml") }} | {{ gitops_repo_dir_link("instance-applications/120-ibm-spss", "120-ibm-spss") }} |
 
 ##### MAS Core Platform
 

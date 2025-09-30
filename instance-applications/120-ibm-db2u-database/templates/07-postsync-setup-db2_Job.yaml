@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v13" }}
+{{- $_job_version := "v15" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -752,7 +752,11 @@ spec:
               echo ""
               echo "Construsting JDBC_CONNECTION_URL"
               echo "--------------------------------------------------------------------------------"
-              export JDBC_CONNECTION_URL="jdbc:db2://c-${DB2_INSTANCE_NAME}-db2u-engn-svc.${DB2_NAMESPACE}.svc:${DB2_TLS_SERVICEPORT}/${DB2_DBNAME}:sslConnection=true;sslVersion=${DB2_TLS_VERSION};"
+              if [[ "$MAS_APP_ID" == "facilities" ]]; then
+                export JDBC_CONNECTION_URL="jdbc:db2://c-${DB2_INSTANCE_NAME}-db2u-engn-svc.${DB2_NAMESPACE}.svc:${DB2_TLS_SERVICEPORT}/${DB2_DBNAME}:sslConnection=true;sslVersion=${DB2_TLS_VERSION};currentSchema=${DB2_SCHEMA};"
+              else
+                export JDBC_CONNECTION_URL="jdbc:db2://c-${DB2_INSTANCE_NAME}-db2u-engn-svc.${DB2_NAMESPACE}.svc:${DB2_TLS_SERVICEPORT}/${DB2_DBNAME}:sslConnection=true;sslVersion=${DB2_TLS_VERSION};"
+              fi
 
               echo ""
               echo "Updating Secrets Manager"
@@ -825,10 +829,14 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | tee /tmp/checkcos.log" db2inst1 || exit $?
 
-                echo ""
-                echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+                backup_images=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/CheckCOS.sh | grep c-${DB2_INSTANCE_NAME}-db2u-0 | grep -v keystore | wc -l" db2inst1`
+                echo "Number of backup images in COS bucket - ${backup_images}"
+                if [[ ${backup_images} == 0 ]]; then
+                  echo ""
+                  echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+                fi
 
                 DROP_TEMPTS="/tmp/db2-scripts/dropTempts.sh"
                 echo ""
@@ -836,10 +844,12 @@ spec:
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${DROP_TEMPTS} | tee /tmp/dropTempts.log" db2inst1 || exit $?
 
-                echo ""
-                echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+                if [[ ${backup_images} == 0 ]]; then
+                  echo ""
+                  echo "Executing ${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                  echo "--------------------------------------------------------------------------------"
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${INSTHOME}/bin/RUN_OnDemandFULL_BKP.sh | tee /tmp/runondemandfullbackup.log" db2inst1 || exit $?
+                fi
               fi
 
       restartPolicy: Never

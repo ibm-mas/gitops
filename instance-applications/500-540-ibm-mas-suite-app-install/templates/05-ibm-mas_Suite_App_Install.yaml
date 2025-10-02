@@ -14,7 +14,11 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-{{ .Values.mas_app_spec | toYaml  | indent 2 }}
-{{- if .Values.internal_certificate_authority }}
+{{- if .Values.internal_certificate_authority and not (empty .Values.mas_app_spec) }}
   internalCertificateAuthority: "{{ .Values.internal_certificate_authority }}"
+  {{ .Values.mas_app_spec | toYaml  | indent 2 }}
+{{- elif .Values.internal_certificate_authority }}
+  internalCertificateAuthority: "{{ .Values.internal_certificate_authority }}"
+{{- else }}
+  {{ .Values.mas_app_spec | toYaml  | indent 2 }}
 {{- end }}

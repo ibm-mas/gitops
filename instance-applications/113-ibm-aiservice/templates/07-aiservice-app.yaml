@@ -1,0 +1,42 @@
+---
+apiVersion: aiservice.ibm.com/v1
+kind: AIServiceApp
+metadata:
+    name: "{{ .Values.aiservice_instance_id }}"
+    namespace: "{{ .Values.aiservice_namespace }}"
+    labels:
+        aiservice.ibm.com/instanceId: "{{ .Values.aiservice_instance_id }}"
+        app.kubernetes.io/instance: "{{ .Values.aiservice_instance_id }}"
+    annotations:
+        argocd.argoproj.io/sync-wave: "150"
+        argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+        ansible.sdk.operatorframework.io/verbosity: "{{ .Values.aiservice_operator_log_level }}"
+spec:
+    settings:
+        icr:
+            cp: "{{ .Values.mas_icr_cp }}"
+            cpopen: "{{ .Values.mas_icr_cpopen }}"
+        dro:
+            url: "{{ .Values.drocfg_url }}"
+            secretName: "{{ .Values.aiservice_dro_token_secret }}"
+            ca: "{{ .Values.drocfg_ca_b64enc }}"
+        jdbc:
+            url: "{{ .Values.jdbccfg_url }}"
+            secretName: "{{ .Values.aiservice_jdbc_secret }}"
+            ca: "{{ .Values.jdbccfg_ca_b64enc }}"
+            useAwsDb2: true
+        storageClassName: "{{ .Values.aiservice_storage_class }}"
+        domain: "{{ .Values.aiservice_domain }}"
+        inSaasEnv: true
+        environmentType: "{{ .Values.environment_type }}"
+        modelId:
+            uniqueLength: "15"
+            prefix: "{{ .Values.aiservice_s3_bucket_prefix }}"
+        s3:
+            bucketPrefix: "{{ .Values.aiservice_s3_bucket_prefix }}"
+            region: "{{ .Values.aiservice_s3_region }}"
+            url: "{{ .Values.aiservice_s3_endpoint_url }}"
+            templatesBucket: "{{ .Values.aiservice_s3_templates_bucket }}"
+            tenantsBucket: "{{ .Values.aiservice_s3_tenants_bucket }}"
+            secretName: "{{ .Values.aiservice_s3_secret }}"
+

@@ -1,0 +1,37 @@
+---
+apiVersion: dscinitialization.opendatahub.io/v1
+kind: DSCInitialization
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+  finalizers:
+    - dscinitialization.opendatahub.io/finalizer
+  labels:
+    app.kubernetes.io/created-by: opendatahub-operator
+    app.kubernetes.io/instance: default
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: dscinitialization
+    app.kubernetes.io/part-of: opendatahub-operator
+  name: default-dsci
+spec:
+  applicationsNamespace: "{{ .Values.odh_namespace }}"
+  monitoring:
+    managementState: Managed
+    namespace: "{{ .Values.odh_namespace }}"
+  serviceMesh:
+    auth:
+      audiences:
+        - 'https://kubernetes.default.svc'
+    controlPlane:
+      metricsCollection: Istio
+      name: data-science-smcp
+      namespace: istio-system
+{{- if eq .Values.aiservice_odh_model_deployment_type "raw" }}
+    managementState: Removed
+{{- else }}
+    managementState: Managed
+{{- end }}
+  trustedCABundle:
+    customCABundle: ''
+    managementState: Managed

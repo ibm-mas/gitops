@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -66,7 +66,7 @@ metadata:
   name: presync-cpd-olm-sa
   namespace: mas-{{ .Values.instance_id }}-syncres
   annotations:
-    argocd.argoproj.io/sync-wave: "001"
+    argocd.argoproj.io/sync-wave: "002"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -78,7 +78,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: presync-cpd-olm-role-{{ .Values.instance_id }}
   annotations:
-    argocd.argoproj.io/sync-wave: "001"
+    argocd.argoproj.io/sync-wave: "002"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -164,6 +164,8 @@ spec:
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ .Values.cpd_operators_namespace }}
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
@@ -190,11 +192,11 @@ spec:
               echo "================================================================================"
 
               
-              echo 
+              echo
               echo "Fetching channel for namespace scope from PackageManifest"
               echo "================================================================================"
 
-              export NAMESPACE_SCOPE_CHANNEL=$((oc get PackageManifest ibm-namespace-scope-operator -o json) | jq -r '[.status.channels | .[].name] | last')
+              export NAMESPACE_SCOPE_CHANNEL=$((oc get PackageManifest ibm-namespace-scope-operator -n ${CPD_OPERATORS_NAMESPACE} -o json) | jq -r '[.status.channels | .[].name] | last')
               if [[ -z "${NAMESPACE_SCOPE_CHANNEL}" ]]; then
                 echo "Failed to fetch namespace scope channel"
                 exit 1

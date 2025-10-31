@@ -19,6 +19,7 @@ data:
     #mas_application_id = os.getenv("MAS_APP_ID")
     mas_application_id = 'facilities'
     database_name = os.getenv("DB_NAME")
+    ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
     created_any = False
     
     with open("/etc/mas/dbs-rds-creds/username", 'r') as f:
@@ -26,9 +27,6 @@ data:
     
     with open("/etc/mas/dbs-rds-creds/password", 'r') as f:
       password = f.read().strip()
-    
-    with open("/etc/mas/rds-ssl/global-bundle.pem", 'r') as f:
-      ssl_cert = f.read().strip()
     
     # Creating database connection string for rdsadmin user
     conn_rds_admin_str = (
@@ -39,7 +37,7 @@ data:
         f"UID={username};"
         f"PWD={password};"
         f"SECURITY=SSL;"
-        f"SSLServerCertificate={ssl_cert};"
+        f"SSLServerCertificate={ssl_cert_path};"
     )
     
     # Creating database connection string for db2rds user
@@ -47,8 +45,11 @@ data:
         f"DATABASE={os.environ['DB_NAME']};"
         f"HOSTNAME={os.environ['DB_HOST']};"
         f"PORT={os.environ['DB_PORT']};"
+        f"PROTOCOL=TCPIP;"
         f"UID={username};"
         f"PWD={password};"
+        f"SECURITY=SSL;"
+        f"SSLServerCertificate={ssl_cert_path};"
     )
 
     try:

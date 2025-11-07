@@ -33,6 +33,8 @@ spec:
           ports:
             - containerPort: {{ .Values.service_port }}
           env:
+            - name: LOG_STORAGE_DIR
+              value: /opt/automation/mas-provisioner/logs
             {{- if not (empty .Values.pd_key) }}
             - name: PD_ROUTING_KEY
               value: /opt/automation/mas-provisioner/pdkey/key
@@ -108,6 +110,8 @@ spec:
             periodSeconds: 60
             failureThreshold: 1
           volumeMounts:
+            - name: log-storage
+              mountPath: /opt/automation/mas-provisioner/logs
             - name: tls-certs
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/tls
@@ -140,6 +144,9 @@ spec:
       imagePullSecrets:
         - name: ibm-entitlement
       volumes:
+        - name: log-storage
+          persistentVolumeClaim:
+            claimName: mas-provisioner-logs
         - name: tls-certs
           secret:
             secretName: mas-provisioner-certificate

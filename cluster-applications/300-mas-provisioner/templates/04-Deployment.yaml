@@ -75,6 +75,10 @@ spec:
             - name: INSTANA_API_TOKEN
               value: /opt/automation/mas-provisioner/instana/token
             {{- end }}
+            {{- if not (empty .Values.git_root_ca) }}
+            - name: GIT_ROOTCACERT_PATH
+              value: /opt/automation/mas-provisioner/git-ca/ca.crt
+            {{- end }}
           resources:
             limits:
               cpu: 200m
@@ -128,6 +132,11 @@ spec:
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/ocm
             {{- end }}
+            {{- if not (empty .Values.git_root_ca) }}
+            - name: git-ca
+              readOnly: true
+              mountPath: /opt/automation/mas-provisioner/git-ca
+            {{- end }}
       serviceAccountName: mas-provisioner-sa
       imagePullSecrets:
         - name: ibm-entitlement
@@ -159,5 +168,11 @@ spec:
         - name: ocm-api
           secret:
             secretName: ocm-api-secret
+        {{- end }}
+        {{- if not (empty .Values.git_root_ca) }}
+        - name: git-ca
+          secret:
+            secretName: git-ca
+            defaultMode: 420
         {{- end }}
       terminationGracePeriodSeconds: 60

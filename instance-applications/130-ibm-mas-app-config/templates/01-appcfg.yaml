@@ -1,0 +1,28 @@
+---
+apiVersion: config.mas.ibm.com/v1
+kind: AppCfg
+metadata:
+  name: {{ .Values.instance_id }}-appconfig-system
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "131"
+spec:
+  displayName: Application configuration
+  config:
+    enabled: true
+    persistentVolume:
+      name: app-config
+      size: 2Gi
+      storageClassName: localblock
+  podTemplates:
+    - name: graphite-configuration
+      replicas: 1
+      containers:
+        - name: graphite-configuration
+          resources:
+            limits:
+              cpu: 5
+              memory: 8Gi
+            requests:
+              cpu: 10m
+              memory: 256Mi

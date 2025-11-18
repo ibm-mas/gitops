@@ -103,7 +103,15 @@ spec:
           command: [ "/bin/sh", "-c" ]
           args:
             - |
+              set -e
+              echo "Downloading RDS SSL certificate..."
+              mkdir -p /etc/mas/rds-ssl
+              curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
+              
+              echo "✅ Certificate downloaded to /etc/mas/rds-ssl/global-bundle.pem"
+
               pip install ibm_db && \
+              export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem && \
               python /etc/mas/dbs-rds-init-script/dbs-rds-init.py
           env:
             - name: MAS_APP_ID
@@ -113,9 +121,11 @@ spec:
             - name: RDS_ADMIN_DB
               value: {{ .Values.rds_admin_db_name | quote }}
             - name: DB_PORT
-              value: "50000"
+              value: {{ .Values.port | quote }}
             - name: DB_NAME
               value: {{ .Values.dbname | quote }}
+            - name: SSL_CERT_PATH
+              value: "/etc/mas/rds-ssl/global-bundle.pem"
           volumeMounts:
             - name: dbs-rds-secret-store
               mountPath: /etc/mas/dbs-rds-creds/
@@ -131,4 +141,3 @@ spec:
             secretName: dbs-rds-secret-store
             defaultMode: 420
             optional: false
-

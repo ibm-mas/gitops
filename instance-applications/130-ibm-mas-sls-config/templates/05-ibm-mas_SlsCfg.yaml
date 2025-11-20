@@ -1,4 +1,3 @@
-{{- if and (not (empty .Values.ibm_sls)) (empty .Values.ibm_sls.ibm_customer_number) }}
 ---
 apiVersion: config.mas.ibm.com/v1
 kind: SlsCfg
@@ -23,7 +22,13 @@ spec:
   config:
     url: "{{ .Values.url }}"
     credentials:
-      secretName: "{{ .Values.mas_config_name }}-credentials"
+      secretName: {{- if .Values.ibm_customer_number }}
+        "{{ .Values.registration_key }}"   # AWS  registration_key
+      {{- else }}
+        "{{ .Values.mas_config_name }}-credentials"  # cluster secret
+      {{- end }}
   certificates:
     - alias: ca
 {{ .Values.ca | toYaml | indent 6 }}
+
+      

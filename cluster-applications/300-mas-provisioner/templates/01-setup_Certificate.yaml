@@ -2,7 +2,7 @@
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: "mas-provisioner-ca-issuer"
+  name: "mas-provisioner-selfsigned-issuer"
   namespace: "{{ .Values.provisioner_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "00"
@@ -17,7 +17,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: "mas-provisioner-ca-certificate"
+  name: "mas-provisioner-rootca-certificate"
   namespace: "{{ .Values.provisioner_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "01"
@@ -26,34 +26,23 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  secretName: "mas-provisioner-ca"
+  secretName: "mas-provisioner-rootca"
   duration: "175200h0m0s"
   renewBefore: "2160h0m0s"
   issuerRef:
-    name: "mas-provisioner-ca-issuer"
+    name: "mas-provisioner-selfsigned-issuer"
     kind: Issuer
   isCA: true
   usages:
     - cert sign
     - digital signature
     - key encipherment
-    - server auth
-  commonName: "ca.mas-provisioner-tls"
-  subject:
-    countries:
-      - US
-    streetAddresses:
-      - New York
-    localities:
-      - New York
-    organizationalUnits:
-      - IBM Maximo Application Suite
 
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: "mas-provisioner-issuer"
+  name: "mas-provisioner-rootca-issuer"
   namespace: "{{ .Values.provisioner_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "02"
@@ -63,13 +52,13 @@ metadata:
 {{- end }}
 spec:
   ca:
-    secretName: "mas-provisioner-ca"
+    secretName: "mas-provisioner-rootca"
 
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: "mas-provisioner-certificate"
+  name: "mas-provisioner-server-certificate"
   namespace: "{{ .Values.provisioner_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "03"
@@ -78,19 +67,16 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  secretName: "mas-provisioner-certificate"
-  duration: "175200h0m0s"
-  renewBefore: "2160h0m0s"
+  secretName: "mas-provisioner-server-tls"
+  duration: "2160h" # 90 days
+  renewBefore: "360h" # 15 days
+  commonName: "mas-provisioner-service-{{ .Values.provisioner_namespace }}.{{ .Values.provisioner_domain }}"
   issuerRef:
-    name: "mas-provisioner-issuer"
+    name: "mas-provisioner-rootca-issuer"
     kind: Issuer
   usages:
-    - cert sign
-    - digital signature
-    - key encipherment
     - server auth
   dnsNames:
-    - "*.{{ .Values.provisioner_domain }}"
     - "mas-provisioner-service-{{ .Values.provisioner_namespace }}.{{ .Values.provisioner_domain }}"
   subject:
     countries:
@@ -101,3 +87,26 @@ spec:
       - New York
     organizationalUnits:
       - IBM Maximo Application Suite
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: "mas-provisioner-client-certificate"
+  namespace: "{{ .Values.provisioner_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "03"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  secretName: "mas-provisioner-client-tls"
+  duration: "2160h" # 90 days
+  renewBefore: "360h" # 15 days
+  commonName: "mas-provisioner-client"
+  issuerRef:
+    name: "mas-provisioner-rootca-issuer"
+    kind: Issuer
+  usages:
+    - client auth

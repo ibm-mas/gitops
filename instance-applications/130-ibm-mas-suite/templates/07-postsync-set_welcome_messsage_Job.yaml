@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -174,6 +174,9 @@ spec:
             - name: WELCOME_MESSAGE
               value: "{{ .Values.welcome_message }}"
 
+            - name: STATE_CONFIGMAP_NAME
+              value: "{{ $cm_name }}"
+
           volumeMounts:
             - name: "tls"
               mountPath: /etc/mas/tls
@@ -198,18 +201,29 @@ spec:
               CERT_FILE="/etc/mas/tls/tls.crt"
               KEY_FILE="/etc/mas/tls/tls.key"
 
+              # Escape any characters that may interfere with JSON
+              WELCOME_MESSAGE_ESCAPED=$(echo ${WELCOME_MESSAGE} | jq -Rsa .)
+              PAYLOAD_FILE="payload.json"
+              echo '{"message": '${WELCOME_MESSAGE_ESCAPED}'}' > ${PAYLOAD_FILE}
+
+              echo "WELCOME_MESSAGES_API_URL: ${WELCOME_MESSAGES_API_URL}"
+              echo "Payload (escaped):"
+              cat ${PAYLOAD_FILE}
+
               curl -X PUT "${WELCOME_MESSAGES_API_URL}" \
-                  -f \
-                  --cert "${CERT_FILE}" \
-                  --key "${KEY_FILE}" \
-                  --cacert "${CA_FILE}" \
-                  -H 'Content-Type: application/json' \
-                  -d '{"message": "'${WELCOME_MESSAGE}'"}'
+                -f \
+                --cert "${CERT_FILE}" \
+                --key "${KEY_FILE}" \
+                --cacert "${CA_FILE}" \
+                -H 'Content-Type: application/json' \
+                -d @${PAYLOAD_FILE}
               
               rc=$?
 
               if [[ "$rc" == "0" ]]; then
                 # establish the state configmap
+                echo "Successfully set welcome message"
+                # oc create configmap "${STATE_CONFIGMAP_NAME}" --from-literal=...
               else
                 echo "Failed with RC $rc"
               fi

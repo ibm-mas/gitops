@@ -202,6 +202,9 @@ spec:
             - name: STATE_CONFIGMAP_NAME
               value: "{{ $cm_name }}"
 
+            - name: MAS_CORE_NAMESPACE
+              value: "{{ $ns }}"
+
           volumeMounts:
             - name: "tls"
               mountPath: /etc/mas/tls
@@ -210,48 +213,100 @@ spec:
             - /bin/sh
             - -c
             - |
+                INTERNAL_API_URL="https://internalapi.mas-${MAS_INSTANCE_ID}-core.svc:9443"
+                WELCOME_MESSAGES_API_URL="${INTERNAL_API_URL}/v1/messages/welcome"
+                CA_FILE="/etc/mas/tls/ca.crt"
+                CERT_FILE="/etc/mas/tls/tls.crt"
+                KEY_FILE="/etc/mas/tls/tls.key"
 
-              # We need the welcome message to be set exactly once on installation (or if the welcome message is updated in the gitops config files)
-              # and we should ensure we do not override changes made by the customer post-install via the UI or API
-              
-              # We cannot rely on ArgoCD alone for these "apply once" semantics; the Job will be rerun e.g. if the CLI image is updated
-              # For this reason, we need to track execution status via a config map
+                echo "MAS Welcome Message Setup"
+                echo "==============================="
+                echo ""
 
-              # skip Job if it's present and matches the message set in gitops
+                echo "This Job will ensure that the MAS welcome message (i.e. that shown at the bottom of the login screen)"
+                echo "is set to the value defined in gitops configuration."
+                echo "The welcome message will only be updated if one of the following are true:"
+                echo " - This Job has never been run before (i.e. after the Suite is installed for the first time)"
+                echo " - The welcome message defined in the gitops configuration has changed since the last time this Job ran"
+                echo "If the welcome message is changed via the MAS UI/API, this Job will NOT revert the change - this is intentional."
+                echo ""
 
-              INTERNAL_API_URL="https://internalapi.mas-${MAS_INSTANCE_ID}-core.svc:443"
-              WELCOME_MESSAGES_API_URL="${INTERNAL_API_URL}/v1/messages/welcome"
-              CA_FILE="/etc/mas/tls/ca.crt"
-              CERT_FILE="/etc/mas/tls/tls.crt"
-              KEY_FILE="/etc/mas/tls/tls.key"
+                # Escape any characters that may interfere with JSON
+                WELCOME_MESSAGE_ESCAPED=$(echo ${WELCOME_MESSAGE} | jq -Ra .)
 
-              # Escape any characters that may interfere with JSON
-              WELCOME_MESSAGE_ESCAPED=$(echo ${WELCOME_MESSAGE} | jq -Rsa .)
-              PAYLOAD_FILE="payload.json"
-              echo '{"message": '${WELCOME_MESSAGE_ESCAPED}'}' > ${PAYLOAD_FILE}
+                echo "Fetch Welcome Message last set by this Job from ConfigMap ${STATE_CONFIGMAP_NAME}"
+                echo "------------------------------------------------"
+                LAST_APPLIED_WELCOME_MESSAGE_ESCAPED=$(oc get configmap ${STATE_CONFIGMAP_NAME} -ojsonpath='{.data.last-applied}' -n "${MAS_CORE_NAMESPACE}")
+                rc=$?
+                LAST_APPLIED_WELCOME_MESSAGE_ESCAPED='"'${LAST_APPLIED_WELCOME_MESSAGE_ESCAPED}'"'
 
-              echo "WELCOME_MESSAGES_API_URL: ${WELCOME_MESSAGES_API_URL}"
-              echo "Payload (escaped):"
-              cat ${PAYLOAD_FILE}
+                if [[ "$rc" != 0 ]]; then
+                    echo "ConfigMap ${STATE_CONFIGMAP_NAME} was not found, Job has never been run, so proceed ..."
+                elif [[ "${WELCOME_MESSAGE_ESCAPED}" != "${LAST_APPLIED_WELCOME_MESSAGE_ESCAPED}" ]]; then
+                    echo "Gitops configuration contains a different welcome message than that last applied by this Job, so proceed ... "
+                else
+                    echo "Gitops configuration and the welcome message last applied by this Job are the same, so abort ..."
+                    exit 0
+                fi
+                echo ""
 
-              curl -X PUT "${WELCOME_MESSAGES_API_URL}" \
-                -f \
-                --cert "${CERT_FILE}" \
-                --key "${KEY_FILE}" \
-                --cacert "${CA_FILE}" \
-                -H 'Content-Type: application/json' \
-                -d @${PAYLOAD_FILE}
-              
-              rc=$?
 
-              if [[ "$rc" == "0" ]]; then
-                # establish the state configmap
-                echo "Successfully set welcome message"
-                # oc create configmap "${STATE_CONFIGMAP_NAME}" --from-literal=...
-              else
-                echo "Failed with RC $rc"
-              fi
+                echo "Setting MAS Welcome Message"
+                echo "---------------------------"
 
-              exit $rc
+
+                PAYLOAD_FILE="payload.json"
+                echo '{"message": '${WELCOME_MESSAGE_ESCAPED}'}' > ${PAYLOAD_FILE}
+
+                curl -X PUT "${WELCOME_MESSAGES_API_URL}" \
+                    -f \
+                    --cert "${CERT_FILE}" \
+                    --key "${KEY_FILE}" \
+                    --cacert "${CA_FILE}" \
+                    -H 'Content-Type: application/json' \
+                    -d @${PAYLOAD_FILE}
+
+                rc=$?
+
+                echo ""
+                echo "Result"
+                echo "---------------------------"
+
+                if [[ "$rc" == "0" ]]; then
+                    # establish the state configmap
+                    echo "Successfully set welcome message"
+                    echo ""
+                    
+                    
+                    echo "Updating ConfigMap ${STATE_CONFIGMAP_NAME}"
+                    echo "---------------------------"
+
+                    CONFIGMAP_YAML_FILE="configmap.yaml"
+
+                    echo '
+                        apiVersion: v1
+                        kind: ConfigMap
+                        metadata:
+                            name: '${STATE_CONFIGMAP_NAME}'
+                            namespace: '${MAS_CORE_NAMESPACE}'
+                        data:
+                            last-applied: '${WELCOME_MESSAGE_ESCAPED} > ${CONFIGMAP_YAML_FILE}
+
+                    oc apply -f ${CONFIGMAP_YAML_FILE}
+                    cm_rc=$?
+
+                    if [[ "${cm_rc}" != "0" ]]; then
+                        echo ""
+                        echo "Failed to update ConfigMap ${STATE_CONFIGMAP_NAME} (rc ${cm_rc})"
+                        echo "Failing Job execution; this needs to be rectified otherwise the Job may revert future changes"
+                        echo "made to the Welcome message by the customer via the MAS UI/API."
+                        exit $cm_rc
+                    fi
+
+                else
+                    echo "Failed with to set Welcome Message (rc $rc)"
+                fi
+
+                exit $rc
 
 {{- end }}

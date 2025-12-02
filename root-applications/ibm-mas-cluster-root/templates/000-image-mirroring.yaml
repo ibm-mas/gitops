@@ -1,0 +1,80 @@
+{{- if not (empty .Values.image_mirroring) }}
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: image-mirroring.{{ .Values.cluster.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+    healthCheckTimeout: "1800"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: openshift-config
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: cluster-applications/000-image-mirroring
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }}
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            region_id: {{ .Values.region.id }}
+            ecr_host: {{ .Values.image_mirroring.ecr_host }}
+            repo_path_prefix: {{ .Values.image_mirroring.repo_path_prefix }}
+            cli_image_repo: {{ .Values.cli_image_repo }}
+
+            aws_access_key_id: "{{ .Values.image_mirroring.aws_access_key_id }}"
+            aws_secret_access_key: "{{ .Values.image_mirroring.aws_secret_access_key }}"
+            aws_region: "{{ .Values.region.id }}"
+
+            additional_image_tag_sources: {{ .Values.image_mirroring.additional_image_tag_sources }}
+            additional_image_digest_sources: {{ .Values.image_mirroring.additional_image_digest_sources }}
+
+            junitreporter:
+              reporter_name: "image-mirroring"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+              cli_image_repo: {{ .Values.cli_image_repo }}
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+        - name: ARGOCD_APP_NAME
+          value: imsagemirroringapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+{{- end }}

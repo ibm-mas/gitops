@@ -49,7 +49,13 @@ spec:
             sm_aws_access_key_id: "{{ $.Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ $.Values.sm.aws_secret_access_key }}"
             
-            jdbc_connection_url_additional_params:{{- range $.Values.ibm_mas_suite_configs }} {{ .jdbc_connection_url_additional_params }}{{- end }}
+            {{- range $.Values.ibm_mas_suite_configs }}
+              {{- if eq .mas_application_id "facilities" }}
+            jdbc_connection_url_additional_params: "{{ $.Values.jdbc_connection_url_additional_params }}"
+              {{- else if eq .mas_application_id "manage" }}
+            jdbc_connection_url_additional_params: "{{ $.Values.jdbc_connection_url_additional_params }}"
+              {{- end }}
+            {{- end }}
         
             {{- if $.Values.custom_labels }}
             custom_labels: {{ $.Values.custom_labels | toYaml | nindent 14 }}

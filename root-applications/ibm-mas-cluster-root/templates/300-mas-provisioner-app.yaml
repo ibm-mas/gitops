@@ -45,19 +45,24 @@ spec:
             pd_key: "{{ .Values.mas_provisioner.pagerduty_integration }}"
             service_port: "{{ .Values.mas_provisioner.service_port }}"
             status_repo_url: "{{ .Values.mas_provisioner.status_repo_url }}"
+            mas_annotations_repo_url: "{{ .Values.mas_provisioner.mas_annotations_repo_url }}"
             base_branch: "{{ .Values.mas_provisioner.base_branch }}"
             async_poll_interval: "{{ .Values.mas_provisioner.async_poll_interval }}"
             async_poll_max: "{{ .Values.mas_provisioner.async_poll_max }}"
+            instana_url_prefix: "{{ .Values.mas_provisioner.instana_url_prefix }}"
             instana_api_token: "{{ .Values.mas_provisioner.instana_api_token }}"
             enable_pd_alert: "{{ .Values.mas_provisioner.enable_pd_alert }}"
             enable_ocm_alert: "{{ .Values.mas_provisioner.enable_ocm_alert }}"
             ocm_api_key: "{{ .Values.mas_provisioner.ocm_api_token }}"
+            git_root_ca: "{{ .Values.mas_provisioner.git_root_ca }}"
+            provisioner_storage_class: "{{ .Values.mas_provisioner.storage_class }}"
             junitreporter:
               reporter_name: "mas-provisioner"
               cluster_id: "{{ .Values.cluster.id }}"
               devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
               devops_build_number: "{{ .Values.devops.build_number }}"
               gitops_version: "{{ .Values.source.revision }}"
+              cli_image_repo: {{ .Values.cli_image_repo }}
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
@@ -72,6 +77,10 @@ spec:
         - /imagePullSecrets
         - /secrets
       kind: ServiceAccount
+    - jsonPointers:
+        - /data
+        - /stringData
+      kind: Secret
   syncPolicy:
     automated:
       {{- if .Values.auto_delete }}

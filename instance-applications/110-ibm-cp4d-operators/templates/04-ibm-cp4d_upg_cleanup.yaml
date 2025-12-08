@@ -131,9 +131,10 @@ spec:
 
               # Check available channels against the expected channel that would be installed
               if [[ ! -z "${CPFS_AVAILABLE_CHANNELS}" ]]; then
+                echo "check if expected channel ${CPFS_CHANNEL} is included the available channnels"
                 FOUND="false"
                 for channel in $CPFS_AVAILABLE_CHANNELS; do 
-                  echo "comparing ${channel} to ${CPFS_CHANNEL:1}"
+                  # echo "comparing ${channel} to ${CPFS_CHANNEL:1}"
                   compare=$(compare_channels ${channel} ${CPFS_CHANNEL:1})
                   if [[ ${compare} == 0 ]]; then
                     export FOUND="true"
@@ -142,6 +143,7 @@ spec:
                 done
 
                 if [[ ${FOUND} == "true" ]]; then
+                  echo "Expected channel ${CPFS_CHANNEL} was found in the available channel and therefore it is valid. Proceeding..."
                   echo
                   echo "Backup and Delete existing common-service-maps configmap"
                   echo "================================================================================"
@@ -203,7 +205,51 @@ spec:
                 fi
               fi
 
+              # Update zen-operator subscription channel if it exists (for upgrades)
+              EXPECTED_ZEN_SUB_CHANNEL=$((oc get ConfigMap olm-utils-cm -n mas-${INSTANCE_ID}-syncres -o json) | yq '.data.release_components_meta' | yq '.zen.sub_channel')
+              CURRENT_ZEN_SUB_CHANNEL=$(oc get Subscription ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.items[0].spec.channel}')
+              echo
+              echo "Checking if Zen Operator channel exists and needs an update..."
+              echo
+              echo "============"
+              echo "Debug:"
+              echo "============"
+              echo "- Expected Zen Operator Channel....................... ${EXPECTED_ZEN_SUB_CHANNEL}"
+              echo "- Currently Installed Zen Operator Channel............ ${CURRENT_ZEN_SUB_CHANNEL}"
+
+              COMP_ZEN=$(compare_channels ${CURRENT_ZEN_SUB_CHANNEL:1} ${EXPECTED_ZEN_SUB_CHANNEL:1})
+    
+              if [[ $COMP_ZEN != 0 ]]; then
+                echo "Updating Zen operator subscription channel from ${CURRENT_ZEN_SUB_CHANNEL} to ${EXPECTED_ZEN_SUB_CHANNEL}"
+                oc patch Subscription ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} -p '{"spec":{ "channel":"$EXPECTED_ZEN_SUB_CHANNEL"}}'
+              fi
+              echo "Done"
+
+
       restartPolicy: Never
       serviceAccountName: cpd-sa
   backoffLimit: 4
 
+
+# After the backup and delete for the existing common-service-maps above. This part creates a config map in kube-public namespace with the values from this instance.
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: common-service-maps
+  namespace: kube-public
+  labels:
+    operator.ibm.com/managedByCsOperator: 'true'
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "087"
+data:
+  common-service-maps.yaml: |
+    controlNamespace: {{ .Values.cpd_cs_control_namespace }}
+    namespaceMapping:
+    - map-to-common-service-namespace: {{ .Values.cpd_instance_namespace }}
+      requested-from-namespace:
+      - {{ .Values.cpd_instance_namespace }}
+      - {{ .Values.cpd_operators_namespace }}

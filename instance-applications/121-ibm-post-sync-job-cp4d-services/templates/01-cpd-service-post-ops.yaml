@@ -346,7 +346,7 @@ spec:
                     sleep 60
                   fi
 
-                  OPENSEARCH_CR_LOOKUP=$(oc get Cluster elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
+                  OPENSEARCH_CR_LOOKUP=$(oc get Cluster.opensearch.cloudpackopen.ibm.com elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
                   if [[ ! -z $OPENSEARCH_CR_LOOKUP ]]; then
                     echo "Opensearch Cr is available"
                     break
@@ -355,13 +355,13 @@ spec:
 
                 echo "Patching Cluster elasticsearch-master if not already patched"
 
-                OPENSEARCH_IMAGEPULLSECRET=$(oc get Cluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.imagePullSecret}')
+                OPENSEARCH_IMAGEPULLSECRET=$(oc get Cluster.opensearch.cloudpackopen.ibm.com elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.imagePullSecret}')
 
                 if [[ -z $OPENSEARCH_IMAGEPULLSECRET ]]; then
                   echo "elasticsearch-master needs to be patched"
                   echo "patching elasticsearch-master and waiting for reconcile..."
                   oc delete Job elasticsearch-master-snapshot-repo -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
-                  oc patch --type='merge' ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\"}}"
+                  oc patch --type='merge' Cluster.opensearch.cloudpackopen.ibm.com elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\"}}"
                   sleep 30
                 fi
 
@@ -378,9 +378,9 @@ spec:
                     sleep 60
                   fi
 
-                  OPENSEARCH_CLUSTER_LOOKUP=$(oc get Cluster elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found -ojsonpath='{.status.phase}')
+                  OPENSEARCH_CLUSTER_LOOKUP=$(oc get Cluster.opensearch.cloudpackopen.ibm.com elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found -ojsonpath='{.status.phase}')
                   if [[ ! -z ${OPENSEARCH_CLUSTER_LOOKUP} && ${OPENSEARCH_CLUSTER_LOOKUP} == *"Available"* ]]; then
-                    echo "Cluster elasticsearch-master is available"
+                    echo "Cluster.opensearch.cloudpackopen.ibm.com elasticsearch-master is available"
                     break
                   fi
                 done

@@ -213,18 +213,21 @@ spec:
               echo
               echo "Checking if Zen Operator channel exists and needs an update..."
               echo
-              echo "============"
-              echo "Debug:"
-              echo "============"
-              echo "- Expected Zen Operator Channel....................... ${EXPECTED_ZEN_SUB_CHANNEL}"
-              echo "- Currently Installed Zen Operator Channel............ ${CURRENT_ZEN_SUB_CHANNEL}"
+              if [[ ! -z $CURRENT_ZEN_SUB_CHANNEL ]]; then
+                echo "============"
+                echo "Debug:"
+                echo "============"
+                echo "- Expected Zen Operator Channel....................... ${EXPECTED_ZEN_SUB_CHANNEL}"
+                echo "- Currently Installed Zen Operator Channel............ ${CURRENT_ZEN_SUB_CHANNEL}"
 
-              COMP_ZEN=$(compare_channels ${CURRENT_ZEN_SUB_CHANNEL:1} ${EXPECTED_ZEN_SUB_CHANNEL:1})
+                COMP_ZEN=$(compare_channels ${CURRENT_ZEN_SUB_CHANNEL:1} ${EXPECTED_ZEN_SUB_CHANNEL:1})
     
-              if [[ $COMP_ZEN != 0 ]]; then
-                echo "Updating Zen operator subscription channel from ${CURRENT_ZEN_SUB_CHANNEL} to ${EXPECTED_ZEN_SUB_CHANNEL}"
-                oc patch Subscription ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} -p '{"spec":{ "channel":"$EXPECTED_ZEN_SUB_CHANNEL"}}'
-              fi
+                if [[ $COMP_ZEN != 0 ]]; then
+                  echo "Updating Zen operator subscription channel from ${CURRENT_ZEN_SUB_CHANNEL} to ${EXPECTED_ZEN_SUB_CHANNEL}"
+                  oc patch Subscription ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} -p '{"spec":{ "channel":"$EXPECTED_ZEN_SUB_CHANNEL"}}'
+                fi
+              else
+                echo "Zen Operator is not installed"
               echo "Done"
 
 

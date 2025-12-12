@@ -1,7 +1,8 @@
+{{- if or .Values.wml_channel .Values.wsl_channel .Values.spss_channel }}
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
-{{- $_job_name_prefix := "cpd-spss-post-verify-job" }}
+{{- $_job_name_prefix := "cpd-services-post-sync-job" }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
@@ -24,7 +25,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v1" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -59,10 +60,10 @@ are required here.
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: spss-postcheck-sa
+  name: cpd-service-postsync-sa
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "094"
+    argocd.argoproj.io/sync-wave: "001"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -72,9 +73,9 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: spss-postcheck-role-{{ .Values.instance_id }}
+  name: cpd-service-postsync-role-{{ .Values.instance_id }}
   annotations:
-    argocd.argoproj.io/sync-wave: "094"
+    argocd.argoproj.io/sync-wave: "001"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -93,6 +94,7 @@ rules:
       - apiextensions.k8s.io
       - ccs.cpd.ibm.com
       - elasticsearch.opencontent.ibm.com
+      - opensearch.cloudpackopen.ibm.com
       - ws.cpd.ibm.com
     resources:
       - ibmcpds
@@ -102,6 +104,7 @@ rules:
       - customresourcedefinitions
       - ccs
       - elasticsearchclusters
+      - clusters
       - ws
       - serviceaccounts
   - verbs:
@@ -128,21 +131,21 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: spss-postcheck-rb-{{ .Values.instance_id }}
+  name: cpd-service-postsync-rb-{{ .Values.instance_id }}
   annotations:
-    argocd.argoproj.io/sync-wave: "095"
+    argocd.argoproj.io/sync-wave: "002"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 subjects:
   - kind: ServiceAccount
-    name: spss-postcheck-sa
+    name: cpd-service-postsync-sa
     namespace: "{{ .Values.cpd_operators_namespace }}"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: spss-postcheck-role-{{ .Values.instance_id }}
+  name: cpd-service-postsync-role-{{ .Values.instance_id }}
 
 ---
 apiVersion: batch/v1
@@ -151,7 +154,7 @@ metadata:
   name: {{ $_job_name }}
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "096"
+    argocd.argoproj.io/sync-wave: "003"
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -177,6 +180,8 @@ spec:
               cpu: 10m
               memory: 64Mi
           env:
+            - name: CPD_PRODUCT_VERSION
+              value: {{ .Values.cpd_product_version }}
             - name: CPD_INSTANCE_NAMESPACE
               value: {{ .Values.cpd_instance_namespace }}
             - name: CPD_OPERATORS_NAMESPACE
@@ -191,9 +196,16 @@ spec:
             - |
 
               set -e
+
+              # function to compare the versions
+              compare_versions(){
+                V1=$(echo "$1" | tr -d '.')
+                V2=$(echo "$2" | tr -d '.')
+                echo $(( $V1 - $V2 ))
+              }
+
               echo
               echo "================================================================================"
-              echo "Waiting for SPSS and its dependencies to be complete"
               echo "Wait for CCS Cr to be ready and patch if needed"
               echo "================================================================================"
               echo
@@ -252,65 +264,127 @@ spec:
                 fi
               done
 
-              echo
-              echo "================================================================================"
-              echo "Wait for Elastic Search to be ready and patch if needed before checking ccsStatus"
-              echo "================================================================================"
-              echo
+              COMP=$(compare_versions ${CPD_PRODUCT_VERSION} 5.2.0)
 
-              echo
-              echo "Waiting for elasticsearch-master to be ready..."
+              if [[ $COMP < 0 ]]; then
+                echo
+                echo "================================================================================"
+                echo "Wait for Elastic Search to be ready and patch if needed before checking ccsStatus"
+                echo "================================================================================"
+                echo
 
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+60))
-                if [ $wait_period -gt 1800 ]; then
-                  echo "elasticsearch-master is not ready after 30 minutes of waiting. Exiting..."
-                  exit 1
-                else
-                  sleep 60
+                echo
+                echo "Waiting for elasticsearch-master to be ready..."
+
+                wait_period=0
+                while true; do
+                  wait_period=$(($wait_period+60))
+                  if [ $wait_period -gt 1800 ]; then
+                    echo "elasticsearch-master is not ready after 30 minutes of waiting. Exiting..."
+                    exit 1
+                  else
+                    sleep 60
+                  fi
+
+                  ELASTICSEARCH_CR_LOOKUP=$(oc get ElasticsearchCluster elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
+                  if [[ ! -z $ELASTICSEARCH_CR_LOOKUP ]]; then
+                    echo "Elasticsearch Cr is available"
+                    break
+                  fi
+                done
+
+                echo "Patching ElasticsearchCluster elasticsearch-master if not already patched"
+
+                ELASTICSEARCH_IMAGEPULLSECRET=$(oc get ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.imagePullSecret}')
+
+                if [[ -z $ELASTICSEARCH_IMAGEPULLSECRET ]]; then
+                  echo "elasticsearch-master needs to be patched"
+                  echo "patching elasticsearch-master and forcing reconcile..."
+                  oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
+                  oc delete Job elasticsearch-master-ibm-elasticsearch-create-snapshot-repo-job -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
+                  oc delete StatefulSet -n ${CPD_INSTANCE_NAMESPACE} --selector="app.kubernetes.io/instance=elasticsearch-master" --ignore-not-found
+                  oc patch --type='merge' ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\"}}"
+                  oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
                 fi
 
-                ELASTICSEARCH_CR_LOOKUP=$(oc get ElasticsearchCluster elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
-                if [[ ! -z $ELASTICSEARCH_CR_LOOKUP ]]; then
-                  echo "Elasticsearch Cr is available"
-                  break
+                echo
+                echo "Waiting for ibm-elasticsearch-operator to be ready again..."
+
+                wait_period=0
+                while true; do
+                  wait_period=$(($wait_period+60))
+                  if [ $wait_period -gt 1200 ]; then
+                    echo "Elasticsearch operator is not ready after 20 minutes of waiting. exiting..."
+                    exit 1
+                  else
+                    sleep 60
+                  fi
+
+                  ELASTICSEARCH_OPERATOR_LOOKUP=$(oc get deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+                  if [[ ! -z $ELASTICSEARCH_OPERATOR_LOOKUP ]]; then
+                    echo "Elasticsearch Operator is ready again"
+                    break
+                  fi
+                done
+              else
+                echo
+                echo "================================================================================"
+                echo "Wait for Open Search to be ready and patch if needed before checking ccsStatus"
+                echo "================================================================================"
+                echo
+
+                echo
+                echo "Waiting for elasticsearch-master to be ready..."
+
+                wait_period=0
+                while true; do
+                  wait_period=$(($wait_period+60))
+                  if [ $wait_period -gt 1800 ]; then
+                    echo "elasticsearch-master is not ready after 30 minutes of waiting. Exiting..."
+                    exit 1
+                  else
+                    sleep 60
+                  fi
+
+                  OPENSEARCH_CR_LOOKUP=$(oc get Cluster.opensearch.cloudpackopen.ibm.com elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found)
+                  if [[ ! -z $OPENSEARCH_CR_LOOKUP ]]; then
+                    echo "Opensearch Cr is available"
+                    break
+                  fi
+                done
+
+                echo "Patching Cluster elasticsearch-master if not already patched"
+
+                OPENSEARCH_IMAGEPULLSECRET=$(oc get Cluster.opensearch.cloudpackopen.ibm.com elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.imagePullSecret}')
+
+                if [[ -z $OPENSEARCH_IMAGEPULLSECRET ]]; then
+                  echo "elasticsearch-master needs to be patched"
+                  echo "patching elasticsearch-master and waiting for reconcile..."
+                  oc delete Job elasticsearch-master-snapshot-repo -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
+                  oc patch --type='merge' Cluster.opensearch.cloudpackopen.ibm.com elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\"}}"
+                  sleep 30
                 fi
-              done
 
-              echo "Patching ElasticsearchCluster elasticsearch-master if not already patched"
+                echo
+                echo "Waiting for Cluster elasticsearch-master to be available.."
 
-              ELASTICSEARCH_IMAGEPULLSECRET=$(oc get ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.imagePullSecret}')
+                wait_period=0
+                while true; do
+                  wait_period=$(($wait_period+60))
+                  if [ $wait_period -gt 3600 ]; then
+                    echo "Cluster elasticsearch-master is not ready after 1 hour of waiting. exiting..."
+                    exit 1
+                  else
+                    sleep 60
+                  fi
 
-              if [[ -z $ELASTICSEARCH_IMAGEPULLSECRET ]]; then
-                echo "elasticsearch-master needs to be patched"
-                echo "patching elasticsearch-master and forcing reconcile..."
-                oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
-                oc delete Job elasticsearch-master-ibm-elasticsearch-create-snapshot-repo-job -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
-                oc delete StatefulSet -n ${CPD_INSTANCE_NAMESPACE} --selector="app.kubernetes.io/instance=elasticsearch-master" --ignore-not-found
-                oc patch --type='merge' ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\"}}"
-                oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
+                  OPENSEARCH_CLUSTER_LOOKUP=$(oc get Cluster.opensearch.cloudpackopen.ibm.com elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found -ojsonpath='{.status.phase}')
+                  if [[ ! -z ${OPENSEARCH_CLUSTER_LOOKUP} && ${OPENSEARCH_CLUSTER_LOOKUP} == *"Available"* ]]; then
+                    echo "Cluster.opensearch.cloudpackopen.ibm.com elasticsearch-master is available"
+                    break
+                  fi
+                done
               fi
-
-              echo
-              echo "Waiting for ibm-elasticsearch-operator to be ready again..."
-
-              wait_period=0
-              while true; do
-                wait_period=$(($wait_period+60))
-                if [ $wait_period -gt 1200 ]; then
-                  echo "Elasticsearch operator is not ready after 20 minutes of waiting. exiting..."
-                  exit 1
-                else
-                  sleep 60
-                fi
-
-                ELASTICSEARCH_OPERATOR_LOOKUP=$(oc get deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
-                if [[ ! -z $ELASTICSEARCH_OPERATOR_LOOKUP ]]; then
-                  echo "Elasticsearch Operator is ready again"
-                  break
-                fi
-              done
 
               echo
               echo "================================================================================"
@@ -338,7 +412,6 @@ spec:
 
 
       restartPolicy: Never
-      serviceAccountName: spss-postcheck-sa
+      serviceAccountName: cpd-service-postsync-sa
   backoffLimit: 4
-
-
+{{- end }}

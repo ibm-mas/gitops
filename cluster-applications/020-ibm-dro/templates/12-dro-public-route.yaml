@@ -1,0 +1,24 @@
+{{- if .Values.dro_public_host }}
+
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: ibm-data-reporter
+  namespace: ibm-software-central
+  labels:
+    type: external
+spec:
+  host: {{ .Values.dro_public_host }}
+  to:
+    kind: Service
+    name: ibm-data-reporter-operator-controller-manager-metrics-service
+    weight: 100
+  port:
+    targetPort: 8443
+  tls:
+    termination: reencrypt
+    insecureEdgeTerminationPolicy: Redirect
+    name: dro-secret
+  wildcardPolicy: None
+{{- end }}

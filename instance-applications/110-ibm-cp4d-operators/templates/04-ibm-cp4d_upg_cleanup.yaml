@@ -7,7 +7,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:1b88f88a1a719d006ea1f4b8dcfd1c2625fa7ecc529c3267e7b4b6afaa1c8da0" }}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -24,7 +24,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -84,7 +84,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -102,6 +102,8 @@ spec:
               value: {{ .Values.cpd_platform_channel }}
             - name: CPD_PRODUCT_VERSION
               value: {{ .Values.cpd_product_version }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
           command:
             - /bin/sh
             - -c
@@ -131,9 +133,10 @@ spec:
 
               # Check available channels against the expected channel that would be installed
               if [[ ! -z "${CPFS_AVAILABLE_CHANNELS}" ]]; then
+                echo "check if expected channel ${CPFS_CHANNEL} is included the available channnels"
                 FOUND="false"
                 for channel in $CPFS_AVAILABLE_CHANNELS; do 
-                  echo "comparing ${channel} to ${CPFS_CHANNEL:1}"
+                  # echo "comparing ${channel} to ${CPFS_CHANNEL:1}"
                   compare=$(compare_channels ${channel} ${CPFS_CHANNEL:1})
                   if [[ ${compare} == 0 ]]; then
                     export FOUND="true"
@@ -142,6 +145,7 @@ spec:
                 done
 
                 if [[ ${FOUND} == "true" ]]; then
+                  echo "Expected channel ${CPFS_CHANNEL} was found in the available channel and therefore it is valid. Proceeding..."
                   echo
                   echo "Backup and Delete existing common-service-maps configmap"
                   echo "================================================================================"
@@ -157,7 +161,8 @@ spec:
                       echo "deleting existing common-service-maps ConfigMap..."
                       oc delete ConfigMap common-service-maps -n kube-public
                     fi
-
+                  else
+                    echo "Configmap not found. Nothing to do here. Proceeding..."
                   fi
                   
                   echo
@@ -180,6 +185,8 @@ spec:
                       oc delete Subscription --selector="operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
                       oc delete ClusterServiceVersion --selector="operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
                     fi
+                  else
+                    echo "IBM CP4D is not installed. Nothing to do here. Proceeding..."
                   fi
 
                   if [[ ! -z $OP2 ]]; then
@@ -194,8 +201,9 @@ spec:
                       oc delete Subscription --selector="operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
                       oc delete ClusterServiceVersion --selector="operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
                     fi
+                  else
+                    echo "IBM CPFS is not installed. Nothing to do here. Proceeding..."
                   fi
-                  echo "Done"
                 else
                   echo "The channel available in ibm-common-service-operator package manifest (v${CPFS_AVAILABLE_CHANNEL}) is older than the minimum required version ${CPFS_CHANNEL} needed by Cloud Pak for Data ${CPD_PRODUCT_VERSION}!"
                   echo "exiting..."
@@ -203,7 +211,55 @@ spec:
                 fi
               fi
 
+              # Update zen-operator subscription channel if it exists (for upgrades)
+              EXPECTED_ZEN_SUB_CHANNEL=$((oc get ConfigMap olm-utils-cm -n mas-${INSTANCE_ID}-syncres -o json) | yq '.data.release_components_meta' | yq '.zen.sub_channel')
+              CURRENT_ZEN_SUB_CHANNEL=$(oc get Subscription ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found -ojsonpath='{.spec.channel}')
+              echo
+              echo "Checking if Zen Operator channel exists and needs an update..."
+              echo
+              if [[ ! -z $CURRENT_ZEN_SUB_CHANNEL ]]; then
+                echo "============"
+                echo "Debug:"
+                echo "============"
+                echo "- Expected Zen Operator Channel....................... ${EXPECTED_ZEN_SUB_CHANNEL}"
+                echo "- Currently Installed Zen Operator Channel............ ${CURRENT_ZEN_SUB_CHANNEL}"
+
+                COMP_ZEN=$(compare_channels ${CURRENT_ZEN_SUB_CHANNEL:1} ${EXPECTED_ZEN_SUB_CHANNEL:1})
+    
+                if [[ $COMP_ZEN != 0 ]]; then
+                  echo "Updating Zen operator subscription channel from ${CURRENT_ZEN_SUB_CHANNEL} to ${EXPECTED_ZEN_SUB_CHANNEL}"
+                  oc patch Subscription ibm-zen-operator -n ${CPD_OPERATORS_NAMESPACE} -p '{"spec":{ "channel":"$EXPECTED_ZEN_SUB_CHANNEL"}}'
+                fi
+              else
+                echo "Zen Operator is not installed. Nothing to do here. Proceeding..."
+              fi
+              echo "Done"
+
+
       restartPolicy: Never
       serviceAccountName: cpd-sa
   backoffLimit: 4
 
+
+# After the backup and delete for the existing common-service-maps above. This part creates a config map in kube-public namespace with the values from this instance.
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: common-service-maps
+  namespace: kube-public
+  labels:
+    operator.ibm.com/managedByCsOperator: 'true'
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "087"
+data:
+  common-service-maps.yaml: |
+    controlNamespace: {{ .Values.cpd_cs_control_namespace }}
+    namespaceMapping:
+    - map-to-common-service-namespace: {{ .Values.cpd_instance_namespace }}
+      requested-from-namespace:
+      - {{ .Values.cpd_instance_namespace }}
+      - {{ .Values.cpd_operators_namespace }}

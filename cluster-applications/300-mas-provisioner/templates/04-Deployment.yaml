@@ -33,13 +33,15 @@ spec:
           ports:
             - containerPort: {{ .Values.service_port }}
           env:
+            - name: LOG_STORAGE_DIR
+              value: /opt/automation/mas-provisioner/logs
             {{- if not (empty .Values.pd_key) }}
             - name: PD_ROUTING_KEY
               value: /opt/automation/mas-provisioner/pdkey/key
             {{- end }}
             - name: MTLS_ENABLED
               value: "{{ .Values.enable_mtls }}"
-            {{- if not (empty .Values.csb_client_ca) }}
+            {{- if .Values.enable_mtls }}
             - name: CLIENT_CA_PATH
               value: /opt/automation/mas-provisioner/cert
             {{- end }}
@@ -55,6 +57,8 @@ spec:
             {{- end }}
             - name: STATUS_REPO_URL
               value: "{{ .Values.status_repo_url }}"
+            - name: MAS_ANNOTATIONS_REPO_URL
+              value: "{{ .Values.mas_annotations_repo_url }}"
             - name: ASYNC_POLL_INTERVAL
               value: "{{ .Values.async_poll_interval }}"
             - name: ASYNC_POLL_MAX
@@ -74,14 +78,24 @@ spec:
             {{- if not (empty .Values.instana_api_token) }}
             - name: INSTANA_API_TOKEN
               value: /opt/automation/mas-provisioner/instana/token
+            - name: INSTANA_URL_PREFIX
+              value: /opt/automation/mas-provisioner/instana/url_prefix
+            {{- end }}
+            {{- if not (empty .Values.git_root_ca) }}
+            - name: GIT_ROOTCACERT_PATH
+              value: /opt/automation/mas-provisioner/git/ca.crt
+            {{- end }}
+            {{- if not (empty .Values.git_root_ca) }}
+            - name: GIT_ROOTCACERT_PATH
+              value: /opt/automation/mas-provisioner/git-ca/ca.crt
             {{- end }}
           resources:
             limits:
               cpu: 200m
               memory: 512Mi
             requests:
-              cpu: 20m
-              memory: 64Mi
+              cpu: 100m
+              memory: 200Mi
           readinessProbe:
             httpGet:
               scheme: HTTPS
@@ -100,6 +114,8 @@ spec:
             periodSeconds: 60
             failureThreshold: 1
           volumeMounts:
+            - name: log-storage
+              mountPath: /opt/automation/mas-provisioner/logs
             - name: tls-certs
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/tls
@@ -113,7 +129,7 @@ spec:
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/pdkey
             {{- end }}
-            {{- if not (empty .Values.csb_client_ca) }}
+            {{- if .Values.enable_mtls }}
             - name: csb-client-ca
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/cert/clientca
@@ -128,13 +144,21 @@ spec:
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/ocm
             {{- end }}
+            {{- if not (empty .Values.git_root_ca) }}
+            - name: git-ca
+              readOnly: true
+              mountPath: /opt/automation/mas-provisioner/git-ca
+            {{- end }}
       serviceAccountName: mas-provisioner-sa
       imagePullSecrets:
         - name: ibm-entitlement
       volumes:
+        - name: log-storage
+          persistentVolumeClaim:
+            claimName: mas-provisioner-logs
         - name: tls-certs
           secret:
-            secretName: mas-provisioner-certificate
+            secretName: mas-provisioner-server-tls
         {{- if not (empty .Values.github_token) }}
         - name: git
           secret:
@@ -145,10 +169,17 @@ spec:
           secret:
             secretName: pd-routing-key-secret
         {{- end }}
-        {{- if not (empty .Values.csb_client_ca) }}
+        {{- if and .Values.enable_mtls (not (empty .Values.csb_client_ca)) }}
         - name: csb-client-ca
           secret:
             secretName: csb-ca
+        {{- else if and .Values.enable_mtls (empty .Values.csb_client_ca) }}
+        - name: csb-client-ca
+          secret:
+            secretName: mas-provisioner-client-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
         {{- end }}
         {{- if not (empty .Values.instana_api_token) }}
         - name: instana-api
@@ -159,5 +190,11 @@ spec:
         - name: ocm-api
           secret:
             secretName: ocm-api-secret
+        {{- end }}
+        {{- if not (empty .Values.git_root_ca) }}
+        - name: git-ca
+          secret:
+            secretName: git-ca
+            defaultMode: 420
         {{- end }}
       terminationGracePeriodSeconds: 60

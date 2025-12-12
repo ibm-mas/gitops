@@ -8,7 +8,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:1b88f88a1a719d006ea1f4b8dcfd1c2625fa7ecc529c3267e7b4b6afaa1c8da0" }}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -80,7 +80,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -169,10 +169,10 @@ spec:
                   sleep 60
                 fi
 
-                ZENCLUSTER_LOOKUP=$(oc get Cluster zen-metastore-edb -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.status}')
+                ZENCLUSTER_LOOKUP=$(oc get cluster.postgresql.k8s.enterprisedb.io zen-metastore-edb -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.status}')
                 if [[ ! -z $ZENCLUSTER_LOOKUP ]]; then
-                  LICENSE_EXP=$(oc get Cluster zen-metastore-edb -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.status.licenseStatus.licenseExpiration}')
-                  LICENSE_STATUS=$(oc get Cluster zen-metastore-edb -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.status.licenseStatus.licenseStatus}')
+                  LICENSE_EXP=$(oc get Cluster.postgresql.k8s.enterprisedb.io zen-metastore-edb -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.status.licenseStatus.licenseExpiration}')
+                  LICENSE_STATUS=$(oc get Cluster.postgresql.k8s.enterprisedb.io zen-metastore-edb -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -ojsonpath='{.status.licenseStatus.licenseStatus}')
 
                   echo
                   echo "================================================================================"
@@ -199,6 +199,7 @@ spec:
                   break
                 fi 
               done
+              echo "Done"
 
 
       restartPolicy: Never

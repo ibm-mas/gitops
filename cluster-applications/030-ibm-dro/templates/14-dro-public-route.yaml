@@ -1,5 +1,5 @@
 {{- if and (eq .Values.dns_provider "cis") (not .Values.mas_manual_cert_mgmt) }}
-{{- if .Values.dro_public_host }}
+{{- if .Values.dro_public_domain }}
 
 ---
 kind: Route
@@ -10,7 +10,7 @@ metadata:
   labels:
     type: external
 spec:
-  host: {{ .Values.dro_public_host }}
+  host: "{{ .Values.cluster.id }}.{{ .Values.dro_public_domain }}"
   to:
     kind: Service
     name: ibm-data-reporter-operator-controller-manager-metrics-service
@@ -21,8 +21,8 @@ spec:
     termination: reencrypt
     insecureEdgeTerminationPolicy: Redirect
     name: dro-secret
-    certificate: {{ .Values.dro_certificate }}
-    key: {{ .Values.dro_key }}
+    externalCertificate:
+      name: dro-tls-secret
   wildcardPolicy: None
 {{- end }}
 {{- end }}

@@ -1,4 +1,4 @@
-{{ if or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (not (empty .Values.ibm_db2u_databases)) (.Values.cluster_nonshared) }}
+{{ if or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (.Values.additional_infrastructure) (not (empty .Values.ibm_db2u_databases)) (.Values.cluster_nonshared) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
@@ -43,6 +43,15 @@ spec:
             extensions: {{ .Values.extensions }}
             additional_vpn: {{ .Values.additional_vpn }}
             cluster_nonshared: {{ .Values.cluster_nonshared }}
+            additional_infrastructure: {{ .Values.additional_infrastructure }}
+            {{- if .Values.additional_infrastructure_instances }}
+            additional_infrastructure_instances:
+            {{- range .Values.additional_infrastructure_instances }}
+              - name: "{{ .name }}"
+                cost: {{ .cost }}
+                reasonCode: "{{ .reasonCode }}"
+            {{- end }}
+            {{- end }}
             databases:
             {{- range $val := .Values.ibm_db2u_databases }}
             {{- if and (contains "sdb" $val.db2_instance_name) ($val.replica_db) }}

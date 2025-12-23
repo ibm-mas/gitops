@@ -1,6 +1,6 @@
 {{- if and (eq .Values.dns_provider "cis") (not .Values.mas_manual_cert_mgmt) }}
 {{- if .Values.dro_public_domain }}
-
+{{- $existingSecret := lookup "v1" "Secret" "ibm-software-central" "dro-client-tls" }}
 ---
 kind: Route
 apiVersion: route.openshift.io/v1
@@ -23,11 +23,11 @@ spec:
   tls:
     termination: reencrypt
     insecureEdgeTerminationPolicy: Redirect
-    {{- if (lookup "v1" "Secret" .Release.Namespace "dro-client-tls").data }}
+    {{- if $existingSecret }}
     certificate: |
-      {{- index (lookup "v1" "Secret" .Release.Namespace "dro-client-tls").data "tls.crt" | b64dec | nindent 6 }}
+      {{- index $existingSecret.data "tls.crt" | b64dec | nindent 6 }}
     key: |
-      {{- index (lookup "v1" "Secret" .Release.Namespace "dro-client-tls").data "tls.key" | b64dec | nindent 6 }}
+      {{- index $existingSecret.data "tls.key" | b64dec | nindent 6 }}
     {{- end }}
     # name: dro-secret
     # externalCertificate:

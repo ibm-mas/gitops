@@ -23,10 +23,12 @@ spec:
   tls:
     termination: reencrypt
     insecureEdgeTerminationPolicy: Redirect
+    {{- if (lookup "v1" "Secret" .Release.Namespace "dro-client-tls").data }}
     certificate: |
-      {{- (lookup "v1" "Secret" .Release.Namespace "dro-client-tls").data.["tls.crt"] | b64dec | nindent 6 }}
+      {{- index (lookup "v1" "Secret" .Release.Namespace "dro-client-tls").data "tls.crt" | b64dec | nindent 6 }}
     key: |
-      {{- (lookup "v1" "Secret" .Release.Namespace "dro-client-tls").data.["tls.key"] | b64dec | nindent 6 }}
+      {{- index (lookup "v1" "Secret" .Release.Namespace "dro-client-tls").data "tls.key" | b64dec | nindent 6 }}
+    {{- end }}
     # name: dro-secret
     # externalCertificate:
       # name: dro-tls-secret

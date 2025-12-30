@@ -1,4 +1,4 @@
-{{- if .Values.additional_infrastructure }}
+{{- if and .Values.additional_infrastructure (eq .Values.additional_infrastructure.install true) }}
 ---
 apiVersion: addons.mas.ibm.com/v1
 kind: GenericAddon
@@ -7,16 +7,12 @@ metadata:
   namespace: mas-{{ .Values.instance_id }}-core
   annotations:
     argocd.argoproj.io/sync-wave: "557"
-{{- if eq .Values.additional_infrastructure.install false }}
-    argocd.argoproj.io/sync-options: Delete=true
-{{- end }}
   labels:
     mas.ibm.com/configScope: system
     mas.ibm.com/instanceId: {{ .Values.instance_id }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
-{{- if eq .Values.additional_infrastructure.install true }}
 spec:
   displayName: "{{ .Values.instance_id }}-AdditionalInfrastructure"
   addonType: additional-infrastructure
@@ -31,6 +27,5 @@ spec:
 {{- end }}
 {{- else }}
       []
-{{- end }}
 {{- end }}
 {{- end }}

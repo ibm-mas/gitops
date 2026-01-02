@@ -1,4 +1,10 @@
-{{- if and .Values.additional_infrastructure (eq .Values.additional_infrastructure.install true) }}
+{{- /*
+CLI Image Digest - must be updated when CLI version changes
+*/}}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+
+{{- if .Values.additional_infrastructure }}
+{{- if eq .Values.additional_infrastructure.install true }}
 ---
 apiVersion: addons.mas.ibm.com/v1
 kind: GenericAddon
@@ -6,7 +12,7 @@ metadata:
   name: "{{ .Values.instance_id }}-addons-additional-infrastructure"
   namespace: mas-{{ .Values.instance_id }}-core
   annotations:
-    argocd.argoproj.io/sync-wave: "557"
+    argocd.argoproj.io/sync-wave: "558"
   labels:
     mas.ibm.com/configScope: system
     mas.ibm.com/instanceId: {{ .Values.instance_id }}
@@ -27,5 +33,53 @@ spec:
 {{- end }}
 {{- else }}
       []
+{{- end }}
+{{- else }}
+---
+# Cleanup Job - Deletes GenericAddon when install is set to false
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "cleanup-{{ .Values.instance_id }}-additional-infrastructure-{{ now | date "20060102-150405" }}"
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "557"
+  labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: cleanup-additional-infrastructure
+    spec:
+      serviceAccountName: argocd-application-controller
+      restartPolicy: Never
+      containers:
+      - name: cleanup
+        image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Checking for GenericAddon: {{ .Values.instance_id }}-addons-additional-infrastructure"
+          
+          if oc get genericaddon "{{ .Values.instance_id }}-addons-additional-infrastructure" -n mas-{{ .Values.instance_id }}-core &>/dev/null; then
+            echo "Found GenericAddon, deleting..."
+            oc delete genericaddon "{{ .Values.instance_id }}-addons-additional-infrastructure" -n mas-{{ .Values.instance_id }}-core --ignore-not-found=true
+            echo "GenericAddon deleted successfully"
+          else
+            echo "GenericAddon not found, nothing to clean up"
+          fi
+          
+          echo "Cleanup complete"
 {{- end }}
 {{- end }}

@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -181,11 +181,15 @@ spec:
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
+            - name: DRO_PUBLIC_DOMAIN
+              value: {{ .Values.dro_public_domain }}
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
             - name: ibm-data-reporter-operator-api-token
               mountPath: /etc/mas/creds/ibm-data-reporter-operator-api-token
+            - name: dro-client-tls
+              mountPath: /etc/mas/creds/dro-client-tls
           command:
             - /bin/sh
             - -c
@@ -252,6 +256,25 @@ spec:
                 exit 1
               fi
 
+              if [[ -n "${DRO_PUBLIC_DOMAIN}" ]]; then
+                wait_for_resource "certificate" "dro-client-certificate" "${DRO_NAMESPACE}"
+                export DRO_CLIENT_TLS_CA_CRT=$(cat /etc/mas/creds/dro-client-tls/ca.crt)
+                if [[ -z "${DRO_CLIENT_TLS_CA_CRT}" ]]; then
+                  echo "Failed to fetch ca.crt"
+                  exit 1
+                fi
+                export DRO_CLIENT_TLS_TLS_CRT=$(cat /etc/mas/creds/dro-client-tls/tls.crt)
+                if [[ -z "${DRO_CLIENT_TLS_TLS_CRT}" ]]; then
+                  echo "Failed to fetch tls.crt"
+                  exit 1
+                fi
+                export DRO_CLIENT_TLS_TLS_KEY=$(cat /etc/mas/creds/dro-client-tls/tls.key)
+                if [[ -z "${DRO_CLIENT_TLS_TLS_KEY}" ]]; then
+                  echo "Failed to fetch tls.key"
+                  exit 1
+                fi
+              fi
+
 
               # aws configure set aws_access_key_id $SM_AWS_ACCESS_KEY_ID
               # aws configure set aws_secret_access_key $SM_AWS_SECRET_ACCESS_KEY
@@ -263,7 +286,7 @@ spec:
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
               SECRET_NAME_DRO=${ACCOUNT_ID}/${CLUSTER_ID}/dro
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-dro-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\" }" "${TAGS}"
+              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\", \"dro_client_tls_ca_crt\": \"$DRO_CLIENT_TLS_CA_CRT\", \"dro_client_tls_tls_crt\": \"$DRO_CLIENT_TLS_TLS_CRT\", \"dro_client_tls_tls_key\": \"$DRO_CLIENT_TLS_TLS_KEY\" }" "${TAGS}"
 
 
       restartPolicy: Never
@@ -280,6 +303,11 @@ spec:
         - name: ibm-data-reporter-operator-api-token
           secret:
             secretName: ibm-data-reporter-operator-api-token
+            defaultMode: 420
+            optional: false
+        - name: dro-client-tls
+          secret:
+            secretName: dro-client-tls
             defaultMode: 420
             optional: false
   backoffLimit: 4

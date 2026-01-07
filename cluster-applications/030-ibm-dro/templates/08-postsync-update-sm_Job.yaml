@@ -260,17 +260,17 @@ spec:
 
               if [[ -n "${DRO_PUBLIC_DOMAIN}" ]]; then
                 wait_for_resource "certificate" "dro-client-certificate" "${DRO_NAMESPACE}"
-                export DRO_CLIENT_TLS_CA_CRT=$(cat /etc/mas/creds/dro-client-tls/ca.crt)
+                export DRO_CLIENT_TLS_CA_CRT=$(cat /etc/mas/creds/dro-client-tls/ca.crt | base64 -w0)
                 if [[ -z "${DRO_CLIENT_TLS_CA_CRT}" ]]; then
                   echo "Failed to fetch ca.crt"
                   exit 1
                 fi
-                export DRO_CLIENT_TLS_TLS_CRT=$(cat /etc/mas/creds/dro-client-tls/tls.crt)
+                export DRO_CLIENT_TLS_TLS_CRT=$(cat /etc/mas/creds/dro-client-tls/tls.crt | base64 -w0)
                 if [[ -z "${DRO_CLIENT_TLS_TLS_CRT}" ]]; then
                   echo "Failed to fetch tls.crt"
                   exit 1
                 fi
-                export DRO_CLIENT_TLS_TLS_KEY=$(cat /etc/mas/creds/dro-client-tls/tls.key)
+                export DRO_CLIENT_TLS_TLS_KEY=$(cat /etc/mas/creds/dro-client-tls/tls.key | base64 -w0)
                 if [[ -z "${DRO_CLIENT_TLS_TLS_KEY}" ]]; then
                   echo "Failed to fetch tls.key"
                   exit 1
@@ -288,7 +288,7 @@ spec:
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
               SECRET_NAME_DRO=${ACCOUNT_ID}/${CLUSTER_ID}/dro
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-dro-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\", \"dro_client_tls_ca_crt\": \"$DRO_CLIENT_TLS_CA_CRT\", \"dro_client_tls_tls_crt\": \"$DRO_CLIENT_TLS_TLS_CRT\", \"dro_client_tls_tls_key\": \"$DRO_CLIENT_TLS_TLS_KEY\" }" "${TAGS}"
+              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\", \"dro_client_tls_ca_crt_b64\": \"$DRO_CLIENT_TLS_CA_CRT\", \"dro_client_tls_tls_crt_b64\": \"$DRO_CLIENT_TLS_TLS_CRT\", \"dro_client_tls_tls_key_b64\": \"$DRO_CLIENT_TLS_TLS_KEY\" }" "${TAGS}"
 
 
       restartPolicy: Never

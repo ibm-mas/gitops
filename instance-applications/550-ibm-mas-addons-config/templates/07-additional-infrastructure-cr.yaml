@@ -122,15 +122,15 @@ spec:
         - |
           set -e
           echo "Checking for GenericAddon: {{ .Values.instance_id }}-addons-additional-infrastructure"
+
+          ADDON_LOOKUP=$(oc get genericaddon "{{ .Values.instance_id }}-addons-additional-infrastructure" -n mas-{{ .Values.instance_id }}-core --ignore-not-found)
           
-          if oc get genericaddon "{{ .Values.instance_id }}-addons-additional-infrastructure" -n mas-{{ .Values.instance_id }}-core &>/dev/null; then
+          if [[ ! -z $ADDON_LOOKUP ]] then
             echo "Found GenericAddon, deleting..."
-            oc delete genericaddon "{{ .Values.instance_id }}-addons-additional-infrastructure" -n mas-{{ .Values.instance_id }}-core --ignore-not-found=true
-            echo "GenericAddon deleted successfully"
+            oc delete genericaddon "{{ .Values.instance_id }}-addons-additional-infrastructure" -n mas-{{ .Values.instance_id }}-core
+            echo "Cleanup complete"
           else
-            echo "GenericAddon not found, nothing to clean up"
+            echo "GenericAddon not found, nothing to clean up. Exiting..."
           fi
-          
-          echo "Cleanup complete"
 {{- end }}
 {{- end }}

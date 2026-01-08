@@ -103,33 +103,34 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  ttlSecondsAfterFinished: 300
-  backoffLimit: 3
+  backoffLimit: 4
   template:
+{{- if .Values.custom_labels }}
     metadata:
       labels:
-        app: cleanup-additional-infrastructure
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
     spec:
       serviceAccountName: addon-cleanup-sa
       restartPolicy: Never
       containers:
-      - name: cleanup
-        image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
-        imagePullPolicy: IfNotPresent
-        command:
-        - /bin/bash
-        - -c
-        - |
-          set -e
-          echo "Checking for GenericAddon: {{ .Values.instance_id }}-addons-additional-infrastructure"
-          ADDON_LOOKUP=$(oc get GenericAddon.addons.mas.ibm.com "{{ .Values.instance_id }}-addons-additional-infrastructure" -n mas-{{ .Values.instance_id }}-core -o json --ignore-not-found)
-          
-          if [[ ! -z $ADDON_LOOKUP ]]; then
-            echo "Found GenericAddon, deleting..."
-            oc delete GenericAddon.addons.mas.ibm.com "{{ .Values.instance_id }}-addons-additional-infrastructure" -n mas-{{ .Values.instance_id }}-core
-            echo "Cleanup complete"
-          else
-            echo "GenericAddon not found, nothing to clean up. Exiting..."
-          fi
+        - name: cleanup
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Checking for GenericAddon: {{ .Values.instance_id }}-addons-additional-infrastructure"
+              ADDON_LOOKUP=$(oc get GenericAddon.addons.mas.ibm.com "{{ .Values.instance_id }}-addons-additional-infrastructure" -n mas-{{ .Values.instance_id }}-core -o json --ignore-not-found)
+              
+              if [[ ! -z $ADDON_LOOKUP ]]; then
+                echo "Found GenericAddon, deleting..."
+                oc delete GenericAddon.addons.mas.ibm.com "{{ .Values.instance_id }}-addons-additional-infrastructure" -n mas-{{ .Values.instance_id }}-core
+                echo "Cleanup complete"
+              else
+                echo "GenericAddon not found, nothing to clean up. Exiting..."
+              fi
 {{- end }}
 {{- end }}

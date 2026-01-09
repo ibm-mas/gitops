@@ -190,8 +190,8 @@ spec:
               mountPath: /etc/mas/creds/aws
             - name: ibm-data-reporter-operator-api-token
               mountPath: /etc/mas/creds/ibm-data-reporter-operator-api-token
-            - name: dro-client-tls
-              mountPath: /etc/mas/creds/dro-client-tls
+            - name: dro-tls-secret
+              mountPath: /etc/mas/creds/dro-tls-secret
           command:
             - /bin/sh
             - -c
@@ -260,17 +260,17 @@ spec:
 
               if [[ -n "${DRO_PUBLIC_DOMAIN}" ]]; then
                 wait_for_resource "certificate" "dro-client-certificate" "${DRO_NAMESPACE}"
-                export DRO_CLIENT_TLS_CA_CRT=$(cat /etc/mas/creds/dro-client-tls/ca.crt | base64 -w0)
+                export DRO_CLIENT_TLS_CA_CRT=$(cat /etc/mas/creds/dro-tls-secret/ca.crt | base64 -w0)
                 if [[ -z "${DRO_CLIENT_TLS_CA_CRT}" ]]; then
                   echo "Failed to fetch ca.crt"
                   exit 1
                 fi
-                export DRO_CLIENT_TLS_TLS_CRT=$(cat /etc/mas/creds/dro-client-tls/tls.crt | base64 -w0)
+                export DRO_CLIENT_TLS_TLS_CRT=$(cat /etc/mas/creds/dro-tls-secret/tls.crt | base64 -w0)
                 if [[ -z "${DRO_CLIENT_TLS_TLS_CRT}" ]]; then
                   echo "Failed to fetch tls.crt"
                   exit 1
                 fi
-                export DRO_CLIENT_TLS_TLS_KEY=$(cat /etc/mas/creds/dro-client-tls/tls.key | base64 -w0)
+                export DRO_CLIENT_TLS_TLS_KEY=$(cat /etc/mas/creds/dro-tls-secret/tls.key | base64 -w0)
                 if [[ -z "${DRO_CLIENT_TLS_TLS_KEY}" ]]; then
                   echo "Failed to fetch tls.key"
                   exit 1
@@ -307,9 +307,9 @@ spec:
             secretName: ibm-data-reporter-operator-api-token
             defaultMode: 420
             optional: false
-        - name: dro-client-tls
+        - name: dro-tls-secret
           secret:
-            secretName: dro-client-tls
+            secretName: dro-tls-secret
             defaultMode: 420
             optional: false
   backoffLimit: 4

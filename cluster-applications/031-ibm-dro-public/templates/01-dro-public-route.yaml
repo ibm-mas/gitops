@@ -1,19 +1,16 @@
-{{- if and (eq .Values.dns_provider "cis") (not .Values.mas_manual_cert_mgmt) }}
+{{- if (eq .Values.dns_provider "cis") }}
 {{- if .Values.dro_public_domain }}
-# {{- $existingSecret := lookup "v1" "Secret" "ibm-software-central" "dro-client-tls" }}
 ---
 kind: Route
 apiVersion: route.openshift.io/v1
 metadata:
   name: ibm-data-reporter-public-route
-  namespace: ibm-software-central
+  namespace: "{{ .Values.dro_namespace }}"
   labels:
     type: external
-    route.openshift.io/destination-ca-certificate-secret: dro-server-tls
 
 spec:
   host: "dro.{{ .Values.cluster_id }}.{{ .Values.dro_public_domain }}"
-  # host: "dro.apps.noble6.cp.fyre.ibm.com"
   to:
     kind: Service
     name: ibm-data-reporter-operator-controller-manager-metrics-service

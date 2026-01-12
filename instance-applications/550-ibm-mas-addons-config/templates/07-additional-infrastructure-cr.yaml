@@ -126,26 +126,26 @@ spec:
               
               # Function to delete a resource with verification
               function delete_resource() {
-                local RESOURCE=$1
-                local NAMESPACE=$2
-                local RESOURCE_NAME=$3
+                local RESOURCE_TYPE=$1
+                local RESOURCE_NAME=$2
+                local NAMESPACE=$3
                 
                 echo ""
                 echo "================================================================"
-                echo "Checking for ${RESOURCE}: ${RESOURCE_NAME} in namespace ${NAMESPACE}"
+                echo "Checking for ${RESOURCE_TYPE}/${RESOURCE_NAME} in namespace ${NAMESPACE}"
                 
                 set +e
-                RESOURCE_LOOKUP=$(oc get ${RESOURCE} "${RESOURCE_NAME}" -n ${NAMESPACE} -o json --ignore-not-found 2>/dev/null)
+                RESOURCE_LOOKUP=$(oc get ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} --ignore-not-found 2>/dev/null)
                 set -e
                 
                 if [[ -z "$RESOURCE_LOOKUP" ]]; then
-                  echo "${RESOURCE} not found, nothing to clean up."
+                  echo "${RESOURCE_TYPE}/${RESOURCE_NAME} not found, nothing to clean up."
                   return 0
                 fi
                 
-                echo "Found ${RESOURCE}, deleting..."
+                echo "Found ${RESOURCE_TYPE}/${RESOURCE_NAME}, deleting..."
                 set +e
-                oc delete ${RESOURCE} "${RESOURCE_NAME}" -n ${NAMESPACE} --timeout=300s --wait=true
+                oc delete ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} --timeout=300s --wait=true
                 DELETE_RC=$?
                 set -e
                 
@@ -154,32 +154,37 @@ spec:
                 fi
                 
                 # Verify deletion
-                echo "Verifying ${RESOURCE} is deleted..."
+                echo "Verifying ${RESOURCE_TYPE}/${RESOURCE_NAME} is deleted..."
                 set +e
-                RESOURCE_LOOKUP=$(oc get ${RESOURCE} "${RESOURCE_NAME}" -n ${NAMESPACE} -o json --ignore-not-found 2>/dev/null)
+                RESOURCE_LOOKUP=$(oc get ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} --ignore-not-found 2>/dev/null)
                 set -e
                 
                 if [[ -n "$RESOURCE_LOOKUP" ]]; then
-                  echo "ERROR: ${RESOURCE} still present after deletion attempt"
+                  echo "ERROR: ${RESOURCE_TYPE}/${RESOURCE_NAME} still present after deletion attempt"
                   return 1
                 fi
                 
-                echo "Successfully deleted ${RESOURCE}"
+                echo "Successfully deleted ${RESOURCE_TYPE}/${RESOURCE_NAME}"
                 return 0
               }
               
-              # Step 1: Delete the GenericAddon
+              # Step 1: Delete the GenericAddon (if it exists)
               echo "Step 1: Cleaning up GenericAddon resource"
-              delete_resource "GenericAddon.addons.mas.ibm.com" "mas-${INSTANCE_ID}-core" "${INSTANCE_ID}-addons-additional-infrastructure"
+              delete_resource "genericaddon" "${INSTANCE_ID}-addons-additional-infrastructure" "mas-${INSTANCE_ID}-core" || true
               
               # Step 2: Delete the Argo Application
               echo ""
               echo "Step 2: Cleaning up Argo Application"
               ARGO_APP_NAME="addons.${CLUSTER_ID}.${INSTANCE_ID}"
-              delete_resource "Application.argoproj.io" "${ARGO_NAMESPACE}" "${ARGO_APP_NAME}"
+              echo "Argo Application name: ${ARGO_APP_NAME}"
+              echo "Argo namespace: ${ARGO_NAMESPACE}"
+              
+              # Delete the Argo Application
+              delete_resource "application" "${ARGO_APP_NAME}" "${ARGO_NAMESPACE}"
               
               echo ""
               echo "================================================================"
-              echo "Cleanup complete - All resources successfully deleted"
+              echo "Cleanup complete - All resources processed"
+              echo "Note: The Argo Application deletion will trigger ArgoCD to clean up all managed resources"
 {{- end }}
 {{- end }}

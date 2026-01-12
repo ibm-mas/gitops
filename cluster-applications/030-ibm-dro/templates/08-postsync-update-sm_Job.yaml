@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -102,7 +102,7 @@ metadata:
   name: {{ $role_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "026"
+    argocd.argoproj.io/sync-wave: "036"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -112,8 +112,10 @@ rules:
       - get
     apiGroups:
       - route.openshift.io
+      - cert-manager.io
     resources:
       - routes
+      - certificates
 
 
 ---
@@ -123,7 +125,7 @@ metadata:
   name: {{ $rb_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "027"
+    argocd.argoproj.io/sync-wave: "037"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -144,7 +146,7 @@ metadata:
   name: {{ $_job_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "028"
+    argocd.argoproj.io/sync-wave: "038"
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -181,11 +183,15 @@ spec:
             # Hard-coded for now:
             - name: AVP_TYPE
               value: "aws"
+            - name: DRO_PUBLIC_DOMAIN
+              value: {{ .Values.dro_public_domain }}
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
             - name: ibm-data-reporter-operator-api-token
               mountPath: /etc/mas/creds/ibm-data-reporter-operator-api-token
+            - name: dro-tls-secret
+              mountPath: /etc/mas/creds/dro-tls-secret
           command:
             - /bin/sh
             - -c
@@ -252,6 +258,25 @@ spec:
                 exit 1
               fi
 
+              if [[ -n "${DRO_PUBLIC_DOMAIN}" ]]; then
+                wait_for_resource "certificate" "dro-client-certificate" "${DRO_NAMESPACE}"
+                export DRO_CLIENT_TLS_CA_CRT=$(cat /etc/mas/creds/dro-tls-secret/ca.crt | base64 -w0)
+                if [[ -z "${DRO_CLIENT_TLS_CA_CRT}" ]]; then
+                  echo "Failed to fetch ca.crt"
+                  exit 1
+                fi
+                export DRO_CLIENT_TLS_TLS_CRT=$(cat /etc/mas/creds/dro-tls-secret/tls.crt | base64 -w0)
+                if [[ -z "${DRO_CLIENT_TLS_TLS_CRT}" ]]; then
+                  echo "Failed to fetch tls.crt"
+                  exit 1
+                fi
+                export DRO_CLIENT_TLS_TLS_KEY=$(cat /etc/mas/creds/dro-tls-secret/tls.key | base64 -w0)
+                if [[ -z "${DRO_CLIENT_TLS_TLS_KEY}" ]]; then
+                  echo "Failed to fetch tls.key"
+                  exit 1
+                fi
+              fi
+
 
               # aws configure set aws_access_key_id $SM_AWS_ACCESS_KEY_ID
               # aws configure set aws_secret_access_key $SM_AWS_SECRET_ACCESS_KEY
@@ -263,7 +288,7 @@ spec:
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
               SECRET_NAME_DRO=${ACCOUNT_ID}/${CLUSTER_ID}/dro
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-dro-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\" }" "${TAGS}"
+              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\", \"dro_client_tls_ca_crt_b64\": \"$DRO_CLIENT_TLS_CA_CRT\", \"dro_client_tls_tls_crt_b64\": \"$DRO_CLIENT_TLS_TLS_CRT\", \"dro_client_tls_tls_key_b64\": \"$DRO_CLIENT_TLS_TLS_KEY\" }" "${TAGS}"
 
 
       restartPolicy: Never
@@ -280,6 +305,11 @@ spec:
         - name: ibm-data-reporter-operator-api-token
           secret:
             secretName: ibm-data-reporter-operator-api-token
+            defaultMode: 420
+            optional: false
+        - name: dro-tls-secret
+          secret:
+            secretName: dro-tls-secret
             defaultMode: 420
             optional: false
   backoffLimit: 4

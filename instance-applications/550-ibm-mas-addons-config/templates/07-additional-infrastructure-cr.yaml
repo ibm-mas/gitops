@@ -134,14 +134,9 @@ spec:
                 echo "================================================================"
                 echo "Checking for ${RESOURCE_TYPE}/${RESOURCE_NAME} in namespace ${NAMESPACE}"
                 
-                set +e
-                RESOURCE_LOOKUP=$(oc get ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} -o name 2>&1)
-                RC=$?
-                set -e
+                RESOURCE_LOOKUP=$(oc get ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} --ignore-not-found)
                 
-                echo "RESOURCE_LOOKUP value: '${RESOURCE_LOOKUP}'"
-                
-                if [[ $RC -ne 0 ]]; then
+                if [[ -z "$RESOURCE_LOOKUP" ]]; then
                   echo "${RESOURCE_TYPE}/${RESOURCE_NAME} not found, nothing to clean up."
                   return 0
                 fi
@@ -158,14 +153,9 @@ spec:
                 
                 # Verify deletion
                 echo "Verifying ${RESOURCE_TYPE}/${RESOURCE_NAME} is deleted..."
-                set +e
-                RESOURCE_LOOKUP=$(oc get ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} -o name 2>&1)
-                RC=$?
-                set -e
+                RESOURCE_LOOKUP=$(oc get ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} --ignore-not-found)
                 
-                echo "Verification RESOURCE_LOOKUP value: '${RESOURCE_LOOKUP}'"
-                
-                if [[ $RC -eq 0 ]]; then
+                if [[ ! -z "$RESOURCE_LOOKUP" ]]; then
                   echo "ERROR: ${RESOURCE_TYPE}/${RESOURCE_NAME} still present after deletion attempt"
                   return 1
                 fi

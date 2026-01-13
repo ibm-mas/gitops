@@ -37,7 +37,7 @@ CLI Image Digest - must be updated when CLI version changes
 
 {{- /*
 Cleanup Job - Runs when additional_infrastructure.install is set to false
-This job runs during ArgoCD sync to clean up the GenericAddon and Argo Application
+This job runs during ArgoCD sync to clean up the GenericAddon CR
 */}}
 {{- if .Values.additional_infrastructure }}
 {{- if eq .Values.additional_infrastructure.install false }}
@@ -56,7 +56,7 @@ Any changes to values in this dict will trigger a rerun of the job.
 {{- /*
 Increment this value whenever you make a change to an immutable field of the Job resource.
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -74,7 +74,7 @@ to identify old Job resources that should be pruned on behalf of ArgoCD.
 {{- $_job_cleanup_group := cat $_job_name_prefix .Values.instance_id | sha1sum }}
 
 ---
-# Cleanup Job - Deletes GenericAddon and Argo Application when install is set to false
+# Cleanup Job - Deletes GenericAddon CR when install is set to false
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -112,12 +112,8 @@ spec:
               cpu: 10m
               memory: 64Mi
           env:
-            - name: CLUSTER_ID
-              value: "{{ .Values.cluster_id }}"
             - name: INSTANCE_ID
               value: "{{ .Values.instance_id }}"
-            - name: ARGO_NAMESPACE
-              value: "{{ .Values.argo_namespace | default "openshift-gitops" }}"
           command:
             - /bin/bash
             - -c
@@ -164,23 +160,12 @@ spec:
                 return 0
               }
               
-              # Step 1: Delete the GenericAddon (if it exists)
-              echo "Step 1: Cleaning up GenericAddon resource"
-              delete_resource "genericaddons.addons.mas.ibm.com" "${INSTANCE_ID}-addons-additional-infrastructure" "mas-${INSTANCE_ID}-core" || true
-              
-              # Step 2: Delete the Argo Application
-              echo ""
-              echo "Step 2: Cleaning up Argo Application"
-              ARGO_APP_NAME="addons.${CLUSTER_ID}.${INSTANCE_ID}"
-              echo "Argo Application name: ${ARGO_APP_NAME}"
-              echo "Argo namespace: ${ARGO_NAMESPACE}"
-              
-              # Delete the Argo Application
-              delete_resource "application" "${ARGO_APP_NAME}" "${ARGO_NAMESPACE}"
+              # Delete the GenericAddon CR
+              echo "Cleaning up GenericAddon resource"
+              delete_resource "genericaddons.addons.mas.ibm.com" "${INSTANCE_ID}-addons-additional-infrastructure" "mas-${INSTANCE_ID}-core"
               
               echo ""
               echo "================================================================"
-              echo "Cleanup complete - All resources processed"
-              echo "Note: The Argo Application deletion will trigger ArgoCD to clean up all managed resources"
+              echo "Cleanup complete - GenericAddon CR removed"
 {{- end }}
 {{- end }}

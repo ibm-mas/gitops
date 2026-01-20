@@ -1,3 +1,4 @@
+{{- if or .Values.allow_list .Values.additional_vpn .Values.enhanced_dr .Values.extensions .Values.replica_db .Values.cluster_nonshared .Values.application_configuration .Values.additional_resources }}
 ---
 kind: ServiceAccount
 apiVersion: v1
@@ -12,10 +13,11 @@ metadata:
 {{- end }}
 
 ---
-kind: ClusterRole
+kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: addon-cleanup-role
+  namespace: mas-{{ .Values.instance_id }}-core
   annotations:
     argocd.argoproj.io/sync-wave: "557"
 {{- if .Values.custom_labels }}
@@ -34,10 +36,11 @@ rules:
       - genericaddons
 
 ---
-kind: ClusterRoleBinding
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: addon-cleanup-rb
+  namespace: mas-{{ .Values.instance_id }}-core
   annotations:
     argocd.argoproj.io/sync-wave: "558"
 {{- if .Values.custom_labels }}
@@ -50,5 +53,6 @@ subjects:
     namespace: mas-{{ .Values.instance_id }}-core
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: addon-cleanup-role
+{{- end }}

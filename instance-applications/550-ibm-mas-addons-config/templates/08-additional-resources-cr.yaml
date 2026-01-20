@@ -1,0 +1,31 @@
+{{- if and .Values.additional_resources (eq .Values.additional_resources.install true) }}
+---
+apiVersion: addons.mas.ibm.com/v1
+kind: GenericAddon
+metadata:
+  name: "{{ .Values.instance_id }}-addons-additional-resources"
+  namespace: mas-{{ .Values.instance_id }}-core
+  annotations:
+    argocd.argoproj.io/sync-wave: "559"
+  labels:
+    mas.ibm.com/configScope: system
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  displayName: "{{ .Values.instance_id }}-AdditionalResources"
+  addonType: additional-resources
+  config:
+    addonIdentifier: {{ .Values.instance_id }}
+    instances:
+{{- if .Values.additional_resources.instances }}
+{{- range .Values.additional_resources.instances }}
+      - name: {{ .name }}
+        cost: {{ .cost }}
+        reasonCode: {{ .reasonCode }}
+{{- end }}
+{{- else }}
+      []
+{{- end }}
+{{- end }}

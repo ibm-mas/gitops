@@ -1,51 +1,16 @@
-{{- if and .Values.additional_infrastructure (eq .Values.additional_infrastructure.install true) }}
----
-apiVersion: addons.mas.ibm.com/v1
-kind: GenericAddon
-metadata:
-  name: "{{ .Values.instance_id }}-addons-additional-infrastructure"
-  namespace: mas-{{ .Values.instance_id }}-core
-  annotations:
-    argocd.argoproj.io/sync-wave: "559"
-  labels:
-    mas.ibm.com/configScope: system
-    mas.ibm.com/instanceId: {{ .Values.instance_id }}
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  displayName: "{{ .Values.instance_id }}-AdditionalInfrastructure"
-  addonType: additional-infrastructure
-  config:
-    addonIdentifier: {{ .Values.instance_id }}
-    instances:
-{{- if .Values.additional_infrastructure.instances }}
-{{- range .Values.additional_infrastructure.instances }}
-      - name: {{ .name }}
-        cost: {{ .cost }}
-        reasonCode: {{ .reasonCode }}
-{{- end }}
-{{- else }}
-      []
-{{- end }}
-{{- end }}
-
 {{- /*
 CLI Image Digest - must be updated when CLI version changes
 */}}
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
-{{- /*
-Cleanup Job - Runs when additional_infrastructure.install is set to false
-This job runs during ArgoCD sync to clean up the GenericAddon CR
-*/}}
-{{- if .Values.additional_infrastructure }}
-{{- if eq .Values.additional_infrastructure.install false }}
+{{- if .Values.additional_resources }}
+{{- if eq .Values.additional_infrastructure.install false) }}
 
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
-{{- $_job_name_prefix := "cleanup-additional-infrastructure" }}
+{{- $_job_name_prefix := "cleanup-addons" }}
+{{- $_addon_type := "additional-resources" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -115,6 +80,8 @@ spec:
           env:
             - name: INSTANCE_ID
               value: "{{ .Values.instance_id }}"
+            - name: ADDON_TYPE
+              value: "{{ $_addon_type }}"
           command:
             - /bin/bash
             - -c
@@ -161,12 +128,12 @@ spec:
                 return 0
               }
               
-              # Delete the GenericAddon CR
-              echo "Cleaning up GenericAddon resource"
-              delete_resource "genericaddons.addons.mas.ibm.com" "${INSTANCE_ID}-addons-additional-infrastructure" "mas-${INSTANCE_ID}-core"
+              # Delete the GenericAddon CR using the addon type from environment
+              echo "Cleaning up GenericAddon resource for addon type: ${ADDON_TYPE}"
+              delete_resource "genericaddons.addons.mas.ibm.com" "${INSTANCE_ID}-addons-${ADDON_TYPE}" "mas-${INSTANCE_ID}-core"
               
               echo ""
               echo "================================================================"
-              echo "Cleanup complete - GenericAddon CR removed"
+              echo "Cleanup complete - GenericAddon CR removed for ${ADDON_TYPE}"
 {{- end }}
 {{- end }}

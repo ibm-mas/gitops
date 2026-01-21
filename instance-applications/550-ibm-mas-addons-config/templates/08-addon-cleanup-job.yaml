@@ -3,8 +3,15 @@ CLI Image Digest - must be updated when CLI version changes
 */}}
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
-{{- if .Values.additional_resources }}
-{{- if eq .Values.additional_resources.install false }}
+{{- if not .Values.additional_resources }}
+{{- /* Cleanup job runs when additional_resources section is removed from the config */}}
+{{- /* Check if the GenericAddon CR actually exists before creating cleanup job */}}
+{{- $_addon_cr_name := printf "%s-addons-additional-resources" .Values.instance_id }}
+{{- $_addon_namespace := printf "mas-%s-core" .Values.instance_id }}
+{{- $_addon_exists := lookup "addons.mas.ibm.com/v1" "GenericAddon" $_addon_namespace $_addon_cr_name }}
+
+{{- if $_addon_exists }}
+{{- /* Only create cleanup job if the CR actually exists */}}
 
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.

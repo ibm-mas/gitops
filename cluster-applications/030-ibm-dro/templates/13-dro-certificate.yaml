@@ -1,0 +1,20 @@
+{{- if (eq .Values.dns_provider "cis") }}
+{{- if .Values.dro_public_domain }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "139"
+  name: dro-tls-cert
+  namespace: "{{ .Values.dro_namespace }}"
+spec:
+  secretName: dro-tls-secret
+  issuerRef:
+    name: letsencrypt-staging
+    kind: ClusterIssuer
+  commonName: dro-{{ .Values.cluster_id }}
+  privateKey:
+    rotationPolicy: Always
+{{- end }}
+{{- end }}

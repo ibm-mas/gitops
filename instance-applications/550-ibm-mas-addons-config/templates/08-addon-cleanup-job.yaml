@@ -44,6 +44,14 @@ to identify old Job resources that should be pruned on behalf of ArgoCD.
 */}}
 {{- $_job_cleanup_group := cat $_job_name_prefix .Values.instance_id | sha1sum }}
 
+# NOTE: depends on resources created in ibm-mas-suite chart (01-postdelete-crs-resources)
+# The values below must align with the values in that file
+{{ $role_name := "postdelete-delete-cr-r" }}
+{{ $sa_name :=   "postdelete-delete-cr-sa" }}
+{{ $rb_name :=   "postdelete-delete-cr-rb" }}
+{{ $np_name :=   "postdelete-delete-cr-np" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
+
 ---
 # Cleanup Job - Deletes GenericAddon CR when install is set to false
 apiVersion: batch/v1
@@ -65,12 +73,12 @@ spec:
   template:
     metadata:
       labels:
-        app: addon-cleanup-job
+        app: {{ $job_label }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
-      serviceAccountName: addon-cleanup-sa
+      serviceAccountName: {{ $sa_name }}
       restartPolicy: Never
       containers:
         - name: cleanup
@@ -155,33 +163,11 @@ spec:
               echo "Cleaning up GenericAddon resource for addon type: ${ADDON_TYPE}"
               delete_resource "genericaddons.addons.mas.ibm.com" "${INSTANCE_ID}-addons-${ADDON_TYPE}" "mas-${INSTANCE_ID}-core"
               
-              # Delete the RoleBinding for addon cleanup (before Role)
               echo ""
               echo "================================================================"
-              echo "Cleaning up RoleBinding for addon cleanup"
-              delete_resource "rolebinding" "addon-cleanup-rb" "mas-${INSTANCE_ID}-core"
-              
-              # Delete the Role for addon cleanup
+              echo "Cleanup complete - GenericAddon CR removed for ${ADDON_TYPE}"
               echo ""
-              echo "================================================================"
-              echo "Cleaning up Role for addon cleanup"
-              delete_resource "role" "addon-cleanup-role" "mas-${INSTANCE_ID}-core"
-              
-              # Delete the ServiceAccount for addon cleanup
-              echo ""
-              echo "================================================================"
-              echo "Cleaning up ServiceAccount for addon cleanup"
-              delete_resource "serviceaccount" "addon-cleanup-sa" "mas-${INSTANCE_ID}-core"
-              
-              # IMPORTANT: Delete NetworkPolicy LAST to maintain network connectivity
-              # Deleting it earlier would block API server access for subsequent commands
-              echo ""
-              echo "================================================================"
-              echo "Cleaning up NetworkPolicy for addon cleanup job (deleting last to maintain connectivity)"
-              delete_resource "networkpolicy" "${INSTANCE_ID}-allow-oc-addon-cleanup-job" "mas-${INSTANCE_ID}-core"
-              
-              echo ""
-              echo "================================================================"
-              echo "Cleanup complete - All resources removed for ${ADDON_TYPE}"
+              echo "NOTE: Shared RBAC resources (ServiceAccount, Role, RoleBinding, NetworkPolicy)"
+              echo "are managed by the ibm-mas-suite chart and will be cleaned up separately."
 {{- end }}
 {{- end }}

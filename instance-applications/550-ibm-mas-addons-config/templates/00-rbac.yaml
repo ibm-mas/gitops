@@ -1,4 +1,3 @@
-{{- if or .Values.allow_list .Values.additional_vpn .Values.enhanced_dr .Values.extensions .Values.replica_db .Values.cluster_nonshared .Values.application_configuration (and .Values.additional_resources .Values.additional_resources.install) }}
 ---
 kind: ServiceAccount
 apiVersion: v1
@@ -38,6 +37,34 @@ rules:
       - addons.mas.ibm.com
     resources:
       - genericaddons
+  - verbs:
+      - get
+      - list
+      - delete
+      - watch
+    apiGroups:
+      - networking.k8s.io
+    resources:
+      - networkpolicies
+  - verbs:
+      - get
+      - list
+      - delete
+      - watch
+    apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+  - verbs:
+      - get
+      - list
+      - delete
+      - watch
+    apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
 
 ---
 kind: RoleBinding
@@ -61,4 +88,3 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: addon-cleanup-role
-{{- end }}

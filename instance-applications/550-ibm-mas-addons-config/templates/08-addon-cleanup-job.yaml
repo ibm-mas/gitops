@@ -6,11 +6,18 @@ CLI Image Digest - must be updated when CLI version changes
 {{- if .Values.additional_resources }}
 {{- if eq .Values.additional_resources.install false }}
 
+{{- $_addon_type := "additional-resources" }}
+{{- $_addon_cr_name := printf "%s-addons-%s" .Values.instance_id $_addon_type }}
+{{- $_namespace := printf "mas-%s-core" .Values.instance_id }}
+
+{{- /* Check if the GenericAddon CR exists before creating the cleanup job */}}
+{{- $genericAddon := lookup "addons.mas.ibm.com/v1" "GenericAddon" $_namespace $_addon_cr_name }}
+{{- if $genericAddon }}
+
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
 {{- $_job_name_prefix := "cleanup-addons" }}
-{{- $_addon_type := "additional-resources" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -115,10 +122,27 @@ spec:
                 
                 if [[ $DELETE_RC -ne 0 ]]; then
                   echo "Warning: Delete command returned non-zero exit code: $DELETE_RC"
+                  echo "Attempting to remove finalizers..."
+                  
+                  # Try to patch out finalizers if delete failed
+                  set +e
+                  oc patch ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} \
+                    --type json \
+                    -p='[{"op": "remove", "path": "/metadata/finalizers"}]' 2>&1
+                  PATCH_RC=$?
+                  set -e
+                  
+                  if [[ $PATCH_RC -eq 0 ]]; then
+                    echo "Successfully removed finalizers, retrying deletion..."
+                    set +e
+                    oc delete ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} --timeout=60s --wait=true 2>&1
+                    set -e
+                  fi
                 fi
                 
                 # Verify deletion
                 echo "Verifying ${RESOURCE_TYPE}/${RESOURCE_NAME} is deleted..."
+                sleep 3
                 RESOURCE_LOOKUP=$(oc get ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} --ignore-not-found)
                 
                 if [[ ! -z "$RESOURCE_LOOKUP" ]]; then
@@ -134,8 +158,33 @@ spec:
               echo "Cleaning up GenericAddon resource for addon type: ${ADDON_TYPE}"
               delete_resource "genericaddons.addons.mas.ibm.com" "${INSTANCE_ID}-addons-${ADDON_TYPE}" "mas-${INSTANCE_ID}-core"
               
+              # Delete the NetworkPolicy for addon cleanup job
               echo ""
               echo "================================================================"
-              echo "Cleanup complete - GenericAddon CR removed for ${ADDON_TYPE}"
+              echo "Cleaning up NetworkPolicy for addon cleanup job"
+              delete_resource "networkpolicy" "${INSTANCE_ID}-allow-oc-addon-cleanup-job" "mas-${INSTANCE_ID}-core"
+              
+              # Delete the ServiceAccount for addon cleanup
+              echo ""
+              echo "================================================================"
+              echo "Cleaning up ServiceAccount for addon cleanup"
+              delete_resource "serviceaccount" "addon-cleanup-sa" "mas-${INSTANCE_ID}-core"
+              
+              # Delete the Role for addon cleanup
+              echo ""
+              echo "================================================================"
+              echo "Cleaning up Role for addon cleanup"
+              delete_resource "role" "addon-cleanup-role" "mas-${INSTANCE_ID}-core"
+              
+              # Delete the RoleBinding for addon cleanup
+              echo ""
+              echo "================================================================"
+              echo "Cleaning up RoleBinding for addon cleanup"
+              delete_resource "rolebinding" "addon-cleanup-rb" "mas-${INSTANCE_ID}-core"
+              
+              echo ""
+              echo "================================================================"
+              echo "Cleanup complete - All resources removed for ${ADDON_TYPE}"
+{{- end }}
 {{- end }}
 {{- end }}

@@ -1,33 +1,65 @@
-{{- if .Values.use_postdelete_hooks }}
-
 {{- /*
 CLI Image Digest - must be updated when CLI version changes
 */}}
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
+{{- if .Values.additional_resources }}
+{{- if eq .Values.additional_resources.install false }}
+
 {{- /*
-PostDelete hook - This job will run when the ArgoCD application is deleted
-It will clean up the GenericAddon CR that was created (if it exists)
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
+{{- $_job_name_prefix := "cleanup-addons" }}
+{{- $_addon_type := "additional-resources" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+*/}}
+{{- $_job_version := "v4" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
+This ensures ArgoCD will create a new job resource instead of attempting to update an immutable field.
+*/}}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
+{{- /*
+Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+When the auto_delete flag is not set on the root application, a CronJob in the cluster uses this label
+to identify old Job resources that should be pruned on behalf of ArgoCD.
+*/}}
+{{- $_job_cleanup_group := cat $_job_name_prefix .Values.instance_id | sha1sum }}
+
 ---
+# Cleanup Job - Deletes GenericAddon CR when install is set to false
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: postdelete-addon-cleanup-job
+  name: {{ $_job_name }}
   namespace: mas-{{ .Values.instance_id }}-core
   annotations:
-    argocd.argoproj.io/hook: PostDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
+    argocd.argoproj.io/sync-wave: "559"
   labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
   backoffLimit: 4
+  ttlSecondsAfterFinished: 300
   template:
     metadata:
       labels:
-        app: postdelete-addon-cleanup-job
+        app: addon-cleanup-job
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
@@ -48,60 +80,60 @@ spec:
           env:
             - name: INSTANCE_ID
               value: "{{ .Values.instance_id }}"
-            - name: CR_NAMESPACE
-              value: "mas-{{ .Values.instance_id }}-core"
-            - name: CR_NAME
-              value: "{{ .Values.instance_id }}-addons-additional-resources"
-            - name: CR_API_VERSION
-              value: "addons.mas.ibm.com/v1"
-            - name: CR_KIND
-              value: "GenericAddon"
+            - name: ADDON_TYPE
+              value: "{{ $_addon_type }}"
           command:
-            - /bin/sh
+            - /bin/bash
             - -c
             - |
               set -e
               
-              function delete_oc_resource(){
-                RESOURCE=$1
-                NAMESPACE=$2
-                echo
-                echo "------------------------------------------------------------------"
-                echo "Check if resource $RESOURCE is present in namespace $NAMESPACE "
+              # Function to delete a resource with verification
+              function delete_resource() {
+                local RESOURCE_TYPE=$1
+                local RESOURCE_NAME=$2
+                local NAMESPACE=$3
                 
-                # don't want a non-zero rc from oc get to cause the job to fail
-                # so, temporarily set +e
-                set +e
-                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
-                set -e
-                if [[ -z "${RESOURCE_NAME}" ]]; then
-                  echo "$RESOURCE not found, skipping"
+                echo ""
+                echo "================================================================"
+                echo "Checking for ${RESOURCE_TYPE}/${RESOURCE_NAME} in namespace ${NAMESPACE}"
+                
+                RESOURCE_LOOKUP=$(oc get ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} --ignore-not-found)
+                
+                if [[ -z "$RESOURCE_LOOKUP" ]]; then
+                  echo "${RESOURCE_TYPE}/${RESOURCE_NAME} not found, nothing to clean up."
                   return 0
                 fi
                 
-                echo "oc delete resource $RESOURCE in namespace $NAMESPACE "
-                
-                # don't want a non-zero rc from oc delete to cause the job to fail
-                # so, temporarily set +e
+                echo "Found ${RESOURCE_TYPE}/${RESOURCE_NAME}, deleting..."
                 set +e
-                oc delete $RESOURCE -n $NAMESPACE --timeout=300s --wait=true
-                return_code=$?
+                oc delete ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} --timeout=300s --wait=true
+                DELETE_RC=$?
                 set -e
                 
-                echo "Verify that resource $RESOURCE is now absent in namespace $NAMESPACE "
-                # don't want a non-zero rc from oc get to cause the job to fail
-                # so, temporarily set +e
-                set +e
-                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
-                set -e
-                if [[ -n "${RESOURCE_NAME}" ]]; then
-                  echo "$RESOURCE still present, failing job"
-                  exit 1
+                if [[ $DELETE_RC -ne 0 ]]; then
+                  echo "Warning: Delete command returned non-zero exit code: $DELETE_RC"
                 fi
                 
-                echo "... verified"
+                # Verify deletion
+                echo "Verifying ${RESOURCE_TYPE}/${RESOURCE_NAME} is deleted..."
+                RESOURCE_LOOKUP=$(oc get ${RESOURCE_TYPE} ${RESOURCE_NAME} -n ${NAMESPACE} --ignore-not-found)
+                
+                if [[ ! -z "$RESOURCE_LOOKUP" ]]; then
+                  echo "ERROR: ${RESOURCE_TYPE}/${RESOURCE_NAME} still present after deletion attempt"
+                  return 1
+                fi
+                
+                echo "Successfully deleted ${RESOURCE_TYPE}/${RESOURCE_NAME}"
                 return 0
               }
               
-              delete_oc_resource "${CR_KIND}.${CR_API_VERSION}/${CR_NAME}" "${CR_NAMESPACE}"
+              # Delete the GenericAddon CR using the addon type from environment
+              echo "Cleaning up GenericAddon resource for addon type: ${ADDON_TYPE}"
+              delete_resource "genericaddons.addons.mas.ibm.com" "${INSTANCE_ID}-addons-${ADDON_TYPE}" "mas-${INSTANCE_ID}-core"
+              
+              echo ""
+              echo "================================================================"
+              echo "Cleanup complete - GenericAddon CR removed for ${ADDON_TYPE}"
+{{- end }}
 {{- end }}

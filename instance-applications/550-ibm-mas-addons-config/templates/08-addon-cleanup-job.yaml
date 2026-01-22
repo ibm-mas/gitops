@@ -155,17 +155,11 @@ spec:
               echo "Cleaning up GenericAddon resource for addon type: ${ADDON_TYPE}"
               delete_resource "genericaddons.addons.mas.ibm.com" "${INSTANCE_ID}-addons-${ADDON_TYPE}" "mas-${INSTANCE_ID}-core"
               
-              # Delete the NetworkPolicy for addon cleanup job
+              # Delete the RoleBinding for addon cleanup (before Role)
               echo ""
               echo "================================================================"
-              echo "Cleaning up NetworkPolicy for addon cleanup job"
-              delete_resource "networkpolicy" "${INSTANCE_ID}-allow-oc-addon-cleanup-job" "mas-${INSTANCE_ID}-core"
-              
-              # Delete the ServiceAccount for addon cleanup
-              echo ""
-              echo "================================================================"
-              echo "Cleaning up ServiceAccount for addon cleanup"
-              delete_resource "serviceaccount" "addon-cleanup-sa" "mas-${INSTANCE_ID}-core"
+              echo "Cleaning up RoleBinding for addon cleanup"
+              delete_resource "rolebinding" "addon-cleanup-rb" "mas-${INSTANCE_ID}-core"
               
               # Delete the Role for addon cleanup
               echo ""
@@ -173,11 +167,18 @@ spec:
               echo "Cleaning up Role for addon cleanup"
               delete_resource "role" "addon-cleanup-role" "mas-${INSTANCE_ID}-core"
               
-              # Delete the RoleBinding for addon cleanup
+              # Delete the ServiceAccount for addon cleanup
               echo ""
               echo "================================================================"
-              echo "Cleaning up RoleBinding for addon cleanup"
-              delete_resource "rolebinding" "addon-cleanup-rb" "mas-${INSTANCE_ID}-core"
+              echo "Cleaning up ServiceAccount for addon cleanup"
+              delete_resource "serviceaccount" "addon-cleanup-sa" "mas-${INSTANCE_ID}-core"
+              
+              # IMPORTANT: Delete NetworkPolicy LAST to maintain network connectivity
+              # Deleting it earlier would block API server access for subsequent commands
+              echo ""
+              echo "================================================================"
+              echo "Cleaning up NetworkPolicy for addon cleanup job (deleting last to maintain connectivity)"
+              delete_resource "networkpolicy" "${INSTANCE_ID}-allow-oc-addon-cleanup-job" "mas-${INSTANCE_ID}-core"
               
               echo ""
               echo "================================================================"

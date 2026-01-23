@@ -1,4 +1,5 @@
 {{- if not .Values.additional_resources }}
+
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
@@ -64,16 +65,13 @@ spec:
             - /bin/sh
             - -c
             - |
-
               set -e
-
               function delete_oc_resource(){
                 RESOURCE=$1
                 NAMESPACE=$2
                 echo
                 echo "------------------------------------------------------------------"
                 echo "Check if resource $RESOURCE is present in namespace $NAMESPACE "
-
                 # don't want a non-zero rc from oc delete to cause the job to fail
                 # so, temporarily set +e
                 set +e
@@ -83,16 +81,13 @@ spec:
                   echo "$RESOURCE not found, skipping"
                   return 0
                 fi
-
                 echo "oc delete resource $RESOURCE in namespace $NAMESPACE "
-
                 # don't want a non-zero rc from oc delete to cause the job to fail (since we then want to try patching out the finalizers)
                 # so, temporarily set +e
                 set +e
                 oc delete $RESOURCE -n $NAMESPACE --timeout=300s --wait=true
                 return_code=$?
                 set -e
-
                 echo "Verify that resource $RESOURCE is now absent in namespace $NAMESPACE "
                 # don't want a non-zero rc from oc delete to cause the job to fail
                 # so, temporarily set +e
@@ -103,14 +98,11 @@ spec:
                   echo "$RESOURCE still present, failing job"
                   exit 1
                 fi
-
                 echo "... verified"
                 return 0
                 
               }
-
               delete_oc_resource "${CR_KIND}.${CR_API_VERSION}/${CR_NAME}" "${CR_NAMESPACE}"
-
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}
   backoffLimit: 4

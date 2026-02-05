@@ -465,7 +465,7 @@ spec:
                     if [[ ! -z $timestamp ]]; then
                       backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "ls /mnt/backup/standby | grep ${timestamp}" db2inst1`
                       echo "backup_filename - $backup_filename"
-                      if [[ ${timestamp:0:8} == `date +%Y%m%d` ]]; then
+                      if [[ e == `date +%Y%m%d` ]]; then
                         is_backup_file_available=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f /mnt/backup/standby/$backup_filename ]; then echo 'true'; else echo 'false'; fi"`
                       fi
                     fi
@@ -480,7 +480,7 @@ spec:
                     echo ""
                     timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
                     echo "Timestamp of backup is ${timestamp}"
-
+ 
                     backup_filename=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "ls /mnt/backup/standby | grep ${timestamp}" db2inst1`
                     echo "Backup filename is ${backup_filename}"
                   else
@@ -494,7 +494,7 @@ spec:
 
                 # copy backup to standby if it is not there or not a valid image
                 echo "Checking if backup file was copied already to standby c-${DB2_INSTANCE_NAME}-db2u-0"
-                is_backup_copied=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f /mnt/backup/primary-backup/${backup_filename} ]; then echo 'true'; else echo 'false'; fi"`
+                is_backup_copied=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "if [ -f lsprimary-backup/${backup_filename} ]; then echo 'true'; else echo 'false'; fi"`
 
                 if [[ $rc != 0 || $is_backup_copied == 'false' ]]; then
                   echo ""

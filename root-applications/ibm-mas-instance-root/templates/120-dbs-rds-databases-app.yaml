@@ -3,7 +3,8 @@
   For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
   */}}
 
-  {{- range $i, $value := .Values.ibm_dbs_rds_databases }}
+{{- range $i, $value := .Values.ibm_dbs_rds_databases }}
+{{- if contains "rds" $value.db2_instance_name }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -38,12 +39,58 @@ spec:
       env:
         - name: {{ $.Values.avp.values_varname }}
           value: |
+            # Basic connection configuration
             rds_admin_db_name: "{{ $value.rds_admin_db_name }}"
             host: "{{ $value.host }}"
             port: "{{ $value.port }}"
             dbname: "{{ $value.dbname }}"
             user: "{{ $value.user }}"
             password: "{{ $value.password }}"
+            
+            # Additional basic values
+            db2_namespace: "{{ $value.db2_namespace }}"
+            {{- if $value.mas_application_id }}
+            mas_application_id: "{{ $value.mas_application_id }}"
+            {{- end }}
+            {{- if $value.jdbc_connection_url }}
+            jdbc_connection_url: "{{ $value.jdbc_connection_url }}"
+            {{- end }}
+            {{- if hasKey $value "replica_db" }}
+            replica_db: {{ $value.replica_db }}
+            {{- end }}
+            
+            # DB2 Instance Registry Configuration
+            {{- if $value.db2_instance_registry }}
+            db2_instance_registry:
+              {{- range $key, $val := $value.db2_instance_registry }}
+              {{ $key }}: "{{ $val }}"
+              {{- end }}
+            {{- end }}
+            
+            # DB2 Database Configuration
+            {{- if $value.db2_database_db_config }}
+            db2_database_db_config:
+              {{- range $key, $val := $value.db2_database_db_config }}
+              {{ $key }}: "{{ $val }}"
+              {{- end }}
+            {{- end }}
+            
+            # DB2 Audit Configuration
+            {{- if $value.db2_addons_audit_config }}
+            db2_addons_audit_config:
+              enableAudit: {{ $value.db2_addons_audit_config.enableAudit }}
+              applyDefaultPolicy: {{ $value.db2_addons_audit_config.applyDefaultPolicy }}
+            {{- end }}
+            
+            # DB2 Instance DBM Configuration
+            {{- if $value.db2_instance_dbm_config }}
+            db2_instance_dbm_config:
+              {{- range $key, $val := $value.db2_instance_dbm_config }}
+              {{ $key }}: "{{ $val }}"
+              {{- end }}
+            {{- end }}
+            
+            # JUnit Reporter Configuration
             junitreporter:
               reporter_name: {{ $value.db2_instance_name }}
               cluster_id: "{{ $.Values.cluster.id }}"
@@ -66,4 +113,5 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - RespectIgnoreDifferences=true
-  {{- end }}
+{{- end }}
+{{- end }}

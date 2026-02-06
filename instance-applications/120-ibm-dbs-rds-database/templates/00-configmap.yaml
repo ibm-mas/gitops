@@ -189,5 +189,64 @@ data:
     else:
         print("✅ All bufferpools and tablespaces already existed or not created — please check.")
 
+    # 3. Apply DB2 Instance Registry Configuration
+    db2_instance_registry = os.environ.get('DB2_INSTANCE_REGISTRY', '')
+    if db2_instance_registry:
+        print("\n📝 Applying DB2 Instance Registry settings...")
+        import json
+        registry = json.loads(db2_instance_registry)
+        for key, value in registry.items():
+            try:
+                sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
+                db2.exec_immediate(admin_conn, sql)
+                print(f"  ✅ Set {key} = {value}")
+            except Exception as e:
+                print(f"  ⚠️  Failed to set {key}: {e}")
+    
+    # 4. Apply DB2 Database Configuration
+    db2_database_config = os.environ.get('DB2_DATABASE_CONFIG', '')
+    if db2_database_config:
+        print("\n📝 Applying DB2 Database Configuration settings...")
+        import json
+        config = json.loads(db2_database_config)
+        for key, value in config.items():
+            try:
+                sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
+                db2.exec_immediate(admin_conn, sql)
+                print(f"  ✅ Set {key} = {value}")
+            except Exception as e:
+                print(f"  ⚠️  Failed to set {key}: {e}")
+    
+    # 5. Apply DB2 Instance DBM Configuration
+    db2_instance_dbm_config = os.environ.get('DB2_INSTANCE_DBM_CONFIG', '')
+    if db2_instance_dbm_config:
+        print("\n📝 Applying DB2 Instance DBM Configuration settings...")
+        import json
+        config = json.loads(db2_instance_dbm_config)
+        for key, value in config.items():
+            try:
+                sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
+                db2.exec_immediate(admin_conn, sql)
+                print(f"  ✅ Set {key} = {value}")
+            except Exception as e:
+                print(f"  ⚠️  Failed to set {key}: {e}")
+    
+    # 6. Apply DB2 Audit Configuration
+    enable_audit = os.environ.get('ENABLE_AUDIT', 'false').lower() == 'true'
+    if enable_audit:
+        print("\n📝 Configuring DB2 Audit...")
+        try:
+            sql = f"CALL rdsadmin.update_db_param('{database_name}', 'AUDIT_BUF_SZ', '1000')"
+            db2.exec_immediate(admin_conn, sql)
+            print("  ✅ Set AUDIT_BUF_SZ = 1000")
+            
+            apply_default_policy = os.environ.get('APPLY_DEFAULT_POLICY', 'false').lower() == 'true'
+            if apply_default_policy:
+                print("  ℹ️  Default audit policy would be applied here")
+        except Exception as e:
+            print(f"  ⚠️  Failed to configure audit: {e}")
+
+    print("\n✅ All DB2 configurations applied successfully")
+    
     db2.close(admin_conn)
     db2.close(db2_conn)

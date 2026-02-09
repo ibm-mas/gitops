@@ -1,4 +1,4 @@
-{{ if or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (not (empty .Values.ibm_db2u_databases)) (.Values.cluster_nonshared) }}
+{{ if or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (.Values.application_configuration) (not (empty .Values.ibm_db2u_databases)) (.Values.cluster_nonshared) (.Values.additional_resources) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
@@ -20,6 +20,8 @@ metadata:
     argocd.argoproj.io/sync-options: PruneLast=true
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+    - post-delete-finalizer.argocd.argoproj.io	
+    - post-delete-finalizer.argocd.argoproj.io/cleanup
 spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
@@ -39,10 +41,15 @@ spec:
             cluster_id: "{{ .Values.cluster.id }}"
             instance_id: "{{ .Values.instance.id }}"
             allow_list: "{{ .Values.allow_list }}"
-            enhanced_dr: "{{ .Values.enhanced_dr }}"
-            extensions: '{{ .Values.extensions }}'
-            additional_vpn: "{{ .Values.additional_vpn }}"
-            nonshared: "{{ .Values.cluster_nonshared }}"
+            enhanced_dr: {{ .Values.enhanced_dr }}
+            extensions: {{ .Values.extensions }}
+            additional_vpn: {{ .Values.additional_vpn }}
+            cluster_nonshared: {{ .Values.cluster_nonshared }}
+            application_configuration: {{ .Values.application_configuration }}
+            use_postdelete_hooks: {{ .Values.use_postdelete_hooks | default true }}
+            {{- if .Values.additional_resources }}
+            additional_resources: {{ .Values.additional_resources | toYaml | nindent 14 }}
+            {{- end }}
             databases:
             {{- range $val := .Values.ibm_db2u_databases }}
             {{- if and (contains "sdb" $val.db2_instance_name) ($val.replica_db) }}
@@ -60,6 +67,7 @@ spec:
               devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
               devops_build_number: "{{ .Values.devops.build_number }}"
               gitops_version: "{{ .Values.source.revision }}"
+              cli_image_repo: {{ .Values.cli_image_repo }}
 
         - name: ARGOCD_APP_NAME
           value: addons-{{ .Values.cluster.id }}-{{ .Values.instance.id }}

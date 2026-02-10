@@ -6,6 +6,8 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 {{ $ns        :=  .Values.mas_app_namespace }}
 {{ $job_label :=  "mas-app-route-patch" }}
 
+{{- if .Values.application_admin_role }}
+
 ---
 # Permit outbound communication by the Job pods
 # (Needed to communicate with the K8S HTTP API and AWS SM)
@@ -30,6 +32,10 @@ spec:
     - {}
   policyTypes:
     - Egress
+
+{{- end }}
+
+{{- if .Values.cluster_admin_role }}
 
 ---
 # Service account that is authorized to read k8s secrets (needed by the job)
@@ -115,6 +121,10 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: mas-app-route-prereq-role-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
+
+{{- end }}
+
+{{- if .Values.application_admin_role }}
 
 ---
 apiVersion: batch/v1
@@ -216,3 +226,5 @@ spec:
       restartPolicy: Never
       serviceAccountName: "mas-app-route-sa"
   backoffLimit: 4
+{{- end }}
+{{- end }}

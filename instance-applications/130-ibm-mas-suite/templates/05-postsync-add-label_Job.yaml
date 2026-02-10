@@ -57,6 +57,9 @@ are required here.
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
 {{ $job_label :=  "mas-route-patch" }}
+
+{{- if .Values.application_admin_role }}
+
 ---
 # Permit outbound communication by the Job pods
 # (Needed to communicate with the K8S HTTP API and AWS SM)
@@ -80,6 +83,9 @@ spec:
   policyTypes:
     - Egress
 
+{{- end }}
+
+{{- if .Values.cluster_admin_role }}
 
 ---
 apiVersion: v1
@@ -143,6 +149,10 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: mas-route-prereq-role-{{ .Values.instance_id }}
+
+{{- end }}
+
+{{- if .Values.application_admin_role }}
 
 ---
 apiVersion: batch/v1
@@ -226,3 +236,5 @@ spec:
       restartPolicy: Never
       serviceAccountName: "mas-route-sa"
   backoffLimit: 4
+
+{{- end }}

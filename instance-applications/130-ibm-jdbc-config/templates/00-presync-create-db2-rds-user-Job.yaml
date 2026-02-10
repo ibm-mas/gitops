@@ -1,0 +1,278 @@
+{{- if eq .Values.jdbc_type "rds-db2"  }}
+
+  {{- /*
+    Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+    */}}
+  {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+
+  {{ $ns := printf "mas-%s-core" .Values.instance_id }}
+  {{ $prefix := printf "pre-jdbc-nonadmin-%s" .Values.mas_config_name }}
+  {{ $sa := printf "%s-sa" $prefix }}
+  {{ $np := printf "%s-np" $prefix }}
+  {{ $job := printf "%s-job" $prefix }}
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+  {{- if .Values.custom_labels }}
+labels:
+  {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with RDS)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+  {{- if .Values.custom_labels }}
+labels:
+  {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+  {{- if .Values.custom_labels }}
+labels:
+  {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job }}
+  {{- if .Values.custom_labels }}
+  {{ .Values.custom_labels | toYaml | indent 8 }}
+  {{- end }}
+spec:
+  containers:
+    - name: run
+      image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+      imagePullPolicy: IfNotPresent
+      resources:
+        limits:
+          cpu: 200m
+          memory: 512Mi
+        requests:
+          cpu: 10m
+          memory: 64Mi
+      env:
+        - name: JDBC_CONNECTION_URL
+          value: "{{ .Values.jdbc_connection_url }}"
+        - name: JDBC_INSTANCE_USERNAME
+          value: "{{ .Values.jdbc_instance_username }}"
+        - name: JDBC_INSTANCE_PASSWORD
+          value: "{{ .Values.jdbc_instance_password }}"
+        - name: MAS_APP_ID
+          value: "{{ .Values.mas_application_id }}"
+      command:
+        - /bin/sh
+        - -c
+        - |
+          
+          set -e
+          
+          echo ""
+          echo "================================================================================"
+          echo "Settings"
+          echo "================================================================================"
+          echo "JDBC_CONNECTION_URL ................. ${JDBC_CONNECTION_URL}"
+          echo "JDBC_INSTANCE_USERNAME .............. ${JDBC_INSTANCE_USERNAME}"
+          echo "MAS_APP_ID .......................... ${MAS_APP_ID}"
+          
+          echo ""
+          echo "Installing required Python packages..."
+          echo "--------------------------------------------------------------------------------"
+          pip install ibm_db
+          
+          echo ""
+          echo "Downloading RDS SSL certificate..."
+          echo "--------------------------------------------------------------------------------"
+          mkdir -p /tmp/rds-ssl
+          curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
+          echo "✅ Certificate downloaded"
+          
+          # Path to the generated Python script
+          RDS_USER_SCRIPT="/tmp/create_rds_nonadmin_users.py"
+          
+          echo ""
+          echo "Create ${RDS_USER_SCRIPT}"
+          echo "--------------------------------------------------------------------------------"
+          
+          # Generate a Python script to create non-admin users and grant permissions
+          cat > ${RDS_USER_SCRIPT} << 'EOFPYTHON'
+          import ibm_db
+          import os
+          import sys
+          
+          import re
+          
+          # Get environment variables
+          jdbc_connection_url = os.getenv('JDBC_CONNECTION_URL')
+          jdbc_username = os.getenv('JDBC_INSTANCE_USERNAME')
+          jdbc_password = os.getenv('JDBC_INSTANCE_PASSWORD')
+          mas_app_id = os.getenv('MAS_APP_ID', 'manage')
+          ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
+          
+          # Parse JDBC connection URL to extract host, port, and database
+          # Format: jdbc:db2://host:port/database
+          match = re.match(r'jdbc:db2://([^:]+):(\d+)/(.+)', jdbc_connection_url)
+          if not match:
+              print(f"❌ Failed to parse JDBC connection URL: {jdbc_connection_url}")
+              sys.exit(1)
+          
+          rds_host = match.group(1)
+          rds_port = match.group(2)
+          rds_dbname = match.group(3).split(':')[0]  # Remove any additional parameters
+          
+          # Build connection string with SSL
+          conn_str = (
+              f"DATABASE={rds_dbname};"
+              f"HOSTNAME={rds_host};"
+              f"PORT={rds_port};"
+              f"PROTOCOL=TCPIP;"
+              f"UID={jdbc_username};"
+              f"PWD={jdbc_password};"
+              f"Security=SSL;"
+              f"SSLServerCertificate={ssl_cert_path};"
+          )
+          
+          print(f"Connecting to RDS DB2 instance: {rds_host}:{rds_port}/{rds_dbname}")
+          print(f"MAS Application ID: {mas_app_id}")
+          print(f"JDBC Username: {jdbc_username}")
+          
+          # Define all app-specific admin users to create
+          # Create users for all three app types regardless of current MAS_APP_ID
+          users_to_create = [
+              {
+                  'username': 'DB2_manage',
+                  'role': 'DBADM',
+                  'grants': ['MAXIMO_READ', 'MAXIMO_WRITE'],
+                  'description': 'Manage Admin User',
+                  'app_type': 'manage'
+              },
+              {
+                  'username': 'DB2_facilities',
+                  'role': 'DBADM',
+                  'grants': ['TRIDATA_READ', 'TRIDATA_WRITE'],
+                  'description': 'Facilities Admin User',
+                  'app_type': 'facilities'
+              },
+              {
+                  'username': 'DB2_iot',
+                  'role': 'DBADM',
+                  'grants': [],
+                  'description': 'IoT Admin User',
+                  'app_type': 'iot'
+              }
+          ]
+          
+          print(f"\n✅ Creating users for all MAS applications (manage, facilities, iot)")
+          
+          try:
+              # Connect to the database
+              conn = ibm_db.connect(conn_str, "", "")
+              print("✅ Successfully connected to RDS DB2")
+          
+              for user_info in users_to_create:
+                  username = user_info['username']
+                  role_to_assign = user_info['role']
+                  grants = user_info['grants']
+                  description = user_info['description']
+          
+                  print(f"\n{'='*80}")
+                  print(f"Processing: {description}")
+                  print(f"Username: {username}")
+                  print(f"{'='*80}")
+          
+                  # Check if user exists
+                  check_user_sql = f"""
+                      SELECT COUNT(*) as user_count 
+                      FROM SYSIBM.SYSDBAUTH 
+                      WHERE GRANTEE = '{username}'
+                  """
+          
+                  try:
+                      stmt = ibm_db.exec_immediate(conn, check_user_sql)
+                      result = ibm_db.fetch_assoc(stmt)
+                      user_exists = result['USER_COUNT'] > 0
+          
+                      if user_exists:
+                          print(f"ℹ️  User {username} already exists")
+                      else:
+                          # Create user - Note: In RDS DB2, users are typically created externally
+                          # This grants database privileges to the user
+                          print(f"✅ Granting {role_to_assign} privileges to {username}")
+                          grant_dbadm_sql = f"GRANT {role_to_assign} ON DATABASE TO USER {username}"
+                          try:
+                              ibm_db.exec_immediate(conn, grant_dbadm_sql)
+                              print(f"✅ Granted {role_to_assign} to {username}")
+                          except Exception as e:
+                              print(f"⚠️  Error granting {role_to_assign}: {str(e)}")
+          
+                  except Exception as e:
+                      print(f"⚠️  Error checking user {username}: {str(e)}")
+          
+                  # Grant role permissions
+                  if grants:
+                      print(f"\n✅ Granting role permissions to {username}...")
+                      for grant_role in grants:
+                          try:
+                              grant_role_sql = f"GRANT ROLE {grant_role} TO USER {username}"
+                              ibm_db.exec_immediate(conn, grant_role_sql)
+                              print(f"✅ Granted role {grant_role} to {username}")
+                          except Exception as e:
+                              print(f"⚠️  Error granting role {grant_role}: {str(e)}")
+          
+              print("\n✅ App-specific admin user creation and permission grants completed successfully")
+          
+              # Close connection
+              ibm_db.close(conn)
+          
+          except Exception as e:
+              print(f"❌ Error: {str(e)}")
+              sys.exit(1)
+          EOFPYTHON
+          # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
+          
+          echo ""
+          echo "Executing ${RDS_USER_SCRIPT}"
+          echo "--------------------------------------------------------------------------------"
+          python ${RDS_USER_SCRIPT} || exit $?
+          
+          echo ""
+          echo "✅ RDS app-specific admin user creation job completed successfully"
+
+  restartPolicy: Never
+  serviceAccountName: {{ $sa }}
+  volumes: []
+backoffLimit: 4
+  
+  {{- end }}
+

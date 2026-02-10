@@ -1,14 +1,14 @@
-{{- if not (empty .Values.manage_rds_databases) }}
+{{- if not (empty .Values.mas_rds_databases) }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
-{{ $manage_ns          := .Values.mas_app_namespace }}
-{{ $np_name            := "postsync-manage-rds-roles-np" }}
-{{ $sa_name            := "postsync-manage-rds-roles-sa" }}
-{{ $job_label          := "postsync-manage-rds-roles-job" }}
+{{ $app_ns          := .Values.mas_app_namespace }}
+{{ $np_name            := "postsync-app-rds-roles-np" }}
+{{ $sa_name            := "postsync-app-rds-roles-sa" }}
+{{ $job_label          := "postsync-app-rds-roles-job" }}
 
 ---
 {{- /*
@@ -19,7 +19,7 @@ kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
   name: {{ $np_name }}
-  namespace: {{ $manage_ns }}
+  namespace: {{ $app_ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "703"
 {{- if .Values.custom_labels }}
@@ -44,7 +44,7 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: "{{ $sa_name }}"
-  namespace: "{{ $manage_ns }}"
+  namespace: "{{ $app_ns }}"
   annotations:
     argocd.argoproj.io/sync-wave: "703"
 {{- if .Values.custom_labels }}
@@ -60,7 +60,7 @@ metadata:
   NOTE: When inside the range loop below, make sure you prefix any references to chart values NOT under .Values.manage_rds_databases with $.
         For example: {{ $.Values.custom_labels }} (instead of {{ .Values.custom_labels }} )
 */}}
-{{- range $i, $db := .Values.manage_rds_databases }}
+{{- range $i, $db := .Values.mas_rds_databases }}
 
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
@@ -122,7 +122,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: {{ $_cronjob_name }}
-  namespace: "{{ $manage_ns }}"
+  namespace: "{{ $app_ns }}"
   annotations:
     argocd.argoproj.io/sync-wave: "704"
   labels:

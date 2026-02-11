@@ -167,54 +167,81 @@ spec:
           print(f"MAS Application ID: {mas_app_id}")
           print(f"JDBC Username: {jdbc_username}")
           
-          # Define all app-specific admin users to create
-          # Create users for all three app types regardless of current MAS_APP_ID
-          users_to_create = [
+          # Option 2: Create TWO types of users
+          # 1. Admin users: We CREATE these with DBADM (for schema management)
+          # 2. Non-admin user: We FETCH from AWS Secrets Manager and grant only app roles (for runtime)
+          
+          # Admin users to CREATE (with DBADM)
+          admin_users_to_create = [
               {
                   'username': 'DB2_manage',
                   'role': 'DBADM',
-                  'grants': ['MAXIMO_READ', 'MAXIMO_WRITE'],
-                  'description': 'Manage Admin User',
+                  'description': 'Manage Admin User (DBADM for schema management)',
                   'app_type': 'manage'
               },
               {
                   'username': 'DB2_facilities',
                   'role': 'DBADM',
-                  'grants': ['TRIDATA_READ', 'TRIDATA_WRITE'],
-                  'description': 'Facilities Admin User',
+                  'description': 'Facilities Admin User (DBADM for schema management)',
                   'app_type': 'facilities'
               },
               {
                   'username': 'DB2_iot',
                   'role': 'DBADM',
-                  'grants': [],
-                  'description': 'IoT Admin User',
+                  'description': 'IoT Admin User (DBADM for schema management)',
                   'app_type': 'iot'
               }
           ]
           
-          print(f"\n✅ Creating users for all MAS applications (manage, facilities, iot)")
+          # Non-admin user from AWS Secrets Manager (grant only app roles)
+          # Note: IoT does NOT get non-admin roles - only admin user with DBADM
+          nonadmin_user_roles = [
+              {
+                  'username': jdbc_username,  # From AWS Secrets Manager
+                  'grants': ['MAXIMO_READ', 'MAXIMO_WRITE', 'MAXIMO_SEQ', 'EXPLAIN'],
+                  'description': 'Manage Application User (from AWS Secrets Manager)',
+                  'app_type': 'manage'
+              },
+              {
+                  'username': jdbc_username,
+                  'grants': ['TRIDATA_READ', 'TRIDATA_WRITE'],
+                  'description': 'Facilities Application User (from AWS Secrets Manager)',
+                  'app_type': 'facilities'
+              }
+              # IoT: No non-admin roles - uses admin user (DB2_iot) with DBADM only
+          ]
+          
+          print(f"\n✅ Creating users:")
+          print(f"   1. Admin users: DB2_manage, DB2_facilities, DB2_iot (DBADM)")
+          print(f"   2. Non-admin user: {jdbc_username} (App roles for Manage & Facilities only)")
+          print(f"   Note: IoT uses admin user (DB2_iot) with DBADM only")
           
           try:
               # Connect to the database
               conn = ibm_db.connect(conn_str, "", "")
               print("✅ Successfully connected to RDS DB2")
           
-              for user_info in users_to_create:
-                  username = user_info['username']
-                  role_to_assign = user_info['role']
-                  grants = user_info['grants']
-                  description = user_info['description']
+              # ========================================================================
+              # STEP 1: Create Admin Users with DBADM
+              # ========================================================================
+              print(f"\n{'='*80}")
+              print("STEP 1: Creating Admin Users (DBADM)")
+              print(f"{'='*80}")
+              
+              for admin_user in admin_users_to_create:
+                  username = admin_user['username']
+                  role_to_assign = admin_user['role']
+                  description = admin_user['description']
+                  app_type = admin_user['app_type']
           
-                  print(f"\n{'='*80}")
-                  print(f"Processing: {description}")
+                  print(f"\n--- Processing: {description} ---")
                   print(f"Username: {username}")
-                  print(f"{'='*80}")
+                  print(f"App Type: {app_type}")
           
                   # Check if user exists
                   check_user_sql = f"""
-                      SELECT COUNT(*) as user_count 
-                      FROM SYSIBM.SYSDBAUTH 
+                      SELECT COUNT(*) as user_count
+                      FROM SYSIBM.SYSDBAUTH
                       WHERE GRANTEE = '{username}'
                   """
           
@@ -226,31 +253,74 @@ spec:
                       if user_exists:
                           print(f"ℹ️  User {username} already exists")
                       else:
-                          # Create user - Note: In RDS DB2, users are typically created externally
-                          # This grants database privileges to the user
-                          print(f"✅ Granting {role_to_assign} privileges to {username}")
-                          grant_dbadm_sql = f"GRANT {role_to_assign} ON DATABASE TO USER {username}"
-                          try:
-                              ibm_db.exec_immediate(conn, grant_dbadm_sql)
-                              print(f"✅ Granted {role_to_assign} to {username}")
-                          except Exception as e:
-                              print(f"⚠️  Error granting {role_to_assign}: {str(e)}")
+                          print(f"✅ Creating user {username} with {role_to_assign}")
+                      
+                      # Grant DBADM to user
+                      grant_dbadm_sql = f"GRANT {role_to_assign} ON DATABASE TO USER {username}"
+                      try:
+                          ibm_db.exec_immediate(conn, grant_dbadm_sql)
+                          print(f"✅ Granted {role_to_assign} to {username}")
+                      except Exception as e:
+                          print(f"⚠️  Error granting {role_to_assign}: {str(e)}")
           
                   except Exception as e:
-                      print(f"⚠️  Error checking user {username}: {str(e)}")
+                      print(f"⚠️  Error processing user {username}: {str(e)}")
           
-                  # Grant role permissions
+              # ========================================================================
+              # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)
+              # ========================================================================
+              print(f"\n{'='*80}")
+              print("STEP 2: Granting Application Roles to Non-Admin User")
+              print(f"{'='*80}")
+              print(f"Non-admin user: {jdbc_username} (from AWS Secrets Manager)")
+              
+              # Check if non-admin user exists
+              check_user_sql = f"""
+                  SELECT COUNT(*) as user_count
+                  FROM SYSIBM.SYSDBAUTH
+                  WHERE GRANTEE = '{jdbc_username}'
+              """
+          
+              try:
+                  stmt = ibm_db.exec_immediate(conn, check_user_sql)
+                  result = ibm_db.fetch_assoc(stmt)
+                  user_exists = result['USER_COUNT'] > 0
+          
+                  if user_exists:
+                      print(f"✅ User {jdbc_username} exists in database")
+                  else:
+                      print(f"⚠️  User {jdbc_username} not found in database")
+                      print(f"   Note: User should be created externally in AWS RDS")
+          
+              except Exception as e:
+                  print(f"⚠️  Error checking user {jdbc_username}: {str(e)}")
+          
+              # Grant application-specific roles to non-admin user
+              for user_info in nonadmin_user_roles:
+                  grants = user_info['grants']
+                  description = user_info['description']
+                  app_type = user_info['app_type']
+          
+                  print(f"\n--- Processing: {description} ---")
+                  print(f"App Type: {app_type}")
+          
+                  # Grant application role permissions
                   if grants:
-                      print(f"\n✅ Granting role permissions to {username}...")
+                      print(f"✅ Granting {app_type} application roles to {jdbc_username}...")
                       for grant_role in grants:
                           try:
-                              grant_role_sql = f"GRANT ROLE {grant_role} TO USER {username}"
+                              grant_role_sql = f"GRANT ROLE {grant_role} TO USER {jdbc_username}"
                               ibm_db.exec_immediate(conn, grant_role_sql)
-                              print(f"✅ Granted role {grant_role} to {username}")
+                              print(f"✅ Granted role {grant_role} to {jdbc_username}")
                           except Exception as e:
                               print(f"⚠️  Error granting role {grant_role}: {str(e)}")
+                              print(f"   Note: Role {grant_role} may not exist yet. It will be created by the role creation job.")
           
-              print("\n✅ App-specific admin user creation and permission grants completed successfully")
+              print(f"\n{'='*80}")
+              print("✅ User creation and role assignment completed successfully")
+              print(f"{'='*80}")
+              print(f"Admin users: DB2_manage, DB2_facilities, DB2_iot (DBADM)")
+              print(f"Non-admin user: {jdbc_username} (Application roles only)")
           
               # Close connection
               ibm_db.close(conn)

@@ -22,9 +22,10 @@ metadata:
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: "db2-database-presync-sa-role-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
@@ -33,20 +34,22 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 rules:
-- apiGroups: 
-    - apiextensions.k8s.io
-  resources: 
-    - customresourcedefinitions
-  verbs: 
+- apiGroups:
+    - db2u.databases.ibm.com
+  resources:
+    - db2uinstances
+  verbs:
     - get
+    - list
 
 
 
 ---
-kind: ClusterRoleBinding
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: "db2-database-presync-sa-rb-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
@@ -60,7 +63,7 @@ subjects:
     namespace: "{{ .Values.db2_namespace }}"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: "db2-database-presync-sa-role-{{ .Values.db2_instance_name }}"
 
 ---
@@ -106,25 +109,33 @@ spec:
 
               
 
-              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True STARTS  
+              # Wait for DB2 CRD to be available by checking if we can query the resource
+              # This approach uses namespace-scoped permissions instead of cluster-scoped CRD access
               wait_period=0
+              
+              echo "Waiting for DB2 CRD (db2uinstances) to be available..."
+              
               while true
               do
                 wait_period=$(($wait_period+10))
                 if [ $wait_period -gt 300 ];then
-                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready with in 300 sec, exiting"
+                  echo "DB2 CRD db2uinstances is not ready within 300 seconds, exiting"
                   exit 1
-                else
-                  sleep 10
                 fi
-                export DB2_CRD_NAMES_ACCEPTED_STATUS=`oc get crd db2uclusters.db2u.databases.ibm.com -o=jsonpath="{.status.conditions[?(@.type=='NamesAccepted')].status}"`
-                echo "DB2_CRD_NAMES_ACCEPTED_STATUS .... ${DB2_CRD_NAMES_ACCEPTED_STATUS}"
-
-                if [[ "$DB2_CRD_NAMES_ACCEPTED_STATUS" == "True" ]]; then
+                
+                sleep 10
+                
+                # Try to query db2uinstances - if CRD exists, this will succeed (even if no instances exist)
+                # If CRD doesn't exist, we'll get an error about unknown resource type
+                if oc get db2uinstances -n {{ .Values.db2_namespace }} --no-headers 2>/dev/null; then
+                  echo "DB2 CRD db2uinstances.db2u.databases.ibm.com is available"
                   break
                 fi
-              done  
-              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True DONE
+                
+                echo "DB2 CRD not yet available, waiting... (${wait_period}s elapsed)"
+              done
+              
+              echo "DB2 CRD is ready"
 
       restartPolicy: Never
 

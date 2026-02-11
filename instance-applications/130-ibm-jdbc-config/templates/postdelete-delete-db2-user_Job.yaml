@@ -1,5 +1,7 @@
 {{- if and ( eq .Values.jdbc_type "incluster-db2" ) ( .Values.use_postdelete_hooks ) }}
 
+{{- if .Values.application_admin_role }}
+
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
@@ -124,28 +126,36 @@ spec:
 
               echo ""
               echo "================================================================================"
-              echo "Checking DB2 CRD db2uclusters.db2u.databases.ibm.com is ready (retries every ~10 seconds for ~5 minutes)"
+              echo "Checking DB2 CRD (db2uinstances) is available (retries every ~10 seconds for ~5 minutes)"
               echo "================================================================================"
 
-              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True STARTS  
+              # Wait for DB2 CRD to be available by checking if we can query the resource
+              # This approach uses namespace-scoped permissions instead of cluster-scoped CRD access
               wait_period=0
-              while true; do
-                export DB2_CRD_NAMES_ACCEPTED_STATUS=$(oc get crd db2uclusters.db2u.databases.ibm.com -o=jsonpath="{.status.conditions[?(@.type=='NamesAccepted')].status}")
-                echo "DB2_CRD_NAMES_ACCEPTED_STATUS .... ${DB2_CRD_NAMES_ACCEPTED_STATUS}"
-                if [[ "$DB2_CRD_NAMES_ACCEPTED_STATUS" == "True" ]]; then
-                  break
-                fi
-
+              
+              echo "Waiting for DB2 CRD (db2uinstances) to be available..."
+              
+              while true
+              do
                 wait_period=$(($wait_period+10))
                 if [ $wait_period -gt 300 ];then
-                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready with in 300 sec, exiting"
+                  echo "DB2 CRD db2uinstances is not ready within 300 seconds, exiting"
                   exit 1
-                else
-                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready, trying again in 10 seconds"
-                  sleep 10
                 fi
-              done  
-              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True DONE
+                
+                sleep 10
+                
+                # Try to query db2uinstances - if CRD exists, this will succeed (even if no instances exist)
+                # If CRD doesn't exist, we'll get an error about unknown resource type
+                if oc get db2uinstances -n ${DB2_NAMESPACE} --no-headers 2>/dev/null; then
+                  echo "DB2 CRD db2uinstances.db2u.databases.ibm.com is available"
+                  break
+                fi
+                
+                echo "DB2 CRD not yet available, waiting... (${wait_period}s elapsed)"
+              done
+              
+              echo "DB2 CRD is ready"
 
 
               echo ""
@@ -203,4 +213,5 @@ spec:
       serviceAccountName: aws-db2-user-job
   backoffLimit: 4
 
+{{- end }}
 {{- end }}

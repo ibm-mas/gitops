@@ -70,10 +70,12 @@ metadata:
 {{- end }}
 
 ---
-kind: ClusterRole
+# Role for CPD Instance Namespace - manages CCS, Elasticsearch/OpenSearch resources
+kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: cpd-service-postsync-role-{{ .Values.instance_id }}
+  name: cpd-service-postsync-instance-role
+  namespace: "{{ .Values.cpd_instance_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "001"
 {{- if .Values.custom_labels }}
@@ -85,53 +87,72 @@ rules:
       - get
       - list
       - patch
-      - update
     apiGroups:
-      - ''
-      - zen.cpd.ibm.com
-      - cpd.ibm.com
-      - operator.ibm.com
-      - apiextensions.k8s.io
       - ccs.cpd.ibm.com
-      - elasticsearch.opencontent.ibm.com
-      - opensearch.cloudpackopen.ibm.com
-      - ws.cpd.ibm.com
     resources:
-      - ibmcpds
-      - zenservices
-      - secrets
-      - commonservices
-      - customresourcedefinitions
       - ccs
-      - elasticsearchclusters
-      - clusters
-      - ws
-      - serviceaccounts
   - verbs:
       - get
       - list
-      - scale
+      - patch
+    apiGroups:
+      - elasticsearch.opencontent.ibm.com
+    resources:
+      - elasticsearchclusters
+  - verbs:
+      - get
+      - list
+      - patch
+    apiGroups:
+      - opensearch.cloudpackopen.ibm.com
+    resources:
+      - clusters
+  - verbs:
+      - delete
+      - list
+    apiGroups:
+      - batch
+    resources:
+      - jobs
+  - verbs:
+      - delete
+      - list
+    apiGroups:
+      - apps
+    resources:
+      - statefulsets
+
+---
+# Role for CPD Operators Namespace - manages operator deployments
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cpd-service-postsync-operators-role
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "001"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
       - patch
     apiGroups:
       - apps
     resources:
       - deployments
       - deployments/scale
-  - verbs:
-      - delete
-      - list
-    apiGroups:
-      - batch
-      - apps
-    resources:
-      - jobs
-      - statefulsets
 
 ---
-kind: ClusterRoleBinding
+# RoleBinding for CPD Instance Namespace
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: cpd-service-postsync-rb-{{ .Values.instance_id }}
+  name: cpd-service-postsync-instance-rb
+  namespace: "{{ .Values.cpd_instance_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "002"
 {{- if .Values.custom_labels }}
@@ -144,8 +165,30 @@ subjects:
     namespace: "{{ .Values.cpd_operators_namespace }}"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cpd-service-postsync-role-{{ .Values.instance_id }}
+  kind: Role
+  name: cpd-service-postsync-instance-role
+
+---
+# RoleBinding for CPD Operators Namespace
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cpd-service-postsync-operators-rb
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "002"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: cpd-service-postsync-sa
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cpd-service-postsync-operators-role
 
 ---
 apiVersion: batch/v1

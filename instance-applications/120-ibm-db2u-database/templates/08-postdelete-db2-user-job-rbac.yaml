@@ -1,0 +1,77 @@
+{{- if .Values.application_admin_role }}
+{{- /*
+ RBAC resources for supporting the PostDelete hook in the jdbc-config application
+ These are created in the db2u-database chart (instead of the jdbc-config chart) to:
+   1. ensure the resources are not deleted by ArgoCD before ArgoCD runs the PostDelete hook job that depends on them
+   2. provide access to the db2_namespace which is only available in this chart
+ ( NOTE: this is a workaround for the fact it is not currently possible to annotate these types of resource with 
+   PostDelete due to a bug in ArgoCD: https://github.com/argoproj/argo-cd/issues/17191) and the fact that ArgoCD
+   does not yet support PreDelete hooks: https://github.com/argoproj/argo-cd/issues/13975, either of which
+   would offer a preferable solution to this workaround )
+*/}}
+
+---
+# Role in DB2 namespace for accessing DB2 resources
+# This allows the service account from mas-syncres namespace to access resources in db2 namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aws-db2-user-job-{{ .Values.instance_id }}-role-db2
+  namespace: {{ .Values.db2_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "121"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+- apiGroups:
+    - db2u.databases.ibm.com
+  resources:
+    - db2uinstances
+  verbs:
+    - get
+    - list
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - list
+    - get
+- apiGroups:
+    - ""
+  resources: 
+    - pods/exec
+  verbs: 
+    - create
+- apiGroups:
+    - apps
+  resources: 
+    - statefulsets
+  verbs: 
+    - get
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: aws-db2-user-job-{{ .Values.instance_id }}-rolebinding-db2
+  namespace: {{ .Values.db2_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "122"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: aws-db2-user-job
+    namespace: mas-{{ .Values.instance_id }}-syncres
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aws-db2-user-job-{{ .Values.instance_id }}-role-db2
+{{- end }}
+
+# Made with Bob

@@ -73,10 +73,53 @@ metadata:
 {{- end }}
 
 ---
-kind: ClusterRole
+kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: presync-cpd-olm-role-{{ .Values.instance_id }}
+  name: presync-cpd-olm-role-syncres-{{ .Values.instance_id }}
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "002"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - create
+    apiGroups:
+      - ''
+    resources:
+      - configmaps
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: presync-cpd-olm-rb-syncres-{{ .Values.instance_id }}
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/sync-wave: "002"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: presync-cpd-olm-sa
+    namespace: mas-{{ .Values.instance_id }}-syncres
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: presync-cpd-olm-role-syncres-{{ .Values.instance_id }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: presync-cpd-olm-role-operators-{{ .Values.instance_id }}
+  namespace: {{ .Values.cpd_operators_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "002"
 {{- if .Values.custom_labels }}
@@ -92,19 +135,13 @@ rules:
       - packages.operators.coreos.com/v1
     resources:
       - packagemanifests
-  - verbs:
-      - get
-      - create
-    apiGroups:
-      - ''
-    resources:
-      - configmaps
 
 ---
-kind: ClusterRoleBinding
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: presync-cpd-olm-rb-{{ .Values.instance_id }}
+  name: presync-cpd-olm-rb-operators-{{ .Values.instance_id }}
+  namespace: {{ .Values.cpd_operators_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "002"
 {{- if .Values.custom_labels }}
@@ -117,8 +154,8 @@ subjects:
     namespace: mas-{{ .Values.instance_id }}-syncres
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: presync-cpd-olm-role-{{ .Values.instance_id }}
+  kind: Role
+  name: presync-cpd-olm-role-operators-{{ .Values.instance_id }}
 
 ---
 apiVersion: batch/v1

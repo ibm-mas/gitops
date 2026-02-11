@@ -55,12 +55,13 @@ metadata:
 
 
 ---
-# Needed for "oc get crd db2uclusters.db2u.databases.ibm.com" command
-# and for accessing resources in the db2u namespace
+# Role in DB2 namespace for accessing DB2 resources
+# This allows the service account from mas-core namespace to access resources in db2 namespace
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: {{ $crole }}
+  namespace: {{ .Values.db2_namespace }}
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
@@ -69,12 +70,6 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 rules:
-- apiGroups: 
-    - apiextensions.k8s.io
-  resources: 
-    - customresourcedefinitions
-  verbs: 
-    - get
 - apiGroups:
     - ""
   resources:
@@ -84,22 +79,26 @@ rules:
     - get
 - apiGroups:
     - ""
-  resources: 
+  resources:
     - pods/exec
-  verbs: 
+  verbs:
     - create
 - apiGroups:
     - db2u.databases.ibm.com
-  resources: 
+  resources:
     - db2uengines
-  verbs: 
+    - db2uinstances
+  verbs:
     - get
+    - list
 
 ---
-kind: ClusterRoleBinding
+# RoleBinding in DB2 namespace to bind the service account from mas-core namespace
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: {{ $crb }}
+  namespace: {{ .Values.db2_namespace }}
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
@@ -113,7 +112,7 @@ subjects:
     namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: {{ $crole }}
 
 
@@ -211,28 +210,30 @@ spec:
 
               echo ""
               echo "================================================================================"
-              echo "Checking DB2 CRD db2uclusters.db2u.databases.ibm.com is ready (retries every ~10 seconds for ~5 minutes)"
+              echo "Checking DB2 CRD db2uinstances is available (retries every ~10 seconds for ~5 minutes)"
               echo "================================================================================"
 
-              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True STARTS  
+              # Wait for DB2 CRD to be available by checking if we can query db2uinstances
+              # This approach uses namespace-scoped permissions instead of cluster-scoped CRD access
               wait_period=0
               while true; do
-                export DB2_CRD_NAMES_ACCEPTED_STATUS=$(oc get crd db2uclusters.db2u.databases.ibm.com -o=jsonpath="{.status.conditions[?(@.type=='NamesAccepted')].status}")
-                echo "DB2_CRD_NAMES_ACCEPTED_STATUS .... ${DB2_CRD_NAMES_ACCEPTED_STATUS}"
-                if [[ "$DB2_CRD_NAMES_ACCEPTED_STATUS" == "True" ]]; then
+                # Try to query db2uinstances - if CRD exists, this will succeed (even if no instances exist)
+                # If CRD doesn't exist, we'll get an error about unknown resource type
+                if oc get db2uinstances -n ${DB2_NAMESPACE} --no-headers 2>/dev/null; then
+                  echo "DB2 CRD db2uinstances.db2u.databases.ibm.com is available"
                   break
                 fi
 
                 wait_period=$(($wait_period+10))
                 if [ $wait_period -gt 300 ];then
-                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready with in 300 sec, exiting"
+                  echo "DB2 CRD db2uinstances is not ready within 300 seconds, exiting"
                   exit 1
                 else
-                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready, trying again in 10 seconds"
+                  echo "DB2 CRD not yet available, waiting... (${wait_period}s elapsed)"
                   sleep 10
                 fi
-              done  
-              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True DONE
+              done
+              echo "DB2 CRD is ready"
 
               echo ""
               echo "================================================================================"

@@ -33,10 +33,6 @@ spec:
   policyTypes:
     - Egress
 
-{{- end }}
-
-{{- if .Values.cluster_admin_role }}
-
 ---
 # Service account that is authorized to read k8s secrets (needed by the job)
 apiVersion: v1
@@ -56,9 +52,10 @@ metadata:
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: mas-app-route-prereq-role-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "600"
     argocd.argoproj.io/hook: PostSync
@@ -102,9 +99,10 @@ rules:
       - iotworkspaces
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: mas-app-route-prereq-rb-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "601"
     argocd.argoproj.io/hook: PostSync
@@ -119,12 +117,8 @@ subjects:
     namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: mas-app-route-prereq-role-{{ .Values.instance_id }}-{{ .Values.mas_app_id }}
-
-{{- end }}
-
-{{- if .Values.application_admin_role }}
 
 ---
 apiVersion: batch/v1
@@ -226,5 +220,4 @@ spec:
       restartPolicy: Never
       serviceAccountName: "mas-app-route-sa"
   backoffLimit: 4
-{{- end }}
 {{- end }}

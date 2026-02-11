@@ -145,7 +145,15 @@ rules:
     resources:
       - configmaps
 
-
+  - verbs:
+      - get
+      - list
+      - patch
+      - update
+    apiGroups:
+      - route.openshift.io
+    resources:
+      - routes
 
 ---
 kind: RoleBinding
@@ -267,6 +275,14 @@ spec:
               SECRET_NAME_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/sls
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
               sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\":\"$SLS_URL\" }" "${TAGS}"
+    
+
+              echo "Labeling all routes with type=external"
+
+              SUITE_NAMESPACE="mas-${ICN}-${SUBSCRIPTION_ID}-sls"
+              oc label route --all -n ${SUITE_NAMESPACE} type=external --overwrite
+
+              echo "Route labeling completed"
 
 
       restartPolicy: Never

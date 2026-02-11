@@ -278,14 +278,22 @@ spec:
     
               SUITE_NAMESPACE="mas-${ICN}-${SUBSCRIPTION_ID}-sls"
 
-              export routes=$(oc get routes -n ${SUITE_NAMESPACE} -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
-              echo "Add label to routes updated ${routes}"
+              echo "Fetching routes from ${SUITE_NAMESPACE}"
+
+              routes=$(oc get routes -n ${SUITE_NAMESPACE} -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+
+              echo "Routes found:"
+              echo "${routes}"
 
               for route in $routes; do
                 echo "Adding label to route - ${route}"
-                oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}'
+                  oc patch route ${route} \
+                    -n ${SUITE_NAMESPACE} \
+                    --type=merge \
+                    -p '{"metadata":{"labels":{"type":"external"}}}'
               done
 
+              echo "Route labeling completed"
 
       restartPolicy: Never
 

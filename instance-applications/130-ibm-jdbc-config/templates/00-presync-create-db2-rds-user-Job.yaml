@@ -253,15 +253,25 @@ spec:
                       if user_exists:
                           print(f"ℹ️  User {username} already exists")
                       else:
-                          print(f"✅ Creating user {username} with {role_to_assign}")
+                          print(f"✅ Creating user {username} with comprehensive admin privileges")
                       
-                      # Grant DBADM to user
-                      grant_dbadm_sql = f"GRANT {role_to_assign} ON DATABASE TO USER {username}"
-                      try:
-                          ibm_db.exec_immediate(conn, grant_dbadm_sql)
-                          print(f"✅ Granted {role_to_assign} to {username}")
-                      except Exception as e:
-                          print(f"⚠️  Error granting {role_to_assign}: {str(e)}")
+                      # Grant comprehensive admin privileges to user
+                      admin_grants = [
+                          f"GRANT DBADM, CREATETAB, BINDADD, CONNECT, CREATE_NOT_FENCED_ROUTINE, IMPLICIT_SCHEMA, LOAD, CREATE_EXTERNAL_ROUTINE, QUIESCE_CONNECT ON DATABASE TO USER {username}",
+                          f"GRANT USE OF TABLESPACE MAXDATA TO USER {username}",
+                          f"GRANT DBADM WITHOUT DATAACCESS WITHOUT ACCESSCTRL ON DATABASE TO USER {username}",
+                          f"GRANT SECADM ON DATABASE TO USER {username}",
+                          f"GRANT DATAACCESS ON DATABASE TO USER {username}",
+                          f"GRANT ACCESSCTRL ON DATABASE TO USER {username}"
+                      ]
+                      
+                      for grant_sql in admin_grants:
+                          try:
+                              ibm_db.exec_immediate(conn, grant_sql)
+                              print(f"✅ Executed: {grant_sql}")
+                          except Exception as e:
+                              print(f"⚠️  Error executing grant: {str(e)}")
+                              print(f"   SQL: {grant_sql}")
           
                   except Exception as e:
                       print(f"⚠️  Error processing user {username}: {str(e)}")

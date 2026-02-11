@@ -276,13 +276,15 @@ spec:
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
               sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\":\"$SLS_URL\" }" "${TAGS}"
     
-
-              echo "Labeling all routes with type=external"
-
               SUITE_NAMESPACE="mas-${ICN}-${SUBSCRIPTION_ID}-sls"
-              oc label route --all -n ${SUITE_NAMESPACE} type=external --overwrite
 
-              echo "Route labeling completed"
+              export routes=$(oc get routes -n ${SUITE_NAMESPACE} -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+              echo "Add label to routes updated ${routes}"
+
+              for route in $routes; do
+                echo "Adding label to route - ${route}"
+                oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}'
+              done
 
 
       restartPolicy: Never

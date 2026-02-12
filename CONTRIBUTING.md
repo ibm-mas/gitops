@@ -42,4 +42,34 @@ Manually run the pre-commit hooks against all files
 pre-commit run -a
 ```
 
-The same logic invoked by the commit hook logic is run and enforced by the "lint" Github Action.
+The same logic invoked by the commit hook logic is run and enforced by the "lint" GitHub Action.
+
+## GitHub Actions
+
+This repository uses several automated workflows:
+
+### Lint and Check Helm Templates
+**Workflow:** [`.github/workflows/lint.yaml`](.github/workflows/lint.yaml)
+**Triggers:** Pull requests to `poc`, `main`, or `dev` branches
+
+Validates all Helm charts and Job definitions:
+- Runs [`helm-lint.sh`](build/bin/helm-lint.sh) on all charts in `instance-applications/`, `cluster-applications/`, and `root-applications/`
+- Runs [`verify-job-definitions.sh`](build/bin/verify-job-definitions.sh) to ensure Job templates comply with naming conventions
+
+### Build Documentation
+**Workflow:** [`.github/workflows/docs.yml`](.github/workflows/docs.yml)
+**Triggers:** Pushes to `main` or `dev` branches, or version tags (`*.*.*`)
+
+Automatically builds and publishes versioned documentation to GitHub Pages:
+- Uses [MkDocs](https://www.mkdocs.org/) with [mike](https://github.com/jimporter/mike) for version management
+- Documentation is published to [https://ibm-mas.github.io/gitops/](https://ibm-mas.github.io/gitops/)
+- Version tags (`x.x.x`) are grouped by minor release (`x.x`)
+
+### Update Internal GHE Repo
+**Workflow:** [`.github/workflows/update-internal-repo.yaml`](.github/workflows/update-internal-repo.yaml)
+**Triggers:** Pushes to any branch (excluding tags)
+
+Synchronizes changes to the internal IBM GitHub Enterprise repository:
+- Copies files from public repo to `automation-paas-cd-pipeline/mas-gitops` on github.ibm.com
+- Uses [`copy-gitops.sh`](build/bin/copy-gitops.sh) to selectively sync files
+- Maintains branch parity between public and internal repositories

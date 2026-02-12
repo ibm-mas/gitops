@@ -309,21 +309,26 @@ spec:
                 fi
 
                 echo
-                echo "Waiting for ibm-elasticsearch-operator to be ready again..."
+                echo "Waiting for ElasticsearchCluster elasticsearch-master to be ready again..."
 
                 wait_period=0
                 while true; do
                   wait_period=$(($wait_period+60))
                   if [ $wait_period -gt 1200 ]; then
-                    echo "Elasticsearch operator is not ready after 20 minutes of waiting. exiting..."
+                    echo "ElasticsearchCluster elasticsearch-master is not ready after 20 minutes of waiting. exiting..."
                     exit 1
                   else
                     sleep 60
                   fi
 
-                  ELASTICSEARCH_OPERATOR_LOOKUP=$(oc get deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
-                  if [[ ! -z $ELASTICSEARCH_OPERATOR_LOOKUP ]]; then
-                    echo "Elasticsearch Operator is ready again"
+                  # ELASTICSEARCH_OPERATOR_LOOKUP=$(oc get deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
+                  # if [[ ! -z $ELASTICSEARCH_OPERATOR_LOOKUP ]]; then
+                  #   echo "Elasticsearch Operator is ready again"
+                  #   break
+                  # fi
+                  ELASTICSEARCH_CLUSTER_LOOKUP=$(oc get ElasticsearchCluster elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found -ojsonpath='{.status.phase}')
+                  if [[ ! -z ${ELASTICSEARCH_CLUSTER_LOOKUP} && ${ELASTICSEARCH_CLUSTER_LOOKUP} == *"Ready"* ]]; then
+                    echo "ElasticsearchCluster elasticsearch-master elasticsearch-master is ready"
                     break
                   fi
                 done

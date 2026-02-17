@@ -1,16 +1,13 @@
 
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
-
-
 apiVersion: v1
 kind: Secret
 metadata:
   name: ibmcloud-secret
 type: Opaque
 stringData:
-  apikey: 7ZrKJHIExk
-
+  apikey: UdAEpxVTjvOBNx9JdcCyxneMQkSGBTJgo0yG0LJ2nNgx
 
 
 apiVersion: batch/v1
@@ -23,7 +20,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: ibmcloud-cli
-          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          image: quay.io/ibmmas/cli@sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40
 
           env:
             - name: IBMCLOUD_API_KEY
@@ -38,8 +35,19 @@ spec:
               echo "Logging into IBM Cloud..."
               ibmcloud login --apikey $IBMCLOUD_API_KEY -r global
 
+              echo "Targeting resource group..."
+              ibmcloud target -g Default
+
               echo "Setting CIS instance..."
-              ibmcloud cis instance-set "CIS - ibmmasfvt.com"
+              ibmcloud cis instance-set crn:v1:bluemix:public:internet-svcs:global:a/02fd888448c1415baa2bcd65684e4db3:4c691f74-6c6a-4048-89a6-db022241df9b:
 
               echo "Creating DNS record..."
-              ibmcloud cis dns-record-create ibmmasfvt.com mas CNAME apps.cluster.example.com
+              ibmcloud cis dns-record-create \
+              ibmmasfvt.com \
+              mas \
+              CNAME \
+              apps.cluster.example.com \
+              --proxied=false
+
+              echo "DNS record created successfully!"
+

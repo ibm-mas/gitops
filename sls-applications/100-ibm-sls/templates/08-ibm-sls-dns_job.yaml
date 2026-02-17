@@ -1,0 +1,41 @@
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ibmcloud-secret
+type: Opaque
+stringData:
+  apikey: PLOd1WOYzr
+
+
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cis-dns-job
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ibmcloud-cli
+          image: icr.io/ibmcloud/ibmcloud-cli:latest
+
+          env:
+            - name: IBMCLOUD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ibmcloud-secret
+                  key: apikey
+
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Logging into IBM Cloud..."
+              ibmcloud login --apikey $IBMCLOUD_API_KEY -r global
+
+              echo "Setting CIS instance..."
+              ibmcloud cis instance-set "CIS - ibmmasfvt.com"
+
+              echo "Creating DNS record..."
+              ibmcloud cis dns-record-create ibmmasfvt.com mas CNAME apps.cluster.example.com

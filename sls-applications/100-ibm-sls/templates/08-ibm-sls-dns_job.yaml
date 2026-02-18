@@ -1,18 +1,24 @@
 
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
-apiVersion: v1
 kind: Secret
+apiVersion: v1
 metadata:
-  name: ibmcloud-secret
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "113"
-    argocd.argoproj.io/sync-options: Prune=true
-type: Opaque
-stringData:
-  apikey: 
+    argocd.argoproj.io/sync-wave: "110"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+  ibm_apikey: {{ .Values.ibm_apikey | b64enc }}
+  type: Opaque
 
-
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -27,28 +33,79 @@ spec:
       containers:
         - name: ibmcloud-cli
           image: quay.io/ibmmas/cli@sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40
-
+          imagePullPolicy: IfNotPresent
           env:
-            - name: IBMCLOUD_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: ibmcloud-secret
-                  key: apikey
-
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: ICN
+              value: '{{ .Values.ibm_customer_number }}'
+            - name: SUBSCRIPTION_ID
+              value: '{{ .Values.subscription_id }}'
+            - name: DOMAIN
+              value: '{{ .Values.sls_domain }}'
+            - name: CIS_SERVICE_NAME
+              value: '{{ .Values.cis_service_name }}'
+            - name: CIS_CRN
+              value: '{{ .Values.cis_crn }}'
+            - name: AVP_TYPE
+              value: "aws"
+            
           command: ["/bin/sh", "-c"]
           args:
             - |
-              echo "Logging into IBM Cloud..."
-              ibmcloud login --apikey $IBMCLOUD_API_KEY -r global
 
-              echo "Targeting resource group..."
-              ibmcloud target -g Default
+              set -e
+
+              echo "Reading AWS credentials..."
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat/etc/mas/creds/aws/aws_secret_access_key)
+
+              export SM_AWS_REGION=${REGION_ID}
+
+              source /mascli/functions/gitops_utils
+              sm_login
+
+              echo "Fetching IBM API key from AWS Secrets Manager"
+
+              SECRET_NAME_CIS="${ACCOUNT_ID}/${ICN}/cis"
+
+              SECRET_JSON=$(aws secretsmanager get-secret-value \
+                --secret-id ${SECRET_NAME_CIS} \
+                --query SecretString \
+                --output text)
+
+              IBM_APIKEY=$(echo ${SECRET_JSON} | jq -r '.ibm_apikey')
+
+               if [[ -z "${IBM_APIKEY}" || "${IBM_APIKEY}" == "null" ]]; then
+                echo "Failed to fetch ibm_apikey from ${SECRET_NAME_CIS}"
+                exit 1
+              fi
+
+              echo "Logging into IBM Cloud..."
+              ibmcloud login --apikey ${IBMCLOUD_API_KEY} -r global
+
+              #echo "Targeting resource group..."
+              #ibmcloud target -g Default
 
               echo "Setting CIS instance..."
-              ibmcloud cis instance-set crn:v1:bluemix:public:internet-svcs:global:a/02fd888448c1415baa2bcd65684e4db3:4c691f74-6c6a-4048-89a6-db022241df9b::
+              ibmcloud cis instance-set ${CIS_CRN}
+
+              echo "Exporting DOMAIN_NAME..."
+              export DOMAIN_NAME=$CIS_SERVICE_NAME
+
+              echo "Fetching DOMAIN_ID..."
+              DOMAIN_ID=$(ibmcloud cis domains --output json | jq -r ".[] | select(.name==\"$DOMAIN_NAME\") | .id")
+
 
               echo "Creating DNS record..."
-              ibmcloud cis dns-record-create ibmmasfvt.com mas CNAME apps.cluster.example.com --proxied=false
+               ibmcloud cis dns-record-create "$DOMAIN_ID" \
+               --type CNAME \
+               --name "SLS.mas-${ICN}-${SUBSCRIPTION_ID}-SLS" \
+               --content "apps.cluster.example.com" \
+               --proxied false
+
 
               echo "DNS record created successfully!"
 

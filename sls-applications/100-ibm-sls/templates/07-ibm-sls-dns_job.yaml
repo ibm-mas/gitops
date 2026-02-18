@@ -30,17 +30,19 @@ metadata:
     argocd.argoproj.io/sync-wave: "113"
     argocd.argoproj.io/sync-options: Replace=true
 spec:
-  template:
+ selector:
+    matchLabels:
+      app: cis-dns-job
+ template:
+    metadata:
+      labels:
+        cis-dns-job: cis-dns-job
     spec:
       restartPolicy: Never
       containers:
         - name: run
           image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
-          volumeMounts:
-            - name: aws-creds
-              mountPath: /etc/mas/creds/aws
-              readOnly: true
           env:
             - name: ACCOUNT_ID
               value: {{ .Values.account_id }}

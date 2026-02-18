@@ -4,7 +4,11 @@
 {{ $cr_kind := .Values.mas_config_kind }}
 {{ $cr_api_version := .Values.mas_config_api_version }}
 
-{{ $job_name := printf "postdelete-delete-cr-job-%s" $cr_name }}
+{{- /* Truncate job name to stay under 63 character limit for labels */ -}}
+{{- /* postdelete-cr-job- (18) + name (38) + - (1) + hash (6) = 63 chars */ -}}
+{{ $name_hash := $cr_name | sha256sum | trunc 6 }}
+{{ $truncated_name := trunc 38 $cr_name }}
+{{ $job_name := printf "postdelete-cr-job-%s-%s" $truncated_name $name_hash }}
 
 # NOTE: depends on resources created in ibm-mas-suite chart (01-postdelete-crs-resources)
 # The values below must align with the values in that file

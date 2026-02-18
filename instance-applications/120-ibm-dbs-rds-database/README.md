@@ -113,6 +113,160 @@ db2_addons_audit_config:
   applyDefaultPolicy: true
 ```
 
+### Backup Configuration
+
+Configure automated backups to S3 for RDS DB2 databases. The backup system supports both full and incremental backups with configurable schedules.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `backup.enabled` | Enable/disable backup cron jobs | `true` |
+| `backup.s3_bucket_name` | S3 bucket name for backups | `""` (required) |
+| `backup.s3_prefix` | S3 prefix/folder for backups | `"db2-backups"` |
+
+#### Full Backup Configuration
+
+Full backups run weekly on Sundays at 2 AM by default.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `backup.full.enabled` | Enable full backup cron job | `true` |
+| `backup.full.schedule` | Cron schedule for full backup | `"0 2 * * 0"` (Sunday 2 AM) |
+| `backup.full.compression` | Compression option (INCLUDE/EXCLUDE) | `"INCLUDE"` |
+| `backup.full.util_impact_priority` | Utility impact priority (1-100) | `50` |
+| `backup.full.num_files` | Number of parallel backup files | `4` |
+| `backup.full.parallelism` | Degree of parallelism | `4` |
+| `backup.full.num_buffers` | Number of buffers | `8` |
+
+#### Incremental Backup Configuration
+
+Incremental backups run daily at 2 AM except Sundays (Monday-Saturday).
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `backup.incremental.enabled` | Enable incremental backup cron job | `true` |
+| `backup.incremental.schedule` | Cron schedule for incremental backup | `"0 2 * * 1-6"` (Mon-Sat 2 AM) |
+| `backup.incremental.compression` | Compression option (INCLUDE/EXCLUDE) | `"INCLUDE"` |
+| `backup.incremental.util_impact_priority` | Utility impact priority (1-100) | `50` |
+| `backup.incremental.num_files` | Number of parallel backup files | `4` |
+| `backup.incremental.parallelism` | Degree of parallelism | `4` |
+| `backup.incremental.num_buffers` | Number of buffers | `8` |
+
+#### Backup Configuration Example
+
+```yaml
+backup:
+  enabled: true
+  s3_bucket_name: "my-db2-backups-bucket"
+  s3_prefix: "prod/db2-backups"
+  
+  full:
+    enabled: true
+    schedule: "0 2 * * 0"  # Every Sunday at 2 AM
+    compression: "INCLUDE"
+    util_impact_priority: 50
+    num_files: 4
+    parallelism: 4
+    num_buffers: 8
+  
+  incremental:
+    enabled: true
+    schedule: "0 2 * * 1-6"  # Monday-Saturday at 2 AM
+    compression: "INCLUDE"
+    util_impact_priority: 50
+    num_files: 4
+    parallelism: 4
+    num_buffers: 8
+```
+
+#### Backup Process Flow
+
+The backup process follows these steps:
+
+1. **Connect to rdsadmin database** - Establishes secure SSL connection
+2. **Check VPC Gateway Endpoint for S3** - Verifies S3 connectivity (should be pre-configured)
+3. **Configure S3 Integration** - Validates IAM roles and bucket permissions (should be pre-configured)
+4. **Call rdsadmin.backup_database** - Initiates backup with parameters:
+   - `database_name`: Target database
+   - `s3_bucket_name`: S3 bucket for backup storage
+   - `s3_prefix`: S3 path prefix (includes timestamp)
+   - `backup_type`: FULL or INCREMENTAL
+   - `compression_option`: INCLUDE or EXCLUDE
+   - `util_impact_priority`: 1-100 (higher = more resources)
+   - `num_files`: Number of parallel backup files
+   - `parallelism`: Degree of parallelism
+   - `num_buffers`: Number of buffers
+5. **Monitor backup status** - Polls `rdsadmin.get_task_status` until completion
+6. **Verify upload to S3** - Confirms backup files are uploaded
+7. **Terminate connection** - Closes database connection
+
+#### S3 Backup Structure
+
+Backups are organized in S3 with the following structure:
+```
+s3://<bucket>/<prefix>/<database_name>/<backup_type>/<timestamp>/
+```
+
+Example:
+```
+s3://my-db2-backups-bucket/prod/db2-backups/MAXDB80/full/20260213_020000/
+s3://my-db2-backups-bucket/prod/db2-backups/MAXDB80/incremental/20260214_020000/
+```
+
+#### Prerequisites for Backup
+
+1. **VPC Gateway Endpoint for S3** - Must be configured at VPC level
+2. **IAM Role** - RDS instance must have IAM role with S3 write permissions
+3. **S3 Bucket** - Bucket must exist with appropriate permissions
+4. **S3 Bucket Policy** - Allow RDS instance to write to the bucket
+
+#### Region-Based Configuration with Jinja Templates
+
+All backup parameters can be configured per region using Jinja templates in GitOps. This allows you to:
+- Set different backup schedules for different regions/timezones
+- Enable/disable backups per region
+- Configure different S3 buckets per region
+- Adjust backup performance parameters based on region requirements
+
+**Example Jinja Template Configuration:**
+
+```yaml
+# config/<region>/120-ibm-dbs-rds-database-values.yaml.j2
+backup:
+  enabled: {{ backup_enabled | default(true) }}
+  s3_bucket_name: "{{ s3_backup_bucket }}"
+  s3_prefix: "{{ cluster_name }}/db2-backups"
+  
+  full:
+    enabled: {{ full_backup_enabled | default(true) }}
+    schedule: "{{ full_backup_schedule | default('0 2 * * 0') }}"
+  
+  incremental:
+    enabled: {{ incremental_backup_enabled | default(true) }}
+    schedule: "{{ incremental_backup_schedule | default('0 2 * * 1-6') }}"
+```
+
+**Region Variables Example:**
+
+```yaml
+# config/us-east-1/variables.yaml
+backup_enabled: true
+full_backup_enabled: true
+incremental_backup_enabled: true
+full_backup_schedule: "0 2 * * 0"  # Sunday 2 AM UTC
+incremental_backup_schedule: "0 2 * * 1-6"  # Mon-Sat 2 AM UTC
+s3_backup_bucket: "prod-us-east-1-db2-backups"
+
+# config/eu-west-1/variables.yaml
+backup_enabled: true
+full_backup_enabled: true
+incremental_backup_enabled: true
+full_backup_schedule: "0 3 * * 0"  # Sunday 3 AM UTC (adjusted for timezone)
+incremental_backup_schedule: "0 3 * * 1-6"  # Mon-Sat 3 AM UTC
+s3_backup_bucket: "prod-eu-west-1-db2-backups"
+```
+
+See `templates/JINJA_EXAMPLE.md` for comprehensive examples of region-based configuration.
+
 ## Templates
 
 ### 00-configmap.yaml
@@ -130,6 +284,31 @@ Job that runs the initialization script:
 - Executes the Python script from ConfigMap
 - Passes all configuration values as environment variables (JSON format)
 - Downloads RDS SSL certificate for secure connections
+
+### 02-backup-script-configmap.yaml
+Creates a ConfigMap with Python backup script:
+- **Sync Wave**: 135
+- Contains comprehensive RDS DB2 backup logic
+- Supports both FULL and INCREMENTAL backup types
+- Connects to rdsadmin database using SSL
+- Calls `rdsadmin.backup_database` stored procedure
+- Monitors backup progress using `rdsadmin.get_task_status`
+- Organizes backups in S3 with timestamp-based structure
+
+### 03-backup-cronjobs.yaml
+Creates CronJob resources for automated backups:
+- **Sync Wave**: 137
+- **Full Backup CronJob**: Runs weekly (default: Sundays at 2 AM)
+  - Configurable schedule via `backup.full.schedule`
+  - Can be disabled via `backup.full.enabled`
+  - Executes FULL backup to S3
+- **Incremental Backup CronJob**: Runs daily except Sundays (default: Mon-Sat at 2 AM)
+  - Configurable schedule via `backup.incremental.schedule`
+  - Can be disabled via `backup.incremental.enabled`
+  - Executes INCREMENTAL backup to S3
+- Both jobs use the backup script from ConfigMap
+- Credentials mounted from `dbs-rds-secret-store` secret
+- SSL certificate automatically downloaded for secure connections
 
 ## Usage
 
@@ -210,13 +389,18 @@ ibm_dbs_rds_databases:
 
 The chart uses ArgoCD sync waves to ensure proper ordering:
 
-1. **Wave 135**: ConfigMap with comprehensive initialization and configuration script
+1. **Wave 135**: ConfigMaps with initialization and backup scripts
+   - `00-configmap.yaml`: DB2 initialization script
+   - `02-backup-script-configmap.yaml`: Backup script
 2. **Wave 136**: Secret and job that executes all DB2 setup:
    - Creates bufferpools and tablespaces
    - Applies DB2 instance registry settings
    - Applies DB2 database configuration
    - Applies DB2 instance DBM configuration
    - Configures audit settings (if enabled)
+3. **Wave 137**: Backup CronJobs
+   - Full backup CronJob (weekly)
+   - Incremental backup CronJob (daily)
 
 ## Notes
 
@@ -224,3 +408,7 @@ The chart uses ArgoCD sync waves to ensure proper ordering:
 - Jobs use the `mas.ibm.com/job-cleanup-group` label for automatic cleanup
 - SSL/TLS is enforced for all database connections
 - The RDS global certificate bundle is automatically downloaded
+- Backup CronJobs can be individually enabled/disabled via configuration
+- Backup schedules are fully customizable using standard cron syntax
+- Backups are stored in S3 with organized folder structure by database, type, and timestamp
+- Backup monitoring is built-in with automatic status checking

@@ -127,7 +127,16 @@ spec:
               export DOMAIN_NAME=$CIS_SERVICE_NAME
 
               echo "Fetching DOMAIN_ID..."
+              ibmcloud cis domains --output json
+
               DOMAIN_ID=$(ibmcloud cis domains --output json | jq -r ".[] | select(.name==\"$DOMAIN_NAME\") | .id")
+
+              echo "domain id : $DOMAIN_ID"
+
+              if [ -z "$DOMAIN_ID" ] || [ "$DOMAIN_ID" == "null" ]; then
+              echo "ERROR: Could not find Domain ID for name: $DOMAIN_NAME"
+              exit 1
+              fi
 
 
               echo "Creating DNS record..."

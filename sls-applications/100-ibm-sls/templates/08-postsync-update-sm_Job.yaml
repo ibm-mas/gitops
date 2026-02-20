@@ -182,7 +182,7 @@ metadata:
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "112"
-    argocd.argoproj.io/sync-options: Prune=true
+    argocd.argoproj.io/sync-options: Force=true
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -282,15 +282,14 @@ spec:
               echo "Routes found:"
               echo "${routes}"
 
-              #for route in $routes; do
-                #echo "Adding label to route - ${route}"
-                 # oc patch route ${route} \
-                 #   -n ${SUITE_NAMESPACE} \
-                  #  --type=merge \
-                  #  -p '{"metadata":{"labels":{"type":"external"}}}'
-             # done
+              for route in $routes; do
+              echo "Adding label to route - ${route}"
 
-              #echo "Route labeling completed"
+                  oc patch route ${route} \
+                    -n ${SUITE_NAMESPACE} \
+                    --type=merge \
+                    -p '{"metadata":{"labels":{"type":"external"}}}'
+
 
       restartPolicy: Never
 

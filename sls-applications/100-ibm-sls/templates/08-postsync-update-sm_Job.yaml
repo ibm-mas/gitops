@@ -274,6 +274,8 @@ spec:
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
               sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\":\"$SLS_URL\" }" "${TAGS}"
     
+              # 1. Define the namespace using the environment variables passed to the container
+              namespace="mas-${ICN}-${SUBSCRIPTION_ID}-sls"
 
               echo "Fetching routes from ${namespace}"
 
@@ -283,10 +285,10 @@ spec:
               echo "${routes}"
 
               for route in $routes; do
-              echo "Adding label to route - ${route}"
+                echo "Adding label to route - ${route}"
 
               oc patch route ${route} \
-                -n ${SUITE_NAMESPACE} \
+                -n ${namespace} \
                 --type=merge \
                 -p '{"metadata":{"labels":{"type":"external"}}}'
 

@@ -90,6 +90,12 @@ spec:
                 --query SecretString \
                 --output text)
 
+              echo "Fetching OCP_INGRESS from AWS Secrets Manager"
+
+              export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"
+              sm_get_secret_file ${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}public-elb ${PUBLIC_ELB_DNS_NAME_FILE}
+              export OCP_INGRESS=$(jq -r .dns $PUBLIC_ELB_DNS_NAME_FILE)
+
               IBM_APIKEY=$(echo ${SECRET_JSON} | jq -r '.ibm_apikey')
 
                if [[ -z "${IBM_APIKEY}" || "${IBM_APIKEY}" == "null" ]]; then
@@ -97,9 +103,12 @@ spec:
                 exit 1
               fi
 
-              echo "Setting IBM CLI home to writable location..."
-             
+              if [[ -z "${OCP_INGRESS}" || "${OCP_INGRESS}" == "null" ]]; then
+              echo "Failed to fetch dns value from public-elb secret"
+              exit 1
+              fi
 
+              echo "Setting IBM CLI home to writable location..."
               export IBMCLOUD_HOME=/tmp/bluemix
               mkdir -p $IBMCLOUD_HOME
 
@@ -138,14 +147,12 @@ spec:
               exit 1
               fi
 
-
               echo "Creating DNS record..."
                ibmcloud cis dns-record-create "$DOMAIN_ID" \
                --type CNAME \
-               --name "SLSt.mas-${ICN}-${SUBSCRIPTION_ID}.SLS" \
-               --content "apps.noble6.cp.fyre.ibm.com" \
-               --proxied true
-
+               --name "SLS.mas-${ICN}-${SUBSCRIPTION_ID}-SLS" \
+               --content "${OCP_INGRESS}" \
+               --proxied false
 
               echo "DNS record created successfully!"
 

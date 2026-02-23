@@ -7,7 +7,8 @@
 {{- $_job_version := "v5" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
-{{- if not (empty .Values.ibm_sls_standalone.dns_provider) }}
+{{- if .Values.ibm_sls_standalone }}
+  {{- if and .Values.ibm_sls_standalone.dns_provider (eq (lower .Values.ibm_sls_standalone.dns_provider) "cis") }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -154,3 +155,5 @@ spec:
               secretName: aws       # make sure this Secret exists in the same namespace
               defaultMode: 420
 {{- end }}
+{{- end }}
+

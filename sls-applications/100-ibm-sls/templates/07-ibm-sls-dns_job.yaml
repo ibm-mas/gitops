@@ -1,14 +1,18 @@
 
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 {{ $aws_secret := "aws"}}
-
+{{- $_job_name_prefix := "ibm-sls-dns" }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v5" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
 
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: cis-dns-job
+  name: $_job_name 
   namespace: mas-{{ .Values.ibm_customer_number }}-{{ .Values.subscription_id }}-sls
   annotations:
     argocd.argoproj.io/sync-wave: "113"

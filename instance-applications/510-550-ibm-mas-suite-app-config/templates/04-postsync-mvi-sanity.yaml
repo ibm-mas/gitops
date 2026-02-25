@@ -3,7 +3,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:1b88f88a1a719d006ea1f4b8dcfd1c2625fa7ecc529c3267e7b4b6afaa1c8da0" }}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
 {{ $ns               :=  .Values.mas_app_namespace }}
 {{ $np_name          :=  "postsync-sanity-mvi-np" }}
@@ -427,6 +427,41 @@ data:
       )
       assert resp.status_code == 200
 
+    def test_file_upload_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
+      dataset_resp = requests.post(
+        f"https://{mvi_host}/api/datasets",
+        headers={
+        'X-Auth-Token': mvi_apikey,
+        'Content-Type': 'application/json'
+        },
+        data='{"name": "Test Dataset"}',
+        verify=mvi_host_ca_filepath
+      )
+      assert dataset_resp.status_code == 200
+      dataset_id = dataset_resp.json()["dataset_id"]
+      
+      try:
+        test_image = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+        test_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+        test_file.write(test_image)
+        test_file.close()
+        
+        with open(test_file.name, 'rb') as f:
+          upload_resp = requests.post(
+            f"https://{mvi_host}/api/datasets/{dataset_id}/files",
+            headers={'X-Auth-Token': mvi_apikey},
+            files={'files': ('sample.png', f, 'image/png')},
+            verify=mvi_host_ca_filepath
+          )
+        os.remove(test_file.name)
+        assert upload_resp.status_code in [200, 201]
+      finally:
+        requests.delete(
+          f"https://{mvi_host}/api/datasets/{dataset_id}",
+          headers={'X-Auth-Token': mvi_apikey},
+          verify=mvi_host_ca_filepath
+        )
+
     def test_profiles_api(mvi_host, mvi_host_ca_filepath, mvi_apikey):
       resp = requests.get(
         f"https://{mvi_host}/api/profiles",
@@ -542,7 +577,7 @@ spec:
       imagePullSecrets: []
       containers:
         - name: run
-          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
           resources:
             limits:

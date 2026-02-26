@@ -190,7 +190,6 @@ data:
         print("✅ All bufferpools and tablespaces already existed or not created — please check.")
 
     # 3. Apply DB2 Instance Registry Configuration
-    print("----Apply DB2 Instance Registry Configuration----.")
     db2_instance_registry = os.environ.get('DB2_INSTANCE_REGISTRY', '')
     if db2_instance_registry:
         print("\n📝 Applying DB2 Instance Registry settings...")
@@ -206,17 +205,52 @@ data:
     
     # 4. Apply DB2 Database Configuration
     db2_database_config = os.environ.get('DB2_DATABASE_CONFIG', '')
+    restart_required_params = []
     if db2_database_config:
         print("\n📝 Applying DB2 Database Configuration settings...")
         import json
         config = json.loads(db2_database_config)
+        
+        # Parameters that require database restart
+        restart_params = ['CHNGPGS_THRESH', 'CUR_COMMIT', 'DEC_TO_CHAR_FMT',
+                         'LOCKTIMEOUT', 'NUM_IOCLEANERS', 'NUM_IOSERVERS']
+        
         for key, value in config.items():
             try:
-                sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
+                # First, check current value of the parameter
+                check_sql = f"SELECT VALUE FROM SYSIBMADM.DBCFG WHERE NAME = '{key.upper()}'"
+                stmt = db2.exec_immediate(db2_conn, check_sql)
+                result = db2.fetch_tuple(stmt)
+                
+                current_value = result[0].strip() if result else None
+                desired_value = str(value).strip()
+                
+                if current_value == desired_value:
+                    print(f"  ℹ️  {key} already set to {value} (no change needed)")
+                    continue
+                
+                print(f"  📝 Updating {key}: {current_value} → {desired_value}")
+                
+                # Check if parameter requires restart and pass the flag accordingly
+                if key.upper() in restart_params:
+                    sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}', 'RESTART_DATABASE', 'YES')"
+                    restart_required_params.append(key)
+                else:
+                    sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
+                
                 db2.exec_immediate(admin_conn, sql)
                 print(f"  ✅ Set {key} = {value}")
+                    
             except Exception as e:
-                print(f"  ⚠️  Failed to set {key}: {e}")
+                error_msg = str(e)
+                if 'not supported or not modifiable' in error_msg:
+                    print(f"  ℹ️  Skipping {key} (not modifiable in RDS)")
+                elif 'RESTART_DATABASE' in error_msg or 'SQL0438N' in error_msg:
+                    print(f"  ⚠️  {key} requires database restart but failed: {e}")
+                    if key.upper() not in restart_params:
+                        restart_required_params.append(key)
+                else:
+                    print(f"  ⚠️  Failed to set {key}: {e}")
     
     # 5. Apply DB2 Instance DBM Configuration
     db2_instance_dbm_config = os.environ.get('DB2_INSTANCE_DBM_CONFIG', '')
@@ -224,30 +258,46 @@ data:
         print("\n📝 Applying DB2 Instance DBM Configuration settings...")
         import json
         config = json.loads(db2_instance_dbm_config)
+        
         for key, value in config.items():
             try:
                 sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
                 db2.exec_immediate(admin_conn, sql)
                 print(f"  ✅ Set {key} = {value}")
             except Exception as e:
-                print(f"  ⚠️  Failed to set {key}: {e}")
-    
-    # 6. Apply DB2 Audit Configuration
-    enable_audit = os.environ.get('ENABLE_AUDIT', 'false').lower() == 'true'
-    if enable_audit:
-        print("\n📝 Configuring DB2 Audit...")
-        try:
-            sql = f"CALL rdsadmin.update_db_param('{database_name}', 'AUDIT_BUF_SZ', '1000')"
-            db2.exec_immediate(admin_conn, sql)
-            print("  ✅ Set AUDIT_BUF_SZ = 1000")
-            
-            apply_default_policy = os.environ.get('APPLY_DEFAULT_POLICY', 'false').lower() == 'true'
-            if apply_default_policy:
-                print("  ℹ️  Default audit policy would be applied here")
-        except Exception as e:
-            print(f"  ⚠️  Failed to configure audit: {e}")
+                error_msg = str(e)
+                if 'not supported or not modifiable' in error_msg:
+                    print(f"  ℹ️  Skipping {key} (not modifiable in RDS)")
+                else:
+                    print(f"  ⚠️  Failed to set {key}: {e}")
 
-    print("\n✅ All DB2 configurations applied successfully")
-    
-    db2.close(admin_conn)
-    db2.close(db2_conn)
+    # 6. Handle database restart warning if required
+    if restart_required_params:
+        print("\n" + "="*80)
+        print("  ⚠️  DATABASE RESTART PENDING")
+        print("="*80)
+        print(f"\n  The following parameters have been updated but require a database restart to take effect:")
+        for param in restart_required_params:
+            print(f"     - {param}")
+        
+        print(f"\n  ⚠️  IMPORTANT: These changes are PENDING and will NOT be active until the database is restarted.")
+        print(f"\n  Options to restart the RDS DB2 instance:")
+        print(f"  1. Using AWS Console:")
+        print(f"     - Navigate to RDS → Databases → Select your DB instance")
+        print(f"     - Actions → Reboot")
+        print(f"\n  2. Using AWS CLI:")
+        print(f"     aws rds reboot-db-instance --db-instance-identifier <your-db-instance-id>")
+        print(f"\n  3. Using DB2 procedure (if authorized):")
+        print(f"     CALL rdsadmin.restart_database('{database_name}')")
+        print("\n" + "="*80)
+        
+        # Close connections
+        try:
+            db2.close(admin_conn)
+            db2.close(db2_conn)
+        except:
+            pass
+    else:
+        print("\n✅ All DB2 configurations applied successfully")
+        db2.close(admin_conn)
+        db2.close(db2_conn)

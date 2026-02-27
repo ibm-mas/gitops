@@ -7,11 +7,91 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 */}}
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
-{{ $ns := printf "mas-%s-syncres" .Values.instance_id }}
+{{ $ns := printf "mas-%s-core" .Values.instance_id }}
 {{ $prefix := printf "post-jdbc-usr-%s" .Values.mas_config_name }}
 {{ $secret := printf "%s-creds" $prefix }}
+{{ $sa := printf "%s-sa" $prefix }}
+{{ $role := printf "%s-role" $prefix }}
+{{ $rb := printf "%s-rb" $prefix }}
 {{ $np := printf "%s-np" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+
+---
+# Role in DB2 namespace for accessing DB2 resources
+# This allows the service account from mas-core namespace to access resources in db2 namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $role }}
+  namespace: {{ .Values.db2_namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - list
+    - get
+- apiGroups:
+    - ""
+  resources:
+    - pods/exec
+  verbs:
+    - create
+- apiGroups:
+    - db2u.databases.ibm.com
+  resources:
+    - db2uengines
+    - db2uinstances
+  verbs:
+    - get
+    - list
+
+---
+# RoleBinding in DB2 namespace to bind the service account from mas-core namespace
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb }}
+  namespace: {{ .Values.db2_namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role }}
 
 ---
 apiVersion: batch/v1
@@ -30,7 +110,7 @@ spec:
   template:
     metadata:
       labels:
-        app: sync-job
+        app: {{ $job }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
@@ -210,7 +290,7 @@ spec:
 
       restartPolicy: Never
 
-      serviceAccountName: aws-db2-user-job
+      serviceAccountName: {{ $sa }}
   backoffLimit: 4
 
 {{- end }}

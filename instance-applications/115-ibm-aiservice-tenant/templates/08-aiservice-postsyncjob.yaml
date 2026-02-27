@@ -37,12 +37,18 @@ where multiple Jobs are created in our templates using a Helm loop. In those cas
 must be added to $_job_cleanup_group.By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators
 are required here.*/}}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+{{- $_namespace := .Values.aiservice_namespace }}
+{{- if not (hasPrefix "9.1." .Values.aiservice_channel) }}
+  {{- $_namespace = .Values.tenantNamespace }}
+{{- end }}
+
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: postsync-manage-aiservice-job
-  namespace: "{{ .Values.tenantNamespace }}"
+  namespace: "{{ $_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "309"
 
@@ -51,7 +57,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: postsync-manage-aiservice-job-role
-  namespace: "{{ .Values.tenantNamespace }}"
+  namespace: "{{ $_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "310"
 rules:
@@ -63,13 +69,13 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: postsync-manage-aiservice-job-rolebinding
-  namespace: "{{ .Values.tenantNamespace }}"
+  namespace: "{{ $_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "311"
 subjects:
   - kind: ServiceAccount
     name: postsync-manage-aiservice-job
-    namespace: "{{ .Values.tenantNamespace }}"
+    namespace: "{{ $_namespace }}"
 roleRef:
   kind: Role
   name: postsync-manage-aiservice-job-role
@@ -79,7 +85,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-postsync-manage-ai-tenant-job
-  namespace: "{{ .Values.tenantNamespace }}"
+  namespace: "{{ $_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "312"
 spec:
@@ -95,7 +101,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ $_job_name }}
-  namespace: "{{ .Values.tenantNamespace }}"
+  namespace: "{{ $_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "313"
     argocd.argoproj.io/hook: PostSync
@@ -140,6 +146,8 @@ spec:
               value: "{{ .Values.aiservice_s3_secretkey }}"
             - name: AVP_TYPE
               value: "aws"
+            - name: TARGET_NAMESPACE
+              value: "{{ $_namespace }}"
           command:
             - /bin/sh
             - -c
@@ -158,7 +166,7 @@ spec:
               echo "Retrieve AIBroker API Key for tenant: ${AISERVICE_TENANT}"
               echo "================================================================================"
 
-              AISERVICE_APIKEY_SECRET=$(oc get secret ${AISERVICE_TENANT}----apikey-secret -n ${AISERVICE_TENANT} -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
+              AISERVICE_APIKEY_SECRET=$(oc get secret ${AISERVICE_TENANT}----apikey-secret -n ${TARGET_NAMESPACE} -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
               if [ -z "$AISERVICE_APIKEY_SECRET" ]; then
                 echo "AISERVICE_APIKEY_SECRET is empty"
                 exit 1

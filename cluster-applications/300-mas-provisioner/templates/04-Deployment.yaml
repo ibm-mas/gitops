@@ -33,9 +33,11 @@ spec:
           ports:
             - containerPort: {{ .Values.service_port }}
           env:
+            {{- if not (empty .Values.provisioner_storage_class) }}
             - name: LOG_STORAGE_DIR
               value: /opt/automation/mas-provisioner/logs
-            {{- if not (empty .Values.pd_key) }}
+            {{- end }}
+            {{- if and .Values.enable_pd_alert (not (empty .Values.pd_key)) }}
             - name: PD_ROUTING_KEY
               value: /opt/automation/mas-provisioner/pdkey/key
             {{- end }}
@@ -71,7 +73,7 @@ spec:
               value: "{{ .Values.enable_pd_alert }}"
             - name: ENABLE_OCM_ALERT
               value: "{{ .Values.enable_ocm_alert }}"
-            {{- if not (empty .Values.ocm_api_key) }}
+            {{- if and .Values.enable_ocm_alert (not (empty .Values.ocm_api_key))}}
             - name: OCM_API_KEY
               value: /opt/automation/mas-provisioner/ocm/key
             {{- end }}
@@ -114,8 +116,10 @@ spec:
             periodSeconds: 60
             failureThreshold: 1
           volumeMounts:
+            {{- if not (empty .Values.provisioner_storage_class) }}
             - name: log-storage
               mountPath: /opt/automation/mas-provisioner/logs
+            {{- end }}
             - name: tls-certs
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/tls
@@ -153,9 +157,11 @@ spec:
       imagePullSecrets:
         - name: ibm-entitlement
       volumes:
+        {{- if not (empty .Values.provisioner_storage_class) }}
         - name: log-storage
           persistentVolumeClaim:
             claimName: mas-provisioner-logs
+        {{- end }}
         - name: tls-certs
           secret:
             secretName: mas-provisioner-server-tls
@@ -164,7 +170,7 @@ spec:
           secret:
             secretName: git-secret
         {{- end }}
-        {{- if and .Values.enable_pd_alert (.Values.pd_key) }}
+        {{- if and .Values.enable_pd_alert (not (empty .Values.pd_key)) }}
         - name: pd-key
           secret:
             secretName: pd-routing-key-secret

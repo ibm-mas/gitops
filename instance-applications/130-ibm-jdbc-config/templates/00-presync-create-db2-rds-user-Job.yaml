@@ -242,44 +242,24 @@ spec:
                       print(f"Username: {username}")
                       print(f"App Type: {app_type}")
               
-                      # Check if user exists
-                      check_user_sql = f"""
-                          SELECT COUNT(*) as user_count
-                          FROM SYSCAT.DBAUTH
-                          WHERE GRANTEE = UPPER('{username}')
-                      """
-                      print(f"Check user sql: {check_user_sql} ")
-              
-                      try:
-                          stmt = ibm_db.exec_immediate(conn, check_user_sql)
-                          result = ibm_db.fetch_assoc(stmt)
-                          user_exists = result['USER_COUNT'] > 0
-              
-                          if user_exists:
-                              print(f"ℹ️  User {username} already exists")
-                          else:
-                              print(f"✅ Creating user {username} with comprehensive admin privileges")
-                          
-                          # Grant comprehensive admin privileges to user
-                          admin_grants = [
-                              f"GRANT DBADM, CREATETAB, BINDADD, CONNECT, CREATE_NOT_FENCED_ROUTINE, IMPLICIT_SCHEMA, LOAD, CREATE_EXTERNAL_ROUTINE, QUIESCE_CONNECT ON DATABASE TO USER {username}",
-                              f"GRANT USE OF TABLESPACE MAXDATA TO USER {username}",
-                              f"GRANT DBADM WITHOUT DATAACCESS WITHOUT ACCESSCTRL ON DATABASE TO USER {username}",
-                              f"GRANT SECADM ON DATABASE TO USER {username}",
-                              f"GRANT DATAACCESS ON DATABASE TO USER {username}",
-                              f"GRANT ACCESSCTRL ON DATABASE TO USER {username}"
-                          ]
-                          
-                          for grant_sql in admin_grants:
-                              try:
-                                  ibm_db.exec_immediate(conn, grant_sql)
-                                  print(f"✅ Executed: {grant_sql}")
-                              except Exception as e:
-                                  print(f"⚠️  Error executing grant: {str(e)}")
-                                  print(f"   SQL: {grant_sql}")
-              
-                      except Exception as e:
-                          print(f"⚠️  Error processing user {username}: {str(e)}")
+                      # Grant comprehensive admin privileges to user
+                      # Note: GRANT is idempotent - safe to re-run if user already has the privilege
+                      admin_grants = [
+                          f"GRANT DBADM, CREATETAB, BINDADD, CONNECT, CREATE_NOT_FENCED_ROUTINE, IMPLICIT_SCHEMA, LOAD, CREATE_EXTERNAL_ROUTINE, QUIESCE_CONNECT ON DATABASE TO USER {username}",
+                          f"GRANT USE OF TABLESPACE MAXDATA TO USER {username}",
+                          f"GRANT DBADM WITHOUT DATAACCESS WITHOUT ACCESSCTRL ON DATABASE TO USER {username}",
+                          f"GRANT SECADM ON DATABASE TO USER {username}",
+                          f"GRANT DATAACCESS ON DATABASE TO USER {username}",
+                          f"GRANT ACCESSCTRL ON DATABASE TO USER {username}"
+                      ]
+                      
+                      for grant_sql in admin_grants:
+                          try:
+                              ibm_db.exec_immediate(conn, grant_sql)
+                              print(f"✅ Executed: {grant_sql}")
+                          except Exception as e:
+                              print(f"⚠️  Error executing grant: {str(e)}")
+                              print(f"   SQL: {grant_sql}")
               
                   # ========================================================================
                   # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)
@@ -289,27 +269,9 @@ spec:
                   print(f"{'='*80}")
                   print(f"Non-admin user: {jdbc_username} (from AWS Secrets Manager)")
                   
-                  # Check if non-admin user exists
-                  check_user_sql = f"""
-                      SELECT COUNT(*) as user_count
-                      FROM SYSCAT.DBAUTH
-                      WHERE GRANTEE = UPPER('{jdbc_username}')
-                  """
-              
-                  try:
-                      stmt = ibm_db.exec_immediate(conn, check_user_sql)
-                      result = ibm_db.fetch_assoc(stmt)
-                      user_exists = result['USER_COUNT'] > 0
-              
-                      if user_exists:
-                          print(f"✅ User {jdbc_username} exists in database")
-                      else:
-                          print(f"⚠️  User {jdbc_username} not found in database")
-                          print(f"   Note: User should be created externally in AWS RDS")
-              
-                  except Exception as e:
-                      print(f"⚠️  Error checking user {jdbc_username}: {str(e)}")
-              
+                  # Grant application-specific roles to non-admin user
+                  # Note: Skipping user existence check - GRANT is idempotent and safe to re-run
+                  print(f"ℹ️  Proceeding to grant application roles to {jdbc_username}")
                   # Grant application-specific roles to non-admin user
                   for user_info in nonadmin_user_roles:
                       grants = user_info['grants']
@@ -360,4 +322,3 @@ spec:
   backoffLimit: 4
   
   {{- end }}
-

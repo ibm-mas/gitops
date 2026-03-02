@@ -1,0 +1,467 @@
+{{- if not (empty .Values.mas_rds_databases) }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+
+{{ $app_ns          := .Values.mas_app_namespace }}
+{{ $np_name            := "postsync-app-rds-roles-np" }}
+{{ $sa_name            := "postsync-app-rds-roles-sa" }}
+{{ $job_label          := "postsync-app-rds-roles-job" }}
+
+---
+{{- /*
+  Permit outbound communication by the Job pod (Needed to communicate with RDS)
+  This single policy is shared by all per-rds job instances
+*/}}
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $app_ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "703"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+{{- /*
+  Service account for the job
+  This single service account is shared by all per-rds job instances
+*/}}
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: "{{ $sa_name }}"
+  namespace: "{{ $app_ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "703"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+{{- /*
+  A separate CronJob is created in the app namespace per RDS instance reserved for use by MAS applications (Manage or Facilities).
+  This job runs periodically to check if application-specific tables exist and creates required roles.
+
+  NOTE: When inside the range loop below, make sure you prefix any references to chart values NOT under .Values.manage_rds_databases with $.
+        For example: {{ $.Values.custom_labels }} (instead of {{ .Values.custom_labels }} )
+*/}}
+{{- range $i, $db := .Values.mas_rds_databases }}
+
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "postsync-rds-roles" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := $db }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
+This is to ensure ArgoCD will create a new job resource instead of attempting (and failing) to update an
+immutable field of any existing Job resource.
+*/}}
+{{- $_job_hash := print  ( $_job_config_values  |  toYaml ) $_cli_image_digest  $_job_version  |  adler32sum  }}
+
+{{- $_cronjob_name := join "-" (list $_job_name_prefix $_job_hash) }}
+
+{{- /*
+Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+
+When the auto_delete flag is not set on the root application, a CronJob in the cluster uses this label 
+to identify old Job resources that should be pruned on behalf of ArgoCD.
+
+Any Job resources in the same namespace that have the mas.ibm.com/job-cleanup-group with this value
+will be considered to belong to the same cleanup group. All but the most recent (i.e. with the latest "creation_timestamp")
+Jobs will be automatically deleted.
+
+$_job_cleanup_group can usually just be based on $_job_name_prefix. There are some special cases
+where multiple Jobs are created in our templates using a Helm loop. In those cases, additional discriminators
+must be added to $_job_cleanup_group.
+NOTE: this is one of those cases; we need a separate cleanup group for each per-rds Job.
+
+By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators
+are required here.
+*/}}
+{{- $_job_cleanup_group := cat $_job_name_prefix $db.rds_instance_name | sha1sum }}
+
+{{ $rds_host           := $db.rds_host }}
+{{ $rds_port           := $db.rds_port }}
+{{ $rds_dbname         := $db.rds_dbname }}
+{{ $rds_instance_name  := $db.rds_instance_name }}
+{{ $rds_admin_user     := $db.rds_admin_user }}
+{{ $rds_admin_password := $db.rds_admin_password }}
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $_cronjob_name }}
+  namespace: "{{ $app_ns }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "704"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if $.Values.custom_labels }}
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  schedule: "*/30 * * * *"  # Run every 30 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if $.Values.custom_labels }}
+{{ $.Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      template:
+        metadata:
+          labels:
+            app: {{ $job_label }}
+{{- if $.Values.custom_labels }}
+{{ $.Values.custom_labels | toYaml | indent 12 }}
+{{- end }}
+        spec:
+          containers:
+            - name: run
+              image: {{ $.Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+              imagePullPolicy: IfNotPresent
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 512Mi
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+              env:
+                - name: RDS_HOST
+                  value: "{{ $rds_host }}"
+                - name: RDS_PORT
+                  value: "{{ $rds_port }}"
+                - name: RDS_DBNAME
+                  value: "{{ $rds_dbname }}"
+                - name: RDS_INSTANCE_NAME
+                  value: "{{ $rds_instance_name }}"
+                - name: RDS_ADMIN_USER
+                  value: "{{ $rds_admin_user }}"
+                - name: RDS_ADMIN_PASSWORD
+                  value: "{{ $rds_admin_password }}"
+                - name: MAS_APP_ID
+                  value: "{{ $.Values.mas_app_id }}"
+                - name: OPERATIONAL_MODE
+                  value: "{{ $.Values.operational_mode }}"
+
+              volumeMounts: []
+              command:
+                - /bin/sh
+                - -c
+                - |
+
+                  set -e
+                  source /mascli/functions/gitops_utils
+
+                  echo ""
+                  echo "================================================================================"
+                  echo "Settings"
+                  echo "================================================================================"
+                  echo "RDS_INSTANCE_NAME ................... ${RDS_INSTANCE_NAME}"
+                  echo "RDS_DBNAME .......................... ${RDS_DBNAME}"
+                  echo "RDS_HOST ............................ ${RDS_HOST}"
+                  echo "RDS_PORT ............................ ${RDS_PORT}"
+                  echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
+
+                  echo ""
+                  echo "Installing required Python packages..."
+                  echo "--------------------------------------------------------------------------------"
+                  pip install ibm_db
+
+                  echo ""
+                  echo "Downloading RDS SSL certificate..."
+                  echo "--------------------------------------------------------------------------------"
+                  mkdir -p /tmp/rds-ssl
+                  curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
+                  echo "✅ Certificate downloaded"
+
+                  # Path to the generated Python script
+                  RDS_ROLES_SCRIPT="/tmp/create_rds_roles.py"
+
+                  echo ""
+                  echo "Create ${RDS_ROLES_SCRIPT}"
+                  echo "--------------------------------------------------------------------------------"
+
+                  # Generate a Python script to check table and create roles
+                  cat > ${RDS_ROLES_SCRIPT} << 'EOFPYTHON'
+                  import ibm_db
+                  import os
+                  import sys
+
+                  # Get environment variables
+                  rds_host = os.getenv('RDS_HOST')
+                  rds_port = os.getenv('RDS_PORT')
+                  rds_dbname = os.getenv('RDS_DBNAME')
+                  rds_admin_user = os.getenv('RDS_ADMIN_USER')
+                  rds_admin_password = os.getenv('RDS_ADMIN_PASSWORD')
+                  ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
+
+                  # Build connection string with SSL
+                  conn_str = (
+                      f"DATABASE={rds_dbname};"
+                      f"HOSTNAME={rds_host};"
+                      f"PORT={rds_port};"
+                      f"PROTOCOL=TCPIP;"
+                      f"UID={rds_admin_user};"
+                      f"PWD={rds_admin_password};"
+                      f"Security=SSL;"
+                      f"SSLServerCertificate={ssl_cert_path};"
+                  )
+
+                  print(f"Connecting to RDS DB2 instance: {rds_host}:{rds_port}/{rds_dbname}")
+                  print("Creating roles for MAS applications: manage, facilities")
+                  print("Note: IoT uses admin user (DB2_iot) with full admin privileges - no separate roles")
+
+                  try:
+                      # Connect to the database
+                      conn = ibm_db.connect(conn_str, "", "")
+                      print("✅ Successfully connected to RDS DB2")
+
+                      # Define app configurations with table checks and roles
+                      # Note: IoT is NOT included - it uses admin user (DB2_iot) with full privileges only
+                      app_configs = [
+                          {
+                              'app_name': 'manage',
+                              'schema': 'MAXIMO',
+                              'check_table': 'MAXUSERS',
+                              'roles': ['MAXIMO_READ', 'MAXIMO_WRITE', 'MAXIMO_SEQ', 'EXPLAIN']
+                          },
+                          {
+                              'app_name': 'facilities',
+                              'schema': 'TRIDATA',
+                              'check_table': 'TRIDATA_DATA',
+                              'roles': ['TRIDATA_READ', 'TRIDATA_WRITE']
+                          }
+                          # IoT: No roles created - uses DB2_iot admin user with full privileges
+                      ]
+
+                      # Process each app configuration
+                      for app_config in app_configs:
+                          app_name = app_config['app_name']
+                          schema_name = app_config['schema']
+                          table_name = app_config['check_table']
+                          roles = app_config['roles']
+
+                          print(f"\n{'='*60}")
+                          print(f"Processing {app_name.upper()} application")
+                          print(f"{'='*60}")
+
+                          # Check if the required table exists
+                          check_table_sql = f"""
+                              SELECT COUNT(*) as table_count
+                              FROM SYSCAT.TABLES
+                              WHERE TABSCHEMA = '{schema_name}' AND TABNAME = '{table_name}'
+                          """
+                          
+                          stmt = ibm_db.exec_immediate(conn, check_table_sql)
+                          result = ibm_db.fetch_assoc(stmt)
+                          table_exists = result['TABLE_COUNT'] > 0
+
+                          if not table_exists:
+                              print(f"⚠️  Table {schema_name}.{table_name} does not exist yet. Skipping {app_name} role creation.")
+                              continue
+
+                          print(f"✅ Table {schema_name}.{table_name} exists. Proceeding with role creation...")
+
+                          # Create roles if they don't exist
+                          for role in roles:
+                              try:
+                                  # Check if role exists
+                                  check_role_sql = f"""
+                                      SELECT COUNT(*) as role_count
+                                      FROM SYSCAT.ROLES
+                                      WHERE ROLENAME = '{role}'
+                                  """
+                                  stmt = ibm_db.exec_immediate(conn, check_role_sql)
+                                  result = ibm_db.fetch_assoc(stmt)
+                                  role_exists = result['ROLE_COUNT'] > 0
+
+                                  if not role_exists:
+                                      create_role_sql = f"CREATE ROLE {role}"
+                                      ibm_db.exec_immediate(conn, create_role_sql)
+                                      print(f"✅ Created role: {role}")
+                                  else:
+                                      print(f"ℹ️  Role {role} already exists")
+
+                              except Exception as e:
+                                  print(f"⚠️  Error creating role {role}: {str(e)}")
+
+                          # Grant permissions based on app type
+                          if app_name == 'manage':
+                              # Grant permissions to MAXIMO_READ role
+                              print("\n✅ Granting permissions to MAXIMO_READ role...")
+                              read_grants = [
+                                  "GRANT SELECT ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_READ",
+                                  "GRANT SELECT ON SCHEMA MAXIMO TO ROLE MAXIMO_READ",
+                              ]
+                              
+                              for grant_sql in read_grants:
+                                  try:
+                                      ibm_db.exec_immediate(conn, grant_sql)
+                                      print(f"✅ Executed: {grant_sql}")
+                                  except Exception as e:
+                                      print(f"⚠️  Error executing grant: {str(e)}")
+
+                              # Grant permissions to MAXIMO_WRITE role
+                              print("\n✅ Granting permissions to MAXIMO_WRITE role...")
+                              write_grants = [
+                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_WRITE",
+                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA MAXIMO TO ROLE MAXIMO_WRITE",
+                              ]
+                              
+                              for grant_sql in write_grants:
+                                  try:
+                                      ibm_db.exec_immediate(conn, grant_sql)
+                                      print(f"✅ Executed: {grant_sql}")
+                                  except Exception as e:
+                                      print(f"⚠️  Error executing grant: {str(e)}")
+
+                              # Grant permissions to MAXIMO_SEQ role
+                              print("\n✅ Granting permissions to MAXIMO_SEQ role...")
+                              seq_grants = [
+                                  "GRANT USAGE ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ",
+                                  "GRANT ALTER ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ",
+                              ]
+                              
+                              for grant_sql in seq_grants:
+                                  try:
+                                      ibm_db.exec_immediate(conn, grant_sql)
+                                      print(f"✅ Executed: {grant_sql}")
+                                  except Exception as e:
+                                      print(f"⚠️  Error executing grant: {str(e)}")
+
+                              # Grant permissions to EXPLAIN role
+                              print("\n✅ Granting permissions to EXPLAIN role...")
+                              explain_grants = [
+                                  "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE EXPLAIN",
+                                  "GRANT SELECT ON TABLE SYSTOOLS.EXPLAIN_INSTANCE TO ROLE EXPLAIN",
+                              ]
+                              
+                              for grant_sql in explain_grants:
+                                  try:
+                                      ibm_db.exec_immediate(conn, grant_sql)
+                                      print(f"✅ Executed: {grant_sql}")
+                                  except Exception as e:
+                                      print(f"⚠️  Error executing grant: {str(e)}")
+
+                          elif app_name == 'facilities':
+                              # Grant permissions to TRIDATA_READ role
+                              print("\n✅ Granting permissions to TRIDATA_READ role...")
+                              read_grants = [
+                                  "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ",
+                                  "GRANT SELECT ON SCHEMA TRIDATA TO ROLE TRIDATA_READ",
+                              ]
+                              
+                              for grant_sql in read_grants:
+                                  try:
+                                      ibm_db.exec_immediate(conn, grant_sql)
+                                      print(f"✅ Executed: {grant_sql}")
+                                  except Exception as e:
+                                      print(f"⚠️  Error executing grant: {str(e)}")
+
+                              # Grant permissions to TRIDATA_WRITE role
+                              print("\n✅ Granting permissions to TRIDATA_WRITE role...")
+                              write_grants = [
+                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_WRITE",
+                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA TRIDATA TO ROLE TRIDATA_WRITE",
+                              ]
+                              
+                              for grant_sql in write_grants:
+                                  try:
+                                      ibm_db.exec_immediate(conn, grant_sql)
+                                      print(f"✅ Executed: {grant_sql}")
+                                  except Exception as e:
+                                      print(f"⚠️  Error executing grant: {str(e)}")
+
+                          elif app_name == 'iot':
+                              # Grant permissions to IOT_READ role
+                              print("\n✅ Granting permissions to IOT_READ role...")
+                              read_grants = [
+                                  "GRANT SELECT ON TABLE IOT.IOT_DATA TO ROLE IOT_READ",
+                                  "GRANT SELECT ON SCHEMA IOT TO ROLE IOT_READ",
+                              ]
+                              
+                              for grant_sql in read_grants:
+                                  try:
+                                      ibm_db.exec_immediate(conn, grant_sql)
+                                      print(f"✅ Executed: {grant_sql}")
+                                  except Exception as e:
+                                      print(f"⚠️  Error executing grant: {str(e)}")
+
+                              # Grant permissions to IOT_WRITE role
+                              print("\n✅ Granting permissions to IOT_WRITE role...")
+                              write_grants = [
+                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE IOT.IOT_DATA TO ROLE IOT_WRITE",
+                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA IOT TO ROLE IOT_WRITE",
+                              ]
+                              
+                              for grant_sql in write_grants:
+                                  try:
+                                      ibm_db.exec_immediate(conn, grant_sql)
+                                      print(f"✅ Executed: {grant_sql}")
+                                  except Exception as e:
+                                      print(f"⚠️  Error executing grant: {str(e)}")
+
+                      print("\n" + "="*60)
+                      print("✅ Role creation and permission grants completed for all applications")
+                      print("="*60)
+
+                      # Close connection
+                      ibm_db.close(conn)
+
+                  except Exception as e:
+                      print(f"Error: {str(e)}")
+                      sys.exit(1)
+                  EOFPYTHON
+                  # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
+
+                  echo ""
+                  echo "Executing ${RDS_ROLES_SCRIPT}"
+                  echo "--------------------------------------------------------------------------------"
+                  python ${RDS_ROLES_SCRIPT} || exit $?
+
+                  echo ""
+                  echo "RDS role creation job completed successfully"
+
+          restartPolicy: Never
+          serviceAccountName: "{{ $sa_name }}"
+          volumes: []
+      backoffLimit: 4
+{{- end }}
+{{- end }}

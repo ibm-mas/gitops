@@ -4,6 +4,7 @@ For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
 */}}
 
 {{- range $i, $value := .Values.ibm_db2u_databases }}
+{{- if not (contains "rds" $value.db2_instance_name) }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -49,8 +50,6 @@ spec:
             sm_aws_access_key_id: "{{ $.Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ $.Values.sm.aws_secret_access_key }}"
             
-            jdbc_connection_url_additional_params:{{- range $.Values.ibm_mas_suite_configs }} {{ .jdbc_connection_url_additional_params }}{{- end }}
-        
             {{- if $.Values.custom_labels }}
             custom_labels: {{ $.Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
@@ -61,6 +60,7 @@ spec:
               devops_mongo_uri: "{{ $.Values.devops.mongo_uri }}"
               devops_build_number: "{{ $.Values.devops.build_number }}"
               gitops_version: "{{ $.Values.source.revision }}"
+              cli_image_repo: {{ $.Values.cli_image_repo }}
             {{ $value | toYaml | nindent 12 }}
         - name: ARGOCD_APP_NAME
           value: "db2dbapp-{{ $value.db2_instance_name | replace (cat "db2wh-" $.Values.instance.id "-" | replace " " "") "" }}"
@@ -86,4 +86,5 @@ spec:
       kind: Db2uInstance
       jsonPointers:
       - /spec/environment/ssl/secretName
+{{- end }}
 {{- end }}

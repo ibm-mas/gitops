@@ -244,43 +244,50 @@ spec:
                       print(f"Username: {username}")
                       print(f"App Type: {app_type}")
               
-                      # Grant comprehensive admin privileges to user using RDS stored procedures
-                      # Note: RDS DB2 requires using rdsadmin.grant_authority() instead of SQL GRANT
-                      admin_authorities = [
-                          'DBADM',
-                          'SECADM',
-                          'DATAACCESS',
-                          'ACCESSCTRL',
-                          'CREATETAB',
-                          'BINDADD',
-                          'CONNECT',
-                          'CREATE_NOT_FENCED_ROUTINE',
-                          'IMPLICIT_SCHEMA',
-                          'LOAD',
-                          'CREATE_EXTERNAL_ROUTINE',
-                          'QUIESCE_CONNECT'
-                      ]
-                      
-                      for authority in admin_authorities:
-                          try:
-                              grant_sql = f"CALL rdsadmin.grant_authority('{rds_dbname}', '{username}', '{authority}')"
-                              ibm_db.exec_immediate(conn, grant_sql)
-                              print(f"✅ Granted {authority} to {username}")
-                          except Exception as e:
-                              error_msg = str(e)
-                              # Ignore "already has" errors - these are expected on re-runs
-                              if 'already has' in error_msg.lower() or 'SQL0104N' in error_msg:
-                                  print(f"ℹ️  {username} already has {authority} (or authority not applicable)")
-                              else:
-                                  print(f"⚠️  Error granting {authority}: {error_msg}")
-                      
-                      # Grant tablespace usage separately if MAXDATA exists
+                      # Grant comprehensive admin privileges using RDS stored procedure
+                      # RDS DB2 uses: CALL rdsadmin.grant_dbauth(database, grantee, dbadm, createtab, bindadd, connect, ...)
+                      # Parameters: Y = grant, N = don't grant, NULL = no change
                       try:
-                          grant_sql = f"GRANT USE OF TABLESPACE MAXDATA TO USER {username}"
+                          grant_sql = f"""
+                          CALL rdsadmin.grant_dbauth(
+                              '{rds_dbname}',
+                              '{username}',
+                              'Y',  -- DBADM
+                              'Y',  -- CREATETAB
+                              'Y',  -- BINDADD
+                              'Y',  -- CONNECT
+                              'Y',  -- CREATE_NOT_FENCED
+                              'Y',  -- IMPLICIT_SCHEMA
+                              'Y',  -- LOAD
+                              'Y',  -- CREATE_EXTERNAL_ROUTINE
+                              'Y',  -- QUIESCE_CONNECT
+                              'Y',  -- SECADM
+                              'Y',  -- DATAACCESS
+                              'Y'   -- ACCESSCTRL
+                          )
+                          """
                           ibm_db.exec_immediate(conn, grant_sql)
-                          print(f"✅ Granted USE OF TABLESPACE MAXDATA to {username}")
+                          print(f"✅ Granted comprehensive admin privileges to {username} using rdsadmin.grant_dbauth()")
                       except Exception as e:
-                          print(f"ℹ️  MAXDATA tablespace not found or already granted: {str(e)}")
+                          error_msg = str(e)
+                          print(f"⚠️  Error granting admin privileges via rdsadmin.grant_dbauth(): {error_msg}")
+                          print(f"ℹ️  Attempting individual GRANT statements as fallback...")
+                          
+                          # Fallback: try individual GRANT statements (may work if user already exists with some privileges)
+                          fallback_grants = [
+                              f"GRANT CONNECT ON DATABASE TO USER {username}",
+                              f"GRANT CREATETAB ON DATABASE TO USER {username}",
+                              f"GRANT BINDADD ON DATABASE TO USER {username}",
+                              f"GRANT IMPLICIT_SCHEMA ON DATABASE TO USER {username}",
+                              f"GRANT LOAD ON DATABASE TO USER {username}"
+                          ]
+                          
+                          for grant_stmt in fallback_grants:
+                              try:
+                                  ibm_db.exec_immediate(conn, grant_stmt)
+                                  print(f"✅ Executed: {grant_stmt}")
+                              except Exception as fallback_error:
+                                  print(f"⚠️  Fallback grant failed: {str(fallback_error)}")
               
                   # ========================================================================
                   # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)

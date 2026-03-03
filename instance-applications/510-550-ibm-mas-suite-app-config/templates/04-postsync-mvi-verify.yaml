@@ -399,11 +399,8 @@ data:
     def test_expected_reconciled_version(mvi_workspace_reconciled_version, mvi_app_reconciled_version):
       assert mvi_app_reconciled_version == mvi_workspace_reconciled_version, f"Expected MVI Workspace Reconciled version: {mvi_workspace_reconciled_version} to match MVI Operator version: {mvi_app_reconciled_version}"
 
+    @pytest.mark.skipif(not cluster_admin_role, reason="Cluster admin role not enabled, skipping GPU node test")
     def test_at_least_one_ready_gpu_node(gpu_nodes):
-      # Skip this test if cluster admin role is not enabled (no permission to access nodes)
-      if not cluster_admin_role:
-        pytest.skip("Cluster admin role not enabled, skipping GPU node test")
-
       # We may have installed MVI on a cluster with no GPU nodes (e.g. an internal test system)
       # In that case, skip this test so we don't block the pipeline unnecessarily
       if len(gpu_nodes.items) == 0:
@@ -416,11 +413,8 @@ data:
               return
       assert False, f"No GPU nodes with condition Ready=True found in the cluster."
 
+    @pytest.mark.skipif(not cluster_admin_role, reason="Cluster admin role not enabled, skipping GPU node test")
     def test_at_least_one_gpu_visible_to_mvi(gpu_nodes, mvi_host, mvi_apikey, mvi_host_ca_filepath):
-      # Skip this test if cluster admin role is not enabled (no permission to access nodes)
-      if not cluster_admin_role:
-        pytest.skip("Cluster admin role not enabled, skipping GPU node test")
-
       # We may have installed MVI on a cluster with no GPU nodes (e.g. an internal test system)
       # In that case, skip this test so we don't block the pipeline unnecessarily
       if len(gpu_nodes.items) == 0:

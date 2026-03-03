@@ -124,10 +124,14 @@ spec:
               gitops_version: "{{ $.Values.source.revision }}"
               cli_image_repo: {{ $.Values.cli_image_repo }}
             
-            ibm_dbs_rds_databases: {{$.Values.ibm_dbs_rds_databases}}
             {{- if (eq $value.mas_app_id "manage") }}
-            debug_rds_dbs: {{ $.Values.ibm_dbs_rds_databases | toJson | quote }}
-
+              {{- if not (empty $.Values.ibm_dbs_rds_databases) }}
+            debug_ibm_dbs_rds_databases_raw: {{ $.Values.ibm_dbs_rds_databases | toJson | quote }}
+            debug_ibm_dbs_rds_databases_count: {{ len $.Values.ibm_dbs_rds_databases }}
+              {{- else }}
+            debug_ibm_dbs_rds_databases_raw: "EMPTY_OR_UNDEFINED"
+            debug_ibm_dbs_rds_databases_count: 0
+              {{- end }}
               {{- if not (empty $.Values.ibm_db2u_databases) }}
             manage_db2u_databases:
                 {{- range $j, $db := $.Values.ibm_db2u_databases }}
@@ -150,6 +154,8 @@ spec:
                 rds_admin_password: {{ $db.password }}
                   {{- end }}
                 {{- end }}
+              {{- else }}
+            debug_mas_rds_databases: "EMPTY - No RDS databases configured for manage"
               {{- end }}
             {{- end }}
 

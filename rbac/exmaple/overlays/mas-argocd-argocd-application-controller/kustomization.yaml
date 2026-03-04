@@ -1,0 +1,63 @@
+---
+# Kustomize overlay for mas-argocd-argocd-application-controller in mas-argocd
+#
+# This overlay generates:
+#   - Role in each target namespace
+#   - RoleBinding in each target namespace (bound to mas-argocd-argocd-application-controller)
+#   - ClusterRoleBinding for read-only cluster access
+#
+# To add more instances, use the generator script:
+#   ./rbac/generate-rbac-overlays.py inst1 inst2 inst3
+#
+# This will automatically create namespace overlay directories
+# and update the resources list below.
+#
+# Apply with:
+#   kubectl apply -k rbac/kustomize/overlays/mas-argocd-argocd-application-controller
+#
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ./db2u-dev2
+  - ./mas-dev2-core
+  - ./mas-dev2-manage
+  - ./mas-dev2-sls
+  - ./mas-dev2-syncres
+  - ./mas-dev2-visualinspection
+  - ./redhat-marketplace
+components:
+  - ../../components/cluster-readonly
+patches:
+  # Patch the ClusterRoleBinding name to include the SA name
+  # to avoid conflicts when multiple service accounts are configured
+  - target:
+      kind: ClusterRoleBinding
+      name: mas-application-admin-readonly
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: mas-application-admin-readonly-mas-argocd-argocd-application-controller
+  # Patch the RoleBinding subjects to use the correct service account
+  - target:
+      kind: RoleBinding
+      name: mas-application-admin-binding
+    patch: |-
+      - op: replace
+        path: /subjects/0/name
+        value: mas-argocd-argocd-application-controller
+      - op: replace
+        path: /subjects/0/namespace
+        value: mas-argocd
+  # Patch the ClusterRoleBinding subjects to use the correct SA
+  - target:
+      kind: ClusterRoleBinding
+      name: mas-application-admin-readonly
+    patch: |-
+      - op: replace
+        path: /subjects/0/name
+        value: mas-argocd-argocd-application-controller
+      - op: replace
+        path: /subjects/0/namespace
+        value: mas-argocd
+
+# Made with Bob

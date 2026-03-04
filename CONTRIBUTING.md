@@ -5,7 +5,6 @@ Contributing to MAS Gitops
 Documentation
 -------------------------------------------------------------------------------
 
-
 Versioned documentation is published automatically here: [https://ibm-mas.github.io/gitops/](https://ibm-mas.github.io/gitops/).
 Documentation source is located in the `docs` folder.
 
@@ -44,8 +43,8 @@ pre-commit run -a
 
 The same logic invoked by the commit hook logic is run and enforced by the "lint" GitHub Action.
 
-## GitHub Actions
-
+GitHub Actions
+-------------------------------------------------------------------------------
 This repository uses several automated workflows:
 
 ### Lint and Check Helm Templates
@@ -73,3 +72,34 @@ Synchronizes changes to the internal IBM GitHub Enterprise repository:
 - Copies files from public repo to `automation-paas-cd-pipeline/mas-gitops` on github.ibm.com
 - Uses [`copy-gitops.sh`](build/bin/copy-gitops.sh) to selectively sync files
 - Maintains branch parity between public and internal repositories
+
+
+RBAC
+-------------------------------------------------------------------------------
+The [rbac](/rbac/) folder contains kustomize scripts to help users apply the RBAC needed for the `application_admin_role` to deploy MAS using ArgoCD. 
+If new RBAC is addded to any helm chart then we need to update the roles in the `rbac` folder. We should also ensure that the templates are guarded
+with the approtiate condition of `application_admin_role` or `cluster_admin_role`.
+
+### Updating the Role
+
+To update the Role definition:
+
+1. Edit the base Role template [rbac/kustomize/base/application-admin-role.yaml](rbac/kustomize/base/application-admin-role.yaml)
+
+
+### Adding New Resource Types
+
+When adding new MAS applications that require additional resource types:
+
+1. Identify the resource type and API group
+2. Determine if it's cluster-scoped or namespace-scoped
+3. If namespace-scoped:
+   - Add to [`rbac/kustomize/base/application-admin-role.yaml`](kustomize/base/application-admin-role.yaml)
+   - Re-apply the overlay
+4. If cluster-scoped and read-only access needed:
+   - Add to [`rbac/kustomize/components/cluster-readonly/application-admin-clusterrole-readonly.yaml`](kustomize/components/cluster-readonly/application-admin-clusterrole-readonly.yaml)
+   - Reapply the ClusterRole
+5. If cluster-scoped and write access needed:
+   - Document as requiring `cluster_admin_role=true`
+   - Update the README in [rbac](rbac/README.md) accordingly
+6. Test in a development environment before production

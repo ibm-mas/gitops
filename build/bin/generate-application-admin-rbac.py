@@ -2,17 +2,17 @@
 """
 Generate RBAC ClusterRole for application_admin_role deployments.
 
-This script analyzes all Helm charts in cluster-applications, instance-applications,
-root-applications, and sls-applications to identify OpenShift resources that need
-permissions when cluster_admin_role=false and application_admin_role=true.
+This script analyzes all Helm charts in cluster-applications,
+instance-applications, root-applications, and sls-applications to
+identify OpenShift resources that need permissions when
+cluster_admin_role=false and application_admin_role=true.
 """
 
-import os
 import re
 import yaml
 from pathlib import Path
 from collections import defaultdict
-from typing import Set, Dict, List, Tuple
+from typing import Set, Dict, List, Tuple, Optional
 
 # Base directory
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -58,27 +58,117 @@ CLUSTER_ADMIN_ONLY_RESOURCES = {
     "IngressController",  # OpenShift ingress
 }
 
-def extract_resources_from_yaml(file_path: Path) -> List[Tuple[str, str, str]]:
+
+def get_parent_app_conditional(template_file: Path) -> Optional[str]:
+    """
+    Find the parent ArgoCD Application file and check for conditionals.
+    Returns 'cluster_admin_role', 'application_admin_role', or None.
+    """
+    # Determine which chart this template belongs to
+    chart_path = None
+    scan_dir = None
+    for parent in template_file.parents:
+        if parent.name in SCAN_DIRS:
+            # Get chart directory (e.g., cluster-applications/020-ibm-dro)
+            chart_path = template_file.relative_to(parent).parts[0]
+            scan_dir = parent.name
+            break
+    
+    if not chart_path or not scan_dir:
+        return None
+    
+    # Look for parent Application in root-applications
+    root_apps_dir = REPO_ROOT / "root-applications"
+    if not root_apps_dir.exists():
+        return None
+    
+    # Search for Application files that reference this chart
+    for app_file in root_apps_dir.rglob("*.yaml"):
+        try:
+            with open(app_file, 'r') as f:
+                content = f.read()
+                
+            # Check if this app references our chart
+            chart_ref = f"{scan_dir}/{chart_path}"
+            if chart_ref not in content:
+                continue
+            
+            # Check for conditionals in the Application file
+            # Look for {{- if .Values.cluster_admin_role }} or similar
+            cluster_pattern = (
+                r'\{\{-\s*if\s+.*\.Values\.cluster_admin_role\s*\}\}'
+            )
+            app_pattern = (
+                r'\{\{-\s*if\s+.*\.Values\.application_admin_role\s*\}\}'
+            )
+            cluster_and_pattern = (
+                r'\{\{-\s*if\s+and\s+.*\.Values\.cluster_admin_role'
+            )
+            app_and_pattern = (
+                r'\{\{-\s*if\s+and\s+.*\.Values\.application_admin_role'
+            )
+            
+            if re.search(cluster_pattern, content):
+                return 'cluster_admin_role'
+            elif re.search(app_pattern, content):
+                return 'application_admin_role'
+            # Check for 'and' conditions
+            elif re.search(cluster_and_pattern, content):
+                return 'cluster_admin_role'
+            elif re.search(app_and_pattern, content):
+                return 'application_admin_role'
+                
+        except Exception:
+            continue
+    
+    return None
+
+
+def extract_resources_from_yaml(
+    file_path: Path
+) -> Tuple[List[Tuple[str, str, str]], List[Tuple[str, str, str]]]:
     """
     Extract Kubernetes resource types from a YAML file.
-    Returns list of (kind, apiVersion, conditional) tuples.
+    Returns tuple of (kinds, rbac_resources) where:
+    - kinds: list of (kind, apiVersion, conditional) tuples
+    - rbac_resources: list of (resource_name, apiGroup, conditional) tuples
+      extracted from Role/ClusterRole rules
     """
-    resources = []
+    kinds = []
+    rbac_resources = []
     
     try:
         with open(file_path, 'r') as f:
             content = f.read()
             
         # Check for helm conditionals at file level
+        # Scan the entire file, not just the first few lines
         file_conditional = None
-        first_lines = content.split('\n')[:5]
-        for line in first_lines:
+        for line in content.split('\n'):
             if '{{- if' in line:
-                if 'cluster_admin_role' in line:
+                # Check for both conditions in the same line
+                has_cluster = 'cluster_admin_role' in line
+                has_app = 'application_admin_role' in line
+                
+                if has_cluster and has_app:
+                    # Both conditions present - check if it's AND or OR
+                    if ' and ' in line.lower():
+                        # For 'and', both must be true, so it's in 'both'
+                        file_conditional = 'both'
+                    else:
+                        # For 'or' or other cases, also treat as 'both'
+                        file_conditional = 'both'
+                elif has_cluster:
                     file_conditional = 'cluster_admin_role'
-                elif 'application_admin_role' in line:
+                elif has_app:
                     file_conditional = 'application_admin_role'
                 break
+        
+        # If no conditional found in template, check parent Application
+        if file_conditional is None:
+            parent_conditional = get_parent_app_conditional(file_path)
+            if parent_conditional:
+                file_conditional = parent_conditional
         
         # Parse YAML documents
         try:
@@ -88,27 +178,99 @@ def extract_resources_from_yaml(file_path: Path) -> List[Tuple[str, str, str]]:
                     kind = doc.get('kind')
                     api_version = doc.get('apiVersion', '')
                     if kind:
-                        resources.append((kind, api_version, file_conditional))
+                        kinds.append((kind, api_version, file_conditional))
+                        
+                        # If Role or ClusterRole, extract resources from rules
+                        if kind in ('Role', 'ClusterRole'):
+                            rules = doc.get('rules', [])
+                            for rule in rules:
+                                if isinstance(rule, dict):
+                                    api_groups = rule.get('apiGroups', [])
+                                    rule_resources = rule.get('resources', [])
+                                    
+                                    for resource in rule_resources:
+                                        # Skip subresources (e.g., pods/exec)
+                                        if '/' in resource:
+                                            continue
+                                        
+                                        # Add resource for each API group
+                                        for api_group in api_groups:
+                                            rbac_resources.append((
+                                                resource,
+                                                api_group,
+                                                file_conditional
+                                            ))
         except yaml.YAMLError:
-            # If YAML parsing fails due to templates, try regex extraction
-            kind_matches = re.findall(r'^kind:\s+(\w+)', content, re.MULTILINE)
-            api_matches = re.findall(r'^apiVersion:\s+([\w./]+)', content, re.MULTILINE)
+            # YAML parsing failed - use regex for Kinds
+            kind_matches = re.findall(
+                r'^kind:\s+(\w+)', content, re.MULTILINE
+            )
+            api_matches = re.findall(
+                r'^apiVersion:\s+([\w./]+)', content, re.MULTILINE
+            )
             
             for i, kind in enumerate(kind_matches):
                 api_version = api_matches[i] if i < len(api_matches) else ''
-                resources.append((kind, api_version, file_conditional))
+                kinds.append((kind, api_version, file_conditional))
+        
+        # Always try regex extraction for RBAC resources from
+        # Role/ClusterRole rules (works even with Helm templates)
+        if 'kind: Role' in content or 'kind: ClusterRole' in content:
+            # Extract rules sections using regex
+            # Match: - apiGroups: ... resources: ...
+            rules_pattern = (
+                r'- apiGroups:\s*\n\s*-\s*["\']?([^"\'\n]*)["\']?\s*\n'
+                r'(?:.*\n)*?'
+                r'\s*resources:\s*\n((?:\s*-\s*[^\n]+\n)+)'
+            )
+            
+            for match in re.finditer(rules_pattern, content):
+                api_group = match.group(1).strip()
+                resources_block = match.group(2)
+                
+                # Extract individual resources
+                resource_matches = re.findall(
+                    r'^\s*-\s*["\']?([^"\'\s#]+)["\']?',
+                    resources_block,
+                    re.MULTILINE
+                )
+                
+                for resource in resource_matches:
+                    # Skip subresources, comments, and template vars
+                    if ('/' in resource or resource.startswith('#') or
+                            resource.startswith('{{')):
+                        continue
+                    
+                    rbac_resources.append((
+                        resource,
+                        api_group,
+                        file_conditional
+                    ))
                 
     except Exception as e:
         print(f"Warning: Could not process {file_path}: {e}")
     
-    return resources
+    return kinds, rbac_resources
 
-def scan_helm_charts() -> Dict[str, Set[Tuple[str, str]]]:
+
+def scan_helm_charts() -> Tuple[
+    Dict[str, Set[Tuple[str, str]]],
+    Dict[str, Set[Tuple[str, str]]]
+]:
     """
     Scan all Helm charts and categorize resources by their conditions.
-    Returns dict with keys: 'cluster_admin', 'application_admin', 'both', 'none'
+    Returns tuple of (kinds_categorized, rbac_resources_categorized).
+    Each dict has keys: 'cluster_admin', 'application_admin',
+    'both', 'none'
     """
-    categorized = {
+    kinds_categorized = {
+        'cluster_admin': set(),
+        'application_admin': set(),
+        'both': set(),
+        'none': set()
+    }
+    
+    rbac_resources_categorized = {
         'cluster_admin': set(),
         'application_admin': set(),
         'both': set(),
@@ -120,55 +282,77 @@ def scan_helm_charts() -> Dict[str, Set[Tuple[str, str]]]:
         if not dir_path.exists():
             continue
             
-        # Find all template files
-        for template_file in dir_path.rglob('templates/*.yaml'):
-            resources = extract_resources_from_yaml(template_file)
+        # Find all template files (.yaml and .yml)
+        yaml_files = list(dir_path.rglob('templates/*.yaml'))
+        yml_files = list(dir_path.rglob('templates/*.yml'))
+        for template_file in yaml_files + yml_files:
+            kinds, rbac_resources = extract_resources_from_yaml(template_file)
             
-            for kind, api_version, conditional in resources:
+            # Process Kinds
+            for kind, api_version, conditional in kinds:
                 resource_tuple = (kind, api_version)
                 
                 # Categorize based on conditional
                 if conditional == 'cluster_admin_role':
-                    categorized['cluster_admin'].add(resource_tuple)
+                    kinds_categorized['cluster_admin'].add(resource_tuple)
                 elif conditional == 'application_admin_role':
-                    categorized['application_admin'].add(resource_tuple)
+                    kinds_categorized['application_admin'].add(resource_tuple)
+                elif conditional == 'both':
+                    kinds_categorized['both'].add(resource_tuple)
                 elif conditional is None:
-                    categorized['none'].add(resource_tuple)
-                else:
-                    categorized['both'].add(resource_tuple)
-        
-        # Also scan .yml files
-        for template_file in dir_path.rglob('templates/*.yml'):
-            resources = extract_resources_from_yaml(template_file)
+                    kinds_categorized['none'].add(resource_tuple)
             
-            for kind, api_version, conditional in resources:
-                resource_tuple = (kind, api_version)
+            # Process RBAC resources
+            for resource_name, api_group, conditional in rbac_resources:
+                resource_tuple = (resource_name, api_group)
                 
+                # Categorize based on conditional
                 if conditional == 'cluster_admin_role':
-                    categorized['cluster_admin'].add(resource_tuple)
+                    rbac_resources_categorized['cluster_admin'].add(
+                        resource_tuple
+                    )
                 elif conditional == 'application_admin_role':
-                    categorized['application_admin'].add(resource_tuple)
+                    rbac_resources_categorized['application_admin'].add(
+                        resource_tuple
+                    )
+                elif conditional == 'both':
+                    rbac_resources_categorized['both'].add(resource_tuple)
                 elif conditional is None:
-                    categorized['none'].add(resource_tuple)
-                else:
-                    categorized['both'].add(resource_tuple)
+                    rbac_resources_categorized['none'].add(resource_tuple)
     
-    return categorized
+    return kinds_categorized, rbac_resources_categorized
 
-def generate_rbac_rules(categorized: Dict[str, Set[Tuple[str, str]]]) -> List[Dict]:
+
+def generate_rbac_rules(
+    kinds_categorized: Dict[str, Set[Tuple[str, str]]],
+    rbac_resources_categorized: Dict[str, Set[Tuple[str, str]]]
+) -> List[Dict]:
     """Generate RBAC rules for application_admin_role."""
     
-    # Resources that application_admin can manage
-    # (excludes cluster_admin_only and resources with cluster_admin_role condition)
-    manageable_resources = (
-        categorized['application_admin'] | 
-        categorized['both'] | 
-        categorized['none']
-    ) - categorized['cluster_admin']
+    # Resources that application_admin can manage from Kinds
+    # Include: application_admin, both, and none
+    # Only exclude resources that are ONLY in cluster_admin
+    # (not in application_admin)
+    manageable_kinds = (
+        kinds_categorized['application_admin'] |
+        kinds_categorized['both'] |
+        kinds_categorized['none']
+    )
+    
+    # Resources from RBAC rules
+    # Only exclude resources that are ONLY in cluster_admin
+    # (not in application_admin)
+    manageable_rbac_resources = (
+        rbac_resources_categorized['application_admin'] |
+        rbac_resources_categorized['both'] |
+        rbac_resources_categorized['none']
+    )
     
     # Group by API group
     api_groups = defaultdict(set)
-    for kind, api_version in manageable_resources:
+    
+    # Process Kinds (convert to resource names)
+    for kind, api_version in manageable_kinds:
         if kind in CLUSTER_ADMIN_ONLY_RESOURCES:
             continue
             
@@ -191,6 +375,10 @@ def generate_rbac_rules(categorized: Dict[str, Set[Tuple[str, str]]]) -> List[Di
         
         api_groups[group].add(resource)
     
+    # Process RBAC resources (already in resource name format)
+    for resource_name, api_group in manageable_rbac_resources:
+        api_groups[api_group].add(resource_name)
+    
     # Generate rules
     rules = []
     
@@ -199,7 +387,10 @@ def generate_rbac_rules(categorized: Dict[str, Set[Tuple[str, str]]]) -> List[Di
         rules.append({
             "apiGroups": [""],
             "resources": sorted(list(api_groups[""])),
-            "verbs": ["create", "delete", "get", "list", "patch", "update", "watch"]
+            "verbs": [
+                "create", "delete", "get", "list",
+                "patch", "update", "watch"
+            ]
         })
     
     # Other API groups
@@ -209,58 +400,137 @@ def generate_rbac_rules(categorized: Dict[str, Set[Tuple[str, str]]]) -> List[Di
         rules.append({
             "apiGroups": [group],
             "resources": sorted(list(api_groups[group])),
-            "verbs": ["create", "delete", "get", "list", "patch", "update", "watch"]
+            "verbs": [
+                "create", "delete", "get", "list",
+                "patch", "update", "watch"
+            ]
         })
     
     return rules
 
+
 def main():
     print("Scanning Helm charts for OpenShift resources...")
-    categorized = scan_helm_charts()
+    kinds_cat, rbac_res_cat = scan_helm_charts()
     
-    print(f"\nFound resources:")
-    print(f"  - Cluster admin only: {len(categorized['cluster_admin'])}")
-    print(f"  - Application admin: {len(categorized['application_admin'])}")
-    print(f"  - Both roles: {len(categorized['both'])}")
-    print(f"  - No condition: {len(categorized['none'])}")
+    print("\nFound Kinds:")
+    print(f"  - Cluster admin only: {len(kinds_cat['cluster_admin'])}")
+    print(f"  - Application admin: {len(kinds_cat['application_admin'])}")
+    print(f"  - Both roles: {len(kinds_cat['both'])}")
+    print(f"  - No condition: {len(kinds_cat['none'])}")
+    
+    print("\nFound RBAC resources:")
+    print(f"  - Cluster admin only: {len(rbac_res_cat['cluster_admin'])}")
+    print(f"  - Application admin: "
+          f"{len(rbac_res_cat['application_admin'])}")
+    print(f"  - Both roles: {len(rbac_res_cat['both'])}")
+    print(f"  - No condition: {len(rbac_res_cat['none'])}")
     
     print("\nGenerating RBAC rules...")
-    rules = generate_rbac_rules(categorized)
+    rules = generate_rbac_rules(kinds_cat, rbac_res_cat)
     
-    # Create ClusterRole YAML
-    cluster_role = {
+    # Create Role YAML for namespace-scoped resources
+    role = {
         "apiVersion": "rbac.authorization.k8s.io/v1",
-        "kind": "ClusterRole",
+        "kind": "Role",
         "metadata": {
             "name": "mas-application-admin",
             "annotations": {
-                "description": "ClusterRole for MAS GitOps deployments when cluster_admin_role=false and application_admin_role=true"
+                "description": (
+                    "Role for MAS GitOps deployments when "
+                    "cluster_admin_role=false and "
+                    "application_admin_role=true"
+                )
             }
         },
         "rules": rules
     }
     
-    # Write to file
-    output_file = REPO_ROOT / "cluster-applications" / "061-ibm-rbac" / "templates" / "cluster-roles" / "application-admin.yaml"
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    # Create ClusterRole YAML for read-only cluster access
+    cluster_role = {
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "kind": "ClusterRole",
+        "metadata": {
+            "name": "mas-application-admin-readonly",
+            "annotations": {
+                "description": (
+                    "ClusterRole for read-only cluster access when "
+                    "cluster_admin_role=false and "
+                    "application_admin_role=true"
+                )
+            }
+        },
+        "rules": [
+            {
+                "apiGroups": [""],
+                "resources": ["namespaces", "nodes"],
+                "verbs": ["get", "list", "watch"]
+            },
+            {
+                "apiGroups": ["storage.k8s.io"],
+                "resources": ["storageclasses"],
+                "verbs": ["get", "list", "watch"]
+            }
+        ]
+    }
     
-    with open(output_file, 'w') as f:
-        f.write("# Generated by build/bin/generate-application-admin-rbac.py\n")
-        f.write("# This ClusterRole defines permissions needed for MAS GitOps deployments\n")
-        f.write("# when cluster_admin_role=false and application_admin_role=true\n")
+    # Write Role to kustomize base
+    role_file = (
+        REPO_ROOT / "rbac" / "kustomize" / "base" /
+        "application-admin-role.yaml"
+    )
+    role_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(role_file, 'w') as f:
+        f.write("# Generated by "
+                "build/bin/generate-application-admin-rbac.py\n")
+        f.write("# This Role defines permissions needed for MAS GitOps "
+                "deployments\n")
+        f.write("# when cluster_admin_role=false and "
+                "application_admin_role=true\n")
         f.write("---\n")
-        yaml.dump(cluster_role, f, default_flow_style=False, sort_keys=False)
+        yaml.dump(role, f, default_flow_style=False, sort_keys=False)
     
-    print(f"\nGenerated RBAC file: {output_file}")
-    print(f"Total rules: {len(rules)}")
+    # Write ClusterRole to kustomize component
+    cluster_role_file = (
+        REPO_ROOT / "rbac" / "kustomize" / "components" /
+        "cluster-readonly" /
+        "application-admin-clusterrole-readonly.yaml"
+    )
+    cluster_role_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(cluster_role_file, 'w') as f:
+        f.write("# Generated by "
+                "build/bin/generate-application-admin-rbac.py\n")
+        f.write("# This ClusterRole provides read-only cluster access\n")
+        f.write("# when cluster_admin_role=false and "
+                "application_admin_role=true\n")
+        f.write("---\n")
+        yaml.dump(cluster_role, f, default_flow_style=False,
+                  sort_keys=False)
+    
+    print("\nGenerated RBAC files:")
+    print(f"  - Role: {role_file}")
+    print(f"  - ClusterRole: {cluster_role_file}")
+    print(f"Total rules in Role: {len(rules)}")
     
     # Print summary
-    print("\nResource summary by condition:")
-    for category, resources in categorized.items():
+    print("\nKind summary by condition:")
+    for category, resources in kinds_cat.items():
         if resources:
             print(f"\n{category.upper()}:")
             for kind, api_version in sorted(resources):
                 print(f"  - {kind} ({api_version})")
+    
+    print("\nRBAC resource summary by condition:")
+    for category, resources in rbac_res_cat.items():
+        if resources:
+            print(f"\n{category.upper()}:")
+            for resource, api_group in sorted(resources):
+                print(f"  - {resource} ({api_group})")
+
 
 if __name__ == "__main__":
     main()
+
+# Made with Bob

@@ -80,26 +80,8 @@ The [rbac](/rbac/) folder contains kustomize scripts to help users apply the RBA
 If new RBAC is addded to any helm chart then we need to update the roles in the `rbac` folder. We should also ensure that the templates are guarded
 with the approtiate condition of `application_admin_role` or `cluster_admin_role`.
 
-### Updating the Role
+### Adding New Resource Types or new RBAC
 
-To update the Role definition:
+Run the script [build/bin/generate-application-admin-rbac.py](build/bin/generate-application-admin-rbac.py) which will update the rbac files that will be
+applied. The difference should just include what has been added, updated or removed.
 
-1. Edit the base Role template [rbac/kustomize/base/application-admin-role.yaml](rbac/kustomize/base/application-admin-role.yaml)
-
-
-### Adding New Resource Types
-
-When adding new MAS applications that require additional resource types:
-
-1. Identify the resource type and API group
-2. Determine if it's cluster-scoped or namespace-scoped
-3. If namespace-scoped:
-   - Add to [`rbac/kustomize/base/application-admin-role.yaml`](kustomize/base/application-admin-role.yaml)
-   - Re-apply the overlay
-4. If cluster-scoped and read-only access needed:
-   - Add to [`rbac/kustomize/components/cluster-readonly/application-admin-clusterrole-readonly.yaml`](kustomize/components/cluster-readonly/application-admin-clusterrole-readonly.yaml)
-   - Reapply the ClusterRole
-5. If cluster-scoped and write access needed:
-   - Document as requiring `cluster_admin_role=true`
-   - Update the README in [rbac](rbac/README.md) accordingly
-6. Test in a development environment before production

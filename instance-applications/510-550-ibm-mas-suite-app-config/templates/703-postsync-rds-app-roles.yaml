@@ -131,7 +131,7 @@ metadata:
 {{ $.Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  schedule: "*/30 * * * *"  # Run every 30 minutes
+  schedule: "* * * * *"  # Run every minute run 30 minute */30 * * * *
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -199,6 +199,12 @@ spec:
                   echo "RDS_PORT ............................ ${RDS_PORT}"
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
+                  echo ""
+                  echo "Installing system dependencies..."
+                  echo "--------------------------------------------------------------------------------"
+                  # Install libxcrypt-compat which provides libcrypt.so.1 required by ibm_db
+                  microdnf install -y libxcrypt-compat || yum install -y libxcrypt-compat || dnf install -y libxcrypt-compat || apt-get update && apt-get install -y libcrypt1
+                  
                   echo ""
                   echo "Installing required Python packages..."
                   echo "--------------------------------------------------------------------------------"

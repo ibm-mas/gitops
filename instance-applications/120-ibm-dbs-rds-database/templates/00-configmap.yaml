@@ -197,15 +197,15 @@ data:
         registry = json.loads(db2_instance_registry)
         for key, value in registry.items():
             try:
-                # Try RDS procedure first
+                # Try RDS procedure first (Amazon RDS for Db2)
                 sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
                 db2.exec_immediate(admin_conn, sql)
                 print(f"  ✅ Set {key} = {value} (RDS)")
             except Exception:
                 try:
-                    # Fallback for standard DB2 (when connected to the database, don't specify FOR database)
-                    sql = f"UPDATE DB CFG USING {key} {value}"
-                    db2.exec_immediate(db2_conn, sql)
+                    # Standard DB2 fallback using ADMIN_CMD
+                    sql = f"CALL SYSPROC.ADMIN_CMD('UPDATE DB CFG FOR {database_name} USING {key} {value}')"
+                    db2.exec_immediate(admin_conn, sql)
                     print(f"  ✅ Set {key} = {value} (DB CFG)")
                 except Exception as e:
                     print(f"  ⚠️  Failed to set {key}: {e}")
@@ -250,13 +250,12 @@ data:
                     print(f"  ✅ Set {key} = {value} (RDS)")
                 except Exception as rds_error:
                     error_msg = str(rds_error)
-                    # If RDS procedure fails, try standard DB2 command
+                    # If RDS procedure fails, try standard DB2 command using ADMIN_CMD
                     if 'SQL0440N' in error_msg or 'SQL0438N' in error_msg:
                         try:
-                            # Fallback to standard DB2 UPDATE DATABASE CONFIGURATION
-                            # When connected to the database, don't specify FOR database
-                            sql = f"UPDATE DB CFG USING {key} {value} IMMEDIATE"
-                            db2.exec_immediate(db2_conn, sql)
+                            # Fallback to standard DB2 using ADMIN_CMD
+                            sql = f"CALL SYSPROC.ADMIN_CMD('UPDATE DB CFG FOR {database_name} USING {key} {value} IMMEDIATE')"
+                            db2.exec_immediate(admin_conn, sql)
                             print(f"  ✅ Set {key} = {value} (DB CFG)")
                             if key.upper() in restart_params:
                                 restart_required_params.append(key)
@@ -285,8 +284,8 @@ data:
                 print(f"  ✅ Set {key} = {value} (RDS)")
             except Exception:
                 try:
-                    # Fallback for standard DB2
-                    sql = f"UPDATE DBM CFG USING {key} {value} IMMEDIATE"
+                    # Fallback for standard DB2 using ADMIN_CMD
+                    sql = f"CALL SYSPROC.ADMIN_CMD('UPDATE DBM CFG USING {key} {value} IMMEDIATE')"
                     db2.exec_immediate(admin_conn, sql)
                     print(f"  ✅ Set {key} = {value} (DBM CFG)")
                 except Exception as e:

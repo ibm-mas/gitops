@@ -117,39 +117,38 @@ db2_addons_audit_config:
 
 Configure automated backups to S3 for RDS DB2 databases. The backup system supports both full and incremental backups with configurable schedules.
 
+#### Common Backup Parameters
+
+These parameters are shared by both full and incremental backups:
+
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `backup.enabled` | Enable/disable backup cron jobs | `true` |
 | `backup.s3_bucket_name` | S3 bucket name for backups | `""` (required) |
 | `backup.s3_prefix` | S3 prefix/folder for backups | `"db2-backups"` |
+| `backup.compression` | Compression option (INCLUDE/EXCLUDE) | `"INCLUDE"` |
+| `backup.util_impact_priority` | Utility impact priority (1-100) | `50` |
+| `backup.num_files` | Number of parallel backup files | `4` |
+| `backup.parallelism` | Degree of parallelism | `4` |
+| `backup.num_buffers` | Number of buffers | `8` |
 
 #### Full Backup Configuration
 
-Full backups run weekly on Sundays at 2 AM by default.
+Full backups run weekly on Sundays at 2 AM by default. Only schedule-specific parameters:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `backup.full.enabled` | Enable full backup cron job | `true` |
 | `backup.full.schedule` | Cron schedule for full backup | `"0 2 * * 0"` (Sunday 2 AM) |
-| `backup.full.compression` | Compression option (INCLUDE/EXCLUDE) | `"INCLUDE"` |
-| `backup.full.util_impact_priority` | Utility impact priority (1-100) | `50` |
-| `backup.full.num_files` | Number of parallel backup files | `4` |
-| `backup.full.parallelism` | Degree of parallelism | `4` |
-| `backup.full.num_buffers` | Number of buffers | `8` |
 
 #### Incremental Backup Configuration
 
-Incremental backups run daily at 2 AM except Sundays (Monday-Saturday).
+Incremental backups run daily at 2 AM except Sundays (Monday-Saturday). Only schedule-specific parameters:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `backup.incremental.enabled` | Enable incremental backup cron job | `true` |
 | `backup.incremental.schedule` | Cron schedule for incremental backup | `"0 2 * * 1-6"` (Mon-Sat 2 AM) |
-| `backup.incremental.compression` | Compression option (INCLUDE/EXCLUDE) | `"INCLUDE"` |
-| `backup.incremental.util_impact_priority` | Utility impact priority (1-100) | `50` |
-| `backup.incremental.num_files` | Number of parallel backup files | `4` |
-| `backup.incremental.parallelism` | Degree of parallelism | `4` |
-| `backup.incremental.num_buffers` | Number of buffers | `8` |
 
 #### Backup Configuration Example
 
@@ -159,23 +158,22 @@ backup:
   s3_bucket_name: "my-db2-backups-bucket"
   s3_prefix: "prod/db2-backups"
   
+  # Common parameters for both full and incremental backups
+  compression: "INCLUDE"
+  util_impact_priority: 50
+  num_files: 4
+  parallelism: 4
+  num_buffers: 8
+  
+  # Full backup - only schedule-specific settings
   full:
     enabled: true
     schedule: "0 2 * * 0"  # Every Sunday at 2 AM
-    compression: "INCLUDE"
-    util_impact_priority: 50
-    num_files: 4
-    parallelism: 4
-    num_buffers: 8
   
+  # Incremental backup - only schedule-specific settings
   incremental:
     enabled: true
     schedule: "0 2 * * 1-6"  # Monday-Saturday at 2 AM
-    compression: "INCLUDE"
-    util_impact_priority: 50
-    num_files: 4
-    parallelism: 4
-    num_buffers: 8
 ```
 
 #### Backup Process Flow
@@ -235,6 +233,13 @@ backup:
   enabled: {{ backup_enabled | default(true) }}
   s3_bucket_name: "{{ s3_backup_bucket }}"
   s3_prefix: "{{ cluster_name }}/db2-backups"
+  
+  # Common backup parameters
+  compression: "{{ backup_compression | default('INCLUDE') }}"
+  util_impact_priority: {{ backup_util_impact_priority | default(50) }}
+  num_files: {{ backup_num_files | default(4) }}
+  parallelism: {{ backup_parallelism | default(4) }}
+  num_buffers: {{ backup_num_buffers | default(8) }}
   
   full:
     enabled: {{ full_backup_enabled | default(true) }}

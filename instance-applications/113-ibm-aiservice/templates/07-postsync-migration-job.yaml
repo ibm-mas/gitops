@@ -128,8 +128,23 @@ spec:
               echo "[INFO] ibm-aiservice operator v9.2 is installed. Proceeding with migration ..."
 
               echo "[INFO] Cleaning up AI Service namespace for deployment of namespace-scoped tenant operator"
-              oc delete deployment ${AISERVICE_INSTANCE_ID}entitymgr-tenant -n ${AISERVICE_NAMESPACE} --ignore-not-found
-              oc delete configmap ${AISERVICE_INSTANCE_ID}-entitymgr-tenant-reconcile -n ${AISERVICE_NAMESPACE} --ignore-not-found
-              oc delete secret provision-tenant----apikey-secret -n ${AISERVICE_NAMESPACE} --ignore-not-found
+              if oc delete deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant -n ${AISERVICE_NAMESPACE} &>/dev/null; then
+                echo "[INFO] Deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant deleted successfully"
+              else
+                echo "[WARNING] Deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant not found. Skipping deletion"
+              fi
+
+              if oc delete secret provision-tenant----apikey-secret -n ${AISERVICE_NAMESPACE} &>/dev/null; then
+                echo "[INFO] Secret provision-tenant----apikey-secret deleted successfully"
+              else
+                echo "[WARNING] Secret provision-tenant----apikey-secret not found. Skipping deletion"
+              fi
+
+              if oc delete configmap ${AISERVICE_INSTANCE_ID}-entitymgr-tenant-reconcile -n ${AISERVICE_NAMESPACE} &>/dev/null; then
+                echo "[INFO] Configmap ${AISERVICE_INSTANCE_ID}-entitymgr-tenant-reconcile deleted successfully"
+              else
+                echo "[WARNING] Configmap ${AISERVICE_INSTANCE_ID}-entitymgr-tenant-reconcile not found. Skipping deletion"
+              fi
+
               exit 0
 {{- end }}

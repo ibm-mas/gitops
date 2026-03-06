@@ -93,6 +93,24 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 
 ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: presync-tenant-migration
+  namespace: "{{ .Values.tenantNamespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+spec:
+  podSelector:
+    matchLabels:
+      app: presync-job
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:

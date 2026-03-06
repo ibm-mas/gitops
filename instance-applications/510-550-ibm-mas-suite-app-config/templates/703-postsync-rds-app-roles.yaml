@@ -200,379 +200,173 @@ spec:
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
                   echo ""
-                  echo "Setting up libcrypt compatibility..."
-                  echo "--------------------------------------------------------------------------------"
-                  # Download libxcrypt-compat library to provide libcrypt.so.1 required by ibm_db
-                  # This is needed for RHEL 9+ based images where libcrypt.so.1 is not included by default
-                  mkdir -p /tmp/lib
-                  
-                  # Check if libcrypt.so.1 already exists in the system
-                  if ldconfig -p | grep -q "libcrypt.so.1"; then
-                    echo "✅ libcrypt.so.1 already available in system"
-                  else
-                    echo "libcrypt.so.1 not found in system, attempting to obtain it..."
-                    
-                    # Strategy 1: Try downloading pre-extracted library directly
-                    echo "Attempting to download libcrypt.so.1 directly..."
-                    DIRECT_DOWNLOAD=false
-                    for LIB_URL in \
-                      "https://github.com/ibm-mas/cli/releases/download/v9.0.0/libcrypt.so.1" \
-                      "https://raw.githubusercontent.com/ibm-mas/cli/main/image/cli/libcrypt.so.1"
-                    do
-                      echo "Trying: ${LIB_URL}"
-                      if curl -sSL -f -o /tmp/lib/libcrypt.so.1 "${LIB_URL}" 2>/dev/null; then
-                        if [ -f /tmp/lib/libcrypt.so.1 ] && [ -s /tmp/lib/libcrypt.so.1 ]; then
-                          chmod +x /tmp/lib/libcrypt.so.1
-                          DIRECT_DOWNLOAD=true
-                          echo "✅ libcrypt.so.1 downloaded successfully"
-                          ls -lh /tmp/lib/libcrypt.so.1
-                          break
-                        fi
-                      fi
-                    done
-                    
-                    # Strategy 2: If direct download failed, try RPM extraction
-                    if [ "${DIRECT_DOWNLOAD}" = "false" ]; then
-                      echo "Direct download failed, trying RPM extraction..."
-                      
-                      RPM_DOWNLOADED=false
-                      for RPM_URL in \
-                        "https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
-                        "http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
-                        "https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/Packages/l/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
-                        "https://rpmfind.net/linux/centos-stream/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm"
-                      do
-                        echo "Trying: ${RPM_URL}"
-                        if curl -sSL -f -o /tmp/libxcrypt-compat.rpm "${RPM_URL}" 2>/dev/null; then
-                          RPM_DOWNLOADED=true
-                          echo "✅ RPM downloaded successfully"
-                          break
-                        fi
-                      done
-                      
-                      if [ "${RPM_DOWNLOADED}" = "true" ] && [ -f /tmp/libxcrypt-compat.rpm ]; then
-                        # Verify it's actually an RPM file
-                        if file /tmp/libxcrypt-compat.rpm 2>/dev/null | grep -q "RPM"; then
-                          echo "Extracting libcrypt.so.1 from RPM..."
-                          cd /tmp
-                          
-                          # Extract using rpm2cpio
-                          if command -v rpm2cpio >/dev/null 2>&1; then
-                            rpm2cpio libxcrypt-compat.rpm | cpio -idmv 2>&1 | grep -E "(libcrypt|extracted)" || true
-                          else
-                            echo "⚠️  rpm2cpio not available, trying alternative extraction..."
-                            # Alternative: use bsdtar if available
-                            if command -v bsdtar >/dev/null 2>&1; then
-                              bsdtar -xf libxcrypt-compat.rpm 2>&1 || true
-                            fi
-                          fi
-                          
-                          # Find and copy the library (check multiple possible locations)
-                          LIBCRYPT_FOUND=false
-                          for LIB_PATH in /tmp/usr/lib64/libcrypt.so.1 /tmp/lib64/libcrypt.so.1 /tmp/usr/lib/libcrypt.so.1; do
-                            if [ -f "${LIB_PATH}" ]; then
-                              cp "${LIB_PATH}" /tmp/lib/
-                              chmod +x /tmp/lib/libcrypt.so.1
-                              echo "✅ libcrypt.so.1 extracted from ${LIB_PATH}"
-                              LIBCRYPT_FOUND=true
-                              break
-                            fi
-                          done
-                          
-                          if [ "${LIBCRYPT_FOUND}" = "false" ]; then
-                            echo "⚠️  Could not find libcrypt.so.1 in extracted RPM"
-                            echo "Listing extracted files:"
-                            find /tmp -name "libcrypt*" 2>/dev/null || true
-                          fi
-                        else
-                          echo "⚠️  Downloaded file is not a valid RPM package"
-                          file /tmp/libxcrypt-compat.rpm 2>/dev/null || true
-                        fi
-                      fi
-                    fi
-                    
-                    # Final check and error message
-                    if [ ! -f /tmp/lib/libcrypt.so.1 ]; then
-                      echo "❌ Failed to obtain libcrypt.so.1"
-                      echo "This is required for ibm_db Python package to work with DB2"
-                      echo "Please ensure network access to download the library or pre-install it in the container image"
-                      exit 1
-                    fi
-                  fi
-                  
-                  # Ensure LD_LIBRARY_PATH is set for subsequent commands
-                  export LD_LIBRARY_PATH=/tmp/lib:${LD_LIBRARY_PATH:-}
-                  echo "Current LD_LIBRARY_PATH: ${LD_LIBRARY_PATH}"
-                  
-                  echo ""
-                  echo "Installing required Python packages..."
-                  echo "--------------------------------------------------------------------------------"
-                  pip install ibm_db
-
-                  echo ""
                   echo "Downloading RDS SSL certificate..."
                   echo "--------------------------------------------------------------------------------"
                   mkdir -p /tmp/rds-ssl
                   curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
                   echo "✅ Certificate downloaded"
 
-                  # Path to the generated Python script
-                  RDS_ROLES_SCRIPT="/tmp/create_rds_roles.py"
+                  # Path to the shell script for DB2 operations
+                  RDS_ROLES_SCRIPT="/tmp/create_rds_roles.sh"
 
                   echo ""
                   echo "Create ${RDS_ROLES_SCRIPT}"
                   echo "--------------------------------------------------------------------------------"
 
-                  # Generate a Python script to check table and create roles
-                  cat > ${RDS_ROLES_SCRIPT} << 'EOFPYTHON'
-                  import ibm_db
-                  import os
-                  import sys
-
+                  # Generate a shell script using db2 CLI commands instead of Python ibm_db
+                  cat > ${RDS_ROLES_SCRIPT} << 'EOFSHELL'
+                  #!/bin/bash
+                  set -e
+                  
                   # Get environment variables
-                  rds_host = os.getenv('RDS_HOST')
-                  rds_port = os.getenv('RDS_PORT')
-                  rds_dbname = os.getenv('RDS_DBNAME')
-                  rds_admin_user = os.getenv('RDS_ADMIN_USER')
-                  rds_admin_password = os.getenv('RDS_ADMIN_PASSWORD')
-                  ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
-
-                  # Build connection string with SSL
-                  conn_str = (
-                      f"DATABASE={rds_dbname};"
-                      f"HOSTNAME={rds_host};"
-                      f"PORT={rds_port};"
-                      f"PROTOCOL=TCPIP;"
-                      f"UID={rds_admin_user};"
-                      f"PWD={rds_admin_password};"
-                      f"Security=SSL;"
-                      f"SSLServerCertificate={ssl_cert_path};"
-                  )
-
-                  print(f"Connecting to RDS DB2 instance: {rds_host}:{rds_port}/{rds_dbname}")
-                  print("Creating roles for MAS applications: manage, facilities")
-                  print("Note: IoT uses admin user (DB2_iot) with full admin privileges - no separate roles")
-
-                  try:
-                      # Connect to the database
-                      conn = ibm_db.connect(conn_str, "", "")
-                      print("✅ Successfully connected to RDS DB2")
-
-                      # Define app configurations with table checks and roles
-                      # Note: IoT is NOT included - it uses admin user (DB2_iot) with full privileges only
-                      app_configs = [
-                          {
-                              'app_name': 'manage',
-                              'schema': 'MAXIMO',
-                              'check_table': 'MAXUSERS',
-                              'roles': ['MAXIMO_READ', 'MAXIMO_WRITE', 'MAXIMO_SEQ', 'EXPLAIN']
-                          },
-                          {
-                              'app_name': 'facilities',
-                              'schema': 'TRIDATA',
-                              'check_table': 'TRIDATA_DATA',
-                              'roles': ['TRIDATA_READ', 'TRIDATA_WRITE']
-                          }
-                          # IoT: No roles created - uses DB2_iot admin user with full privileges
-                      ]
-
-                      # Process each app configuration
-                      for app_config in app_configs:
-                          app_name = app_config['app_name']
-                          schema_name = app_config['schema']
-                          table_name = app_config['check_table']
-                          roles = app_config['roles']
-
-                          print(f"\n{'='*60}")
-                          print(f"Processing {app_name.upper()} application")
-                          print(f"{'='*60}")
-
-                          # Check if the required table exists
-                          check_table_sql = f"""
-                              SELECT COUNT(*) as table_count
-                              FROM SYSCAT.TABLES
-                              WHERE TABSCHEMA = '{schema_name}' AND TABNAME = '{table_name}'
-                          """
-                          
-                          stmt = ibm_db.exec_immediate(conn, check_table_sql)
-                          result = ibm_db.fetch_assoc(stmt)
-                          table_exists = result['TABLE_COUNT'] > 0
-
-                          if not table_exists:
-                              print(f"⚠️  Table {schema_name}.{table_name} does not exist yet. Skipping {app_name} role creation.")
-                              continue
-
-                          print(f"✅ Table {schema_name}.{table_name} exists. Proceeding with role creation...")
-
-                          # Create roles if they don't exist
-                          for role in roles:
-                              try:
-                                  # Check if role exists
-                                  check_role_sql = f"""
-                                      SELECT COUNT(*) as role_count
-                                      FROM SYSCAT.ROLES
-                                      WHERE ROLENAME = '{role}'
-                                  """
-                                  stmt = ibm_db.exec_immediate(conn, check_role_sql)
-                                  result = ibm_db.fetch_assoc(stmt)
-                                  role_exists = result['ROLE_COUNT'] > 0
-
-                                  if not role_exists:
-                                      create_role_sql = f"CREATE ROLE {role}"
-                                      ibm_db.exec_immediate(conn, create_role_sql)
-                                      print(f"✅ Created role: {role}")
-                                  else:
-                                      print(f"ℹ️  Role {role} already exists")
-
-                              except Exception as e:
-                                  print(f"⚠️  Error creating role {role}: {str(e)}")
-
-                          # Grant permissions based on app type
-                          if app_name == 'manage':
-                              # Grant permissions to MAXIMO_READ role
-                              print("\n✅ Granting permissions to MAXIMO_READ role...")
-                              read_grants = [
-                                  "GRANT SELECT ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_READ",
-                                  "GRANT SELECT ON SCHEMA MAXIMO TO ROLE MAXIMO_READ",
-                              ]
-                              
-                              for grant_sql in read_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                              # Grant permissions to MAXIMO_WRITE role
-                              print("\n✅ Granting permissions to MAXIMO_WRITE role...")
-                              write_grants = [
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_WRITE",
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA MAXIMO TO ROLE MAXIMO_WRITE",
-                              ]
-                              
-                              for grant_sql in write_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                              # Grant permissions to MAXIMO_SEQ role
-                              print("\n✅ Granting permissions to MAXIMO_SEQ role...")
-                              seq_grants = [
-                                  "GRANT USAGE ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ",
-                                  "GRANT ALTER ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ",
-                              ]
-                              
-                              for grant_sql in seq_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                              # Grant permissions to EXPLAIN role
-                              print("\n✅ Granting permissions to EXPLAIN role...")
-                              explain_grants = [
-                                  "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE EXPLAIN",
-                                  "GRANT SELECT ON TABLE SYSTOOLS.EXPLAIN_INSTANCE TO ROLE EXPLAIN",
-                              ]
-                              
-                              for grant_sql in explain_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                          elif app_name == 'facilities':
-                              # Grant permissions to TRIDATA_READ role
-                              print("\n✅ Granting permissions to TRIDATA_READ role...")
-                              read_grants = [
-                                  "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ",
-                                  "GRANT SELECT ON SCHEMA TRIDATA TO ROLE TRIDATA_READ",
-                              ]
-                              
-                              for grant_sql in read_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                              # Grant permissions to TRIDATA_WRITE role
-                              print("\n✅ Granting permissions to TRIDATA_WRITE role...")
-                              write_grants = [
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_WRITE",
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA TRIDATA TO ROLE TRIDATA_WRITE",
-                              ]
-                              
-                              for grant_sql in write_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                          elif app_name == 'iot':
-                              # Grant permissions to IOT_READ role
-                              print("\n✅ Granting permissions to IOT_READ role...")
-                              read_grants = [
-                                  "GRANT SELECT ON TABLE IOT.IOT_DATA TO ROLE IOT_READ",
-                                  "GRANT SELECT ON SCHEMA IOT TO ROLE IOT_READ",
-                              ]
-                              
-                              for grant_sql in read_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                              # Grant permissions to IOT_WRITE role
-                              print("\n✅ Granting permissions to IOT_WRITE role...")
-                              write_grants = [
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE IOT.IOT_DATA TO ROLE IOT_WRITE",
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA IOT TO ROLE IOT_WRITE",
-                              ]
-                              
-                              for grant_sql in write_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                      print("\n" + "="*60)
-                      print("✅ Role creation and permission grants completed for all applications")
-                      print("="*60)
-
-                      # Close connection
-                      ibm_db.close(conn)
-
-                  except Exception as e:
-                      print(f"Error: {str(e)}")
-                      sys.exit(1)
-                  EOFPYTHON
-                  # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
+                  RDS_HOST="${RDS_HOST}"
+                  RDS_PORT="${RDS_PORT}"
+                  RDS_DBNAME="${RDS_DBNAME}"
+                  RDS_ADMIN_USER="${RDS_ADMIN_USER}"
+                  RDS_ADMIN_PASSWORD="${RDS_ADMIN_PASSWORD}"
+                  SSL_CERT_PATH="/tmp/rds-ssl/global-bundle.pem"
+                  
+                  echo "Connecting to RDS DB2 instance: ${RDS_HOST}:${RDS_PORT}/${RDS_DBNAME}"
+                  echo "Creating roles for MAS applications: manage, facilities"
+                  echo "Note: IoT uses admin user (DB2_iot) with full admin privileges - no separate roles"
+                  
+                  # Function to execute DB2 SQL
+                  execute_db2_sql() {
+                      local sql="$1"
+                      local description="$2"
+                      
+                      echo "Executing: ${description}"
+                      
+                      # Use db2 command with connection string
+                      db2 "CONNECT TO ${RDS_DBNAME} USER ${RDS_ADMIN_USER} USING ${RDS_ADMIN_PASSWORD} AT ${RDS_HOST}:${RDS_PORT} USING SSLSERVERCERTIFICATE ${SSL_CERT_PATH}" >/dev/null 2>&1 || {
+                          echo "❌ Failed to connect to database"
+                          return 1
+                      }
+                      
+                      # Execute the SQL
+                      result=$(db2 -x "${sql}" 2>&1)
+                      exit_code=$?
+                      
+                      if [ $exit_code -eq 0 ]; then
+                          echo "✅ ${description}"
+                          echo "${result}"
+                      else
+                          # Check if error is because object already exists
+                          if echo "${result}" | grep -qi "already exists\|duplicate"; then
+                              echo "ℹ️  ${description} - already exists"
+                          else
+                              echo "⚠️  ${description} - ${result}"
+                          fi
+                      fi
+                      
+                      db2 "CONNECT RESET" >/dev/null 2>&1 || true
+                      return 0
+                  }
+                  
+                  # Function to check if table exists
+                  check_table_exists() {
+                      local schema="$1"
+                      local table="$2"
+                      
+                      db2 "CONNECT TO ${RDS_DBNAME} USER ${RDS_ADMIN_USER} USING ${RDS_ADMIN_PASSWORD} AT ${RDS_HOST}:${RDS_PORT} USING SSLSERVERCERTIFICATE ${SSL_CERT_PATH}" >/dev/null 2>&1 || {
+                          echo "❌ Failed to connect to database"
+                          return 1
+                      }
+                      
+                      result=$(db2 -x "SELECT COUNT(*) FROM SYSCAT.TABLES WHERE TABSCHEMA='${schema}' AND TABNAME='${table}'" 2>&1)
+                      db2 "CONNECT RESET" >/dev/null 2>&1 || true
+                      
+                      if echo "${result}" | grep -q "^[[:space:]]*[1-9]"; then
+                          return 0  # Table exists
+                      else
+                          return 1  # Table doesn't exist
+                      fi
+                  }
+                  
+                  # Process MANAGE application
+                  echo ""
+                  echo "============================================================"
+                  echo "Processing MANAGE application"
+                  echo "============================================================"
+                  
+                  if check_table_exists "MAXIMO" "MAXUSERS"; then
+                      echo "✅ Table MAXIMO.MAXUSERS exists. Proceeding with role creation..."
+                      
+                      # Create roles
+                      execute_db2_sql "CREATE ROLE MAXIMO_READ" "Create MAXIMO_READ role"
+                      execute_db2_sql "CREATE ROLE MAXIMO_WRITE" "Create MAXIMO_WRITE role"
+                      execute_db2_sql "CREATE ROLE MAXIMO_SEQ" "Create MAXIMO_SEQ role"
+                      execute_db2_sql "CREATE ROLE EXPLAIN" "Create EXPLAIN role"
+                      
+                      # Grant permissions to MAXIMO_READ
+                      echo ""
+                      echo "Granting permissions to MAXIMO_READ role..."
+                      execute_db2_sql "GRANT SELECT ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_READ" "Grant SELECT on MAXUSERS"
+                      execute_db2_sql "GRANT SELECT ON SCHEMA MAXIMO TO ROLE MAXIMO_READ" "Grant SELECT on MAXIMO schema"
+                      
+                      # Grant permissions to MAXIMO_WRITE
+                      echo ""
+                      echo "Granting permissions to MAXIMO_WRITE role..."
+                      execute_db2_sql "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_WRITE" "Grant DML on MAXUSERS"
+                      execute_db2_sql "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA MAXIMO TO ROLE MAXIMO_WRITE" "Grant DML on MAXIMO schema"
+                      
+                      # Grant permissions to MAXIMO_SEQ
+                      echo ""
+                      echo "Granting permissions to MAXIMO_SEQ role..."
+                      execute_db2_sql "GRANT USAGE ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ" "Grant USAGE on MAXSEQ"
+                      execute_db2_sql "GRANT ALTER ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ" "Grant ALTER on MAXSEQ"
+                      
+                      # Grant permissions to EXPLAIN
+                      echo ""
+                      echo "Granting permissions to EXPLAIN role..."
+                      execute_db2_sql "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE EXPLAIN" "Grant EXECUTE on SYSSH200"
+                      execute_db2_sql "GRANT SELECT ON TABLE SYSTOOLS.EXPLAIN_INSTANCE TO ROLE EXPLAIN" "Grant SELECT on EXPLAIN_INSTANCE"
+                  else
+                      echo "⚠️  Table MAXIMO.MAXUSERS does not exist yet. Skipping manage role creation."
+                  fi
+                  
+                  # Process FACILITIES application
+                  echo ""
+                  echo "============================================================"
+                  echo "Processing FACILITIES application"
+                  echo "============================================================"
+                  
+                  if check_table_exists "TRIDATA" "TRIDATA_DATA"; then
+                      echo "✅ Table TRIDATA.TRIDATA_DATA exists. Proceeding with role creation..."
+                      
+                      # Create roles
+                      execute_db2_sql "CREATE ROLE TRIDATA_READ" "Create TRIDATA_READ role"
+                      execute_db2_sql "CREATE ROLE TRIDATA_WRITE" "Create TRIDATA_WRITE role"
+                      
+                      # Grant permissions to TRIDATA_READ
+                      echo ""
+                      echo "Granting permissions to TRIDATA_READ role..."
+                      execute_db2_sql "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ" "Grant SELECT on TRIDATA_DATA"
+                      execute_db2_sql "GRANT SELECT ON SCHEMA TRIDATA TO ROLE TRIDATA_READ" "Grant SELECT on TRIDATA schema"
+                      
+                      # Grant permissions to TRIDATA_WRITE
+                      echo ""
+                      echo "Granting permissions to TRIDATA_WRITE role..."
+                      execute_db2_sql "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_WRITE" "Grant DML on TRIDATA_DATA"
+                      execute_db2_sql "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA TRIDATA TO ROLE TRIDATA_WRITE" "Grant DML on TRIDATA schema"
+                  else
+                      echo "⚠️  Table TRIDATA.TRIDATA_DATA does not exist yet. Skipping facilities role creation."
+                  fi
+                  
+                  echo ""
+                  echo "============================================================"
+                  echo "✅ Role creation and permission grants completed"
+                  echo "============================================================"
+                  
+                  exit 0
+                  EOFSHELL
+                  # IMPORTANT: Do not make any changes to the "EOFSHELL" line above (including its indentation)
 
                   echo ""
                   echo "Executing ${RDS_ROLES_SCRIPT}"
                   echo "--------------------------------------------------------------------------------"
-                  # Ensure LD_LIBRARY_PATH is set before running Python
-                  export LD_LIBRARY_PATH=/tmp/lib:${LD_LIBRARY_PATH:-}
-                  echo "LD_LIBRARY_PATH before Python execution: ${LD_LIBRARY_PATH}"
-                  
-                  # Verify libcrypt.so.1 is accessible
-                  if [ -f /tmp/lib/libcrypt.so.1 ]; then
-                    echo "✅ /tmp/lib/libcrypt.so.1 exists"
-                    ls -lh /tmp/lib/libcrypt.so.1
-                  else
-                    echo "⚠️  /tmp/lib/libcrypt.so.1 not found, checking system libraries..."
-                    ldconfig -p | grep libcrypt || echo "No libcrypt found in system"
-                  fi
-                  
-                  python ${RDS_ROLES_SCRIPT} || exit $?
+                  chmod +x ${RDS_ROLES_SCRIPT}
+                  ${RDS_ROLES_SCRIPT} || exit $?
 
                   echo ""
                   echo "RDS role creation job completed successfully"

@@ -1,6 +1,6 @@
 {{- if hasPrefix "9.2." (toString .Values.aiservice_channel) }}
 
-{{- $_job_name_prefix := "aiservice-migration" }}
+{{- $_job_name_prefix := "postsync-aiservice-migration" }}
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
 {{- $_job_version := "v1" }}
@@ -12,7 +12,7 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: aiservice-migration
+  name: postsync-aiservice-migration
   namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/hook: PostSync
@@ -22,7 +22,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: aiservice-migration
+  name: postsync-aiservice-migration
   namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/hook: PostSync
@@ -34,23 +34,26 @@ rules:
   - apiGroups: [""]
     resources: ["secrets", "configmaps"]
     verbs: ["get", "list", "delete"]
+  - apiGroups: ["operators.coreos.com"]
+    resources: ["subscriptions"]
+    verbs: ["get", "list"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: aiservice-migration
+  name: postsync-aiservice-migration
   namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 subjects:
   - kind: ServiceAccount
-    name: aiservice-migration
+    name: postsync-aiservice-migration
     namespace: "{{ .Values.aiservice_namespace }}"
 roleRef:
   kind: Role
-  name: aiservice-migration
+  name: postsync-aiservice-migration
   apiGroup: rbac.authorization.k8s.io
 
 ---
@@ -77,7 +80,7 @@ spec:
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
-      serviceAccountName: aiservice-migration
+      serviceAccountName: postsync-aiservice-migration
       restartPolicy: OnFailure
       containers:
         - name: main

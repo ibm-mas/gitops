@@ -8,16 +8,22 @@ The `dro_cmm_setup` being set to true is used to configure connectivity to CMM w
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
-| `OperatorGroup` | `ibm-mas-operator-group` | `ibm-software-central` | Always | `cluster_admin_role` |
-| `Secret` | `ibm-entitlement` | `ibm-software-central` | Always | `cluster_admin_role` |
-| `Subscription` | `ibm-metrics-operator` | `ibm-software-central` | Always | `cluster_admin_role` |
-| `Subscription` | `redhat-marketplace-operator` | `ibm-software-central` | Always | `cluster_admin_role` |
-| `MarketplaceConfig` | `marketplaceconfig` | `ibm-software-central` | Always | `cluster_admin_role` |
-| `ClusterRole` | `dro-cluster-role` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
-| `ClusterRoleBinding` | `dro-cluster-role-binding` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
-| `Secret` | `dro-api-token` | `ibm-software-central` | Always | `cluster_admin_role` |
-| `Job` | `postsync-dro-update-sm-job-*` | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
-| `Secret` | `dest-header-map-secret` | `ibm-software-central` | When `dro_cmm_setup` is true | `cluster_admin_role` |
-| `Secret` | `dest-api-key-secret` | `ibm-software-central` | When `dro_cmm_setup` is true | `cluster_admin_role` |
-| `ConfigMap` | `dest-ca-certificate-config` | `ibm-software-central` | When `dro_cmm_setup` is true | `cluster_admin_role` |
-| `DataReporterConfig` | `datareporterconfig` | `ibm-software-central` | When `dro_cmm_setup` is true | `cluster_admin_role` |
+| `OperatorGroup` | `ibm-mas-operator-group` | `ibm-software-central` | When `cluster_admin_role` is true | `cluster_admin_role` |
+| `Secret` | `redhat-marketplace-pull-secret` | `ibm-software-central` | When `application_admin_role` is true | `application_admin_role` |
+| `Subscription` | `ibm-metrics-operator` | `ibm-software-central` | When `cluster_admin_role` is true | `cluster_admin_role` |
+| `Subscription` | `ibm-data-reporter-operator` | `ibm-software-central` | When `cluster_admin_role` is true | `cluster_admin_role` |
+| `MarketplaceConfig` | `marketplaceconfig` | `ibm-software-central` | When `application_admin_role` is true | `application_admin_role` |
+| `ClusterRoleBinding` | `metric-state-view-binding` | N/A (cluster-scoped) | When `cluster_admin_role` is true | `cluster_admin_role` |
+| `ClusterRoleBinding` | `reporter-cluster-monitoring-binding` | N/A (cluster-scoped) | When `cluster_admin_role` is true | `cluster_admin_role` |
+| `ClusterRoleBinding` | `manager-cluster-monitoring-binding` | N/A (cluster-scoped) | When `cluster_admin_role` is true | `cluster_admin_role` |
+| `Secret` | `ibm-data-reporter-operator-api-token` | `ibm-software-central` | When `application_admin_role` is true | `application_admin_role` |
+| `Secret` | `aws` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
+| `ServiceAccount` | `postsync-ibm-dro-update-sm-sa` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
+| `Role` | `postsync-ibm-dro-update-sm-r` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
+| `RoleBinding` | `postsync-ibm-dro-update-sm-rb` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
+| `Job` | `postsync-ibm-dro-update-sm-job-*` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
+| `Secret` | `dest-header-map-secret` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
+| `Secret` | `auth-header-map-secret` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
+| `Secret` | `auth-body-data-secret` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
+| `ConfigMap` | `kazaam-configmap` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
+| `DataReporterConfig` | `datareporterconfig` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |

@@ -21,7 +21,7 @@ metadata:
   name: {{ $np_name }}
   namespace: {{ $app_ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "703"
+    argocd.argoproj.io/sync-wave: "600"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -46,7 +46,7 @@ metadata:
   name: "{{ $sa_name }}"
   namespace: "{{ $app_ns }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "703"
+    argocd.argoproj.io/sync-wave: "600"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -124,14 +124,14 @@ metadata:
   name: {{ $_cronjob_name }}
   namespace: "{{ $app_ns }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "704"
+    argocd.argoproj.io/sync-wave: "600"
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if $.Values.custom_labels }}
 {{ $.Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  schedule: "*/30 * * * *"  # Run every 30 minutes
+  schedule: "* * * * *"  # Run every minute run 30 minute */30 * * * *
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -151,10 +151,16 @@ spec:
 {{ $.Values.custom_labels | toYaml | indent 12 }}
 {{- end }}
         spec:
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
           containers:
             - name: run
               image: {{ $.Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
               imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: true
               resources:
                 limits:
                   cpu: 200m
@@ -199,6 +205,12 @@ spec:
                   echo "RDS_PORT ............................ ${RDS_PORT}"
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
+                  echo ""
+                  echo "Installing system dependencies..."
+                  echo "--------------------------------------------------------------------------------"
+                  # Install libxcrypt-compat which provides libcrypt.so.1 required by ibm_db
+                  microdnf install -y libxcrypt-compat || yum install -y libxcrypt-compat || dnf install -y libxcrypt-compat || apt-get update && apt-get install -y libcrypt1
+                  
                   echo ""
                   echo "Installing required Python packages..."
                   echo "--------------------------------------------------------------------------------"

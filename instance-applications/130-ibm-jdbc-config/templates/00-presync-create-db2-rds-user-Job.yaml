@@ -3,7 +3,7 @@
   {{- /*
     Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
     */}}
-  {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+  {{- $_cli_image_digest := "sha256:1b88f88a1a719d006ea1f4b8dcfd1c2625fa7ecc529c3267e7b4b6afaa1c8da0" }}
 
   {{ $ns := printf "mas-%s-core" .Values.instance_id }}
   {{ $prefix := printf "pre-jdbc-nonadmin-%s" .Values.mas_config_name }}
@@ -68,291 +68,286 @@ spec:
       labels:
         app: {{ $job }}
   {{- if .Values.custom_labels }}
-  {{ .Values.custom_labels | toYaml | indent 8 }}
+      {{ .Values.custom_labels | toYaml | indent 8 }}
   {{- end }}
-spec:
-  containers:
-    - name: run
-      image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
-      imagePullPolicy: IfNotPresent
-      resources:
-        limits:
-          cpu: 200m
-          memory: 512Mi
-        requests:
-          cpu: 10m
-          memory: 64Mi
-      env:
-        - name: JDBC_CONNECTION_URL
-          value: "{{ .Values.jdbc_connection_url }}"
-        - name: JDBC_INSTANCE_USERNAME
-          value: "{{ .Values.jdbc_instance_username }}"
-        - name: JDBC_INSTANCE_PASSWORD
-          value: "{{ .Values.jdbc_instance_password }}"
-        - name: MAS_APP_ID
-          value: "{{ .Values.mas_application_id }}"
-      command:
-        - /bin/sh
-        - -c
-        - |
-          
-          set -e
-          
-          echo ""
-          echo "================================================================================"
-          echo "Settings"
-          echo "================================================================================"
-          echo "JDBC_CONNECTION_URL ................. ${JDBC_CONNECTION_URL}"
-          echo "JDBC_INSTANCE_USERNAME .............. ${JDBC_INSTANCE_USERNAME}"
-          echo "MAS_APP_ID .......................... ${MAS_APP_ID}"
-          
-          echo ""
-          echo "Installing required Python packages..."
-          echo "--------------------------------------------------------------------------------"
-          pip install ibm_db
-          
-          echo ""
-          echo "Downloading RDS SSL certificate..."
-          echo "--------------------------------------------------------------------------------"
-          mkdir -p /tmp/rds-ssl
-          curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
-          echo "✅ Certificate downloaded"
-          
-          # Path to the generated Python script
-          RDS_USER_SCRIPT="/tmp/create_rds_nonadmin_users.py"
-          
-          echo ""
-          echo "Create ${RDS_USER_SCRIPT}"
-          echo "--------------------------------------------------------------------------------"
-          
-          # Generate a Python script to create non-admin users and grant permissions
-          cat > ${RDS_USER_SCRIPT} << 'EOFPYTHON'
-          import ibm_db
-          import os
-          import sys
-          
-          import re
-          
-          # Get environment variables
-          jdbc_connection_url = os.getenv('JDBC_CONNECTION_URL')
-          jdbc_username = os.getenv('JDBC_INSTANCE_USERNAME')
-          jdbc_password = os.getenv('JDBC_INSTANCE_PASSWORD')
-          mas_app_id = os.getenv('MAS_APP_ID', 'manage')
-          ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
-          
-          # Parse JDBC connection URL to extract host, port, and database
-          # Format: jdbc:db2://host:port/database
-          match = re.match(r'jdbc:db2://([^:]+):(\d+)/(.+)', jdbc_connection_url)
-          if not match:
-              print(f"❌ Failed to parse JDBC connection URL: {jdbc_connection_url}")
-              sys.exit(1)
-          
-          rds_host = match.group(1)
-          rds_port = match.group(2)
-          rds_dbname = match.group(3).split(':')[0]  # Remove any additional parameters
-          
-          # Build connection string with SSL
-          conn_str = (
-              f"DATABASE={rds_dbname};"
-              f"HOSTNAME={rds_host};"
-              f"PORT={rds_port};"
-              f"PROTOCOL=TCPIP;"
-              f"UID={jdbc_username};"
-              f"PWD={jdbc_password};"
-              f"Security=SSL;"
-              f"SSLServerCertificate={ssl_cert_path};"
-          )
-          
-          print(f"Connecting to RDS DB2 instance: {rds_host}:{rds_port}/{rds_dbname}")
-          print(f"MAS Application ID: {mas_app_id}")
-          print(f"JDBC Username: {jdbc_username}")
-          
-          # Option 2: Create TWO types of users
-          # 1. Admin users: We CREATE these with DBADM (for schema management)
-          # 2. Non-admin user: We FETCH from AWS Secrets Manager and grant only app roles (for runtime)
-          
-          # Admin users to CREATE (with DBADM)
-          admin_users_to_create = [
-              {
-                  'username': 'DB2_manage',
-                  'role': 'DBADM',
-                  'description': 'Manage Admin User (DBADM for schema management)',
-                  'app_type': 'manage'
-              },
-              {
-                  'username': 'DB2_facilities',
-                  'role': 'DBADM',
-                  'description': 'Facilities Admin User (DBADM for schema management)',
-                  'app_type': 'facilities'
-              },
-              {
-                  'username': 'DB2_iot',
-                  'role': 'DBADM',
-                  'description': 'IoT Admin User (DBADM for schema management)',
-                  'app_type': 'iot'
-              }
-          ]
-          
-          # Non-admin user from AWS Secrets Manager (grant only app roles)
-          # Note: IoT does NOT get non-admin roles - only admin user with DBADM
-          nonadmin_user_roles = [
-              {
-                  'username': jdbc_username,  # From AWS Secrets Manager
-                  'grants': ['MAXIMO_READ', 'MAXIMO_WRITE', 'MAXIMO_SEQ', 'EXPLAIN'],
-                  'description': 'Manage Application User (from AWS Secrets Manager)',
-                  'app_type': 'manage'
-              },
-              {
-                  'username': jdbc_username,
-                  'grants': ['TRIDATA_READ', 'TRIDATA_WRITE'],
-                  'description': 'Facilities Application User (from AWS Secrets Manager)',
-                  'app_type': 'facilities'
-              }
-              # IoT: No non-admin roles - uses admin user (DB2_iot) with DBADM only
-          ]
-          
-          print(f"\n✅ Creating users:")
-          print(f"   1. Admin users: DB2_manage, DB2_facilities, DB2_iot (DBADM)")
-          print(f"   2. Non-admin user: {jdbc_username} (App roles for Manage & Facilities only)")
-          print(f"   Note: IoT uses admin user (DB2_iot) with DBADM only")
-          
-          try:
-              # Connect to the database
-              conn = ibm_db.connect(conn_str, "", "")
-              print("✅ Successfully connected to RDS DB2")
-          
-              # ========================================================================
-              # STEP 1: Create Admin Users with DBADM
-              # ========================================================================
-              print(f"\n{'='*80}")
-              print("STEP 1: Creating Admin Users (DBADM)")
-              print(f"{'='*80}")
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: JDBC_CONNECTION_URL
+              value: "{{ .Values.jdbc_connection_url }}"
+            - name: RDS_ADMIN_DB_NAME
+              value: "{{ .Values.rds_admin_db_name }}"
+            - name: JDBC_INSTANCE_USERNAME
+              value: "{{ .Values.jdbc_instance_username }}"
+            - name: JDBC_INSTANCE_PASSWORD
+              value: "{{ .Values.jdbc_instance_password }}"
+            - name: MAS_APP_ID
+              value: "{{ .Values.mas_application_id }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
               
-              for admin_user in admin_users_to_create:
-                  username = admin_user['username']
-                  role_to_assign = admin_user['role']
-                  description = admin_user['description']
-                  app_type = admin_user['app_type']
-          
-                  print(f"\n--- Processing: {description} ---")
-                  print(f"Username: {username}")
-                  print(f"App Type: {app_type}")
-          
-                  # Check if user exists
-                  check_user_sql = f"""
-                      SELECT COUNT(*) as user_count
-                      FROM SYSIBM.SYSDBAUTH
-                      WHERE GRANTEE = '{username}'
-                  """
-          
-                  try:
-                      stmt = ibm_db.exec_immediate(conn, check_user_sql)
-                      result = ibm_db.fetch_assoc(stmt)
-                      user_exists = result['USER_COUNT'] > 0
-          
-                      if user_exists:
-                          print(f"ℹ️  User {username} already exists")
-                      else:
-                          print(f"✅ Creating user {username} with comprehensive admin privileges")
-                      
-                      # Grant comprehensive admin privileges to user
-                      admin_grants = [
-                          f"GRANT DBADM, CREATETAB, BINDADD, CONNECT, CREATE_NOT_FENCED_ROUTINE, IMPLICIT_SCHEMA, LOAD, CREATE_EXTERNAL_ROUTINE, QUIESCE_CONNECT ON DATABASE TO USER {username}",
-                          f"GRANT USE OF TABLESPACE MAXDATA TO USER {username}",
-                          f"GRANT DBADM WITHOUT DATAACCESS WITHOUT ACCESSCTRL ON DATABASE TO USER {username}",
-                          f"GRANT SECADM ON DATABASE TO USER {username}",
-                          f"GRANT DATAACCESS ON DATABASE TO USER {username}",
-                          f"GRANT ACCESSCTRL ON DATABASE TO USER {username}"
-                      ]
-                      
-                      for grant_sql in admin_grants:
-                          try:
-                              ibm_db.exec_immediate(conn, grant_sql)
-                              print(f"✅ Executed: {grant_sql}")
-                          except Exception as e:
-                              print(f"⚠️  Error executing grant: {str(e)}")
-                              print(f"   SQL: {grant_sql}")
-          
-                  except Exception as e:
-                      print(f"⚠️  Error processing user {username}: {str(e)}")
-          
-              # ========================================================================
-              # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)
-              # ========================================================================
-              print(f"\n{'='*80}")
-              print("STEP 2: Granting Application Roles to Non-Admin User")
-              print(f"{'='*80}")
-              print(f"Non-admin user: {jdbc_username} (from AWS Secrets Manager)")
+              set -e
               
-              # Check if non-admin user exists
-              check_user_sql = f"""
-                  SELECT COUNT(*) as user_count
-                  FROM SYSIBM.SYSDBAUTH
-                  WHERE GRANTEE = '{jdbc_username}'
-              """
-          
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "JDBC_CONNECTION_URL ................. ${JDBC_CONNECTION_URL}"
+              echo "JDBC_INSTANCE_USERNAME .............. ${JDBC_INSTANCE_USERNAME}"
+              echo "RDS_ADMIN_DB_NAME ................... ${RDS_ADMIN_DB_NAME}"
+              echo "MAS_APP_ID .......................... ${MAS_APP_ID}"
+              
+              echo ""
+              echo "Installing required Python packages..."
+              echo "--------------------------------------------------------------------------------"
+              pip install ibm_db
+              
+              echo ""
+              echo "Downloading RDS SSL certificate..."
+              echo "--------------------------------------------------------------------------------"
+              mkdir -p /tmp/rds-ssl
+              curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
+              echo "✅ Certificate downloaded"
+              
+              # Path to the generated Python script
+              RDS_USER_SCRIPT="/tmp/create_rds_nonadmin_users.py"
+              
+              echo ""
+              echo "Create ${RDS_USER_SCRIPT}"
+              echo "--------------------------------------------------------------------------------"
+              
+              # Generate a Python script to create non-admin users and grant permissions
+              cat > ${RDS_USER_SCRIPT} << 'EOFPYTHON'
+              import ibm_db
+              import os
+              import sys
+              
+              import re
+              
+              # Get environment variables
+              jdbc_connection_url = os.getenv('JDBC_CONNECTION_URL')
+              rds_admin_db_name = os.getenv('RDS_ADMIN_DB_NAME')
+              jdbc_username = os.getenv('JDBC_INSTANCE_USERNAME')
+              jdbc_password = os.getenv('JDBC_INSTANCE_PASSWORD')
+              mas_app_id = os.getenv('MAS_APP_ID', 'manage')
+              ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
+              
+              # Parse JDBC connection URL to extract host, port, and database
+              # Format: jdbc:db2://host:port/database
+              match = re.match(r'jdbc:db2://([^:]+):(\d+)/(.+)', jdbc_connection_url)
+              if not match:
+                  print(f"❌ Failed to parse JDBC connection URL: {jdbc_connection_url}")
+                  sys.exit(1)
+              
+              rds_host = match.group(1)
+              rds_port = match.group(2)
+              rds_dbname = match.group(3).split(':')[0]  # Remove any additional parameters
+              
+              # Build connection string with SSL
+              # Connect to the application database (rds_dbname from JDBC URL) to run GRANT statements
+              # Note: rds_admin_db_name (rdsadmin) is the admin DB and does not allow GRANT operations
+              conn_str = (
+                  f"DATABASE={rds_dbname};"
+                  f"HOSTNAME={rds_host};"
+                  f"PORT={rds_port};"
+                  f"PROTOCOL=TCPIP;"
+                  f"UID={jdbc_username};"
+                  f"PWD={jdbc_password};"
+                  f"Security=SSL;"
+                  f"SSLServerCertificate={ssl_cert_path};"
+              )
+              
+              print(f"Connecting to RDS DB2 instance: {rds_host}:{rds_port}/{rds_dbname}")
+              print(f"MAS Application ID: {mas_app_id}")
+              print(f"JDBC Username: {jdbc_username}")
+              
+              # Option 2: Create TWO types of users
+              # 1. Admin users: We CREATE these with DBADM (for schema management)
+              # 2. Non-admin user: We FETCH from AWS Secrets Manager and grant only app roles (for runtime)
+              
+              # Admin users to CREATE (with DBADM)
+              admin_users_to_create = [
+                  {
+                      'username': 'DB2_manage',
+                      'role': 'DBADM',
+                      'description': 'Manage Admin User (DBADM for schema management)',
+                      'app_type': 'manage'
+                  },
+                  {
+                      'username': 'DB2_facilities',
+                      'role': 'DBADM',
+                      'description': 'Facilities Admin User (DBADM for schema management)',
+                      'app_type': 'facilities'
+                  },
+                  {
+                      'username': 'DB2_iot',
+                      'role': 'DBADM',
+                      'description': 'IoT Admin User (DBADM for schema management)',
+                      'app_type': 'iot'
+                  }
+              ]
+              
+              # Non-admin user from AWS Secrets Manager (grant only app roles)
+              # Note: IoT does NOT get non-admin roles - only admin user with DBADM
+              nonadmin_user_roles = [
+                  {
+                      'username': jdbc_username,  # From AWS Secrets Manager
+                      'grants': ['MAXIMO_READ', 'MAXIMO_WRITE', 'MAXIMO_SEQ', 'EXPLAIN'],
+                      'description': 'Manage Application User (from AWS Secrets Manager)',
+                      'app_type': 'manage'
+                  },
+                  {
+                      'username': jdbc_username,
+                      'grants': ['TRIDATA_READ', 'TRIDATA_WRITE'],
+                      'description': 'Facilities Application User (from AWS Secrets Manager)',
+                      'app_type': 'facilities'
+                  }
+                  # IoT: No non-admin roles - uses admin user (DB2_iot) with DBADM only
+              ]
+              
+              print(f"\n✅ Creating users:")
+              print(f"   1. Admin users: DB2_manage, DB2_facilities, DB2_iot (DBADM)")
+              print(f"   2. Non-admin user: {jdbc_username} (App roles for Manage & Facilities only)")
+              print(f"   Note: IoT uses admin user (DB2_iot) with DBADM only")
+              
               try:
-                  stmt = ibm_db.exec_immediate(conn, check_user_sql)
-                  result = ibm_db.fetch_assoc(stmt)
-                  user_exists = result['USER_COUNT'] > 0
-          
-                  if user_exists:
-                      print(f"✅ User {jdbc_username} exists in database")
-                  else:
-                      print(f"⚠️  User {jdbc_username} not found in database")
-                      print(f"   Note: User should be created externally in AWS RDS")
-          
+                  # Connect to the database
+                  conn = ibm_db.connect(conn_str, "", "")
+                  print("✅ Successfully connected to RDS DB2")
+              
+                  # ========================================================================
+                  # STEP 1: Create Admin Users with DBADM
+                  # ========================================================================
+                  print(f"\n{'='*80}")
+                  print("STEP 1: Creating Admin Users (DBADM)")
+                  print(f"{'='*80}")
+                  
+                  for admin_user in admin_users_to_create:
+                      username = admin_user['username']
+                      role_to_assign = admin_user['role']
+                      description = admin_user['description']
+                      app_type = admin_user['app_type']
+              
+                      print(f"\n--- Processing: {description} ---")
+                      print(f"Username: {username}")
+                      print(f"App Type: {app_type}")
+              
+                      # Grant comprehensive admin privileges using RDS stored procedure
+                      # RDS DB2 uses: CALL rdsadmin.grant_dbauth(database, grantee, dbadm, createtab, bindadd, connect, ...)
+                      # Parameters: Y = grant, N = don't grant, NULL = no change
+                      try:
+                          grant_sql = f"""
+                          CALL rdsadmin.grant_dbauth(
+                              '{rds_dbname}',
+                              '{username}',
+                              'Y',  -- DBADM
+                              'Y',  -- CREATETAB
+                              'Y',  -- BINDADD
+                              'Y',  -- CONNECT
+                              'Y',  -- CREATE_NOT_FENCED
+                              'Y',  -- IMPLICIT_SCHEMA
+                              'Y',  -- LOAD
+                              'Y',  -- CREATE_EXTERNAL_ROUTINE
+                              'Y',  -- QUIESCE_CONNECT
+                              'Y',  -- SECADM
+                              'Y',  -- DATAACCESS
+                              'Y'   -- ACCESSCTRL
+                          )
+                          """
+                          ibm_db.exec_immediate(conn, grant_sql)
+                          print(f"✅ Granted comprehensive admin privileges to {username} using rdsadmin.grant_dbauth()")
+                      except Exception as e:
+                          error_msg = str(e)
+                          print(f"⚠️  Error granting admin privileges via rdsadmin.grant_dbauth(): {error_msg}")
+                          print(f"ℹ️  Attempting individual GRANT statements as fallback...")
+                          
+                          # Fallback: try individual GRANT statements (may work if user already exists with some privileges)
+                          fallback_grants = [
+                              f"GRANT CONNECT ON DATABASE TO USER {username}",
+                              f"GRANT CREATETAB ON DATABASE TO USER {username}",
+                              f"GRANT BINDADD ON DATABASE TO USER {username}",
+                              f"GRANT IMPLICIT_SCHEMA ON DATABASE TO USER {username}",
+                              f"GRANT LOAD ON DATABASE TO USER {username}"
+                          ]
+                          
+                          for grant_stmt in fallback_grants:
+                              try:
+                                  ibm_db.exec_immediate(conn, grant_stmt)
+                                  print(f"✅ Executed: {grant_stmt}")
+                              except Exception as fallback_error:
+                                  print(f"⚠️  Fallback grant failed: {str(fallback_error)}")
+              
+                  # ========================================================================
+                  # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)
+                  # ========================================================================
+                  print(f"\n{'='*80}")
+                  print("STEP 2: Granting Application Roles to Non-Admin User")
+                  print(f"{'='*80}")
+                  print(f"Non-admin user: {jdbc_username} (from AWS Secrets Manager)")
+                  
+                  # Grant application-specific roles to non-admin user
+                  # Note: Skipping user existence check - GRANT is idempotent and safe to re-run
+                  print(f"ℹ️  Proceeding to grant application roles to {jdbc_username}")
+                  # Grant application-specific roles to non-admin user
+                  for user_info in nonadmin_user_roles:
+                      grants = user_info['grants']
+                      description = user_info['description']
+                      app_type = user_info['app_type']
+              
+                      print(f"\n--- Processing: {description} ---")
+                      print(f"App Type: {app_type}")
+              
+                      # Grant application role permissions
+                      if grants:
+                          print(f"✅ Granting {app_type} application roles to {jdbc_username}...")
+                          for grant_role in grants:
+                              try:
+                                  grant_role_sql = f"GRANT ROLE {grant_role} TO USER {jdbc_username}"
+                                  ibm_db.exec_immediate(conn, grant_role_sql)
+                                  print(f"✅ Granted role {grant_role} to {jdbc_username}")
+                              except Exception as e:
+                                  print(f"⚠️  Error granting role {grant_role}: {str(e)}")
+                                  print(f"   Note: Role {grant_role} may not exist yet. It will be created by the role creation job.")
+              
+                  print(f"\n{'='*80}")
+                  print("✅ User creation and role assignment completed successfully")
+                  print(f"{'='*80}")
+                  print(f"Admin users: DB2_manage, DB2_facilities, DB2_iot (DBADM)")
+                  print(f"Non-admin user: {jdbc_username} (Application roles only)")
+              
+                  # Close connection
+                  ibm_db.close(conn)
+              
               except Exception as e:
-                  print(f"⚠️  Error checking user {jdbc_username}: {str(e)}")
-          
-              # Grant application-specific roles to non-admin user
-              for user_info in nonadmin_user_roles:
-                  grants = user_info['grants']
-                  description = user_info['description']
-                  app_type = user_info['app_type']
-          
-                  print(f"\n--- Processing: {description} ---")
-                  print(f"App Type: {app_type}")
-          
-                  # Grant application role permissions
-                  if grants:
-                      print(f"✅ Granting {app_type} application roles to {jdbc_username}...")
-                      for grant_role in grants:
-                          try:
-                              grant_role_sql = f"GRANT ROLE {grant_role} TO USER {jdbc_username}"
-                              ibm_db.exec_immediate(conn, grant_role_sql)
-                              print(f"✅ Granted role {grant_role} to {jdbc_username}")
-                          except Exception as e:
-                              print(f"⚠️  Error granting role {grant_role}: {str(e)}")
-                              print(f"   Note: Role {grant_role} may not exist yet. It will be created by the role creation job.")
-          
-              print(f"\n{'='*80}")
-              print("✅ User creation and role assignment completed successfully")
-              print(f"{'='*80}")
-              print(f"Admin users: DB2_manage, DB2_facilities, DB2_iot (DBADM)")
-              print(f"Non-admin user: {jdbc_username} (Application roles only)")
-          
-              # Close connection
-              ibm_db.close(conn)
-          
-          except Exception as e:
-              print(f"❌ Error: {str(e)}")
-              sys.exit(1)
-          EOFPYTHON
-          # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
-          
-          echo ""
-          echo "Executing ${RDS_USER_SCRIPT}"
-          echo "--------------------------------------------------------------------------------"
-          python ${RDS_USER_SCRIPT} || exit $?
-          
-          echo ""
-          echo "✅ RDS app-specific admin user creation job completed successfully"
+                  print(f"❌ Error: {str(e)}")
+                  sys.exit(1)
+              EOFPYTHON
+              # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
+              
+              echo ""
+              echo "Executing ${RDS_USER_SCRIPT}"
+              echo "--------------------------------------------------------------------------------"
+              python ${RDS_USER_SCRIPT} || exit $?
+              
+              echo ""
+              echo "✅ RDS app-specific admin user creation job completed successfully"
 
-  restartPolicy: Never
-  serviceAccountName: {{ $sa }}
-  volumes: []
-backoffLimit: 4
+      restartPolicy: Never
+      serviceAccountName: {{ $sa }}
+      volumes: []
+  backoffLimit: 4
   
   {{- end }}
 

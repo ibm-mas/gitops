@@ -197,12 +197,12 @@ data:
         import json
         registry = json.loads(db2_instance_registry)
         for key, value in registry.items():
-            try:
-                sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
-                db2.exec_immediate(admin_conn, sql)
-                print(f"  ✅ Set {key} = {value}")
-            except Exception as e:
-                print(f"  ⚠️  Failed to set {key}: {e}")
+          try:
+            sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
+            db2.exec_immediate(admin_conn, sql)
+            print(f"  ✅ Set {key} = {value}")
+          except Exception as e:
+            print(f"  ⚠️  Failed to set {key}: {e}")
     
     # 4. Apply DB2 Database Configuration
     db2_database_config = os.environ.get('DB2_DATABASE_CONFIG', '')
@@ -210,12 +210,39 @@ data:
         print("\n📝 Applying DB2 Database Configuration settings...")
         import json
         config = json.loads(db2_database_config)
+    
+        # Parameters that typically require RESTART_DATABASE flag
+        restart_params = ['CHNGPGS_THRESH', 'CUR_COMMIT', 'DEC_TO_CHAR_FMT',
+                         'LOCKTIMEOUT', 'NUM_IOCLEANERS', 'NUM_IOSERVERS']
+    
         for key, value in config.items():
-            try:
+          try:
+            # Try with RESTART_DATABASE flag if parameter is in the restart list
+            if key.upper() in restart_params:
+                sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}', 'RESTART_DATABASE', 'YES')"
+            else:
                 sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
-                db2.exec_immediate(admin_conn, sql)
-                print(f"  ✅ Set {key} = {value}")
-            except Exception as e:
+    
+            db2.exec_immediate(admin_conn, sql)
+            print(f"  ✅ Set {key} = {value}")
+          except Exception as e:
+            error_msg = str(e)
+    
+            # Provide specific guidance based on error type
+            if 'SQL0438N' in error_msg and 'RESTART_DATABASE' in error_msg:
+                print(f"  ⚠️  Failed to set {key}: Parameter requires RESTART_DATABASE flag")
+                print(f"      → MANUAL CONFIGURATION REQUIRED:")
+                print(f"         1. Connect as rdsadmin user to database '{database_name}'")
+                print(f"         2. Execute: CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}', 'RESTART_DATABASE', 'YES')")
+                print(f"         3. Restart database via AWS Console (RDS → Databases → Actions → Reboot)")
+                print(f"         4. Verify: SELECT NAME, VALUE FROM SYSIBMADM.DBCFG WHERE NAME = '{key.upper()}'")
+            elif 'SQL0440N' in error_msg:
+                print(f"  ⚠️  Failed to set {key}: RDS procedure not available")
+                print(f"      → This parameter must be configured through AWS RDS parameter groups or AWS Support")
+            elif 'SQL0551N' in error_msg:
+                print(f"  ⚠️  Failed to set {key}: Insufficient privileges")
+                print(f"      → This parameter is managed by AWS RDS. Contact AWS Support to modify")
+            else:
                 print(f"  ⚠️  Failed to set {key}: {e}")
     
     # 5. Apply DB2 Instance DBM Configuration
@@ -225,29 +252,14 @@ data:
         import json
         config = json.loads(db2_instance_dbm_config)
         for key, value in config.items():
-            try:
-                sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
-                db2.exec_immediate(admin_conn, sql)
-                print(f"  ✅ Set {key} = {value}")
-            except Exception as e:
-                print(f"  ⚠️  Failed to set {key}: {e}")
-    
-    # 6. Apply DB2 Audit Configuration
-    enable_audit = os.environ.get('ENABLE_AUDIT', 'false').lower() == 'true'
-    if enable_audit:
-        print("\n📝 Configuring DB2 Audit...")
-        try:
-            sql = f"CALL rdsadmin.update_db_param('{database_name}', 'AUDIT_BUF_SZ', '1000')"
+          try:
+            sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
             db2.exec_immediate(admin_conn, sql)
-            print("  ✅ Set AUDIT_BUF_SZ = 1000")
-            
-            apply_default_policy = os.environ.get('APPLY_DEFAULT_POLICY', 'false').lower() == 'true'
-            if apply_default_policy:
-                print("  ℹ️  Default audit policy would be applied here")
-        except Exception as e:
-            print(f"  ⚠️  Failed to configure audit: {e}")
-
-    print("\n✅ All DB2 configurations applied successfully")
+            print(f"  ✅ Set {key} = {value}")
+          except Exception as e:
+            print(f"  ⚠️  Failed to set {key}: {e}")
     
+    print("\n✅ All DB2 configurations applied successfully")
+  
     db2.close(admin_conn)
     db2.close(db2_conn)

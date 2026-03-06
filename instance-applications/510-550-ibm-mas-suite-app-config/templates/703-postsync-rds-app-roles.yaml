@@ -212,82 +212,91 @@ spec:
                   else
                     echo "libcrypt.so.1 not found in system, attempting to obtain it..."
                     
-                    # Try multiple mirror URLs
-                    RPM_DOWNLOADED=false
-                    for RPM_URL in \
-                      "https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
-                      "http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
-                      "https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/Packages/l/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
-                      "https://rpmfind.net/linux/centos-stream/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm"
+                    # Strategy 1: Try downloading pre-extracted library directly
+                    echo "Attempting to download libcrypt.so.1 directly..."
+                    DIRECT_DOWNLOAD=false
+                    for LIB_URL in \
+                      "https://github.com/ibm-mas/cli/releases/download/v9.0.0/libcrypt.so.1" \
+                      "https://raw.githubusercontent.com/ibm-mas/cli/main/image/cli/libcrypt.so.1"
                     do
-                      echo "Trying: ${RPM_URL}"
-                      if curl -sSL -f -o /tmp/libxcrypt-compat.rpm "${RPM_URL}" 2>/dev/null; then
-                        RPM_DOWNLOADED=true
-                        echo "✅ RPM downloaded successfully"
-                        break
+                      echo "Trying: ${LIB_URL}"
+                      if curl -sSL -f -o /tmp/lib/libcrypt.so.1 "${LIB_URL}" 2>/dev/null; then
+                        if [ -f /tmp/lib/libcrypt.so.1 ] && [ -s /tmp/lib/libcrypt.so.1 ]; then
+                          chmod +x /tmp/lib/libcrypt.so.1
+                          DIRECT_DOWNLOAD=true
+                          echo "✅ libcrypt.so.1 downloaded successfully"
+                          ls -lh /tmp/lib/libcrypt.so.1
+                          break
+                        fi
                       fi
                     done
                     
-                    if [ "${RPM_DOWNLOADED}" = "true" ] && [ -f /tmp/libxcrypt-compat.rpm ]; then
-                      # Verify it's actually an RPM file
-                      if file /tmp/libxcrypt-compat.rpm 2>/dev/null | grep -q "RPM"; then
-                        echo "Extracting libcrypt.so.1 from RPM..."
-                        cd /tmp
-                        
-                        # Extract using rpm2cpio
-                        if command -v rpm2cpio >/dev/null 2>&1; then
-                          rpm2cpio libxcrypt-compat.rpm | cpio -idmv 2>&1 | grep -E "(libcrypt|extracted)" || true
+                    # Strategy 2: If direct download failed, try RPM extraction
+                    if [ "${DIRECT_DOWNLOAD}" = "false" ]; then
+                      echo "Direct download failed, trying RPM extraction..."
+                      
+                      RPM_DOWNLOADED=false
+                      for RPM_URL in \
+                        "https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
+                        "http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
+                        "https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/Packages/l/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
+                        "https://rpmfind.net/linux/centos-stream/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm"
+                      do
+                        echo "Trying: ${RPM_URL}"
+                        if curl -sSL -f -o /tmp/libxcrypt-compat.rpm "${RPM_URL}" 2>/dev/null; then
+                          RPM_DOWNLOADED=true
+                          echo "✅ RPM downloaded successfully"
+                          break
+                        fi
+                      done
+                      
+                      if [ "${RPM_DOWNLOADED}" = "true" ] && [ -f /tmp/libxcrypt-compat.rpm ]; then
+                        # Verify it's actually an RPM file
+                        if file /tmp/libxcrypt-compat.rpm 2>/dev/null | grep -q "RPM"; then
+                          echo "Extracting libcrypt.so.1 from RPM..."
+                          cd /tmp
+                          
+                          # Extract using rpm2cpio
+                          if command -v rpm2cpio >/dev/null 2>&1; then
+                            rpm2cpio libxcrypt-compat.rpm | cpio -idmv 2>&1 | grep -E "(libcrypt|extracted)" || true
+                          else
+                            echo "⚠️  rpm2cpio not available, trying alternative extraction..."
+                            # Alternative: use bsdtar if available
+                            if command -v bsdtar >/dev/null 2>&1; then
+                              bsdtar -xf libxcrypt-compat.rpm 2>&1 || true
+                            fi
+                          fi
+                          
+                          # Find and copy the library (check multiple possible locations)
+                          LIBCRYPT_FOUND=false
+                          for LIB_PATH in /tmp/usr/lib64/libcrypt.so.1 /tmp/lib64/libcrypt.so.1 /tmp/usr/lib/libcrypt.so.1; do
+                            if [ -f "${LIB_PATH}" ]; then
+                              cp "${LIB_PATH}" /tmp/lib/
+                              chmod +x /tmp/lib/libcrypt.so.1
+                              echo "✅ libcrypt.so.1 extracted from ${LIB_PATH}"
+                              LIBCRYPT_FOUND=true
+                              break
+                            fi
+                          done
+                          
+                          if [ "${LIBCRYPT_FOUND}" = "false" ]; then
+                            echo "⚠️  Could not find libcrypt.so.1 in extracted RPM"
+                            echo "Listing extracted files:"
+                            find /tmp -name "libcrypt*" 2>/dev/null || true
+                          fi
                         else
-                          echo "⚠️  rpm2cpio not available, trying alternative extraction..."
-                          # Alternative: use bsdtar if available
-                          if command -v bsdtar >/dev/null 2>&1; then
-                            bsdtar -xf libxcrypt-compat.rpm 2>&1 || true
-                          fi
+                          echo "⚠️  Downloaded file is not a valid RPM package"
+                          file /tmp/libxcrypt-compat.rpm 2>/dev/null || true
                         fi
-                        
-                        # Find and copy the library (check multiple possible locations)
-                        LIBCRYPT_FOUND=false
-                        for LIB_PATH in /tmp/usr/lib64/libcrypt.so.1 /tmp/lib64/libcrypt.so.1 /tmp/usr/lib/libcrypt.so.1; do
-                          if [ -f "${LIB_PATH}" ]; then
-                            cp "${LIB_PATH}" /tmp/lib/
-                            export LD_LIBRARY_PATH=/tmp/lib:${LD_LIBRARY_PATH}
-                            echo "✅ libcrypt.so.1 extracted from ${LIB_PATH} and LD_LIBRARY_PATH updated"
-                            LIBCRYPT_FOUND=true
-                            break
-                          fi
-                        done
-                        
-                        if [ "${LIBCRYPT_FOUND}" = "false" ]; then
-                          echo "⚠️  Could not find libcrypt.so.1 in extracted RPM"
-                          echo "Listing extracted files:"
-                          find /tmp -name "libcrypt*" 2>/dev/null || true
-                        fi
-                      else
-                        echo "⚠️  Downloaded file is not a valid RPM package"
-                        file /tmp/libxcrypt-compat.rpm 2>/dev/null || true
                       fi
                     fi
                     
-                    # If RPM download/extraction failed, try creating a symlink from libcrypt.so.2
+                    # Final check and error message
                     if [ ! -f /tmp/lib/libcrypt.so.1 ]; then
-                      echo "⚠️  Could not obtain libcrypt.so.1 from RPM, attempting workaround..."
-                      echo "Checking for libcrypt.so.2 in system..."
-                      
-                      # Find libcrypt.so.2 in the system
-                      LIBCRYPT2_PATH=$(ldconfig -p | grep "libcrypt.so.2 " | awk '{print $NF}' | head -n 1)
-                      
-                      if [ -n "${LIBCRYPT2_PATH}" ] && [ -f "${LIBCRYPT2_PATH}" ]; then
-                        echo "Found libcrypt.so.2 at: ${LIBCRYPT2_PATH}"
-                        echo "Creating symbolic link libcrypt.so.1 -> libcrypt.so.2"
-                        cp "${LIBCRYPT2_PATH}" /tmp/lib/libcrypt.so.2
-                        ln -sf /tmp/lib/libcrypt.so.2 /tmp/lib/libcrypt.so.1
-                        echo "✅ Created symlink: /tmp/lib/libcrypt.so.1 -> /tmp/lib/libcrypt.so.2"
-                        ls -lh /tmp/lib/libcrypt*
-                      else
-                        echo "❌ Could not find libcrypt.so.2 in system either"
-                        echo "Available libcrypt libraries:"
-                        ldconfig -p | grep libcrypt || echo "None found"
-                      fi
+                      echo "❌ Failed to obtain libcrypt.so.1"
+                      echo "This is required for ibm_db Python package to work with DB2"
+                      echo "Please ensure network access to download the library or pre-install it in the container image"
+                      exit 1
                     fi
                   fi
                   

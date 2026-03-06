@@ -1,0 +1,120 @@
+{{- if hasPrefix "9.2." (toString .Values.catalog_channel) }}
+
+{{- $_job_name_prefix := "postsync-tenant-migration" }}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v1" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postsync-tenant-migration
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "postsync-tenant-migration-{{ .Values.tenantNamespace }}"
+  namespace: {{ .Values.aiservice_namespace  }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "postsync-tenant-migration-{{ .Values.tenantNamespace }}"
+  namespace: {{ .Values.aiservice_namespace  }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+subjects:
+  - kind: ServiceAccount
+    name: postsync-tenant-migration
+    namespace: {{ .Values.tenantNamespace }}
+roleRef:
+  kind: Role
+  name: "postsync-tenant-migration-{{ .Values.tenantNamespace }}"
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postsync-tenant-migration
+  namespace: "{{ .Values.tenantNamespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+spec:
+  podSelector:
+    matchLabels:
+      app: postsync-job
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  activeDeadlineSeconds: 3600 # 1 hour
+  template:
+    metadata:
+      labels:
+        app: postsync-job
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: postsync-tenant-migration
+      restartPolicy: OnFailure
+      containers:
+        - name: main
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AISERVICE_NAMESPACE
+              value: "{{ .Values.aiservice_namespace }}"
+            - name: API_KEY_SECRET_NAME
+              value: "{{ .Values.tenantNamespace }}----apikey-secret"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              if oc delete secret ${API_KEY_SECRET_NAME} -n ${AISERVICE_NAMESPACE} &>/dev/null; then
+                echo "[INFO] Secret ${API_KEY_SECRET_NAME} deleted successfully from namespace ${AISERVICE_NAMESPACE}"
+              else
+                echo "[WARNING] Secret ${API_KEY_SECRET_NAME} not found in namespace ${AISERVICE_NAMESPACE}. Skipping deletion"
+              fi
+
+              exit 0
+
+{{- end }}

@@ -142,7 +142,7 @@ spec:
               set -e
 
               function is_v91_installed() {
-                if oc get deployment ${AISERVICE_INSTANCE_ID}entitymgr-tenant -n ${AISERVICE_NAMESPACE} &>/dev/null; then
+                if oc get deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant -n ${AISERVICE_NAMESPACE} &>/dev/null; then
                   export IS_V91_INSTALLED="true"
                 else
                   export IS_V91_INSTALLED="false"
@@ -163,7 +163,7 @@ spec:
                     /tmp/${resource_name}_clean.json > /tmp/${resource_name}_annotated.json
                   # Change the name to avoid possibly conflicting with the secret synced by ArgoCD
                   jq --arg name "${new_resource_name}" '.metadata.name = $name' /tmp/${resource_name}_annotated.json > /tmp/${resource_name}_renamed.json
-                  oc apply -f /tmp/${resource_name}_renamed.json
+                  oc apply -f /tmp/${resource_name}_renamed.json --namespace ${TENANT_NAMESPACE}
                 else
                  echo "[WARNING] ${resource_type} ${resource_name} not found in ${AISERVICE_NAMESPACE} => cannot copy resource to tenant namespace"
                 fi

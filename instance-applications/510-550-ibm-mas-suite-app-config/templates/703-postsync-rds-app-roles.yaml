@@ -270,6 +270,10 @@ spec:
                     fi
                   fi
                   
+                  # Ensure LD_LIBRARY_PATH is set for subsequent commands
+                  export LD_LIBRARY_PATH=/tmp/lib:${LD_LIBRARY_PATH:-}
+                  echo "Current LD_LIBRARY_PATH: ${LD_LIBRARY_PATH}"
+                  
                   echo ""
                   echo "Installing required Python packages..."
                   echo "--------------------------------------------------------------------------------"
@@ -525,6 +529,19 @@ spec:
                   echo ""
                   echo "Executing ${RDS_ROLES_SCRIPT}"
                   echo "--------------------------------------------------------------------------------"
+                  # Ensure LD_LIBRARY_PATH is set before running Python
+                  export LD_LIBRARY_PATH=/tmp/lib:${LD_LIBRARY_PATH:-}
+                  echo "LD_LIBRARY_PATH before Python execution: ${LD_LIBRARY_PATH}"
+                  
+                  # Verify libcrypt.so.1 is accessible
+                  if [ -f /tmp/lib/libcrypt.so.1 ]; then
+                    echo "✅ /tmp/lib/libcrypt.so.1 exists"
+                    ls -lh /tmp/lib/libcrypt.so.1
+                  else
+                    echo "⚠️  /tmp/lib/libcrypt.so.1 not found, checking system libraries..."
+                    ldconfig -p | grep libcrypt || echo "No libcrypt found in system"
+                  fi
+                  
                   python ${RDS_ROLES_SCRIPT} || exit $?
 
                   echo ""

@@ -109,8 +109,11 @@ spec:
             - |
               set -e
 
-              echo "[INFO] Deleting obsolete copy of tenant API key in namespace ${AISERVICE_NAMESPACE}"
-              oc delete secret ${API_KEY_SECRET_NAME} -n ${AISERVICE_NAMESPACE}
+              if oc delete secret ${API_KEY_SECRET_NAME} -n ${AISERVICE_NAMESPACE} &>/dev/null; then
+                echo "[INFO] Secret ${API_KEY_SECRET_NAME} deleted successfully"
+              else
+                echo "[WARNING] Secret ${API_KEY_SECRET_NAME} not found. Skipping deletion"
+              fi
 
               exit 0
 

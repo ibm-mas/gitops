@@ -207,17 +207,18 @@ spec:
                   mkdir -p /tmp/lib
                   
                   # Check if libcrypt.so.1 already exists in the system
-                  if ldconfig -p | grep -q libcrypt.so.1; then
+                  if ldconfig -p | grep -q "libcrypt.so.1"; then
                     echo "✅ libcrypt.so.1 already available in system"
                   else
-                    echo "Attempting to download and extract libxcrypt-compat..."
+                    echo "libcrypt.so.1 not found in system, attempting to obtain it..."
                     
                     # Try multiple mirror URLs
                     RPM_DOWNLOADED=false
                     for RPM_URL in \
                       "https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
                       "http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
-                      "https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/Packages/l/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm"
+                      "https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/Packages/l/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm" \
+                      "https://rpmfind.net/linux/centos-stream/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm"
                     do
                       echo "Trying: ${RPM_URL}"
                       if curl -sSL -f -o /tmp/libxcrypt-compat.rpm "${RPM_URL}" 2>/dev/null; then
@@ -229,7 +230,7 @@ spec:
                     
                     if [ "${RPM_DOWNLOADED}" = "true" ] && [ -f /tmp/libxcrypt-compat.rpm ]; then
                       # Verify it's actually an RPM file
-                      if file /tmp/libxcrypt-compat.rpm | grep -q "RPM"; then
+                      if file /tmp/libxcrypt-compat.rpm 2>/dev/null | grep -q "RPM"; then
                         echo "Extracting libcrypt.so.1 from RPM..."
                         cd /tmp
                         
@@ -263,10 +264,30 @@ spec:
                         fi
                       else
                         echo "⚠️  Downloaded file is not a valid RPM package"
-                        file /tmp/libxcrypt-compat.rpm
+                        file /tmp/libxcrypt-compat.rpm 2>/dev/null || true
                       fi
-                    else
-                      echo "⚠️  Could not download libxcrypt-compat RPM from any mirror"
+                    fi
+                    
+                    # If RPM download/extraction failed, try creating a symlink from libcrypt.so.2
+                    if [ ! -f /tmp/lib/libcrypt.so.1 ]; then
+                      echo "⚠️  Could not obtain libcrypt.so.1 from RPM, attempting workaround..."
+                      echo "Checking for libcrypt.so.2 in system..."
+                      
+                      # Find libcrypt.so.2 in the system
+                      LIBCRYPT2_PATH=$(ldconfig -p | grep "libcrypt.so.2 " | awk '{print $NF}' | head -n 1)
+                      
+                      if [ -n "${LIBCRYPT2_PATH}" ] && [ -f "${LIBCRYPT2_PATH}" ]; then
+                        echo "Found libcrypt.so.2 at: ${LIBCRYPT2_PATH}"
+                        echo "Creating symbolic link libcrypt.so.1 -> libcrypt.so.2"
+                        cp "${LIBCRYPT2_PATH}" /tmp/lib/libcrypt.so.2
+                        ln -sf /tmp/lib/libcrypt.so.2 /tmp/lib/libcrypt.so.1
+                        echo "✅ Created symlink: /tmp/lib/libcrypt.so.1 -> /tmp/lib/libcrypt.so.2"
+                        ls -lh /tmp/lib/libcrypt*
+                      else
+                        echo "❌ Could not find libcrypt.so.2 in system either"
+                        echo "Available libcrypt libraries:"
+                        ldconfig -p | grep libcrypt || echo "None found"
+                      fi
                     fi
                   fi
                   

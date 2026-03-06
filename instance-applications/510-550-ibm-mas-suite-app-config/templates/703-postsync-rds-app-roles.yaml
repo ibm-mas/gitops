@@ -151,16 +151,10 @@ spec:
 {{ $.Values.custom_labels | toYaml | indent 12 }}
 {{- end }}
         spec:
-          securityContext:
-            runAsUser: 0
-            runAsNonRoot: false
           containers:
             - name: run
               image: {{ $.Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
               imagePullPolicy: IfNotPresent
-              securityContext:
-                runAsUser: 0
-                allowPrivilegeEscalation: true
               resources:
                 limits:
                   cpu: 200m
@@ -206,10 +200,35 @@ spec:
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
                   echo ""
-                  echo "Installing system dependencies..."
+                  echo "Setting up libcrypt compatibility..."
                   echo "--------------------------------------------------------------------------------"
-                  # Install libxcrypt-compat which provides libcrypt.so.1 required by ibm_db
-                  microdnf install -y libxcrypt-compat || yum install -y libxcrypt-compat || dnf install -y libxcrypt-compat || apt-get update && apt-get install -y libcrypt1
+                  # Download libxcrypt-compat library to provide libcrypt.so.1 required by ibm_db
+                  # This is needed for RHEL 9+ based images where libcrypt.so.1 is not included by default
+                  mkdir -p /tmp/lib
+                  
+                  # Try to download libxcrypt-compat from CentOS Stream 9 repository
+                  echo "Attempting to download libxcrypt-compat..."
+                  curl -sSL -o /tmp/libxcrypt-compat.rpm \
+                    https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm || \
+                    curl -sSL -o /tmp/libxcrypt-compat.rpm \
+                    http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm
+                  
+                  if [ -f /tmp/libxcrypt-compat.rpm ]; then
+                    echo "Extracting libcrypt.so.1 from RPM..."
+                    cd /tmp
+                    rpm2cpio libxcrypt-compat.rpm | cpio -idmv 2>/dev/null || true
+                    
+                    # Find and copy the library
+                    if [ -f /tmp/usr/lib64/libcrypt.so.1 ]; then
+                      cp /tmp/usr/lib64/libcrypt.so.1 /tmp/lib/
+                      export LD_LIBRARY_PATH=/tmp/lib:${LD_LIBRARY_PATH}
+                      echo "✅ libcrypt.so.1 extracted and LD_LIBRARY_PATH updated"
+                    else
+                      echo "⚠️  Could not extract libcrypt.so.1, attempting to continue anyway..."
+                    fi
+                  else
+                    echo "⚠️  Could not download libxcrypt-compat, attempting to continue anyway..."
+                  fi
                   
                   echo ""
                   echo "Installing required Python packages..."
@@ -477,3 +496,4 @@ spec:
       backoffLimit: 4
 {{- end }}
 {{- end }}
+

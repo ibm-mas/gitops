@@ -1,0 +1,149 @@
+{{- if hasPrefix "9.2." (toString .Values.catalog_channel) }}
+
+{{- $_job_name_prefix := "tenant-migration" }}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v1" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tenant-migration
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "303"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "tenant-migration-{{ .Values.tenantNamespace }}"
+  namespace: {{ .Values.aiservice_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "303"
+  labels:
+    app.kubernetes.io/name: secret-reader
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/instance: {{ .Values.tenantNamespace }}
+    app.kubernetes.io/part-of: aiservice
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "tenant-migration-{{ .Values.tenantNamespace }}"
+  namespace: {{ .Values.aiservice_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "304"
+subjects:
+  - kind: ServiceAccount
+    name: tenant-migration
+    namespace: {{ .Values.tenantNamespace }}
+roleRef:
+  kind: Role
+  name: "tenant-migration-{{ .Values.tenantNamespace }}"
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tenant-migration
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "303"
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-migration
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "304"
+subjects:
+  - kind: ServiceAccount
+    name: tenant-migration
+    namespace: {{ .Values.tenantNamespace }}
+roleRef:
+  kind: Role
+  name: tenant-migration
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "305"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  activeDeadlineSeconds: 3600 # 1 hour
+  template:
+    metadata:
+      labels:
+        app: sync-job
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: tenant-migration
+      restartPolicy: OnFailure
+      containers:
+        - name: main
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TENANT_NAMESPACE
+              value: "{{ .Values.tenantNamespace }}"
+            # Secrets in the tenant namespace whose data will be replaced with data from corresponding secret in the AI Service namespace.
+            # These secrets are created and managed by ArgoCD so we don't move them to avoid triggering out-of-sync state.
+            # Ideally, resources managed by ArgoCD should be immutable, but unfortunately the current operator implementation adds data to
+            # these secrets. With both of these in mind, we allow ArgoCD to create it but then patch it ourselves. The secret must be labeled
+            # "argocd.argoproj.io/compare-options: IgnoreExtraneous" for patching to work.
+            - name: SLS_SECRET_NAME
+              value: "{{ .Values.tenantNamespace }}----sls-secret"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              function patch_secret() {
+                local source="${1}"
+                local target="${2}"
+                if oc get secret ${source} -n ${TENANT_NAMESPACE} -o json > /tmp/${source}_patch.json; then
+                  echo "[INFO] Replacing data in secret ${target} with data from ${source}"
+                  oc get secret ${target} -n ${TENANT_NAMESPACE} -o json > /tmp/${target}_patch.json
+                  jq -s '.[1].data = .[0].data | .[1]' /tmp/${source}_patch.json /tmp/${target}_patch.json > /tmp/${target}_patched.json
+                  oc apply -f /tmp/${target}_patched.json
+                  echo "[INFO] Deleting secret ${source}"
+                  oc delete secret "${source}" -n "${TENANT_NAMESPACE}"
+                else
+                 echo "[WARNING] Secret ${source} not found in ${TENANT_NAMESPACE} => cannot patch secret ${target}"
+                fi
+              }
+                       
+              patch_secret "${SLS_SECRET_NAME}-copy" "${SLS_SECRET_NAME}"
+              
+              exit 0
+
+{{- end }}

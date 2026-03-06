@@ -63,7 +63,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "create", "update", "patch"]
+    verbs: ["get", "create", "update", "patch", "delete"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -81,6 +81,23 @@ roleRef:
   kind: Role
   name: tenant-migration
   apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tenant-migration
+  namespace: "{{ .Values.tenantNamespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "304"
+spec:
+  podSelector:
+    matchLabels:
+      app: sync-job
+  egress:
+    - {}
+  policyTypes:
+    - Egress
 
 ---
 apiVersion: batch/v1

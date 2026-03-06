@@ -446,6 +446,9 @@ spec:
                     echo "Backup type is ${backup_type}"
                     if [[ $backup_type == 'F' || $backup_type == 'N' ]]; then
                       echo "The latest backup ${timestamp} is full backup"
+                      # Get all backup files with the same timestamp from COS
+                      backup_filenames=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "~/bin/CheckCOS.sh | grep c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 | grep -iv keystore | grep ${timestamp} | awk -F '/' '{print \$NF}'" db2inst1`
+                      echo "Backup filenames from COS: ${backup_filenames}"
                     else
                       echo "The latest backup ${timestamp} is not a full backup"
                       timestamp=''

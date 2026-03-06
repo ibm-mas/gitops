@@ -8,4 +8,3 @@ Documentation
 [https://ibm-mas.github.io/gitops/](https://ibm-mas.github.io/gitops/)
 
 [https://github.com/ibm-mas/gitops-demo/tree/002](https://github.com/ibm-mas/gitops-demo/tree/002)
-

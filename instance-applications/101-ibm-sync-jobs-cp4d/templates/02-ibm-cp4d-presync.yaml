@@ -9,7 +9,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:1b88f88a1a719d006ea1f4b8dcfd1c2625fa7ecc529c3267e7b4b6afaa1c8da0" }}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v4" }}
+{{- $_job_version := "v5" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -143,7 +143,7 @@ spec:
     spec:
       containers:
         - name: run
-          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -349,6 +349,14 @@ spec:
               fi
 
               echo
+              echo "Fetching Opencontent Opensearch Channel..."
+              export OPENSEARCH_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.opencontent_opensearch.sub_channel')
+              if [[ -z "${OPENSEARCH_CHANNEL}" ]]; then
+                echo "Failed to fetch opencontent opensearch channel"
+                exit 1
+              fi
+
+              echo
               echo "Fetching SPSS Version..."
               export SPSS_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.spss.cr_version')
               if [[ -z "${SPSS_VERSION}" ]]; then
@@ -395,6 +403,7 @@ spec:
               SECRET_NAME_DATAREFINERY_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/datarefinery_channel
               SECRET_NAME_RABBITMQ_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_rabbitmq_channel
               SECRET_NAME_ELASTICSEARCH_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_elasticsearch_channel
+              SECRET_NAME_OPENSEARCH_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/opencontent_opensearch_channel
               SECRET_NAME_SPSS_VERSION=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/spss_version
               SECRET_NAME_SPSS_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/spss_channel
               SECRET_NAME_CANVASBASE_CHANNEL=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/canvasbase_channel
@@ -429,6 +438,7 @@ spec:
               echo "    - SECRET_NAME_DATAREFINERY_CHANNEL ...................... ${SECRET_NAME_DATAREFINERY_CHANNEL}"
               echo "    - SECRET_NAME_RABBITMQ_CHANNEL .......................... ${SECRET_NAME_RABBITMQ_CHANNEL}"
               echo "    - SECRET_NAME_ELASTICSEARCH_CHANNEL ..................... ${SECRET_NAME_ELASTICSEARCH_CHANNEL}"
+              echo "    - SECRET_NAME_OPENSEARCH_CHANNEL ........................ ${SECRET_NAME_OPENSEARCH_CHANNEL}"
               echo "    - SECRET_NAME_SPSS_VERSION .............................. ${SECRET_NAME_SPSS_VERSION}"
               echo "    - SECRET_NAME_SPSS_CHANNEL .............................. ${SECRET_NAME_SPSS_CHANNEL}"
               echo "    - SECRET_NAME_CANVASBASE_CHANNEL ........................ ${SECRET_NAME_CANVASBASE_CHANNEL}"
@@ -456,6 +466,7 @@ spec:
               sm_update_secret $SECRET_NAME_DATAREFINERY_CHANNEL "{\"datarefinery_channel\": \"$DATAREFINERY_CHANNEL\" }" "${TAGS}"
               sm_update_secret $SECRET_NAME_RABBITMQ_CHANNEL "{\"opencontent_rabbitmq_channel\": \"$RABBITMQ_CHANNEL\" }" "${TAGS}"
               sm_update_secret $SECRET_NAME_ELASTICSEARCH_CHANNEL "{\"opencontent_elasticsearch_channel\": \"$ELASTICSEARCH_CHANNEL\" }" "${TAGS}"
+              sm_update_secret $SECRET_NAME_OPENSEARCH_CHANNEL "{\"opencontent_opensearch_channel\": \"$OPENSEARCH_CHANNEL\" }" "${TAGS}"
               sm_update_secret $SECRET_NAME_SPSS_VERSION "{\"spss_version\": \"$SPSS_VERSION\" }" "${TAGS}"
               sm_update_secret $SECRET_NAME_SPSS_CHANNEL "{\"spss_channel\": \"$SPSS_CHANNEL\" }" "${TAGS}"
               sm_update_secret $SECRET_NAME_CANVASBASE_CHANNEL "{\"canvasbase_channel\": \"$CANVASBASE_CHANNEL\" }" "${TAGS}"

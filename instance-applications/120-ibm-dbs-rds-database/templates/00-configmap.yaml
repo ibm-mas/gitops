@@ -20,6 +20,7 @@ data:
     mas_application_id = 'facilities'
     database_name = os.getenv("DB_NAME")
     created_any = False
+    has_errors = False
     
     ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
         
@@ -54,6 +55,7 @@ data:
         f"SSLVersion=TLSv1.2;"
         f"SSLServerCertificate={ssl_cert_path};"
     )
+
     try:
         admin_conn = db2.connect(conn_rds_admin_str, "", "")
         print("✅ Connected to Db2 as rdsadmin user")
@@ -189,6 +191,28 @@ data:
         print("✅ Db2 RDS bufferpools and tablespaces created or updated.")
     else:
         print("✅ All bufferpools and tablespaces already existed or not created — please check.")
-
+    
+    # 4. Apply DB2 Database Configuration
+    db2_database_config = os.environ.get('DB2_DATABASE_CONFIG', '')
+    if db2_database_config:
+        print("\n📝 Applying DB2 Database Configuration settings...")
+        import json
+        config = json.loads(db2_database_config)
+    
+        for key, value in config.items():
+          try:
+            sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
+            db2.exec_immediate(admin_conn, sql)
+            print(f"  ✅ Set {key} = {value}")
+          except Exception as e:
+            print(f"  ⚠️  Failed to set {key}: {e}")
+            has_errors = True
+    
+    if has_errors:
+        print("\n❌ DB2 configuration process completed with errors. Check above for failed parameters.")
+        sys.exit(1)
+    else:
+        print("\n✅ DB2 configuration process completed successfully.")
+  
     db2.close(admin_conn)
     db2.close(db2_conn)

@@ -20,8 +20,7 @@ data:
     mas_application_id = 'facilities'
     database_name = os.getenv("DB_NAME")
     created_any = False
-    manual_config_required = []
-    config_errors = []
+    has_errors = False
     
     ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
         
@@ -206,6 +205,7 @@ data:
             print(f"  ✅ Set {key} = {value}")
           except Exception as e:
             print(f"  ⚠️  Failed to set {key}: {e}")
+            has_errors = True
     
     # 4. Apply DB2 Database Configuration
     db2_database_config = os.environ.get('DB2_DATABASE_CONFIG', '')
@@ -239,18 +239,15 @@ data:
                 print(f"         2. Execute: CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}', 'RESTART_DATABASE', 'YES')")
                 print(f"         3. Restart database via AWS Console (RDS → Databases → Actions → Reboot)")
                 print(f"         4. Verify: SELECT NAME, VALUE FROM SYSIBMADM.DBCFG WHERE NAME = '{key.upper()}'")
-                manual_config_required.append(f"{key} (requires RESTART_DATABASE flag)")
             elif 'SQL0440N' in error_msg:
                 print(f"  ⚠️  Failed to set {key}: RDS procedure not available")
                 print(f"      → This parameter must be configured through AWS RDS parameter groups or AWS Support")
-                manual_config_required.append(f"{key} (RDS procedure not available)")
             elif 'SQL0551N' in error_msg:
                 print(f"  ⚠️  Failed to set {key}: Insufficient privileges")
                 print(f"      → This parameter is managed by AWS RDS. Contact AWS Support to modify")
-                manual_config_required.append(f"{key} (insufficient privileges)")
             else:
                 print(f"  ⚠️  Failed to set {key}: {e}")
-                config_errors.append(f"{key} ({error_msg})")
+            has_errors = True
     
     # 5. Apply DB2 Instance DBM Configuration
     db2_instance_dbm_config = os.environ.get('DB2_INSTANCE_DBM_CONFIG', '')
@@ -264,43 +261,14 @@ data:
             db2.exec_immediate(admin_conn, sql)
             print(f"  ✅ Set {key} = {value}")
           except Exception as e:
-            error_msg = str(e)
-            if 'SQL0440N' in error_msg:
-                print(f"  ⚠️  Failed to set {key}: RDS procedure not available")
-                print(f"      → This parameter must be configured through AWS RDS parameter groups or AWS Support")
-                manual_config_required.append(f"{key} (RDS procedure not available)")
-            elif 'SQL0551N' in error_msg:
-                print(f"  ⚠️  Failed to set {key}: Insufficient privileges")
-                print(f"      → This parameter is managed by AWS RDS. Contact AWS Support to modify")
-                manual_config_required.append(f"{key} (insufficient privileges)")
-            else:
-                print(f"  ⚠️  Failed to set {key}: {e}")
-                config_errors.append(f"{key} ({error_msg})")
+            print(f"  ⚠️  Failed to set {key}: {e}")
+            has_errors = True
     
-    # Final summary with clear distinction between error types
-    print("\n" + "="*80)
-    if manual_config_required:
-        print("⚠️  MANUAL CONFIGURATION REQUIRED")
-        print("The following parameters cannot be set automatically due to RDS limitations:")
-        for param in manual_config_required:
-            print(f"  • {param}")
-        print("\nRefer to the detailed instructions above for each parameter.")
+    print("\n✅ DB2 configuration process completed. Check above for any parameters that require manual configuration.")
     
-    if config_errors:
-        print("\n❌ CONFIGURATION ERRORS")
-        print("The following parameters failed due to incorrect values or other errors:")
-        for param in config_errors:
-            print(f"  • {param}")
-        print("\nReview the error messages above and verify parameter values.")
-    
-    if not manual_config_required and not config_errors:
-        print("✅ DB2 configuration process completed successfully.")
-        print("All parameters were applied without errors.")
-    elif not config_errors:
-        print("\n✅ DB2 configuration process completed with manual steps required.")
-    else:
-        print("\n⚠️  DB2 configuration process completed with errors.")
-    print("="*80)
+    # Exit with error status if any errors occurred
+    if has_errors:
+        sys.exit(1)
   
     db2.close(admin_conn)
     db2.close(db2_conn)

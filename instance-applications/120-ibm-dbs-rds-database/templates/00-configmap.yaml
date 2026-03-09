@@ -214,39 +214,13 @@ data:
         import json
         config = json.loads(db2_database_config)
     
-        # Parameters that typically require RESTART_DATABASE flag
-        restart_params = ['CHNGPGS_THRESH', 'CUR_COMMIT', 'DEC_TO_CHAR_FMT',
-                         'LOCKTIMEOUT', 'NUM_IOCLEANERS', 'NUM_IOSERVERS']
-    
         for key, value in config.items():
           try:
-            # Try with RESTART_DATABASE flag if parameter is in the restart list
-            if key.upper() in restart_params:
-                sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}', 'RESTART_DATABASE', 'YES')"
-            else:
-                sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
-    
+            sql = f"CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}')"
             db2.exec_immediate(admin_conn, sql)
             print(f"  ✅ Set {key} = {value}")
           except Exception as e:
-            error_msg = str(e)
-    
-            # Provide specific guidance based on error type
-            if 'SQL0438N' in error_msg and 'RESTART_DATABASE' in error_msg:
-                print(f"  ⚠️  Failed to set {key}: Parameter requires RESTART_DATABASE flag")
-                print(f"      → MANUAL CONFIGURATION REQUIRED:")
-                print(f"         1. Connect as rdsadmin user to database '{database_name}'")
-                print(f"         2. Execute: CALL rdsadmin.update_db_param('{database_name}', '{key}', '{value}', 'RESTART_DATABASE', 'YES')")
-                print(f"         3. Restart database via AWS Console (RDS → Databases → Actions → Reboot)")
-                print(f"         4. Verify: SELECT NAME, VALUE FROM SYSIBMADM.DBCFG WHERE NAME = '{key.upper()}'")
-            elif 'SQL0440N' in error_msg:
-                print(f"  ⚠️  Failed to set {key}: RDS procedure not available")
-                print(f"      → This parameter must be configured through AWS RDS parameter groups or AWS Support")
-            elif 'SQL0551N' in error_msg:
-                print(f"  ⚠️  Failed to set {key}: Insufficient privileges")
-                print(f"      → This parameter is managed by AWS RDS. Contact AWS Support to modify")
-            else:
-                print(f"  ⚠️  Failed to set {key}: {e}")
+            print(f"  ⚠️  Failed to set {key}: {e}")
             has_errors = True
     
     # 5. Apply DB2 Instance DBM Configuration

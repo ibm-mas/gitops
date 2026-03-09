@@ -8,6 +8,9 @@ metadata:
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "000"
 spec:
@@ -121,6 +124,9 @@ spec:
         environment: '{{ .Values.account.id }}'
         region: '{{ `{{ .region.id }}` }}'
         cluster: '{{ `{{ .cluster.id }}` }}'
+        {{- if .Values.argo.instance }}
+        argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+        {{- end }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
@@ -150,6 +156,8 @@ spec:
                 value: "{{ .Values.source.repo_url }}"
               - name: argo.namespace
                 value: "{{ .Values.argo.namespace }}"
+              - name: argo.instance
+                value: "{{ .Values.argo.instance }}"
               - name: argo.projects.rootapps
                 value: "{{ .Values.argo.projects.rootapps }}"
               - name: argo.projects.apps

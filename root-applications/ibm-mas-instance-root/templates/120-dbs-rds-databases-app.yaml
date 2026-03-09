@@ -59,14 +59,6 @@ spec:
             replica_db: {{ $value.replica_db }}
             {{- end }}
             
-            # DB2 Instance Registry Configuration
-            {{- if $value.db2_instance_registry }}
-            db2_instance_registry:
-              {{- range $key, $val := $value.db2_instance_registry }}
-              {{ $key }}: "{{ $val }}"
-              {{- end }}
-            {{- end }}
-            
             # DB2 Database Configuration
             {{- if $value.db2_database_db_config }}
             db2_database_db_config:
@@ -74,20 +66,29 @@ spec:
               {{ $key }}: "{{ $val }}"
               {{- end }}
             {{- end }}
-            
-            # DB2 Audit Configuration
-            {{- if $value.db2_addons_audit_config }}
-            db2_addons_audit_config:
-              {{- range $key, $val := $value.db2_addons_audit_config }}
-              {{ $key }}: "{{ $val }}"
+
+            # DB2 RDS Backup Configuration
+            {{- if $value.backup }}
+            backup:
+              enabled: {{ $value.backup.enabled }}
+              {{- if $value.backup.s3_bucket_name }}
+              s3_bucket_name: "{{ $value.backup.s3_bucket_name }}"
               {{- end }}
-            {{- end }}
-            
-            # DB2 Instance DBM Configuration
-            {{- if $value.db2_instance_dbm_config }}
-            db2_instance_dbm_config:
-              {{- range $key, $val := $value.db2_instance_dbm_config }}
-              {{ $key }}: "{{ $val }}"
+              s3_prefix: "{{ $value.backup.s3_prefix }}"
+              compression: "{{ $value.backup.compression }}"
+              util_impact_priority: {{ $value.backup.util_impact_priority }}
+              num_files: {{ $value.backup.num_files }}
+              parallelism: {{ $value.backup.parallelism }}
+              num_buffers: {{ $value.backup.num_buffers }}
+              {{- if $value.backup.full }}
+              full:
+                enabled: {{ $value.backup.full.enabled }}
+                schedule: "{{ $value.backup.full.schedule }}"
+              {{- end }}
+              {{- if $value.backup.incremental }}
+              incremental:
+                enabled: {{ $value.backup.incremental.enabled }}
+                schedule: "{{ $value.backup.incremental.schedule }}"
               {{- end }}
             {{- end }}
             

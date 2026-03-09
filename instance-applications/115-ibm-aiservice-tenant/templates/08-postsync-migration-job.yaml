@@ -104,7 +104,7 @@ spec:
           env:
             - name: AISERVICE_NAMESPACE
               value: "{{ .Values.aiservice_namespace }}"
-            - name: TENANT_NAMESPACE
+            - name: TENANT_ID
               value: "{{ .Values.tenantNamespace }}"
           command:
             - /bin/sh
@@ -112,22 +112,12 @@ spec:
             - |
               set -e
              
-              function delete_resource() {
-                local type="${1}"
-                local name="${2}"
-                if oc delete "${type}" "${name}" -n ${AISERVICE_NAMESPACE} &>/dev/null; then
-                  echo "[INFO] "${type}" "${name}" deleted successfully"
-                else
-                  echo "[WARNING] "${type}" "${name}" not found. Skipping deletion"
-                fi
-              }
-
-              delete_resource secret "${TENANT_NAMESPACE}----apikey-secret"
+              oc delete secret "${TENANT_ID}----apikey-secret" -n "${AISERVICE_NAMESPACE} --ignore-not-found
 
               # Must patch CR to remove finalizer otherwise we cannot delete it
-              oc patch aiservicetenant "${TENANT_NAMESPACE}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
-                --namespace "${AISERVICE_NAMESPACE}"
-              delete_resource aiservicetenant "${TENANT_NAMESPACE}"
+              oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
+                -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+              oc delete aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
 
               exit 0
 

@@ -120,6 +120,16 @@ spec:
                 jq -r '.status.installedCSV | test("^ibm-aiservice\\.v9\\.2\\.")')
               }
 
+              function delete_resource() {
+                local type="${1}"
+                local name="${2}"
+                if oc delete "${type}" "${name}" -n ${AISERVICE_NAMESPACE} &>/dev/null; then
+                  echo "[INFO] "${type}" "${name}" deleted successfully"
+                else
+                  echo "[WARNING] "${type}" "${name}" not found. Skipping deletion"
+                fi
+              }
+
               while [[ "${IS_V92_INSTALLED}" != "true" ]]; do
                 echo "[INFO] ibm-aiservice operator v9.2 is not installed. Checking again in 30 seconds ..."
                 sleep 30
@@ -127,24 +137,10 @@ spec:
               done
               echo "[INFO] ibm-aiservice operator v9.2 is installed. Proceeding with migration ..."
 
-              echo "[INFO] Cleaning up AI Service namespace for deployment of namespace-scoped tenant operator"
-              if oc delete deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant -n ${AISERVICE_NAMESPACE} &>/dev/null; then
-                echo "[INFO] Deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant deleted successfully"
-              else
-                echo "[WARNING] Deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant not found. Skipping deletion"
-              fi
-
-              if oc delete secret provision-tenant----apikey-secret -n ${AISERVICE_NAMESPACE} &>/dev/null; then
-                echo "[INFO] Secret provision-tenant----apikey-secret deleted successfully"
-              else
-                echo "[WARNING] Secret provision-tenant----apikey-secret not found. Skipping deletion"
-              fi
-
-              if oc delete configmap ${AISERVICE_INSTANCE_ID}-entitymgr-tenant-reconcile -n ${AISERVICE_NAMESPACE} &>/dev/null; then
-                echo "[INFO] Configmap ${AISERVICE_INSTANCE_ID}-entitymgr-tenant-reconcile deleted successfully"
-              else
-                echo "[WARNING] Configmap ${AISERVICE_INSTANCE_ID}-entitymgr-tenant-reconcile not found. Skipping deletion"
-              fi
+              delete_resource deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant
+              delete_resource secret secret provision-tenant----apikey-secret
+              delete_resource configmap ${AISERVICE_INSTANCE_ID}-entitymgr-tenant-reconcile
+              delete_resource serviceaccount ibm-aiservice-tenant-operator
 
               exit 0
 {{- end }}

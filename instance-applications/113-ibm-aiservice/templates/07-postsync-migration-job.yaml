@@ -154,12 +154,13 @@ spec:
               done
               echo "[INFO] ibm-aiservice operator v9.2 or higher is installed. Proceeding with migration ..."
 
-              tenant_operator_name=${AISERVICE_INSTANCE_ID}-entitymgr-tenant
-              delete_resource deployment ${tenant_operator_name}
-              while oc get pods -l app="${tenant_operator_name}" -n ${AISERVICE_NAMESPACE} 2>/dev/null | grep -q .; do
+              delete_resource deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant
+              set +e
+              while oc get pods -l aiservice.ibm.com/appType=entitymgr-tenant-operator -n ${AISERVICE_NAMESPACE} 2>/dev/null | grep -q .; do
                 echo "Waiting for pods to terminate..."
                 sleep 5
               done
+              set -e
               echo "[INFO] Pods deleted"
 
               delete_resource secret provision-tenant----apikey-secret

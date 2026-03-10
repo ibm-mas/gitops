@@ -144,8 +144,8 @@ spec:
               mas_app_id = os.getenv('MAS_APP_ID', 'manage')
               ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
               
-              # Parse JDBC connection URL to extract host, port, and database
-              # Format: jdbc:db2://host:port/database
+              # Parse JDBC connection URL to extract host, port, database, and SSL parameters
+              # Format: jdbc:db2://host:port/database:sslConnection=true;sslVersion=TLSv1.2;
               match = re.match(r'jdbc:db2://([^:]+):(\d+)/(.+)', jdbc_connection_url)
               if not match:
                   print(f"❌ Failed to parse JDBC connection URL: {jdbc_connection_url}")
@@ -153,7 +153,27 @@ spec:
               
               rds_host = match.group(1)
               rds_port = match.group(2)
-              rds_dbname = match.group(3).split(':')[0]  # Remove any additional parameters
+              url_remainder = match.group(3)
+              
+              # Split database name from parameters
+              if ':' in url_remainder:
+                  rds_dbname = url_remainder.split(':')[0]
+                  url_params = url_remainder.split(':', 1)[1]
+              else:
+                  rds_dbname = url_remainder.split(';')[0]
+                  url_params = ''
+              
+              # Extract sslVersion from URL parameters if present
+              ssl_version = 'TLSv1.3'  # Default value
+              if url_params:
+                  ssl_version_match = re.search(r'sslVersion=([^;]+)', url_params, re.IGNORECASE)
+                  if ssl_version_match:
+                      ssl_version = ssl_version_match.group(1)
+                      print(f"✅ Extracted SSL Version from JDBC URL: {ssl_version}")
+                  else:
+                      print(f"ℹ️  SSL Version not found in URL, using default: {ssl_version}")
+              else:
+                  print(f"ℹ️  No URL parameters found, using default SSL Version: {ssl_version}")
               
               # Build connection string with SSL
               # Connect to the application database (rds_dbname from JDBC URL) to run GRANT statements
@@ -166,6 +186,7 @@ spec:
                   f"UID={jdbc_username};"
                   f"PWD={jdbc_password};"
                   f"SECURITY=SSL;"
+                  f"SSLVersion={ssl_version};"
                   f"SSLServerCertificate={ssl_cert_path};"
               )
               

@@ -116,6 +116,7 @@ are required here.
 {{ $rds_instance_name  := $db.rds_instance_name }}
 {{ $rds_admin_user     := $db.rds_admin_user }}
 {{ $rds_admin_password := $db.rds_admin_password }}
+{{ $jdbc_connection_url       := $db.jdbc_connection_url }}
 
 ---
 apiVersion: batch/v1
@@ -175,6 +176,8 @@ spec:
                   value: "{{ $rds_admin_user }}"
                 - name: RDS_ADMIN_PASSWORD
                   value: "{{ $rds_admin_password }}"
+                - name: jdbc_connection_url
+                  value: "{{ $jdbc_connection_url }}"
                 - name: MAS_APP_ID
                   value: "{{ $.Values.mas_app_id }}"
                 - name: OPERATIONAL_MODE
@@ -222,6 +225,7 @@ spec:
                   import ibm_db
                   import os
                   import sys
+                  import re
                   
                   # Get environment variables
                   rds_host = os.getenv('RDS_HOST')
@@ -229,7 +233,20 @@ spec:
                   rds_dbname = os.getenv('RDS_DBNAME')
                   rds_admin_user = os.getenv('RDS_ADMIN_USER')
                   rds_admin_password = os.getenv('RDS_ADMIN_PASSWORD')
+                  jdbc_connection_url = os.getenv('jdbc_connection_url', '')
                   ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
+                  
+                  # Extract SSL version from JDBC URL if provided
+                  ssl_version = 'TLSv1.3'  # Default from environment
+                  if jdbc_connection_url:
+                      ssl_version_match = re.search(r'sslVersion=([^;]+)', jdbc_connection_url, re.IGNORECASE)
+                      if ssl_version_match:
+                          ssl_version = ssl_version_match.group(1)
+                          print(f"✅ Extracted SSL Version from JDBC URL: {ssl_version}")
+                      else:
+                          print(f"ℹ️  SSL Version not found in JDBC URL, using provided value: {ssl_version}")
+                  else:
+                      print(f"ℹ️  No JDBC URL provided, using SSL Version: {ssl_version}")
                   
                   # Build connection string with SSL
                   conn_str = (
@@ -240,6 +257,7 @@ spec:
                       f"UID={rds_admin_user};"
                       f"PWD={rds_admin_password};"
                       f"SECURITY=SSL;"
+                      f"SSLVersion={ssl_version};"
                       f"SSLServerCertificate={ssl_cert_path};"
                   )
                   

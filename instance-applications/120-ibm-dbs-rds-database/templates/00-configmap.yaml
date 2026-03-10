@@ -14,8 +14,9 @@ data:
     import ibm_db as db2
     import os
     import sys
+    import re
 
-    # Initialization of 
+    # Initialization of
     #mas_application_id = os.getenv("MAS_APP_ID")
     mas_application_id = 'facilities'
     database_name = os.getenv("DB_NAME")
@@ -23,12 +24,25 @@ data:
     has_errors = False
     
     ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
+    jdbc_connection_url = os.environ.get("JDBC_CONNECTION_URL", "")
         
     with open("/etc/mas/dbs-rds-creds/username", 'r') as f:
       username = f.read().strip()
     
     with open("/etc/mas/dbs-rds-creds/password", 'r') as f:
       password = f.read().strip()
+    
+    # Extract SSL version from JDBC URL if provided
+    ssl_version = 'TLSv1.2'  # Default value
+    if jdbc_connection_url:
+        ssl_version_match = re.search(r'sslVersion=([^;]+)', jdbc_connection_url, re.IGNORECASE)
+        if ssl_version_match:
+            ssl_version = ssl_version_match.group(1)
+            print(f"✅ Extracted SSL Version from JDBC URL: {ssl_version}")
+        else:
+            print(f"ℹ️  SSL Version not found in JDBC URL, using default: {ssl_version}")
+    else:
+        print(f"ℹ️  No JDBC URL provided, using default SSL Version: {ssl_version}")
     
     # Creating database connection string for rdsadmin user
     conn_rds_admin_str = (
@@ -39,7 +53,7 @@ data:
         f"UID={username};"
         f"PWD={password};"
         f"SECURITY=SSL;"
-        f"SSLVersion=TLSv1.2;"
+        f"SSLVersion={ssl_version};"
         f"SSLServerCertificate={ssl_cert_path};"
     )
     
@@ -52,7 +66,7 @@ data:
         f"UID={username};"
         f"PWD={password};"
         f"SECURITY=SSL;"
-        f"SSLVersion=TLSv1.2;"
+        f"SSLVersion={ssl_version};"
         f"SSLServerCertificate={ssl_cert_path};"
     )
 

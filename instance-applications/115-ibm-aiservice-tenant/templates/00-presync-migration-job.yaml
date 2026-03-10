@@ -167,6 +167,15 @@ spec:
                 fi
               }
 
+              function is_api_ready() {
+                local response=$(curl -k -H 'Accept: application/json' https://aibroker.${AISERVICE_NAMESPACE}.svc/ibm/aibroker/service/rest/api/v1/health)
+                if [ "$(echo "${response}" | jq -r '.healthy')" = "true" ]; then
+                  export IS_API_READY="true"
+                else
+                  export IS_API_READY="false"
+                fi
+              }
+
               function copy_resource() {
                 local resource_type="${1}"
                 local resource_name="${2}"
@@ -197,6 +206,14 @@ spec:
                 is_v91_installed
               done
               echo "[INFO] ibm-aiservice-tenant operator v9.1 is not deployed. Proceeding ..."
+
+              is_api_ready
+              while [[ "${IS_API_READY}" != "true" ]]; do
+                echo "[INFO] API Broker is not ready. Checking again in 30 seconds ..."
+                sleep 30
+                is_api_ready
+              done
+              echo "[INFO] API Broker is ready. Proceeding ..."
 
               exit 0
 

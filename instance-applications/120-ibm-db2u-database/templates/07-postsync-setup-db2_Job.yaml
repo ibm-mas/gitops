@@ -1,3 +1,19 @@
+{{- /*
+Check if there's a matching entry in ibm_mas_suite_configs where:
+- mas_application_id equals .Values.mas_application_id
+- jdbc_type equals "incluster-db2"
+*/}}
+{{- $_should_execute := false }}
+{{- if .Values.ibm_mas_suite_configs }}
+{{-   range .Values.ibm_mas_suite_configs }}
+{{-     if and (eq .mas_application_id $.Values.mas_application_id) (eq .jdbc_type "incluster-db2") }}
+{{-       $_should_execute = true }}
+{{-     end }}
+{{-   end }}
+{{- end }}
+
+{{- if $_should_execute }}
+
 {{- if not (contains "sdb" .Values.db2_instance_name) }}
 
 {{- /*
@@ -889,4 +905,6 @@ spec:
             name: db2u-scripts-facilities-{{ .Values.db2_instance_name }}-configmap
 {{- end }}
   backoffLimit: 4
+{{- end }}
+
 {{- end }}

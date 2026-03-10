@@ -3,7 +3,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_cli_image_digest := "sha256:1b88f88a1a719d006ea1f4b8dcfd1c2625fa7ecc529c3267e7b4b6afaa1c8da0" }}
 
 {{ $app_ns          := .Values.mas_app_namespace }}
 {{ $np_name            := "postsync-app-rds-roles-np" }}
@@ -187,7 +187,6 @@ spec:
                 - |
 
                   set -e
-                  source /mascli/functions/gitops_utils
 
                   echo ""
                   echo "================================================================================"
@@ -200,179 +199,167 @@ spec:
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
                   echo ""
+                  echo "Installing required Python packages..."
+                  echo "--------------------------------------------------------------------------------"
+                  pip install ibm_db
+
+                  echo ""
                   echo "Downloading RDS SSL certificate..."
                   echo "--------------------------------------------------------------------------------"
                   mkdir -p /tmp/rds-ssl
                   curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
                   echo "✅ Certificate downloaded"
 
-                  # Path to the shell script for DB2 operations
-                  RDS_ROLES_SCRIPT="/tmp/create_rds_roles.sh"
+                  # Path to the Python script for DB2 operations
+                  RDS_ROLES_SCRIPT="/tmp/create_rds_roles.py"
 
                   echo ""
                   echo "Create ${RDS_ROLES_SCRIPT}"
                   echo "--------------------------------------------------------------------------------"
 
-                  # Generate a shell script using db2 CLI commands instead of Python ibm_db
-                  cat > ${RDS_ROLES_SCRIPT} << 'EOFSHELL'
-                  #!/bin/bash
-                  set -e
+                  # Generate a Python script using ibm_db
+                  cat > ${RDS_ROLES_SCRIPT} << 'EOFPYTHON'
+                  import ibm_db
+                  import os
+                  import sys
                   
                   # Get environment variables
-                  RDS_HOST="${RDS_HOST}"
-                  RDS_PORT="${RDS_PORT}"
-                  RDS_DBNAME="${RDS_DBNAME}"
-                  RDS_ADMIN_USER="${RDS_ADMIN_USER}"
-                  RDS_ADMIN_PASSWORD="${RDS_ADMIN_PASSWORD}"
-                  SSL_CERT_PATH="/tmp/rds-ssl/global-bundle.pem"
+                  rds_host = os.getenv('RDS_HOST')
+                  rds_port = os.getenv('RDS_PORT')
+                  rds_dbname = os.getenv('RDS_DBNAME')
+                  rds_admin_user = os.getenv('RDS_ADMIN_USER')
+                  rds_admin_password = os.getenv('RDS_ADMIN_PASSWORD')
+                  ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
                   
-                  echo "Connecting to RDS DB2 instance: ${RDS_HOST}:${RDS_PORT}/${RDS_DBNAME}"
-                  echo "Creating roles for MAS applications: manage, facilities"
-                  echo "Note: IoT uses admin user (DB2_iot) with full admin privileges - no separate roles"
+                  # Build connection string with SSL
+                  conn_str = (
+                      f"DATABASE={rds_dbname};"
+                      f"HOSTNAME={rds_host};"
+                      f"PORT={rds_port};"
+                      f"PROTOCOL=TCPIP;"
+                      f"UID={rds_admin_user};"
+                      f"PWD={rds_admin_password};"
+                      f"SECURITY=SSL;"
+                      f"SSLServerCertificate={ssl_cert_path};"
+                  )
                   
-                  # Function to execute DB2 SQL
-                  execute_db2_sql() {
-                      local sql="$1"
-                      local description="$2"
-                      
-                      echo "Executing: ${description}"
-                      
-                      # Build connection string with SSL security
-                      local conn_str="DATABASE=${RDS_DBNAME};HOSTNAME=${RDS_HOST};PORT=${RDS_PORT};PROTOCOL=TCPIP;UID=${RDS_ADMIN_USER};PWD=${RDS_ADMIN_PASSWORD};SECURITY=SSL;SSLServerCertificate=${SSL_CERT_PATH};"
-                      
-                      # Use db2 command with connection string
-                      db2 "CONNECT USING '${conn_str}'" >/dev/null 2>&1 || {
-                          echo "❌ Failed to connect to database"
-                          return 1
-                      }
-                      
-                      # Execute the SQL
-                      result=$(db2 -x "${sql}" 2>&1)
-                      exit_code=$?
-                      
-                      if [ $exit_code -eq 0 ]; then
-                          echo "✅ ${description}"
-                          echo "${result}"
-                      else
+                  print(f"Connecting to RDS DB2 instance: {rds_host}:{rds_port}/{rds_dbname}")
+                  print("Creating roles for MAS applications: manage, facilities")
+                  print("Note: IoT uses admin user (DB2_iot) with full admin privileges - no separate roles")
+                  
+                  def execute_db2_sql(conn, sql, description):
+                      """Execute a DB2 SQL statement"""
+                      print(f"Executing: {description}")
+                      try:
+                          stmt = ibm_db.exec_immediate(conn, sql)
+                          print(f"✅ {description}")
+                          return True
+                      except Exception as e:
+                          error_msg = str(e)
                           # Check if error is because object already exists
-                          if echo "${result}" | grep -qi "already exists\|duplicate"; then
-                              echo "ℹ️  ${description} - already exists"
-                          else
-                              echo "⚠️  ${description} - ${result}"
-                          fi
-                      fi
-                      
-                      db2 "CONNECT RESET" >/dev/null 2>&1 || true
-                      return 0
-                  }
+                          if "already exists" in error_msg.lower() or "duplicate" in error_msg.lower():
+                              print(f"ℹ️  {description} - already exists")
+                              return True
+                          else:
+                              print(f"⚠️  {description} - {error_msg}")
+                              return False
                   
-                  # Function to check if table exists
-                  check_table_exists() {
-                      local schema="$1"
-                      local table="$2"
-                      
-                      # Build connection string with SSL security
-                      local conn_str="DATABASE=${RDS_DBNAME};HOSTNAME=${RDS_HOST};PORT=${RDS_PORT};PROTOCOL=TCPIP;UID=${RDS_ADMIN_USER};PWD=${RDS_ADMIN_PASSWORD};SECURITY=SSL;SSLServerCertificate=${SSL_CERT_PATH};"
-                      
-                      db2 "CONNECT USING '${conn_str}'" >/dev/null 2>&1 || {
-                          echo "❌ Failed to connect to database"
-                          return 1
-                      }
-                      
-                      result=$(db2 -x "SELECT COUNT(*) FROM SYSCAT.TABLES WHERE TABSCHEMA='${schema}' AND TABNAME='${table}'" 2>&1)
-                      db2 "CONNECT RESET" >/dev/null 2>&1 || true
-                      
-                      if echo "${result}" | grep -q "^[[:space:]]*[1-9]"; then
-                          return 0  # Table exists
-                      else
-                          return 1  # Table doesn't exist
-                      fi
-                  }
+                  def check_table_exists(conn, schema, table):
+                      """Check if a table exists in the database"""
+                      try:
+                          sql = f"SELECT COUNT(*) FROM SYSCAT.TABLES WHERE TABSCHEMA='{schema}' AND TABNAME='{table}'"
+                          stmt = ibm_db.exec_immediate(conn, sql)
+                          result = ibm_db.fetch_tuple(stmt)
+                          if result and result[0] > 0:
+                              return True
+                          return False
+                      except Exception as e:
+                          print(f"⚠️  Error checking table existence: {str(e)}")
+                          return False
                   
-                  # Process MANAGE application
-                  echo ""
-                  echo "============================================================"
-                  echo "Processing MANAGE application"
-                  echo "============================================================"
+                  try:
+                      # Connect to the database
+                      conn = ibm_db.connect(conn_str, "", "")
+                      print("✅ Successfully connected to RDS DB2")
                   
-                  if check_table_exists "MAXIMO" "MAXUSERS"; then
-                      echo "✅ Table MAXIMO.MAXUSERS exists. Proceeding with role creation..."
+                      # Process MANAGE application
+                      print("\n" + "=" * 60)
+                      print("Processing MANAGE application")
+                      print("=" * 60)
                       
-                      # Create roles
-                      execute_db2_sql "CREATE ROLE MAXIMO_READ" "Create MAXIMO_READ role"
-                      execute_db2_sql "CREATE ROLE MAXIMO_WRITE" "Create MAXIMO_WRITE role"
-                      execute_db2_sql "CREATE ROLE MAXIMO_SEQ" "Create MAXIMO_SEQ role"
-                      execute_db2_sql "CREATE ROLE EXPLAIN" "Create EXPLAIN role"
+                      if check_table_exists(conn, "MAXIMO", "MAXUSERS"):
+                          print("✅ Table MAXIMO.MAXUSERS exists. Proceeding with role creation...")
+                          
+                          # Create roles
+                          execute_db2_sql(conn, "CREATE ROLE MAXIMO_READ", "Create MAXIMO_READ role")
+                          execute_db2_sql(conn, "CREATE ROLE MAXIMO_WRITE", "Create MAXIMO_WRITE role")
+                          execute_db2_sql(conn, "CREATE ROLE MAXIMO_SEQ", "Create MAXIMO_SEQ role")
+                          execute_db2_sql(conn, "CREATE ROLE EXPLAIN", "Create EXPLAIN role")
+                          
+                          # Grant permissions to MAXIMO_READ
+                          print("\nGranting permissions to MAXIMO_READ role...")
+                          execute_db2_sql(conn, "GRANT SELECT ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_READ", "Grant SELECT on MAXUSERS")
+                          execute_db2_sql(conn, "GRANT SELECT ON SCHEMA MAXIMO TO ROLE MAXIMO_READ", "Grant SELECT on MAXIMO schema")
+                          
+                          # Grant permissions to MAXIMO_WRITE
+                          print("\nGranting permissions to MAXIMO_WRITE role...")
+                          execute_db2_sql(conn, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_WRITE", "Grant DML on MAXUSERS")
+                          execute_db2_sql(conn, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA MAXIMO TO ROLE MAXIMO_WRITE", "Grant DML on MAXIMO schema")
+                          
+                          # Grant permissions to MAXIMO_SEQ
+                          print("\nGranting permissions to MAXIMO_SEQ role...")
+                          execute_db2_sql(conn, "GRANT USAGE ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ", "Grant USAGE on MAXSEQ")
+                          execute_db2_sql(conn, "GRANT ALTER ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ", "Grant ALTER on MAXSEQ")
+                          
+                          # Grant permissions to EXPLAIN
+                          print("\nGranting permissions to EXPLAIN role...")
+                          execute_db2_sql(conn, "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE EXPLAIN", "Grant EXECUTE on SYSSH200")
+                          execute_db2_sql(conn, "GRANT SELECT ON TABLE SYSTOOLS.EXPLAIN_INSTANCE TO ROLE EXPLAIN", "Grant SELECT on EXPLAIN_INSTANCE")
+                      else:
+                          print("⚠️  Table MAXIMO.MAXUSERS does not exist yet. Skipping manage role creation.")
                       
-                      # Grant permissions to MAXIMO_READ
-                      echo ""
-                      echo "Granting permissions to MAXIMO_READ role..."
-                      execute_db2_sql "GRANT SELECT ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_READ" "Grant SELECT on MAXUSERS"
-                      execute_db2_sql "GRANT SELECT ON SCHEMA MAXIMO TO ROLE MAXIMO_READ" "Grant SELECT on MAXIMO schema"
+                      # Process FACILITIES application
+                      print("\n" + "=" * 60)
+                      print("Processing FACILITIES application")
+                      print("=" * 60)
                       
-                      # Grant permissions to MAXIMO_WRITE
-                      echo ""
-                      echo "Granting permissions to MAXIMO_WRITE role..."
-                      execute_db2_sql "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_WRITE" "Grant DML on MAXUSERS"
-                      execute_db2_sql "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA MAXIMO TO ROLE MAXIMO_WRITE" "Grant DML on MAXIMO schema"
+                      if check_table_exists(conn, "TRIDATA", "TRIDATA_DATA"):
+                          print("✅ Table TRIDATA.TRIDATA_DATA exists. Proceeding with role creation...")
+                          
+                          # Create roles
+                          execute_db2_sql(conn, "CREATE ROLE TRIDATA_READ", "Create TRIDATA_READ role")
+                          execute_db2_sql(conn, "CREATE ROLE TRIDATA_WRITE", "Create TRIDATA_WRITE role")
+                          
+                          # Grant permissions to TRIDATA_READ
+                          print("\nGranting permissions to TRIDATA_READ role...")
+                          execute_db2_sql(conn, "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ", "Grant SELECT on TRIDATA_DATA")
+                          execute_db2_sql(conn, "GRANT SELECT ON SCHEMA TRIDATA TO ROLE TRIDATA_READ", "Grant SELECT on TRIDATA schema")
+                          
+                          # Grant permissions to TRIDATA_WRITE
+                          print("\nGranting permissions to TRIDATA_WRITE role...")
+                          execute_db2_sql(conn, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_WRITE", "Grant DML on TRIDATA_DATA")
+                          execute_db2_sql(conn, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA TRIDATA TO ROLE TRIDATA_WRITE", "Grant DML on TRIDATA schema")
+                      else:
+                          print("⚠️  Table TRIDATA.TRIDATA_DATA does not exist yet. Skipping facilities role creation.")
                       
-                      # Grant permissions to MAXIMO_SEQ
-                      echo ""
-                      echo "Granting permissions to MAXIMO_SEQ role..."
-                      execute_db2_sql "GRANT USAGE ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ" "Grant USAGE on MAXSEQ"
-                      execute_db2_sql "GRANT ALTER ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ" "Grant ALTER on MAXSEQ"
+                      print("\n" + "=" * 60)
+                      print("✅ Role creation and permission grants completed")
+                      print("=" * 60)
                       
-                      # Grant permissions to EXPLAIN
-                      echo ""
-                      echo "Granting permissions to EXPLAIN role..."
-                      execute_db2_sql "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE EXPLAIN" "Grant EXECUTE on SYSSH200"
-                      execute_db2_sql "GRANT SELECT ON TABLE SYSTOOLS.EXPLAIN_INSTANCE TO ROLE EXPLAIN" "Grant SELECT on EXPLAIN_INSTANCE"
-                  else
-                      echo "⚠️  Table MAXIMO.MAXUSERS does not exist yet. Skipping manage role creation."
-                  fi
+                      # Close connection
+                      ibm_db.close(conn)
+                      sys.exit(0)
                   
-                  # Process FACILITIES application
-                  echo ""
-                  echo "============================================================"
-                  echo "Processing FACILITIES application"
-                  echo "============================================================"
-                  
-                  if check_table_exists "TRIDATA" "TRIDATA_DATA"; then
-                      echo "✅ Table TRIDATA.TRIDATA_DATA exists. Proceeding with role creation..."
-                      
-                      # Create roles
-                      execute_db2_sql "CREATE ROLE TRIDATA_READ" "Create TRIDATA_READ role"
-                      execute_db2_sql "CREATE ROLE TRIDATA_WRITE" "Create TRIDATA_WRITE role"
-                      
-                      # Grant permissions to TRIDATA_READ
-                      echo ""
-                      echo "Granting permissions to TRIDATA_READ role..."
-                      execute_db2_sql "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ" "Grant SELECT on TRIDATA_DATA"
-                      execute_db2_sql "GRANT SELECT ON SCHEMA TRIDATA TO ROLE TRIDATA_READ" "Grant SELECT on TRIDATA schema"
-                      
-                      # Grant permissions to TRIDATA_WRITE
-                      echo ""
-                      echo "Granting permissions to TRIDATA_WRITE role..."
-                      execute_db2_sql "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_WRITE" "Grant DML on TRIDATA_DATA"
-                      execute_db2_sql "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA TRIDATA TO ROLE TRIDATA_WRITE" "Grant DML on TRIDATA schema"
-                  else
-                      echo "⚠️  Table TRIDATA.TRIDATA_DATA does not exist yet. Skipping facilities role creation."
-                  fi
-                  
-                  echo ""
-                  echo "============================================================"
-                  echo "✅ Role creation and permission grants completed"
-                  echo "============================================================"
-                  
-                  exit 0
-                  EOFSHELL
-                  # IMPORTANT: Do not make any changes to the "EOFSHELL" line above (including its indentation)
+                  except Exception as e:
+                      print(f"❌ Error: {str(e)}")
+                      sys.exit(1)
+                  EOFPYTHON
+                  # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
 
                   echo ""
                   echo "Executing ${RDS_ROLES_SCRIPT}"
                   echo "--------------------------------------------------------------------------------"
-                  chmod +x ${RDS_ROLES_SCRIPT}
-                  ${RDS_ROLES_SCRIPT} || exit $?
+                  python ${RDS_ROLES_SCRIPT} || exit $?
 
                   echo ""
                   echo "RDS role creation job completed successfully"

@@ -111,9 +111,20 @@ spec:
             - -c
             - |
               set -e
-             
-              oc delete secret "${TENANT_ID}----apikey-secret" -n "${AISERVICE_NAMESPACE} --ignore-not-found
 
+              readonly API_KEY_SECRET="${TENANT_ID}----apikey-secret"
+              echo "[INFO] Updating owner reference in secret ${API_KEY_SECRET} in namespace ${TENANT_ID}"
+              readonly UID=$(oc get aiservicetenant "${TENANT_ID}" -n "${TENANT_ID}" -o jsonpath='{.metadata.uid}')
+              oc get secret "${API_KEY_SECRET}" -n "${TENANT_ID}" -o json > /tmp/apikey-secret.json
+              jq --arg name "${TENANT_ID}" --arg uid "${UID}" \
+                '.metadata.ownerReferences = [{"apiVersion": "aiservice.ibm.com/v1", "kind": "AIServiceTenant", "name": $name, "uid": $uid}]' \
+                /tmp/apikey-secret.json > /tmp/apikey-secret_patched.json
+              oc apply -f /tmp/apikey-secret_patched.json
+
+              echo "[INFO] Deleting secret ${API_KEY_SECRET} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
+              oc delete secret "${API_KEY_SECRET}" -n "${AISERVICE_NAMESPACE} --ignore-not-found
+
+              echo "[INFO] Deleting AIServiceTenant "${TENANT_ID}" in namespace ${AISERVICE_NAMESPACE} (if it exists)"
               # Must patch CR to remove finalizer otherwise we cannot delete it
               oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
                 -n "${AISERVICE_NAMESPACE}" --ignore-not-found

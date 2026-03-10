@@ -173,8 +173,8 @@ spec:
                 local new_resource_name="${3:-${resource_name}}"
                 if oc get ${resource_type} ${resource_name} -n ${AISERVICE_NAMESPACE} -o json > /tmp/${resource_name}.json; then
                   echo "[INFO] Copying ${resource_type} ${resource_name} from namespace ${AISERVICE_NAMESPACE} to namespace ${TENANT_NAMESPACE}"
-                  # Clean metadata fields to avoid resourceVersion conflicts
-                  jq 'del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.selfLink, .metadata.managedFields)' /tmp/${resource_name}.json \
+                  # Clean metadata fields to avoid resourceVersion conflicts. Delete the owner refs to prevent garbage collection.
+                  jq 'del(.metadata.ownerReferences, .metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.selfLink, .metadata.managedFields)' /tmp/${resource_name}.json \
                     | sed "s/\"namespace\": \"${AISERVICE_NAMESPACE}\"/\"namespace\": \"${TENANT_NAMESPACE}\"/" > /tmp/${resource_name}_clean.json
                   # Prevent ArgoCD from immediately pruning the resources as they do not exist in Git
                   jq '.metadata.annotations = (.metadata.annotations // {}) + {"argocd.argoproj.io/sync-options": "Prune=false"}' \

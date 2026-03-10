@@ -114,9 +114,14 @@ spec:
       {{- if .Values.cluster_admin_role }}
       - CreateNamespace=true
       {{- end }}
-{{- if .Values.custom_labels }}
+{{- if or .Values.custom_labels .Values.argocluster_instance }}
     managedNamespaceMetadata:
       labels:
+        {{- if .Values.argocluster_instance }}
+        argocd.argoproj.io/managed-by: {{ .Values.argocluster_instance }}
+        {{- end }}
+        {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
+        {{- end }}
 {{- end }}
 {{- end }}

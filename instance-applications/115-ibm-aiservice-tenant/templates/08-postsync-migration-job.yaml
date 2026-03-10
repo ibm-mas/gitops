@@ -30,7 +30,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list", "delete"]
+    verbs: ["get", "list", "patch", "delete"]
   - apiGroups: ["aiservice.ibm.com"]
     resources: ["aiservicetenants"]
     verbs: ["get", "list", "patch", "delete"]
@@ -51,6 +51,41 @@ subjects:
 roleRef:
   kind: Role
   name: "postsync-tenant-migration-{{ .Values.tenantNamespace }}"
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: postsync-tenant-migration
+  namespace: {{ .Values.tenantNamespace  }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: ["aiservice.ibm.com"]
+    resources: ["aiservicetenants"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: postsync-tenant-migration
+  namespace: {{ .Values.tenantNamespace  }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+subjects:
+  - kind: ServiceAccount
+    name: postsync-tenant-migration
+    namespace: {{ .Values.tenantNamespace }}
+roleRef:
+  kind: Role
+  name: postsync-tenant-migration
   apiGroup: rbac.authorization.k8s.io
 
 ---

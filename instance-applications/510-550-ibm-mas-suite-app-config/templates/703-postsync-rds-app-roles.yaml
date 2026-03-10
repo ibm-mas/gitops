@@ -237,8 +237,11 @@ spec:
                       
                       echo "Executing: ${description}"
                       
-                      # Use db2 command with connection string including SSL security
-                      db2 "CONNECT TO ${RDS_DBNAME} USER ${RDS_ADMIN_USER} USING ${RDS_ADMIN_PASSWORD} AT ${RDS_HOST}:${RDS_PORT} USING SSLSERVERCERTIFICATE ${SSL_CERT_PATH} SECURITY SSL" >/dev/null 2>&1 || {
+                      # Build connection string with SSL security
+                      local conn_str="DATABASE=${RDS_DBNAME};HOSTNAME=${RDS_HOST};PORT=${RDS_PORT};PROTOCOL=TCPIP;UID=${RDS_ADMIN_USER};PWD=${RDS_ADMIN_PASSWORD};SECURITY=SSL;SSLServerCertificate=${SSL_CERT_PATH};"
+                      
+                      # Use db2 command with connection string
+                      db2 "CONNECT USING '${conn_str}'" >/dev/null 2>&1 || {
                           echo "❌ Failed to connect to database"
                           return 1
                       }
@@ -268,7 +271,10 @@ spec:
                       local schema="$1"
                       local table="$2"
                       
-                      db2 "CONNECT TO ${RDS_DBNAME} USER ${RDS_ADMIN_USER} USING ${RDS_ADMIN_PASSWORD} AT ${RDS_HOST}:${RDS_PORT} USING SSLSERVERCERTIFICATE ${SSL_CERT_PATH} SECURITY SSL" >/dev/null 2>&1 || {
+                      # Build connection string with SSL security
+                      local conn_str="DATABASE=${RDS_DBNAME};HOSTNAME=${RDS_HOST};PORT=${RDS_PORT};PROTOCOL=TCPIP;UID=${RDS_ADMIN_USER};PWD=${RDS_ADMIN_PASSWORD};SECURITY=SSL;SSLServerCertificate=${SSL_CERT_PATH};"
+                      
+                      db2 "CONNECT USING '${conn_str}'" >/dev/null 2>&1 || {
                           echo "❌ Failed to connect to database"
                           return 1
                       }

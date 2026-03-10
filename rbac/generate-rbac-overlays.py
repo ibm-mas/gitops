@@ -33,7 +33,6 @@ REPO_ROOT = Path(__file__).parent.parent
 # Namespace patterns per instance ({inst} is replaced with the instance ID)
 NAMESPACE_PATTERNS = [
     "db2u-{inst}",
-    "ibm-software-central",
     "mas-{inst}-core",
     "mas-{inst}-manage",
     "mas-{inst}-sls",

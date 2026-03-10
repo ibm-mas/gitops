@@ -14,10 +14,28 @@ This file provides guidance to agents when working with code in this repository.
 # Update CLI image digest across all charts
 ./build/bin/set-cli-image-digest.sh --root-dir . --digest 'sha256:...'
 
+# Generate RBAC rules for application_admin_role deployments
+./build/bin/generate-application-admin-rbac.py
+
 # Run pre-commit hooks manually
 pre-commit run        # Changed files only
 pre-commit run -a     # All files
 ```
+
+## RBAC Rules Generation
+
+When adding new Kubernetes resource types to any Helm chart, you **MUST** regenerate RBAC rules:
+
+```bash
+./build/bin/generate-application-admin-rbac.py
+```
+
+This script automatically updates:
+- `rbac/kustomize/base/application-admin-role.yaml` (Kustomize base)
+- `rbac/kustomize/components/cluster-readonly/application-admin-clusterrole-readonly.yaml` (ClusterRole)
+- `instance-applications/600-application-admin-rbac/templates/per-namespace-rbac.yaml` (Helm template)
+
+**Never manually edit these generated files** - your changes will be overwritten on the next generation.
 
 ## Documentation
 

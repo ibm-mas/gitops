@@ -90,7 +90,6 @@ See [`kustomize/README.md`](kustomize/README.md) for creating custom overlays an
 | Pattern | Example (dev2) |
 |---------|-----------------|
 | `db2u-{inst}` | `db2u-dev2` |
-| `ibm-software-central` | `ibm-software-central` |
 | `mas-{inst}-core` | `mas-dev2-core` |
 | `mas-{inst}-manage` | `mas-dev2-manage` |
 | `mas-{inst}-sls` | `mas-dev2-sls` |

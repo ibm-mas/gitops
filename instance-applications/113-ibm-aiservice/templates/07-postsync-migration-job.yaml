@@ -29,7 +29,7 @@ metadata:
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 rules:
   - apiGroups: ["apps"]
-    resources: ["deployments"]
+    resources: ["deployments", "pods"]
     verbs: ["get", "list", "delete"]
   - apiGroups: [""]
     resources: ["secrets", "configmaps", "serviceaccounts"]
@@ -117,8 +117,10 @@ spec:
 
               function is_v92_or_higher_installed() {
                 export IS_V92_INSTALLED="false"
+                set +e
                 csv_info=$(oc get csv -n "${AISERVICE_NAMESPACE}" -o custom-columns=NAME:.metadata.name,VERSION:.spec.version,PHASE:.status.phase --no-headers | grep ibm-aiservice)
                 echo "${csv_info}"
+                set -e
                 
                 if [ -n "${csv_info}" ]; then
                   version=$(echo "${csv_info}" | awk '{print $2}')
@@ -152,7 +154,14 @@ spec:
               done
               echo "[INFO] ibm-aiservice operator v9.2 or higher is installed. Proceeding with migration ..."
 
-              delete_resource deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant
+              tenant_operator_name=${AISERVICE_INSTANCE_ID}-entitymgr-tenant
+              delete_resource deployment ${tenant_operator_name}
+              while oc get pods -l app="${tenant_operator_name}" -n ${AISERVICE_NAMESPACE} 2>/dev/null | grep -q .; do
+                echo "Waiting for pods to terminate..."
+                sleep 5
+              done
+              echo "[INFO] Pods deleted"
+
               delete_resource secret provision-tenant----apikey-secret
               delete_resource configmap ${AISERVICE_INSTANCE_ID}-entitymgr-tenant-reconcile
               delete_resource serviceaccount ibm-aiservice-tenant-operator

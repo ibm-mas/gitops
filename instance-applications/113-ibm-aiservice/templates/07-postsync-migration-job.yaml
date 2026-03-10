@@ -35,7 +35,7 @@ rules:
     resources: ["secrets", "configmaps", "serviceaccounts"]
     verbs: ["get", "list", "delete"]
   - apiGroups: ["operators.coreos.com"]
-    resources: ["subscriptions"]
+    resources: ["subscriptions", "clusterserviceversions"]
     verbs: ["get", "list"]
 
 ---
@@ -115,9 +115,23 @@ spec:
             - |
               set -e
 
-              function is_v92_installed() {
-                export IS_V92_INSTALLED=$(oc get subscription ibm-aiservice -n ${AISERVICE_NAMESPACE} -o json | \
-                jq -r '.status.installedCSV | test("^ibm-aiservice\\.v9\\.2\\.")')
+              function is_v92_or_higher_installed() {
+                export IS_V92_INSTALLED="false"
+                csv_info=$(oc get csv -n "${AISERVICE_NAMESPACE}" -o custom-columns=NAME:.metadata.name,VERSION:.spec.version,PHASE:.status.phase --no-headers | grep ibm-aiservice)
+                echo "${csv_info}"
+                
+                if [ -n "${csv_info}" ]; then
+                  version=$(echo "${csv_info}" | awk '{print $2}')
+                  phase=$(echo "${csv_info}" | awk '{print $3}')
+                  
+                  # Extract major and minor version numbers
+                  if [[ "${version}" =~ ^9\.([0-9]+) ]]; then
+                    minor_version="${BASH_REMATCH[1]}"
+                    if [ "${minor_version}" -ge 2 ] && [ "${phase}" = "Succeeded" ]; then
+                      export IS_V92_INSTALLED="true"
+                    fi
+                  fi
+                fi
               }
 
               function delete_resource() {
@@ -130,12 +144,13 @@ spec:
                 fi
               }
 
+              is_v92_or_higher_installed
               while [[ "${IS_V92_INSTALLED}" != "true" ]]; do
-                echo "[INFO] ibm-aiservice operator v9.2 is not installed. Checking again in 30 seconds ..."
+                echo "[INFO] ibm-aiservice operator v9.2 or higher is not installed. Checking again in 30 seconds ..."
                 sleep 30
-                is_v92_installed
+                is_v92_or_higher_installed
               done
-              echo "[INFO] ibm-aiservice operator v9.2 is installed. Proceeding with migration ..."
+              echo "[INFO] ibm-aiservice operator v9.2 or higher is installed. Proceeding with migration ..."
 
               delete_resource deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant
               delete_resource secret provision-tenant----apikey-secret

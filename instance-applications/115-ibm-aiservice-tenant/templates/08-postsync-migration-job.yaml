@@ -160,10 +160,12 @@ spec:
               oc delete secret "${API_KEY_SECRET}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
 
               echo "[INFO] Deleting AIServiceTenant ${TENANT_ID} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
-              # Must patch CR to remove finalizer otherwise we cannot delete it
-              oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
-                -n "${AISERVICE_NAMESPACE}" --ignore-not-found
-              oc delete aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+              if oc get aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" > /dev/null 2>&1; then
+                # Must patch CR to remove finalizer otherwise we cannot delete it
+                oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
+                  -n "${AISERVICE_NAMESPACE}"
+                oc delete aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+              fi
 
               exit 0
 

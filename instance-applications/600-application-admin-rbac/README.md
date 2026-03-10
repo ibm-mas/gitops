@@ -1,0 +1,160 @@
+# Application Admin RBAC Helm Chart
+
+This Helm chart automatically installs scoped RBAC permissions for ArgoCD service accounts when `cluster_admin_role=true`. It prepares the cluster for future operations using `application_admin_role=true`.
+
+## Overview
+
+This chart dynamically detects which namespaces exist for a MAS instance and applies appropriate RBAC resources:
+
+- **Per-namespace Role**: Grants permissions to manage MAS resources within each namespace
+- **Per-namespace RoleBinding**: Binds the Role to the ArgoCD service account
+- **ClusterRole**: Provides read-only access to cluster-level resources (nodes, namespaces, storageclasses)
+- **ClusterRoleBinding**: Binds the ClusterRole to the ArgoCD service account
+
+## Dynamic Namespace Detection
+
+The chart uses Helm's `lookup` function to check if namespaces exist before creating RBAC resources. This means:
+
+- ✅ RBAC is only created for namespaces that actually exist
+- ✅ No failures if optional apps (e.g., Visual Inspection) are not installed
+- ✅ Automatically adapts to the actual deployment configuration
+
+## Namespace Patterns
+
+The following namespace patterns are checked for each instance:
+
+- `db2u-{instance_id}`
+- `ibm-software-central`
+- `mas-{instance_id}-core`
+- `mas-{instance_id}-manage`
+- `mas-{instance_id}-sls`
+- `mas-{instance_id}-syncres`
+- `mas-{instance_id}-visualinspection`
+
+## Usage Scenarios
+
+### Scenario 1: cluster_admin_role=true
+
+When ArgoCD has cluster-admin privileges:
+
+1. ArgoCD creates all namespaces (CreateNamespace=true)
+2. ArgoCD installs this RBAC chart at sync-wave 600
+3. RBAC grants scoped permissions to the ArgoCD service account
+4. Cluster is prepared for future application-admin operations
+
+### Scenario 2: cluster_admin_role=false, application_admin_role=true
+
+When ArgoCD does NOT have cluster-admin:
+
+1. ArgoCD uses the pre-installed RBAC (from Scenario 1 or manual installation)
+2. ArgoCD can manage MAS resources in existing namespaces
+3. ArgoCD cannot create namespaces (CreateNamespace=false)
+
+## Configuration
+
+### Values
+
+```yaml
+# Instance ID for namespace generation
+instance_id: "inst1"
+
+# ArgoCD namespace (used to derive service account)
+argo_namespace: "openshift-gitops"
+
+# Service account configuration (optional)
+# Defaults to: {argo_namespace}-argocd-application-controller
+service_account:
+  name: ""
+  namespace: ""
+
+# Namespace patterns (can be customized)
+namespace_patterns:
+  - "db2u-{inst}"
+  - "ibm-software-central"
+  - "mas-{inst}-core"
+  - "mas-{inst}-manage"
+  - "mas-{inst}-sls"
+  - "mas-{inst}-syncres"
+  - "mas-{inst}-visualinspection"
+```
+
+### Service Account
+
+By default, the chart derives the service account name from the ArgoCD namespace:
+
+- ArgoCD namespace: `mas-argocd`
+- Service account: `mas-argocd-argocd-application-controller`
+
+You can override this by setting `service_account.name` and `service_account.namespace`.
+
+## Deployment
+
+This chart is automatically deployed by the ArgoCD Application at:
+`root-applications/ibm-mas-instance-root/templates/600-application-admin-rbac-app.yaml`
+
+**Sync Wave**: 600 (after all app installations that create namespaces)
+
+**Condition**: Only deployed when `cluster_admin_role=true`
+
+## Comparison with Kustomize Approach
+
+| Aspect | Helm Chart (Automated) | Kustomize (Manual) |
+|--------|------------------------|-------------------|
+| Deployment | Automatic via ArgoCD | Manual kubectl apply |
+| Namespace Detection | Dynamic (lookup) | Static (pre-generated) |
+| Multi-Instance | One chart per instance | One overlay per instance |
+| Maintenance | Self-updating | Requires regeneration |
+| Use Case | cluster_admin_role=true | Pre-install or manual setup |
+
+## Related Files
+
+- **Kustomize Base**: `rbac/kustomize/base/`
+- **Kustomize Components**: `rbac/kustomize/components/cluster-readonly/`
+- **Generator Script**: `rbac/generate-rbac-overlays.py`
+- **ArgoCD Application**: `root-applications/ibm-mas-instance-root/templates/600-application-admin-rbac-app.yaml`
+
+## Troubleshooting
+
+### RBAC not created for a namespace
+
+**Cause**: The namespace doesn't exist when the chart is deployed.
+
+**Solution**: Ensure the chart is deployed at sync-wave 600, after all namespace-creating apps.
+
+### Multiple instances conflict
+
+**Cause**: ClusterRole/ClusterRoleBinding names must be unique per instance.
+
+**Solution**: The chart automatically includes instance_id in cluster-level resource names.
+
+### Service account not found
+
+**Cause**: Service account name or namespace is incorrect.
+
+**Solution**: Verify the ArgoCD service account exists in the specified namespace.
+
+## Permissions Granted
+
+### Namespace-Level (Role)
+
+The Role grants permissions to manage:
+- Core resources: ConfigMaps, Secrets, Services, ServiceAccounts, Pods
+- MAS resources: Suites, Workspaces, App Configs, JDBC Configs, etc.
+- Database resources: Db2uInstances, Db2uEngines
+- Networking: Routes, NetworkPolicies, Istio resources
+- Batch: Jobs, CronJobs
+- RBAC: Roles, RoleBindings (within namespace)
+
+### Cluster-Level (ClusterRole)
+
+The ClusterRole grants read-only access to:
+- Namespaces
+- Nodes
+- StorageClasses
+
+## Security Considerations
+
+- RBAC is scoped to specific namespaces (not cluster-wide)
+- Cluster-level access is read-only
+- Service account is explicitly specified
+- Resources are labeled for tracking and management

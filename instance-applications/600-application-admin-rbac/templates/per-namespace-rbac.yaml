@@ -1,0 +1,284 @@
+{{- $inst := .Values.instance_id }}
+{{- $serviceAccountName := include "application-admin-rbac.serviceAccountName" . }}
+{{- $serviceAccountNamespace := include "application-admin-rbac.serviceAccountNamespace" . }}
+
+{{- /* Define namespace conditions mapping */ -}}
+{{- $namespaceConditions := dict
+  (printf "mas-%s-core" $inst) (not (empty $.Values.ibm_mas_suite))
+  (printf "db2u-%s" $inst) (not (empty $.Values.ibm_db2u))
+  (printf "mas-%s-syncres" $inst) true
+  (printf "mas-%s-manage" $inst) (not (empty $.Values.ibm_suite_app_manage_install))
+  (printf "mas-%s-assist" $inst) (not (empty $.Values.ibm_suite_app_assist_install))
+  (printf "mas-%s-iot" $inst) (not (empty $.Values.ibm_suite_app_iot_install))
+  (printf "mas-%s-monitor" $inst) (not (empty $.Values.ibm_suite_app_monitor_install))
+  (printf "mas-%s-health" $inst) (not (empty $.Values.ibm_suite_app_health_install))
+  (printf "mas-%s-optimizer" $inst) (not (empty $.Values.ibm_suite_app_optimizer_install))
+  (printf "mas-%s-predict" $inst) (not (empty $.Values.ibm_suite_app_predict_install))
+  (printf "mas-%s-visualinspection" $inst) (not (empty $.Values.ibm_suite_app_visualinspection_install))
+  (printf "mas-%s-facilities" $inst) (not (empty $.Values.ibm_suite_app_facilities_install))
+  (printf "mas-%s-sls" $inst) (and (not (empty $.Values.ibm_sls)) (empty $.Values.ibm_sls.ibm_customer_number))
+}}
+
+{{- range .Values.namespace_patterns }}
+{{- $namespace := . | replace "{inst}" $inst }}
+{{- $shouldCreate := index $namespaceConditions $namespace }}
+{{- if $shouldCreate }}
+---
+# Role for namespace: {{ $namespace }}
+# Based on rbac/kustomize/base/application-admin-role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mas-application-admin
+  namespace: {{ $namespace }}
+  annotations:
+    description: Role for MAS GitOps deployments when cluster_admin_role=false and application_admin_role=true
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - certificates
+  - configmaps
+  - issuers
+  - pods
+  - resourcequotas
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - addons.mas.ibm.com
+  resources:
+  - genericaddons
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - aiservice.ibm.com
+  resources:
+  - aiserviceapps
+  - aiservicetenants
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  - applicationsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - config.mas.ibm.com
+  resources:
+  - appcfgs
+  - bascfgs
+  - idpcfgs
+  - jdbccfgs
+  - kafkacfgs
+  - mongocfgs
+  - objectstoragecfgs
+  - slscfgs
+  - smtpcfgs
+  - watsonstudiocfgs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - core.mas.ibm.com
+  resources:
+  - suites
+  - workspaces
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - datasciencecluster.opendatahub.io
+  resources:
+  - datascienceclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - db2u.databases.ibm.com
+  resources:
+  - db2uengines
+  - db2uinstances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - dscinitialization.opendatahub.io
+  resources:
+  - dscinitializations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.istio.io
+  resources:
+  - destinationrules
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - security.istio.io
+  resources:
+  - peerauthentications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - sls.ibm.com
+  resources:
+  - licenseservices
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+# RoleBinding for namespace: {{ $namespace }}
+# Based on rbac/kustomize/base/application-admin-rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mas-application-admin-binding
+  namespace: {{ $namespace }}
+  annotations:
+    description: "Binds mas-application-admin Role to service account"
+subjects:
+- kind: ServiceAccount
+  name: {{ $serviceAccountName }}
+  namespace: {{ $serviceAccountNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mas-application-admin
+{{- end }}
+{{- end }}
+
+# Made with Bob

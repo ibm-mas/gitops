@@ -2,23 +2,47 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   annotations:
-    description: Role for MAS GitOps deployments within this namespace
+    description: Role for MAS GitOps deployments when cluster_admin_role=false and
+      application_admin_role=true
   name: mas-application-admin
   namespace: db2u-dev2
 rules:
 - apiGroups:
   - ""
   resources:
+  - certificates
   - configmaps
-  - secrets
-  - services
-  - serviceaccounts
-  - persistentvolumeclaims
+  - issuers
   - pods
-  - pods/log
-  - pods/exec
   - resourcequotas
-  - limitranges
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - addons.mas.ibm.com
+  resources:
+  - genericaddons
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - aiservice.ibm.com
+  resources:
+  - aiserviceapps
+  - aiservicetenants
   verbs:
   - create
   - delete
@@ -30,10 +54,20 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - deployments
   - statefulsets
-  - daemonsets
-  - replicasets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  - applicationsets
   verbs:
   - create
   - delete
@@ -45,74 +79,8 @@ rules:
 - apiGroups:
   - batch
   resources:
-  - jobs
   - cronjobs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - roles
-  - rolebindings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - networkpolicies
-  - ingresses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - route.openshift.io
-  resources:
-  - routes
-  - routes/custom-host
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cert-manager.io
-  resources:
-  - certificates
-  - certificaterequests
-  - issuers
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - core.mas.ibm.com
-  resources:
-  - suites
-  - workspaces
+  - jobs
   verbs:
   - create
   - delete
@@ -143,107 +111,10 @@ rules:
   - update
   - watch
 - apiGroups:
-  - addons.mas.ibm.com
+  - core.mas.ibm.com
   resources:
-  - genericaddons
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - sls.ibm.com
-  resources:
-  - licenseservices
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - db2u.databases.ibm.com
-  resources:
-  - db2uinstances
-  - db2uclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cpd.ibm.com
-  resources:
-  - ibmcpds
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - wml.cpd.ibm.com
-  resources:
-  - wmlbases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ws.cpd.ibm.com
-  resources:
-  - ws
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - spssmodeler.cpd.ibm.com
-  resources:
-  - spss
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ae.cpd.ibm.com
-  resources:
-  - analyticsengines
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - aiservice.ibm.com
-  resources:
-  - aiserviceapps
-  - aiservicetenants
+  - suites
+  - workspaces
   verbs:
   - create
   - delete
@@ -265,6 +136,19 @@ rules:
   - update
   - watch
 - apiGroups:
+  - db2u.databases.ibm.com
+  resources:
+  - db2uengines
+  - db2uinstances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - dscinitialization.opendatahub.io
   resources:
   - dscinitializations
@@ -277,12 +161,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - operator.ibm.com
+  - networking.istio.io
   resources:
-  - ibmlicensings
-  - namespacescopes
-  - operandconfigs
-  - operandregistries
+  - destinationrules
   verbs:
   - create
   - delete
@@ -292,11 +173,34 @@ rules:
   - update
   - watch
 - apiGroups:
-  - networking.istio.io
+  - networking.k8s.io
   resources:
-  - destinationrules
-  - virtualservices
-  - gateways
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
   verbs:
   - create
   - delete
@@ -309,7 +213,6 @@ rules:
   - security.istio.io
   resources:
   - peerauthentications
-  - authorizationpolicies
   verbs:
   - create
   - delete
@@ -319,24 +222,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - argoproj.io
+  - sls.ibm.com
   resources:
-  - applications
-  - applicationsets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - monitoring.coreos.com
-  resources:
-  - servicemonitors
-  - podmonitors
-  - prometheusrules
+  - licenseservices
   verbs:
   - create
   - delete
@@ -350,23 +238,47 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   annotations:
-    description: Role for MAS GitOps deployments within this namespace
+    description: Role for MAS GitOps deployments when cluster_admin_role=false and
+      application_admin_role=true
   name: mas-application-admin
   namespace: mas-dev2-core
 rules:
 - apiGroups:
   - ""
   resources:
+  - certificates
   - configmaps
-  - secrets
-  - services
-  - serviceaccounts
-  - persistentvolumeclaims
+  - issuers
   - pods
-  - pods/log
-  - pods/exec
   - resourcequotas
-  - limitranges
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - addons.mas.ibm.com
+  resources:
+  - genericaddons
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - aiservice.ibm.com
+  resources:
+  - aiserviceapps
+  - aiservicetenants
   verbs:
   - create
   - delete
@@ -378,10 +290,20 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - deployments
   - statefulsets
-  - daemonsets
-  - replicasets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  - applicationsets
   verbs:
   - create
   - delete
@@ -393,74 +315,8 @@ rules:
 - apiGroups:
   - batch
   resources:
-  - jobs
   - cronjobs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - roles
-  - rolebindings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - networkpolicies
-  - ingresses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - route.openshift.io
-  resources:
-  - routes
-  - routes/custom-host
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cert-manager.io
-  resources:
-  - certificates
-  - certificaterequests
-  - issuers
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - core.mas.ibm.com
-  resources:
-  - suites
-  - workspaces
+  - jobs
   verbs:
   - create
   - delete
@@ -491,107 +347,10 @@ rules:
   - update
   - watch
 - apiGroups:
-  - addons.mas.ibm.com
+  - core.mas.ibm.com
   resources:
-  - genericaddons
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - sls.ibm.com
-  resources:
-  - licenseservices
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - db2u.databases.ibm.com
-  resources:
-  - db2uinstances
-  - db2uclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cpd.ibm.com
-  resources:
-  - ibmcpds
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - wml.cpd.ibm.com
-  resources:
-  - wmlbases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ws.cpd.ibm.com
-  resources:
-  - ws
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - spssmodeler.cpd.ibm.com
-  resources:
-  - spss
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ae.cpd.ibm.com
-  resources:
-  - analyticsengines
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - aiservice.ibm.com
-  resources:
-  - aiserviceapps
-  - aiservicetenants
+  - suites
+  - workspaces
   verbs:
   - create
   - delete
@@ -613,6 +372,19 @@ rules:
   - update
   - watch
 - apiGroups:
+  - db2u.databases.ibm.com
+  resources:
+  - db2uengines
+  - db2uinstances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - dscinitialization.opendatahub.io
   resources:
   - dscinitializations
@@ -625,12 +397,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - operator.ibm.com
+  - networking.istio.io
   resources:
-  - ibmlicensings
-  - namespacescopes
-  - operandconfigs
-  - operandregistries
+  - destinationrules
   verbs:
   - create
   - delete
@@ -640,11 +409,34 @@ rules:
   - update
   - watch
 - apiGroups:
-  - networking.istio.io
+  - networking.k8s.io
   resources:
-  - destinationrules
-  - virtualservices
-  - gateways
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
   verbs:
   - create
   - delete
@@ -657,7 +449,6 @@ rules:
   - security.istio.io
   resources:
   - peerauthentications
-  - authorizationpolicies
   verbs:
   - create
   - delete
@@ -667,24 +458,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - argoproj.io
+  - sls.ibm.com
   resources:
-  - applications
-  - applicationsets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - monitoring.coreos.com
-  resources:
-  - servicemonitors
-  - podmonitors
-  - prometheusrules
+  - licenseservices
   verbs:
   - create
   - delete
@@ -698,23 +474,47 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   annotations:
-    description: Role for MAS GitOps deployments within this namespace
+    description: Role for MAS GitOps deployments when cluster_admin_role=false and
+      application_admin_role=true
   name: mas-application-admin
   namespace: mas-dev2-manage
 rules:
 - apiGroups:
   - ""
   resources:
+  - certificates
   - configmaps
-  - secrets
-  - services
-  - serviceaccounts
-  - persistentvolumeclaims
+  - issuers
   - pods
-  - pods/log
-  - pods/exec
   - resourcequotas
-  - limitranges
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - addons.mas.ibm.com
+  resources:
+  - genericaddons
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - aiservice.ibm.com
+  resources:
+  - aiserviceapps
+  - aiservicetenants
   verbs:
   - create
   - delete
@@ -726,10 +526,20 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - deployments
   - statefulsets
-  - daemonsets
-  - replicasets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  - applicationsets
   verbs:
   - create
   - delete
@@ -741,74 +551,8 @@ rules:
 - apiGroups:
   - batch
   resources:
-  - jobs
   - cronjobs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - roles
-  - rolebindings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - networkpolicies
-  - ingresses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - route.openshift.io
-  resources:
-  - routes
-  - routes/custom-host
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cert-manager.io
-  resources:
-  - certificates
-  - certificaterequests
-  - issuers
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - core.mas.ibm.com
-  resources:
-  - suites
-  - workspaces
+  - jobs
   verbs:
   - create
   - delete
@@ -839,107 +583,10 @@ rules:
   - update
   - watch
 - apiGroups:
-  - addons.mas.ibm.com
+  - core.mas.ibm.com
   resources:
-  - genericaddons
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - sls.ibm.com
-  resources:
-  - licenseservices
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - db2u.databases.ibm.com
-  resources:
-  - db2uinstances
-  - db2uclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cpd.ibm.com
-  resources:
-  - ibmcpds
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - wml.cpd.ibm.com
-  resources:
-  - wmlbases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ws.cpd.ibm.com
-  resources:
-  - ws
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - spssmodeler.cpd.ibm.com
-  resources:
-  - spss
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ae.cpd.ibm.com
-  resources:
-  - analyticsengines
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - aiservice.ibm.com
-  resources:
-  - aiserviceapps
-  - aiservicetenants
+  - suites
+  - workspaces
   verbs:
   - create
   - delete
@@ -961,6 +608,19 @@ rules:
   - update
   - watch
 - apiGroups:
+  - db2u.databases.ibm.com
+  resources:
+  - db2uengines
+  - db2uinstances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - dscinitialization.opendatahub.io
   resources:
   - dscinitializations
@@ -973,12 +633,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - operator.ibm.com
+  - networking.istio.io
   resources:
-  - ibmlicensings
-  - namespacescopes
-  - operandconfigs
-  - operandregistries
+  - destinationrules
   verbs:
   - create
   - delete
@@ -988,11 +645,34 @@ rules:
   - update
   - watch
 - apiGroups:
-  - networking.istio.io
+  - networking.k8s.io
   resources:
-  - destinationrules
-  - virtualservices
-  - gateways
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
   verbs:
   - create
   - delete
@@ -1005,7 +685,6 @@ rules:
   - security.istio.io
   resources:
   - peerauthentications
-  - authorizationpolicies
   verbs:
   - create
   - delete
@@ -1015,24 +694,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - argoproj.io
+  - sls.ibm.com
   resources:
-  - applications
-  - applicationsets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - monitoring.coreos.com
-  resources:
-  - servicemonitors
-  - podmonitors
-  - prometheusrules
+  - licenseservices
   verbs:
   - create
   - delete
@@ -1046,23 +710,47 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   annotations:
-    description: Role for MAS GitOps deployments within this namespace
+    description: Role for MAS GitOps deployments when cluster_admin_role=false and
+      application_admin_role=true
   name: mas-application-admin
   namespace: mas-dev2-sls
 rules:
 - apiGroups:
   - ""
   resources:
+  - certificates
   - configmaps
-  - secrets
-  - services
-  - serviceaccounts
-  - persistentvolumeclaims
+  - issuers
   - pods
-  - pods/log
-  - pods/exec
   - resourcequotas
-  - limitranges
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - addons.mas.ibm.com
+  resources:
+  - genericaddons
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - aiservice.ibm.com
+  resources:
+  - aiserviceapps
+  - aiservicetenants
   verbs:
   - create
   - delete
@@ -1074,10 +762,20 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - deployments
   - statefulsets
-  - daemonsets
-  - replicasets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  - applicationsets
   verbs:
   - create
   - delete
@@ -1089,74 +787,8 @@ rules:
 - apiGroups:
   - batch
   resources:
-  - jobs
   - cronjobs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - roles
-  - rolebindings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - networkpolicies
-  - ingresses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - route.openshift.io
-  resources:
-  - routes
-  - routes/custom-host
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cert-manager.io
-  resources:
-  - certificates
-  - certificaterequests
-  - issuers
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - core.mas.ibm.com
-  resources:
-  - suites
-  - workspaces
+  - jobs
   verbs:
   - create
   - delete
@@ -1187,107 +819,10 @@ rules:
   - update
   - watch
 - apiGroups:
-  - addons.mas.ibm.com
+  - core.mas.ibm.com
   resources:
-  - genericaddons
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - sls.ibm.com
-  resources:
-  - licenseservices
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - db2u.databases.ibm.com
-  resources:
-  - db2uinstances
-  - db2uclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cpd.ibm.com
-  resources:
-  - ibmcpds
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - wml.cpd.ibm.com
-  resources:
-  - wmlbases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ws.cpd.ibm.com
-  resources:
-  - ws
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - spssmodeler.cpd.ibm.com
-  resources:
-  - spss
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ae.cpd.ibm.com
-  resources:
-  - analyticsengines
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - aiservice.ibm.com
-  resources:
-  - aiserviceapps
-  - aiservicetenants
+  - suites
+  - workspaces
   verbs:
   - create
   - delete
@@ -1309,6 +844,19 @@ rules:
   - update
   - watch
 - apiGroups:
+  - db2u.databases.ibm.com
+  resources:
+  - db2uengines
+  - db2uinstances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - dscinitialization.opendatahub.io
   resources:
   - dscinitializations
@@ -1321,12 +869,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - operator.ibm.com
+  - networking.istio.io
   resources:
-  - ibmlicensings
-  - namespacescopes
-  - operandconfigs
-  - operandregistries
+  - destinationrules
   verbs:
   - create
   - delete
@@ -1336,11 +881,34 @@ rules:
   - update
   - watch
 - apiGroups:
-  - networking.istio.io
+  - networking.k8s.io
   resources:
-  - destinationrules
-  - virtualservices
-  - gateways
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
   verbs:
   - create
   - delete
@@ -1353,7 +921,6 @@ rules:
   - security.istio.io
   resources:
   - peerauthentications
-  - authorizationpolicies
   verbs:
   - create
   - delete
@@ -1363,24 +930,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - argoproj.io
+  - sls.ibm.com
   resources:
-  - applications
-  - applicationsets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - monitoring.coreos.com
-  resources:
-  - servicemonitors
-  - podmonitors
-  - prometheusrules
+  - licenseservices
   verbs:
   - create
   - delete
@@ -1394,23 +946,47 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   annotations:
-    description: Role for MAS GitOps deployments within this namespace
+    description: Role for MAS GitOps deployments when cluster_admin_role=false and
+      application_admin_role=true
   name: mas-application-admin
   namespace: mas-dev2-syncres
 rules:
 - apiGroups:
   - ""
   resources:
+  - certificates
   - configmaps
-  - secrets
-  - services
-  - serviceaccounts
-  - persistentvolumeclaims
+  - issuers
   - pods
-  - pods/log
-  - pods/exec
   - resourcequotas
-  - limitranges
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - addons.mas.ibm.com
+  resources:
+  - genericaddons
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - aiservice.ibm.com
+  resources:
+  - aiserviceapps
+  - aiservicetenants
   verbs:
   - create
   - delete
@@ -1422,10 +998,20 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - deployments
   - statefulsets
-  - daemonsets
-  - replicasets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  - applicationsets
   verbs:
   - create
   - delete
@@ -1437,74 +1023,8 @@ rules:
 - apiGroups:
   - batch
   resources:
-  - jobs
   - cronjobs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - roles
-  - rolebindings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - networkpolicies
-  - ingresses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - route.openshift.io
-  resources:
-  - routes
-  - routes/custom-host
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cert-manager.io
-  resources:
-  - certificates
-  - certificaterequests
-  - issuers
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - core.mas.ibm.com
-  resources:
-  - suites
-  - workspaces
+  - jobs
   verbs:
   - create
   - delete
@@ -1535,107 +1055,10 @@ rules:
   - update
   - watch
 - apiGroups:
-  - addons.mas.ibm.com
+  - core.mas.ibm.com
   resources:
-  - genericaddons
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - sls.ibm.com
-  resources:
-  - licenseservices
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - db2u.databases.ibm.com
-  resources:
-  - db2uinstances
-  - db2uclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cpd.ibm.com
-  resources:
-  - ibmcpds
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - wml.cpd.ibm.com
-  resources:
-  - wmlbases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ws.cpd.ibm.com
-  resources:
-  - ws
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - spssmodeler.cpd.ibm.com
-  resources:
-  - spss
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ae.cpd.ibm.com
-  resources:
-  - analyticsengines
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - aiservice.ibm.com
-  resources:
-  - aiserviceapps
-  - aiservicetenants
+  - suites
+  - workspaces
   verbs:
   - create
   - delete
@@ -1657,6 +1080,19 @@ rules:
   - update
   - watch
 - apiGroups:
+  - db2u.databases.ibm.com
+  resources:
+  - db2uengines
+  - db2uinstances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - dscinitialization.opendatahub.io
   resources:
   - dscinitializations
@@ -1669,12 +1105,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - operator.ibm.com
+  - networking.istio.io
   resources:
-  - ibmlicensings
-  - namespacescopes
-  - operandconfigs
-  - operandregistries
+  - destinationrules
   verbs:
   - create
   - delete
@@ -1684,11 +1117,34 @@ rules:
   - update
   - watch
 - apiGroups:
-  - networking.istio.io
+  - networking.k8s.io
   resources:
-  - destinationrules
-  - virtualservices
-  - gateways
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
   verbs:
   - create
   - delete
@@ -1701,7 +1157,6 @@ rules:
   - security.istio.io
   resources:
   - peerauthentications
-  - authorizationpolicies
   verbs:
   - create
   - delete
@@ -1711,24 +1166,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - argoproj.io
+  - sls.ibm.com
   resources:
-  - applications
-  - applicationsets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - monitoring.coreos.com
-  resources:
-  - servicemonitors
-  - podmonitors
-  - prometheusrules
+  - licenseservices
   verbs:
   - create
   - delete
@@ -1742,23 +1182,47 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   annotations:
-    description: Role for MAS GitOps deployments within this namespace
+    description: Role for MAS GitOps deployments when cluster_admin_role=false and
+      application_admin_role=true
   name: mas-application-admin
   namespace: mas-dev2-visualinspection
 rules:
 - apiGroups:
   - ""
   resources:
+  - certificates
   - configmaps
-  - secrets
-  - services
-  - serviceaccounts
-  - persistentvolumeclaims
+  - issuers
   - pods
-  - pods/log
-  - pods/exec
   - resourcequotas
-  - limitranges
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - addons.mas.ibm.com
+  resources:
+  - genericaddons
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - aiservice.ibm.com
+  resources:
+  - aiserviceapps
+  - aiservicetenants
   verbs:
   - create
   - delete
@@ -1770,10 +1234,20 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - deployments
   - statefulsets
-  - daemonsets
-  - replicasets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  - applicationsets
   verbs:
   - create
   - delete
@@ -1785,74 +1259,8 @@ rules:
 - apiGroups:
   - batch
   resources:
-  - jobs
   - cronjobs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - roles
-  - rolebindings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - networkpolicies
-  - ingresses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - route.openshift.io
-  resources:
-  - routes
-  - routes/custom-host
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cert-manager.io
-  resources:
-  - certificates
-  - certificaterequests
-  - issuers
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - core.mas.ibm.com
-  resources:
-  - suites
-  - workspaces
+  - jobs
   verbs:
   - create
   - delete
@@ -1883,320 +1291,6 @@ rules:
   - update
   - watch
 - apiGroups:
-  - addons.mas.ibm.com
-  resources:
-  - genericaddons
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - sls.ibm.com
-  resources:
-  - licenseservices
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - db2u.databases.ibm.com
-  resources:
-  - db2uinstances
-  - db2uclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cpd.ibm.com
-  resources:
-  - ibmcpds
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - wml.cpd.ibm.com
-  resources:
-  - wmlbases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ws.cpd.ibm.com
-  resources:
-  - ws
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - spssmodeler.cpd.ibm.com
-  resources:
-  - spss
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ae.cpd.ibm.com
-  resources:
-  - analyticsengines
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - aiservice.ibm.com
-  resources:
-  - aiserviceapps
-  - aiservicetenants
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - datasciencecluster.opendatahub.io
-  resources:
-  - datascienceclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - dscinitialization.opendatahub.io
-  resources:
-  - dscinitializations
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - operator.ibm.com
-  resources:
-  - ibmlicensings
-  - namespacescopes
-  - operandconfigs
-  - operandregistries
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.istio.io
-  resources:
-  - destinationrules
-  - virtualservices
-  - gateways
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - security.istio.io
-  resources:
-  - peerauthentications
-  - authorizationpolicies
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - argoproj.io
-  resources:
-  - applications
-  - applicationsets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - monitoring.coreos.com
-  resources:
-  - servicemonitors
-  - podmonitors
-  - prometheusrules
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  annotations:
-    description: Role for MAS GitOps deployments within this namespace
-  name: mas-application-admin
-  namespace: redhat-marketplace
-rules:
-- apiGroups:
-  - ""
-  resources:
-  - configmaps
-  - secrets
-  - services
-  - serviceaccounts
-  - persistentvolumeclaims
-  - pods
-  - pods/log
-  - pods/exec
-  - resourcequotas
-  - limitranges
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - apps
-  resources:
-  - deployments
-  - statefulsets
-  - daemonsets
-  - replicasets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - batch
-  resources:
-  - jobs
-  - cronjobs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - roles
-  - rolebindings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - networkpolicies
-  - ingresses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - route.openshift.io
-  resources:
-  - routes
-  - routes/custom-host
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cert-manager.io
-  resources:
-  - certificates
-  - certificaterequests
-  - issuers
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - core.mas.ibm.com
   resources:
   - suites
@@ -2210,42 +1304,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - config.mas.ibm.com
+  - datasciencecluster.opendatahub.io
   resources:
-  - appcfgs
-  - bascfgs
-  - idpcfgs
-  - jdbccfgs
-  - kafkacfgs
-  - mongocfgs
-  - objectstoragecfgs
-  - slscfgs
-  - smtpcfgs
-  - watsonstudiocfgs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - addons.mas.ibm.com
-  resources:
-  - genericaddons
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - sls.ibm.com
-  resources:
-  - licenseservices
+  - datascienceclusters
   verbs:
   - create
   - delete
@@ -2257,93 +1318,8 @@ rules:
 - apiGroups:
   - db2u.databases.ibm.com
   resources:
+  - db2uengines
   - db2uinstances
-  - db2uclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - cpd.ibm.com
-  resources:
-  - ibmcpds
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - wml.cpd.ibm.com
-  resources:
-  - wmlbases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ws.cpd.ibm.com
-  resources:
-  - ws
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - spssmodeler.cpd.ibm.com
-  resources:
-  - spss
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ae.cpd.ibm.com
-  resources:
-  - analyticsengines
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - aiservice.ibm.com
-  resources:
-  - aiserviceapps
-  - aiservicetenants
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - datasciencecluster.opendatahub.io
-  resources:
-  - datascienceclusters
   verbs:
   - create
   - delete
@@ -2365,12 +1341,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - operator.ibm.com
+  - networking.istio.io
   resources:
-  - ibmlicensings
-  - namespacescopes
-  - operandconfigs
-  - operandregistries
+  - destinationrules
   verbs:
   - create
   - delete
@@ -2380,11 +1353,34 @@ rules:
   - update
   - watch
 - apiGroups:
-  - networking.istio.io
+  - networking.k8s.io
   resources:
-  - destinationrules
-  - virtualservices
-  - gateways
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
   verbs:
   - create
   - delete
@@ -2397,7 +1393,6 @@ rules:
   - security.istio.io
   resources:
   - peerauthentications
-  - authorizationpolicies
   verbs:
   - create
   - delete
@@ -2407,24 +1402,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - argoproj.io
+  - sls.ibm.com
   resources:
-  - applications
-  - applicationsets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - monitoring.coreos.com
-  resources:
-  - servicemonitors
-  - podmonitors
-  - prometheusrules
+  - licenseservices
   verbs:
   - create
   - delete
@@ -2438,8 +1418,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   annotations:
-    description: Read-only ClusterRole for cluster-scoped resources needed by MAS
-      applications
+    description: ClusterRole for read-only cluster access when cluster_admin_role=false
+      and application_admin_role=true
   name: mas-application-admin-readonly
 rules:
 - apiGroups:
@@ -2459,45 +1439,6 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - operators.coreos.com
-  resources:
-  - catalogsources
-  - clusterserviceversions
-  - installplans
-  - subscriptions
-  - operatorgroups
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - apiextensions.k8s.io
-  resources:
-  - customresourcedefinitions
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - argoproj.io
-  resources:
-  - applications
-  - applicationsets
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - config.openshift.io
-  resources:
-  - clusterversions
-  - infrastructures
-  - networks
-  verbs:
-  - get
-  - list
-  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2586,22 +1527,6 @@ metadata:
     description: Binds mas-application-admin Role to service account
   name: mas-application-admin-binding
   namespace: mas-dev2-visualinspection
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: mas-application-admin
-subjects:
-- kind: ServiceAccount
-  name: mas-argocd-argocd-application-controller
-  namespace: mas-argocd
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  annotations:
-    description: Binds mas-application-admin Role to service account
-  name: mas-application-admin-binding
-  namespace: redhat-marketplace
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

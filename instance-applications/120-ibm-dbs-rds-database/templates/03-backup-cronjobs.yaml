@@ -28,6 +28,24 @@ spec:
 {{- end }}
         spec:
           restartPolicy: OnFailure
+          initContainers:
+            - name: setup-dependencies
+              image: quay.io/ibmmas/cli@sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  echo "Downloading RDS SSL certificate..."
+                  mkdir -p /etc/mas/rds-ssl
+                  curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
+                  echo "✅ Certificate downloaded"
+                  
+                  echo "Installing ibm_db Python package..."
+                  pip install --no-cache-dir ibm_db
+                  echo "✅ ibm_db installed successfully"
+              volumeMounts:
+                - name: rds-ssl
+                  mountPath: /etc/mas/rds-ssl
           containers:
             - name: rds-db2-full-backup
               image: quay.io/ibmmas/cli@sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40
@@ -42,14 +60,6 @@ spec:
               args:
                 - |
                   set -e
-                  echo "Downloading RDS SSL certificate..."
-                  mkdir -p /etc/mas/rds-ssl
-                  curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
-                  echo "✅ Certificate downloaded"
-                  
-                  echo "Installing ibm_db Python package..."
-                  pip install ibm_db
-                  
                   echo "Starting FULL backup..."
                   export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem
                   python /etc/mas/backup-script/rds-db2-backup.py
@@ -85,6 +95,8 @@ spec:
                   mountPath: /etc/mas/dbs-rds-creds/
                 - name: backup-script
                   mountPath: /etc/mas/backup-script/
+                - name: rds-ssl
+                  mountPath: /etc/mas/rds-ssl
           volumes:
             - name: backup-script
               configMap:
@@ -95,6 +107,8 @@ spec:
                 secretName: dbs-rds-secret-store
                 defaultMode: 0420
                 optional: false
+            - name: rds-ssl
+              emptyDir: {}
 {{- end }}
 
 ---
@@ -126,6 +140,24 @@ spec:
 {{- end }}
         spec:
           restartPolicy: OnFailure
+          initContainers:
+            - name: setup-dependencies
+              image: quay.io/ibmmas/cli@sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  echo "Downloading RDS SSL certificate..."
+                  mkdir -p /etc/mas/rds-ssl
+                  curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
+                  echo "✅ Certificate downloaded"
+                  
+                  echo "Installing ibm_db Python package..."
+                  pip install --no-cache-dir ibm_db
+                  echo "✅ ibm_db installed successfully"
+              volumeMounts:
+                - name: rds-ssl
+                  mountPath: /etc/mas/rds-ssl
           containers:
             - name: rds-db2-incremental-backup
               image: quay.io/ibmmas/cli@sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40
@@ -140,14 +172,6 @@ spec:
               args:
                 - |
                   set -e
-                  echo "Downloading RDS SSL certificate..."
-                  mkdir -p /etc/mas/rds-ssl
-                  curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
-                  echo "✅ Certificate downloaded"
-                  
-                  echo "Installing ibm_db Python package..."
-                  pip install ibm_db
-                  
                   echo "Starting INCREMENTAL backup..."
                   export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem
                   python /etc/mas/backup-script/rds-db2-backup.py
@@ -183,6 +207,8 @@ spec:
                   mountPath: /etc/mas/dbs-rds-creds/
                 - name: backup-script
                   mountPath: /etc/mas/backup-script/
+                - name: rds-ssl
+                  mountPath: /etc/mas/rds-ssl
           volumes:
             - name: backup-script
               configMap:
@@ -193,5 +219,7 @@ spec:
                 secretName: dbs-rds-secret-store
                 defaultMode: 0420
                 optional: false
+            - name: rds-ssl
+              emptyDir: {}
 {{- end }}
 {{- end }}

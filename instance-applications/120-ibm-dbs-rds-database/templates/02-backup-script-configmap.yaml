@@ -106,29 +106,44 @@ data:
         # Step 4: Call rdsadmin.backup_database stored procedure
         print(f"🚀 Step 4: Initiating {backup_type} backup...")
         
-        backup_sql = f"""
-        CALL rdsadmin.backup_database(
-            '{database_name}',
-            '{s3_bucket_name}',
-            '{s3_backup_path}',
-            '{backup_type}',
-            '{compression}',
-            {util_impact_priority},
-            {num_files},
-            {parallelism},
-            {num_buffers}
-        )
-        """
-        
+        # Prepare parameters for the stored procedure
+        # AWS RDS DB2 backup_database has OUT parameters that need special handling
         print(f"   Executing backup procedure...")
-        stmt = db2.exec_immediate(admin_conn, backup_sql)
         
-        # Fetch the task ID from the result
-        result = db2.fetch_tuple(stmt)
-        if result:
-            task_id = result[0]
-            print(f"   ✅ Backup task initiated successfully")
-            print(f"   📋 Task ID: {task_id}\n")
+        # Use callproc for stored procedures with OUT parameters
+        # Parameters: database_name, s3_bucket, s3_path, backup_type, compression,
+        #             util_impact_priority, num_files, parallelism, num_buffers
+        try:
+            stmt = db2.callproc(admin_conn, 'rdsadmin.backup_database', (
+                database_name,
+                s3_bucket_name,
+                s3_backup_path,
+                backup_type,
+                compression,
+                int(util_impact_priority),
+                int(num_files),
+                int(parallelism),
+                int(num_buffers)
+            ))
+            
+            # Fetch the result which contains task_id and possibly error message
+            result = db2.fetch_tuple(stmt)
+            if result:
+                task_id = result[0]
+                err_message = result[1] if len(result) > 1 else ""
+                
+                if err_message and err_message.strip():
+                    print(f"   ⚠️ Warning from procedure: {err_message}")
+                
+                print(f"   ✅ Backup task initiated successfully")
+                print(f"   📋 Task ID: {task_id}\n")
+        except Exception as proc_error:
+            print(f"   ❌ Failed to call stored procedure: {str(proc_error)}")
+            raise
+        
+        if result and task_id:
+            task_id = str(task_id).strip()
+            print(f"   Using Task ID: {task_id}")
             
             # Step 5: Monitor backup status
             print(f"⏳ Step 5: Monitoring backup status...")

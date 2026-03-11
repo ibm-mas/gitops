@@ -34,15 +34,29 @@ data:
     num_buffers = os.getenv("NUM_BUFFERS", "8")
     
     ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
+    jdbc_connection_url = os.environ.get("JDBC_CONNECTION_URL", "")
     
-    # Read credentials
+    # Read credentials (matching the init script format)
     with open("/etc/mas/dbs-rds-creds/username", 'r') as f:
         username = f.read().strip()
     
     with open("/etc/mas/dbs-rds-creds/password", 'r') as f:
         password = f.read().strip()
     
-    # Create connection string for rdsadmin database
+    # Extract SSL version from JDBC URL if provided (matching init script)
+    ssl_version = 'TLSv1.2'  # Default value
+    if jdbc_connection_url:
+        import re
+        ssl_version_match = re.search(r'sslVersion=([^;]+)', jdbc_connection_url, re.IGNORECASE)
+        if ssl_version_match:
+            ssl_version = ssl_version_match.group(1)
+            print(f"✅ Extracted SSL Version from JDBC URL: {ssl_version}")
+        else:
+            print(f"ℹ️  SSL Version not found in JDBC URL, using default: {ssl_version}")
+    else:
+        print(f"ℹ️  No JDBC URL provided, using default SSL Version: {ssl_version}")
+    
+    # Create connection string for rdsadmin database (matching init script format)
     conn_rds_admin_str = (
         f"DATABASE={os.environ['RDS_ADMIN_DB']};"
         f"HOSTNAME={os.environ['DB_HOST']};"
@@ -51,6 +65,7 @@ data:
         f"UID={username};"
         f"PWD={password};"
         f"SECURITY=SSL;"
+        f"SSLVersion={ssl_version};"
         f"SSLServerCertificate={ssl_cert_path};"
     )
     

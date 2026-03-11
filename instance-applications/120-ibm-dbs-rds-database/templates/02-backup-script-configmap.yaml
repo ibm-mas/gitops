@@ -107,15 +107,17 @@ data:
         print(f"🚀 Step 4: Initiating {backup_type} backup...")
         
         # Prepare parameters for the stored procedure
-        # AWS RDS DB2 backup_database returns task_id as result
+        # AWS RDS DB2 backup_database uses ? for OUT parameter (task_id)
         print(f"   Executing backup procedure...")
         
         # Use exec_immediate with CALL statement
-        # Parameters: database_name, s3_bucket, s3_path, backup_type, compression,
-        #             util_impact_priority, num_files, parallelism, num_buffers
+        # First parameter is ? (OUT parameter for task_id)
+        # Remaining parameters: database_name, s3_bucket, s3_path, backup_type, compression,
+        #                       util_impact_priority, num_files, parallelism, num_buffers
         try:
             backup_sql = f"""
             CALL rdsadmin.backup_database(
+                ?,
                 '{database_name}',
                 '{s3_bucket_name}',
                 '{s3_backup_path}',

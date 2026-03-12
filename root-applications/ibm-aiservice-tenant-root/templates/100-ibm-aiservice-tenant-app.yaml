@@ -126,9 +126,18 @@ spec:
       limit: 20
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
 {{- if .Values.custom_labels }}
     managedNamespaceMetadata:
       labels:
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
+  ignoreDifferences:
+    # Tenant operator updates the secret
+    - group: ""
+      kind: Secret
+      name: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}----sls-secret"
+      namespace: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}"
+      jsonPointers:
+        - /data
 {{- end }}

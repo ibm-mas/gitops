@@ -186,7 +186,7 @@ spec:
                   jq 'del(.metadata.ownerReferences, .metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.selfLink, .metadata.managedFields)' /tmp/${resource_name}.json \
                     | sed "s/\"namespace\": \"${AISERVICE_NAMESPACE}\"/\"namespace\": \"${TENANT_NAMESPACE}\"/" > /tmp/${resource_name}_clean.json
                   # Prevent ArgoCD from immediately pruning the resources as they do not exist in Git
-                  jq '.metadata.annotations = (.metadata.annotations // {}) + {"argocd.argoproj.io/sync-options": "Prune=false"}' \
+                  jq '.metadata.annotations = (.metadata.annotations // {}) + {"argocd.argoproj.io/sync-options": "IgnoreExtraneous"}' \
                     /tmp/${resource_name}_clean.json > /tmp/${resource_name}_annotated.json
                   # Change the name to avoid possibly conflicting with the secret synced by ArgoCD
                   jq --arg name "${new_resource_name}" --arg namespace "${TENANT_NAMESPACE}" '.metadata.name = $name | .metadata.namespace = $namespace' /tmp/${resource_name}_annotated.json > /tmp/${resource_name}_renamed.json

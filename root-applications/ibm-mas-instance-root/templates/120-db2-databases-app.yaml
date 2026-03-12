@@ -52,9 +52,21 @@ spec:
             {{- if $.Values.custom_labels }}
             custom_labels: {{ $.Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
+            
+            {{- /*
+            Check if there's a matching entry in ibm_mas_suite_configs where:
+            - mas_application_id equals $value.mas_application_id
+            - jdbc_type equals "incluster-db2"
+            */}}
+            {{- $_should_execute := false }}
             {{- if $.Values.ibm_mas_suite_configs }}
-            ibm_mas_suite_configs: {{ $.Values.ibm_mas_suite_configs | toYaml | nindent 14 }}
+            {{-   range $index, $config := $.Values.ibm_mas_suite_configs }}
+            {{-     if and (eq $config.mas_application_id $value.mas_application_id) (eq $config.jdbc_type "incluster-db2") }}
+            {{-       $_should_execute = true }}
+            {{-     end }}
+            {{-   end }}
             {{- end }}
+            should_execute: {{ $_should_execute }}
             junitreporter:
               reporter_name: db2-db-{{ $.Values.instance.id }}-{{ $value.db2_instance_name | replace (cat "db2wh-" $.Values.instance.id "-" | replace " " "") "" }}
               cluster_id: "{{ $.Values.cluster.id }}"

@@ -1,0 +1,172 @@
+{{- if hasPrefix "9.2." (toString .Values.catalog_channel) }}
+
+{{- $_job_name_prefix := "postsync-tenant-migration" }}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v1" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postsync-tenant-migration
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "postsync-tenant-migration-{{ .Values.tenantNamespace }}"
+  namespace: {{ .Values.aiservice_namespace  }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "patch", "delete"]
+  - apiGroups: ["aiservice.ibm.com"]
+    resources: ["aiservicetenants"]
+    verbs: ["get", "list", "patch", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "postsync-tenant-migration-{{ .Values.tenantNamespace }}"
+  namespace: {{ .Values.aiservice_namespace  }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+subjects:
+  - kind: ServiceAccount
+    name: postsync-tenant-migration
+    namespace: {{ .Values.tenantNamespace }}
+roleRef:
+  kind: Role
+  name: "postsync-tenant-migration-{{ .Values.tenantNamespace }}"
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: postsync-tenant-migration
+  namespace: {{ .Values.tenantNamespace  }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "patch", "delete"]
+  - apiGroups: ["aiservice.ibm.com"]
+    resources: ["aiservicetenants"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: postsync-tenant-migration
+  namespace: {{ .Values.tenantNamespace  }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+subjects:
+  - kind: ServiceAccount
+    name: postsync-tenant-migration
+    namespace: {{ .Values.tenantNamespace }}
+roleRef:
+  kind: Role
+  name: postsync-tenant-migration
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postsync-tenant-migration
+  namespace: "{{ .Values.tenantNamespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  podSelector:
+    matchLabels:
+      app: postsync-job
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  activeDeadlineSeconds: 3600 # 1 hour
+  template:
+    metadata:
+      labels:
+        app: postsync-job
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: postsync-tenant-migration
+      restartPolicy: OnFailure
+      containers:
+        - name: main
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AISERVICE_NAMESPACE
+              value: "{{ .Values.aiservice_namespace }}"
+            - name: TENANT_ID
+              value: "{{ .Values.tenantNamespace }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              readonly API_KEY_SECRET="${TENANT_ID}----apikey-secret"
+              echo "[INFO] Updating owner reference in secret ${API_KEY_SECRET} in namespace ${TENANT_ID}"
+              readonly CR_UID=$(oc get aiservicetenant "${TENANT_ID}" -n "${TENANT_ID}" -o jsonpath='{.metadata.uid}')
+              oc get secret "${API_KEY_SECRET}" -n "${TENANT_ID}" -o json > /tmp/apikey-secret.json
+              jq --arg name "${TENANT_ID}" --arg cr_uid "${CR_UID}" \
+                '.metadata.ownerReferences = [{"apiVersion": "aiservice.ibm.com/v1", "kind": "AIServiceTenant", "name": $name, "uid": $cr_uid}]' \
+                /tmp/apikey-secret.json > /tmp/apikey-secret_patched.json
+              oc apply -f /tmp/apikey-secret_patched.json
+
+              echo "[INFO] Deleting secret ${API_KEY_SECRET} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
+              oc delete secret "${API_KEY_SECRET}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+
+              echo "[INFO] Deleting AIServiceTenant ${TENANT_ID} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
+              if oc get aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" > /dev/null 2>&1; then
+                # Must patch CR to remove finalizer otherwise we cannot delete it
+                oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
+                  -n "${AISERVICE_NAMESPACE}"
+                oc delete aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+              fi
+
+              exit 0
+
+{{- end }}

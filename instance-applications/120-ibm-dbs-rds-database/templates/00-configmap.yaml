@@ -100,19 +100,25 @@ data:
     
 
     def create_bufferpool(bpname, pagesize=32768):
-        sql = f"""
-          CALL rdsadmin.create_bufferpool(
-              '{database_name}',
-              '{bpname}',
-               NULL,
-              'Y',
-              'N',
-              {pagesize},
-              -1
-          )
-          """
-        db2.exec_immediate(admin_conn, sql)
-        print(f"✅ Created bufferpool: {bpname}")
+        global has_errors
+        try:
+            sql = f"""
+              CALL rdsadmin.create_bufferpool(
+                  '{database_name}',
+                  '{bpname}',
+                   NULL,
+                  'Y',
+                  'N',
+                  {pagesize},
+                  -1
+              )
+              """
+            db2.exec_immediate(admin_conn, sql)
+            print(f"✅ Created bufferpool: {bpname}")
+        except Exception as e:
+            print(f"❌ Error creating bufferpool {bpname}: {str(e)}")
+            has_errors = True
+            raise
 
     def create_tablespace(
         tbname,
@@ -122,19 +128,25 @@ data:
         increasesize=10000,
         tablespace_type="U",
     ):
-        sql = f"""
-          CALL rdsadmin.create_tablespace(
-              '{database_name}',
-              '{tbname}',
-              '{bufferpool}',
-              {pagesize},
-              '{initialsize}',
-              '{increasesize}',
-              '{tablespace_type}'
-          )
-          """
-        db2.exec_immediate(admin_conn, sql)
-        print(f"✅ Created tablespace: {tbname}")
+        global has_errors
+        try:
+            sql = f"""
+              CALL rdsadmin.create_tablespace(
+                  '{database_name}',
+                  '{tbname}',
+                  '{bufferpool}',
+                  {pagesize},
+                  '{initialsize}',
+                  '{increasesize}',
+                  '{tablespace_type}'
+              )
+              """
+            db2.exec_immediate(admin_conn, sql)
+            print(f"✅ Created tablespace: {tbname}")
+        except Exception as e:
+            print(f"❌ Error creating tablespace {tbname}: {str(e)}")
+            has_errors = True
+            raise
 
 
     # 1. Bufferpools

@@ -15,6 +15,7 @@ data:
     import os
     import sys
     import re
+    import time
 
     # Initialization of
     mas_application_id = os.getenv("MAS_APP_ID")
@@ -114,7 +115,17 @@ data:
               )
               """
             db2.exec_immediate(admin_conn, sql)
-            print(f"✅ Created bufferpool: {bpname}")
+            
+            # Verify bufferpool was actually created
+            time.sleep(2)  # Wait for DB2 to commit
+            
+            if bufferpool_exists(bpname):
+                print(f"✅ Created bufferpool: {bpname}")
+            else:
+                error_msg = f"Bufferpool {bpname} not found after rdsadmin.create_bufferpool() call completed. Possible causes: insufficient permissions or RDS limitation."
+                print(f"❌ {error_msg}")
+                has_errors = True
+                raise Exception(error_msg)
         except Exception as e:
             print(f"❌ Error creating bufferpool {bpname}: {str(e)}")
             has_errors = True
@@ -144,11 +155,10 @@ data:
             db2.exec_immediate(admin_conn, sql)
             
             # CRITICAL: Verify tablespace was actually created
-            import time
             time.sleep(2)  # Wait for DB2 to commit
             
             if tablespace_exists(tbname):
-                print(f"✅ v1 Created tablespace: {tbname}")
+                print(f"✅ Created tablespace: {tbname}")
             else:
                 error_msg = f"Tablespace {tbname} not found after rdsadmin.create_tablespace() call completed. Possible causes: pagesize mismatch with bufferpool, insufficient permissions, or RDS limitation."
                 print(f"❌ {error_msg}")

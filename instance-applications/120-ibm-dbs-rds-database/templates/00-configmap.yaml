@@ -142,7 +142,18 @@ data:
               )
               """
             db2.exec_immediate(admin_conn, sql)
-            print(f"✅ Created tablespace: {tbname}")
+            
+            # CRITICAL: Verify tablespace was actually created
+            import time
+            time.sleep(2)  # Wait for DB2 to commit
+            
+            if tablespace_exists(tbname):
+                print(f"✅ v1 Created tablespace: {tbname}")
+            else:
+                error_msg = f"Tablespace {tbname} not found after rdsadmin.create_tablespace() call completed. Possible causes: pagesize mismatch with bufferpool, insufficient permissions, or RDS limitation."
+                print(f"❌ {error_msg}")
+                has_errors = True
+                raise Exception(error_msg)
         except Exception as e:
             print(f"❌ Error creating tablespace {tbname}: {str(e)}")
             has_errors = True

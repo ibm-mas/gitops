@@ -168,7 +168,9 @@ spec:
                   value: "{{ $rds_host }}"
                 - name: RDS_PORT
                   value: "{{ $rds_port }}"
-                - name: RDS_DBNAME
+                - name: RDS_ADMIN_DBNAME
+                  value: "{{ $rds_admin_dbname }}"
+                - name: DBNAME
                   value: "{{ $rds_dbname }}"
                 - name: RDS_INSTANCE_NAME
                   value: "{{ $rds_instance_name }}"
@@ -231,6 +233,7 @@ spec:
                   rds_host = os.getenv('RDS_HOST')
                   rds_port = os.getenv('RDS_PORT')
                   rds_dbname = os.getenv('RDS_DBNAME')
+                  rds_admin_dbname = os.getenv('RDS_ADMIN_DBNAME')
                   rds_admin_user = os.getenv('RDS_ADMIN_USER')
                   rds_admin_password = os.getenv('RDS_ADMIN_PASSWORD')
                   jdbc_connection_url = os.getenv('jdbc_connection_url', '')
@@ -248,9 +251,22 @@ spec:
                   else:
                       print(f"ℹ️  No JDBC URL provided, using SSL Version: {ssl_version}")
                   
-                  # Build connection string with SSL
-                  conn_str = (
-                      f"DATABASE={rds_dbname};"
+                  # Build connection string for rdsadmin database (for role creation)
+                  conn_str_admin = (
+                      f"DATABASE=rdsadmin;"
+                      f"HOSTNAME={rds_host};"
+                      f"PORT={rds_port};"
+                      f"PROTOCOL=TCPIP;"
+                      f"UID={rds_admin_user};"
+                      f"PWD={rds_admin_password};"
+                      f"SECURITY=SSL;"
+                      f"SSLVersion={ssl_version};"
+                      f"SSLServerCertificate={ssl_cert_path};"
+                  )
+                  
+                  # Build connection string for target database (for permission grants)
+                  conn_str_target = (
+                      f"DATABASE={rds_admin_dbname};"
                       f"HOSTNAME={rds_host};"
                       f"PORT={rds_port};"
                       f"PROTOCOL=TCPIP;"
@@ -282,18 +298,32 @@ spec:
                               print(f"⚠️  {description} - {error_msg}")
                               return False
                   
-                  def create_role_rds(conn, role_name):
-                      """Create a role using RDS admin procedure"""
-                      print(f"Creating role: {role_name}")
+                  def create_role_rds(conn_admin, role_name, target_dbname):
+                      """Create a role using RDS admin procedure with server output enabled"""
+                      print(f"Creating role: {role_name} in database: {target_dbname}")
                       try:
-                          sql = f"CALL rdsadmin.create_role('{rds_dbname}', '{role_name}')"
-                          stmt = ibm_db.exec_immediate(conn, sql)
+                          # Enable server output
+                          ibm_db.exec_immediate(conn_admin, "CALL DBMS_OUTPUT.ENABLE()")
+                          
+                          # Create role using rdsadmin procedure
+                          sql = f"CALL rdsadmin.create_role('{target_dbname}', '{role_name}')"
+                          stmt = ibm_db.exec_immediate(conn_admin, sql)
+                          
+                          # Disable server output
+                          ibm_db.exec_immediate(conn_admin, "CALL DBMS_OUTPUT.DISABLE()")
+                          
                           print(f"✅ Created role: {role_name}")
                           return True
                       except Exception as e:
                           error_msg = str(e)
+                          # Disable server output on error
+                          try:
+                              ibm_db.exec_immediate(conn_admin, "CALL DBMS_OUTPUT.DISABLE()")
+                          except:
+                              pass
+                          
                           # Check if error is because role already exists
-                          if "already exists" in error_msg.lower() or "duplicate" in error_msg.lower():
+                          if "already exists" in error_msg.lower() or "duplicate" in error_msg.lower() or "SQL0601N" in error_msg:
                               print(f"ℹ️  Role {role_name} already exists")
                               return True
                           else:
@@ -314,9 +344,10 @@ spec:
                           return False
                   
                   try:
-                      # Connect to the database
-                      conn = ibm_db.connect(conn_str, "", "")
-                      print("✅ Successfully connected to RDS DB2")
+                      # Connect to rdsadmin database for all operations
+                      print(f"Connecting to rdsadmin database...")
+                      conn = ibm_db.connect(conn_str_admin, "", "")
+                      print("✅ Successfully connected to rdsadmin database")
                   
                       # Process MANAGE application
                       print("\n" + "=" * 60)
@@ -326,13 +357,13 @@ spec:
                       if check_table_exists(conn, "MAXIMO", "MAXUSER"):
                           print("✅ Table MAXIMO.MAXUSER exists. Proceeding with role creation...")
                           
-                          # Create roles using RDS admin procedure
-                          create_role_rds(conn, "MAXIMO_READ")
-                          create_role_rds(conn, "MAXIMO_WRITE")
-                          create_role_rds(conn, "MAXIMO_SEQ")
-                          create_role_rds(conn, "EXPLAIN")
+                          # Create roles using RDS admin procedure (connected to rdsadmin)
+                          create_role_rds(conn, "MAXIMO_READ", rds_dbname)
+                          create_role_rds(conn, "MAXIMO_WRITE", rds_dbname)
+                          create_role_rds(conn, "MAXIMO_SEQ", rds_dbname)
+                          create_role_rds(conn, "EXPLAIN", rds_dbname)
                           
-                          # Grant permissions to MAXIMO_READ
+                          # Grant permissions to MAXIMO_READ (also from rdsadmin connection)
                           print("\nGranting permissions to MAXIMO_READ role...")
                           execute_db2_sql(conn, "GRANT SELECT ON TABLE MAXIMO.MAXUSER TO ROLE MAXIMO_READ", "Grant SELECT on MAXUSER")
                           execute_db2_sql(conn, "GRANT SELECT ON SCHEMA MAXIMO TO ROLE MAXIMO_READ", "Grant SELECT on MAXIMO schema")
@@ -362,11 +393,11 @@ spec:
                       if check_table_exists(conn, "TRIDATA", "TRIDATA_DATA"):
                           print("✅ Table TRIDATA.TRIDATA_DATA exists. Proceeding with role creation...")
                           
-                          # Create roles using RDS admin procedure
-                          create_role_rds(conn, "TRIDATA_READ")
-                          create_role_rds(conn, "TRIDATA_WRITE")
+                          # Create roles using RDS admin procedure (connected to rdsadmin)
+                          create_role_rds(conn, "TRIDATA_READ", rds_dbname)
+                          create_role_rds(conn, "TRIDATA_WRITE", rds_dbname)
                           
-                          # Grant permissions to TRIDATA_READ
+                          # Grant permissions to TRIDATA_READ (also from rdsadmin connection)
                           print("\nGranting permissions to TRIDATA_READ role...")
                           execute_db2_sql(conn, "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ", "Grant SELECT on TRIDATA_DATA")
                           execute_db2_sql(conn, "GRANT SELECT ON SCHEMA TRIDATA TO ROLE TRIDATA_READ", "Grant SELECT on TRIDATA schema")

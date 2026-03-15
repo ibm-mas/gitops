@@ -282,6 +282,24 @@ spec:
                               print(f"⚠️  {description} - {error_msg}")
                               return False
                   
+                  def create_role_rds(conn, role_name):
+                      """Create a role using RDS admin procedure"""
+                      print(f"Creating role: {role_name}")
+                      try:
+                          sql = f"CALL rdsadmin.create_role('{rds_dbname}', '{role_name}')"
+                          stmt = ibm_db.exec_immediate(conn, sql)
+                          print(f"✅ Created role: {role_name}")
+                          return True
+                      except Exception as e:
+                          error_msg = str(e)
+                          # Check if error is because role already exists
+                          if "already exists" in error_msg.lower() or "duplicate" in error_msg.lower():
+                              print(f"ℹ️  Role {role_name} already exists")
+                              return True
+                          else:
+                              print(f"⚠️  Failed to create role {role_name}: {error_msg}")
+                              return False
+                  
                   def check_table_exists(conn, schema, table):
                       """Check if a table exists in the database"""
                       try:
@@ -308,11 +326,11 @@ spec:
                       if check_table_exists(conn, "MAXIMO", "MAXUSER"):
                           print("✅ Table MAXIMO.MAXUSER exists. Proceeding with role creation...")
                           
-                          # Create roles
-                          execute_db2_sql(conn, "CREATE ROLE MAXIMO_READ", "Create MAXIMO_READ role")
-                          execute_db2_sql(conn, "CREATE ROLE MAXIMO_WRITE", "Create MAXIMO_WRITE role")
-                          execute_db2_sql(conn, "CREATE ROLE MAXIMO_SEQ", "Create MAXIMO_SEQ role")
-                          execute_db2_sql(conn, "CREATE ROLE EXPLAIN", "Create EXPLAIN role")
+                          # Create roles using RDS admin procedure
+                          create_role_rds(conn, "MAXIMO_READ")
+                          create_role_rds(conn, "MAXIMO_WRITE")
+                          create_role_rds(conn, "MAXIMO_SEQ")
+                          create_role_rds(conn, "EXPLAIN")
                           
                           # Grant permissions to MAXIMO_READ
                           print("\nGranting permissions to MAXIMO_READ role...")
@@ -344,9 +362,9 @@ spec:
                       if check_table_exists(conn, "TRIDATA", "TRIDATA_DATA"):
                           print("✅ Table TRIDATA.TRIDATA_DATA exists. Proceeding with role creation...")
                           
-                          # Create roles
-                          execute_db2_sql(conn, "CREATE ROLE TRIDATA_READ", "Create TRIDATA_READ role")
-                          execute_db2_sql(conn, "CREATE ROLE TRIDATA_WRITE", "Create TRIDATA_WRITE role")
+                          # Create roles using RDS admin procedure
+                          create_role_rds(conn, "TRIDATA_READ")
+                          create_role_rds(conn, "TRIDATA_WRITE")
                           
                           # Grant permissions to TRIDATA_READ
                           print("\nGranting permissions to TRIDATA_READ role...")

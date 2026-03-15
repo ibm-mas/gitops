@@ -251,21 +251,8 @@ spec:
                   else:
                       print(f"ℹ️  No JDBC URL provided, using SSL Version: {ssl_version}")
                   
-                  # Build connection string for rdsadmin database (for role creation)
+                  # Build connection string for admin database (for role creation using rdsadmin procedures)
                   conn_str_admin = (
-                      f"DATABASE=rdsadmin;"
-                      f"HOSTNAME={rds_host};"
-                      f"PORT={rds_port};"
-                      f"PROTOCOL=TCPIP;"
-                      f"UID={rds_admin_user};"
-                      f"PWD={rds_admin_password};"
-                      f"SECURITY=SSL;"
-                      f"SSLVersion={ssl_version};"
-                      f"SSLServerCertificate={ssl_cert_path};"
-                  )
-                  
-                  # Build connection string for target database (for permission grants)
-                  conn_str_target = (
                       f"DATABASE={rds_admin_dbname};"
                       f"HOSTNAME={rds_host};"
                       f"PORT={rds_port};"
@@ -277,7 +264,20 @@ spec:
                       f"SSLServerCertificate={ssl_cert_path};"
                   )
                   
-                  print(f"Connecting to RDS DB2 instance: {rds_host}:{rds_port}/{rds_dbname}")
+                  # Build connection string for target database (for table checks and permission grants)
+                  conn_str_target = (
+                      f"DATABASE={rds_dbname};"
+                      f"HOSTNAME={rds_host};"
+                      f"PORT={rds_port};"
+                      f"PROTOCOL=TCPIP;"
+                      f"UID={rds_admin_user};"
+                      f"PWD={rds_admin_password};"
+                      f"SECURITY=SSL;"
+                      f"SSLVersion={ssl_version};"
+                      f"SSLServerCertificate={ssl_cert_path};"
+                  )
+                  
+                  print(f"Connecting to RDS DB2 - Admin DB: {rds_admin_dbname}, Target DB: {rds_dbname}")
                   print("Creating roles for MAS applications: manage, facilities")
                   print("Note: IoT uses admin user (DB2_iot) with full admin privileges - no separate roles")
                   
@@ -344,44 +344,49 @@ spec:
                           return False
                   
                   try:
-                      # Connect to rdsadmin database for all operations
-                      print(f"Connecting to rdsadmin database...")
-                      conn = ibm_db.connect(conn_str_admin, "", "")
-                      print("✅ Successfully connected to rdsadmin database")
+                      # Connect to admin database for role creation
+                      print(f"Connecting to admin database: {rds_admin_dbname}...")
+                      conn_admin = ibm_db.connect(conn_str_admin, "", "")
+                      print(f"✅ Successfully connected to {rds_admin_dbname} database")
+                      
+                      # Connect to target database for table checks and permission grants
+                      print(f"Connecting to target database: {rds_dbname}...")
+                      conn_target = ibm_db.connect(conn_str_target, "", "")
+                      print(f"✅ Successfully connected to {rds_dbname} database")
                   
                       # Process MANAGE application
                       print("\n" + "=" * 60)
                       print("Processing MANAGE application")
                       print("=" * 60)
                       
-                      if check_table_exists(conn, "MAXIMO", "MAXUSER"):
+                      if check_table_exists(conn_target, "MAXIMO", "MAXUSER"):
                           print("✅ Table MAXIMO.MAXUSER exists. Proceeding with role creation...")
                           
-                          # Create roles using RDS admin procedure (connected to rdsadmin)
-                          create_role_rds(conn, "MAXIMO_READ", rds_dbname)
-                          create_role_rds(conn, "MAXIMO_WRITE", rds_dbname)
-                          create_role_rds(conn, "MAXIMO_SEQ", rds_dbname)
-                          create_role_rds(conn, "EXPLAIN", rds_dbname)
+                          # Create roles using RDS admin procedure (connected to admin database)
+                          create_role_rds(conn_admin, "MAXIMO_READ", rds_dbname)
+                          create_role_rds(conn_admin, "MAXIMO_WRITE", rds_dbname)
+                          create_role_rds(conn_admin, "MAXIMO_SEQ", rds_dbname)
+                          create_role_rds(conn_admin, "EXPLAIN", rds_dbname)
                           
-                          # Grant permissions to MAXIMO_READ (also from rdsadmin connection)
+                          # Grant permissions to MAXIMO_READ (connected to target database)
                           print("\nGranting permissions to MAXIMO_READ role...")
-                          execute_db2_sql(conn, "GRANT SELECT ON TABLE MAXIMO.MAXUSER TO ROLE MAXIMO_READ", "Grant SELECT on MAXUSER")
-                          execute_db2_sql(conn, "GRANT SELECT ON SCHEMA MAXIMO TO ROLE MAXIMO_READ", "Grant SELECT on MAXIMO schema")
+                          execute_db2_sql(conn_target, "GRANT SELECT ON TABLE MAXIMO.MAXUSER TO ROLE MAXIMO_READ", "Grant SELECT on MAXUSER")
+                          execute_db2_sql(conn_target, "GRANT SELECT ON SCHEMA MAXIMO TO ROLE MAXIMO_READ", "Grant SELECT on MAXIMO schema")
                           
                           # Grant permissions to MAXIMO_WRITE
                           print("\nGranting permissions to MAXIMO_WRITE role...")
-                          execute_db2_sql(conn, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE MAXIMO.MAXUSER TO ROLE MAXIMO_WRITE", "Grant DML on MAXUSER")
-                          execute_db2_sql(conn, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA MAXIMO TO ROLE MAXIMO_WRITE", "Grant DML on MAXIMO schema")
+                          execute_db2_sql(conn_target, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE MAXIMO.MAXUSER TO ROLE MAXIMO_WRITE", "Grant DML on MAXUSER")
+                          execute_db2_sql(conn_target, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA MAXIMO TO ROLE MAXIMO_WRITE", "Grant DML on MAXIMO schema")
                           
                           # Grant permissions to MAXIMO_SEQ
                           print("\nGranting permissions to MAXIMO_SEQ role...")
-                          execute_db2_sql(conn, "GRANT USAGE ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ", "Grant USAGE on MAXSEQ")
-                          execute_db2_sql(conn, "GRANT ALTER ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ", "Grant ALTER on MAXSEQ")
+                          execute_db2_sql(conn_target, "GRANT USAGE ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ", "Grant USAGE on MAXSEQ")
+                          execute_db2_sql(conn_target, "GRANT ALTER ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ", "Grant ALTER on MAXSEQ")
                           
                           # Grant permissions to EXPLAIN
                           print("\nGranting permissions to EXPLAIN role...")
-                          execute_db2_sql(conn, "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE EXPLAIN", "Grant EXECUTE on SYSSH200")
-                          execute_db2_sql(conn, "GRANT SELECT ON TABLE SYSTOOLS.EXPLAIN_INSTANCE TO ROLE EXPLAIN", "Grant SELECT on EXPLAIN_INSTANCE")
+                          execute_db2_sql(conn_target, "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE EXPLAIN", "Grant EXECUTE on SYSSH200")
+                          execute_db2_sql(conn_target, "GRANT SELECT ON TABLE SYSTOOLS.EXPLAIN_INSTANCE TO ROLE EXPLAIN", "Grant SELECT on EXPLAIN_INSTANCE")
                       else:
                           print("⚠️  Table MAXIMO.MAXUSER does not exist yet. Skipping manage role creation.")
                       
@@ -390,22 +395,22 @@ spec:
                       print("Processing FACILITIES application")
                       print("=" * 60)
                       
-                      if check_table_exists(conn, "TRIDATA", "TRIDATA_DATA"):
+                      if check_table_exists(conn_target, "TRIDATA", "TRIDATA_DATA"):
                           print("✅ Table TRIDATA.TRIDATA_DATA exists. Proceeding with role creation...")
                           
-                          # Create roles using RDS admin procedure (connected to rdsadmin)
-                          create_role_rds(conn, "TRIDATA_READ", rds_dbname)
-                          create_role_rds(conn, "TRIDATA_WRITE", rds_dbname)
+                          # Create roles using RDS admin procedure (connected to admin database)
+                          create_role_rds(conn_admin, "TRIDATA_READ", rds_dbname)
+                          create_role_rds(conn_admin, "TRIDATA_WRITE", rds_dbname)
                           
-                          # Grant permissions to TRIDATA_READ (also from rdsadmin connection)
+                          # Grant permissions to TRIDATA_READ (connected to target database)
                           print("\nGranting permissions to TRIDATA_READ role...")
-                          execute_db2_sql(conn, "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ", "Grant SELECT on TRIDATA_DATA")
-                          execute_db2_sql(conn, "GRANT SELECT ON SCHEMA TRIDATA TO ROLE TRIDATA_READ", "Grant SELECT on TRIDATA schema")
+                          execute_db2_sql(conn_target, "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ", "Grant SELECT on TRIDATA_DATA")
+                          execute_db2_sql(conn_target, "GRANT SELECT ON SCHEMA TRIDATA TO ROLE TRIDATA_READ", "Grant SELECT on TRIDATA schema")
                           
                           # Grant permissions to TRIDATA_WRITE
                           print("\nGranting permissions to TRIDATA_WRITE role...")
-                          execute_db2_sql(conn, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_WRITE", "Grant DML on TRIDATA_DATA")
-                          execute_db2_sql(conn, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA TRIDATA TO ROLE TRIDATA_WRITE", "Grant DML on TRIDATA schema")
+                          execute_db2_sql(conn_target, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_WRITE", "Grant DML on TRIDATA_DATA")
+                          execute_db2_sql(conn_target, "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA TRIDATA TO ROLE TRIDATA_WRITE", "Grant DML on TRIDATA schema")
                       else:
                           print("⚠️  Table TRIDATA.TRIDATA_DATA does not exist yet. Skipping facilities role creation.")
                       
@@ -413,8 +418,9 @@ spec:
                       print("✅ Role creation and permission grants completed")
                       print("=" * 60)
                       
-                      # Close connection
-                      ibm_db.close(conn)
+                      # Close connections
+                      ibm_db.close(conn_admin)
+                      ibm_db.close(conn_target)
                       sys.exit(0)
                   
                   except Exception as e:

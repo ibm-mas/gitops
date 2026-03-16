@@ -237,18 +237,10 @@ spec:
                   rds_port = os.getenv('RDS_PORT')
                   rds_admin_dbname = os.getenv('RDS_ADMIN_DBNAME', 'rdsadmin')
                   rds_dbname = os.getenv('DBNAME', 'BLUDB')
-                  rds_master_user = os.getenv('RDS_ADMIN_USER')  # masteradmin - for initial DBADM grant
+                  rds_master_user = os.getenv('RDS_ADMIN_USER')  # db2admin - for initial DBADM grant
                   rds_master_password = os.getenv('RDS_ADMIN_PASSWORD')
                   jdbc_connection_url = os.getenv('jdbc_connection_url', '')
                   ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
-                  
-                  # DB2ADMIN user (created during instance creation, will be granted DBADM and used for operations)
-                  db2admin_user = 'DB2ADMIN'
-                  db2admin_password = os.getenv('DB2ADMIN_PASSWORD', rds_master_password)
-                  
-                  # Generate maximo user password (deterministic based on master password)
-                  maximo_user = 'maximo'
-                  maximo_password = hashlib.sha256(f"{rds_master_password}-maximo-{rds_dbname}".encode()).hexdigest()[:32]
                   
                   # Extract SSL version from JDBC URL if provided
                   ssl_version = 'TLSv1.2'
@@ -271,26 +263,13 @@ spec:
                       f"SSLServerCertificate={ssl_cert_path};"
                   )
                   
-                  # Build connection string for admin database using DB2ADMIN (for role creation)
-                  conn_str_admin = (
-                      f"DATABASE={rds_admin_dbname};"
-                      f"HOSTNAME={rds_host};"
-                      f"PORT={rds_port};"
-                      f"PROTOCOL=TCPIP;"
-                      f"UID={db2admin_user};"
-                      f"PWD={db2admin_password};"
-                      f"SECURITY=SSL;"
-                      f"SSLVersion={ssl_version};"
-                      f"SSLServerCertificate={ssl_cert_path};"
-                  )
-                  
                   # Build connection string for target database using DB2ADMIN (for grants)
                   conn_str_target = (
                       f"DATABASE={rds_dbname};"
                       f"HOSTNAME={rds_host};"
                       f"PORT={rds_port};"
                       f"PROTOCOL=TCPIP;"
-                      f"UID={db2admin_user};"
+                      f"UID={rds_master_user};"
                       f"PWD={db2admin_password};"
                       f"SECURITY=SSL;"
                       f"SSLVersion={ssl_version};"
@@ -298,7 +277,7 @@ spec:
                   )
                   
                   print(f"Connecting to RDS DB2 - Admin DB: {rds_admin_dbname}, Target DB: {rds_dbname}")
-                  print(f"Master User: {rds_master_user}, DB2ADMIN User: {db2admin_user}")
+                  print(f"Master User: {rds_master_user}")
                   print("Creating roles for MAS applications: manage, facilities")
                   print("Note: IoT uses admin user (DB2_iot) with full admin privileges - no separate roles")
                   
@@ -371,11 +350,14 @@ spec:
                       print(f"{'='*80}")
                       
                       try:
-                          # Grant DBADM using rdsadmin.dbadm_grant
-                          print(f"Executing: CALL rdsadmin.dbadm_grant('DB2ADMIN')")
-                          sql = "CALL rdsadmin.dbadm_grant('DB2ADMIN')"
-                          ibm_db.exec_immediate(conn_master_admin, sql)
-                          print(f"✅ DBADM granted to DB2ADMIN successfully")
+                          # Grant DBADM using ibm_db.callproc with rdsadmin.dbadm_grant
+                          print(f"Executing: ibm_db.callproc(rdsadmin.dbadm_grant, (None, '{rds_dbname}', 'DBADM', 'USER DB2ADMIN'))")
+                          task_id = ibm_db.callproc(
+                              conn_master_admin,
+                              "rdsadmin.dbadm_grant",
+                              (None, rds_dbname, "DBADM", "USER DB2ADMIN")
+                          )
+                          print(f"✅ DBADM granted to DB2ADMIN successfully (task_id: {task_id})")
                           return True
                       except Exception as e:
                           error_msg = str(e)
@@ -399,18 +381,10 @@ spec:
                       # Grant DBADM to DB2ADMIN
                       grant_dbadm_to_db2admin(conn_master_admin)
                       
-                      # Close masteradmin connection
-                      ibm_db.close(conn_master_admin)
-                      print(f"✅ Closed connection as {rds_master_user}")
-                      
-                      # Now connect as DB2ADMIN for all subsequent operations
-                      print(f"\nConnecting to admin database as {db2admin_user}...")
-                      conn_admin = ibm_db.connect(conn_str_admin, "", "")
-                      print(f"✅ Successfully connected to {rds_admin_dbname} database as {db2admin_user}")
-                      
-                      print(f"\nConnecting to target database as {db2admin_user}...")
+                      # Connect to target database for role operations
+                      print(f"\nConnecting to target database ({rds_dbname})...")
                       conn_target = ibm_db.connect(conn_str_target, "", "")
-                      print(f"✅ Successfully connected to {rds_dbname} database as {db2admin_user}")
+                      print(f"✅ Successfully connected to {rds_dbname} database")
                   
                       # Process MANAGE application
                       print("\n" + "=" * 80)
@@ -421,10 +395,10 @@ spec:
                           print("✅ Table MAXIMO.MAXUSER exists. Proceeding with role creation...")
                           
                           # Create roles using RDS admin procedure (connected to admin database)
-                          create_role_rds(conn_admin, "MAXIMO_READ", rds_dbname)
-                          create_role_rds(conn_admin, "MAXIMO_WRITE", rds_dbname)
-                          create_role_rds(conn_admin, "MAXIMO_SEQ", rds_dbname)
-                          create_role_rds(conn_admin, "EXPLAIN", rds_dbname)
+                          create_role_rds(conn_master_admin, "MAXIMO_READ", rds_dbname)
+                          create_role_rds(conn_master_admin, "MAXIMO_WRITE", rds_dbname)
+                          create_role_rds(conn_master_admin, "MAXIMO_SEQ", rds_dbname)
+                          create_role_rds(conn_master_admin, "EXPLAIN", rds_dbname)
                           
                           # Grant permissions to MAXIMO_READ (connected to target database)
                           print("\nGranting permissions to MAXIMO_READ role...")
@@ -457,8 +431,8 @@ spec:
                           print("✅ Table TRIDATA.TRIDATA_DATA exists. Proceeding with role creation...")
                           
                           # Create roles using RDS admin procedure (connected to admin database)
-                          create_role_rds(conn_admin, "TRIDATA_READ", rds_dbname)
-                          create_role_rds(conn_admin, "TRIDATA_WRITE", rds_dbname)
+                          create_role_rds(conn_master_admin, "TRIDATA_READ", rds_dbname)
+                          create_role_rds(conn_master_admin, "TRIDATA_WRITE", rds_dbname)
                           
                           # Grant permissions to TRIDATA_READ (connected to target database)
                           print("\nGranting permissions to TRIDATA_READ role...")
@@ -477,7 +451,7 @@ spec:
                       print("=" * 60)
                       
                       # Close connections
-                      ibm_db.close(conn_admin)
+                      ibm_db.close(conn_master_admin)
                       ibm_db.close(conn_target)
                       sys.exit(0)
                   

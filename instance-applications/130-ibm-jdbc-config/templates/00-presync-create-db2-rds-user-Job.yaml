@@ -318,17 +318,20 @@ spec:
                               print(f"ℹ️  Attempting to proceed with privilege grants...")
               
                       # STEP 1b: Grant DBADM privileges using RDS stored procedure
-                      # RDS DB2 uses: CALL rdsadmin.dbadm_grant(database_name, authorization, grantee)
-                      # authorization: 'G' = GRANT, 'R' = REVOKE
+                      # RDS DB2 uses: ibm_db.callproc() with rdsadmin.dbadm_grant
+                      # Parameters: (task_id, database, privilege, grantee)
                       print(f"\n🔧 Granting DBADM privileges to {username}...")
                       try:
-                          grant_sql = f"CALL rdsadmin.dbadm_grant('{rds_dbname}', 'G', '{username}')"
-                          ibm_db.exec_immediate(conn, grant_sql)
-                          print(f"✅ Granted DBADM privileges to {username} using rdsadmin.dbadm_grant()")
+                          task_id = ibm_db.callproc(
+                              conn_admin,
+                              "rdsadmin.dbadm_grant",
+                              (None, rds_dbname, "DBADM", f"USER {username}")
+                          )
+                          print(f"✅ Granted DBADM privileges to {username} (task_id: {task_id})")
                       except Exception as e:
                           error_msg = str(e)
                           print(f"⚠️  Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
-                      
+              
                       # Store password information for later retrieval
                       print(f"\n📝 IMPORTANT: Store these credentials securely!")
                       print(f"   Username: {username}")

@@ -336,7 +336,29 @@ spec:
                       print(f"\n📝 IMPORTANT: Store these credentials securely!")
                       print(f"   Username: {username}")
                       print(f"   Password: {password}")
-                      print(f"   (This password should be stored in a Kubernetes secret or AWS Secrets Manager)")
+                      
+                  # ========================================================================
+                  # STEP 1.5: Grant DBADM to db2admin User (so it can grant roles)
+                  # ========================================================================
+                  print(f"\n{'='*80}")
+                  print("STEP 1.5: Granting DBADM to db2admin User")
+                  print(f"{'='*80}")
+                  print(f"Granting DBADM to {jdbc_username} so it can grant application roles...")
+                  
+                  try:
+                      task_id = ibm_db.callproc(
+                          conn,
+                          "rdsadmin.dbadm_grant",
+                          (None, rds_dbname, "DBADM", f"USER {jdbc_username}")
+                      )
+                      print(f"✅ Granted DBADM to {jdbc_username} (task_id: {task_id})")
+                  except Exception as e:
+                      error_msg = str(e)
+                      if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
+                          print(f"ℹ️  {jdbc_username} already has DBADM privilege")
+                      else:
+                          print(f"⚠️  Error granting DBADM to {jdbc_username}: {error_msg}")
+                          print(f"ℹ️  Continuing anyway - may already have sufficient privileges")
               
                   # ========================================================================
                   # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)

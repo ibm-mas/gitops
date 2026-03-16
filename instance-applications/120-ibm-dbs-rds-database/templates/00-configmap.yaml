@@ -72,7 +72,7 @@ data:
 
     try:
         admin_conn = db2.connect(conn_rds_admin_str, "", "")
-        print("✅ Connected to Db2 as {username} user")
+        print(f"✅ Connected to Db2 as {username} user")
     
         db2_conn   = db2.connect(conn_rds_db2_str, "", "")
         print("✅ Connected to Db2 as db2rds user")
@@ -116,19 +116,31 @@ data:
               """
             db2.exec_immediate(admin_conn, sql)
             
-            # Verify bufferpool was actually created
-            time.sleep(5)  # Wait for DB2 to commit
+            # Wait for bufferpool to appear (AWS RDS DB2 creates bufferpools asynchronously)
+            print(f"⏳ Waiting for bufferpool {bpname} to be created...")
+            max_retries = 12  # 12 retries = up to 60 seconds
+            retry_delay = 5   # Start with 5 seconds
             
-            if bufferpool_exists(bpname):
-                print(f"✅ Created bufferpool: {bpname}")
-            else:
-                error_msg = f"Bufferpool {bpname} not found after rdsadmin.create_bufferpool() call completed. Possible causes: insufficient permissions or RDS limitation."
-                print(f"❌ {error_msg}")
-                has_errors = True
-                raise Exception(error_msg)
-        except Exception as e:
-            print(f"❌ Error creating bufferpool {bpname}: {str(e)}")
+            for attempt in range(max_retries):
+                time.sleep(retry_delay)
+                
+                if bufferpool_exists(bpname):
+                    print(f"✅ Created bufferpool: {bpname} (verified after {(attempt + 1) * retry_delay} seconds)")
+                    return
+                else:
+                    print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Bufferpool {bpname} not yet visible, waiting...")
+            
+            # If we get here, bufferpool still doesn't exist after all retries
+            error_msg = f"Bufferpool {bpname} not found after {max_retries * retry_delay} seconds. Possible causes: insufficient permissions or RDS limitation."
+            print(f"❌ {error_msg}")
             has_errors = True
+            raise Exception(error_msg)
+        except Exception as e:
+            error_str = str(e)
+            # Don't re-raise if it's our own timeout exception (already logged)
+            if "not found after" not in error_str:
+                print(f"❌ Error creating bufferpool {bpname}: {error_str}")
+                has_errors = True
             raise
 
     def create_tablespace(
@@ -154,19 +166,31 @@ data:
               """
             db2.exec_immediate(admin_conn, sql)
             
-            # CRITICAL: Verify tablespace was actually created
-            time.sleep(5)  # Wait for DB2 to commit
+            # CRITICAL: Wait for tablespace to appear (AWS RDS DB2 creates tablespaces asynchronously)
+            print(f"⏳ Waiting for tablespace {tbname} to be created...")
+            max_retries = 12  # 12 retries = up to 60 seconds
+            retry_delay = 5   # Start with 5 seconds
             
-            if tablespace_exists(tbname):
-                print(f"✅ Created tablespace: {tbname}")
-            else:
-                error_msg = f"Tablespace {tbname} not found after rdsadmin.create_tablespace() call completed. Possible causes: pagesize mismatch with bufferpool, insufficient permissions, or RDS limitation."
-                print(f"❌ {error_msg}")
-                has_errors = True
-                raise Exception(error_msg)
-        except Exception as e:
-            print(f"❌ Error creating tablespace {tbname}: {str(e)}")
+            for attempt in range(max_retries):
+                time.sleep(retry_delay)
+                
+                if tablespace_exists(tbname):
+                    print(f"✅ Created tablespace: {tbname} (verified after {(attempt + 1) * retry_delay} seconds)")
+                    return
+                else:
+                    print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Tablespace {tbname} not yet visible, waiting...")
+            
+            # If we get here, tablespace still doesn't exist after all retries
+            error_msg = f"Tablespace {tbname} not found after {max_retries * retry_delay} seconds. Possible causes: pagesize mismatch with bufferpool, insufficient permissions, or RDS limitation."
+            print(f"❌ {error_msg}")
             has_errors = True
+            raise Exception(error_msg)
+        except Exception as e:
+            error_str = str(e)
+            # Don't re-raise if it's our own timeout exception (already logged)
+            if "not found after" not in error_str:
+                print(f"❌ Error creating tablespace {tbname}: {error_str}")
+                has_errors = True
             raise
 
 

@@ -230,56 +230,75 @@ spec:
                   import os
                   import sys
                   import re
+                  import hashlib
                   
                   # Get environment variables
                   rds_host = os.getenv('RDS_HOST')
                   rds_port = os.getenv('RDS_PORT')
-                  rds_admin_dbname = os.getenv('RDS_ADMIN_DBNAME', 'rdsadmin')  # Default to rdsadmin for testing
-                  rds_dbname = os.getenv('DBNAME', 'BLUDB')  # Default to BLUDB for testing
-                  rds_admin_user = os.getenv('RDS_ADMIN_USER')
-                  rds_admin_password = os.getenv('RDS_ADMIN_PASSWORD')
+                  rds_admin_dbname = os.getenv('RDS_ADMIN_DBNAME', 'rdsadmin')
+                  rds_dbname = os.getenv('DBNAME', 'BLUDB')
+                  rds_master_user = os.getenv('RDS_ADMIN_USER')  # masteradmin - for initial DBADM grant
+                  rds_master_password = os.getenv('RDS_ADMIN_PASSWORD')
                   jdbc_connection_url = os.getenv('jdbc_connection_url', '')
                   ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
                   
+                  # DB2ADMIN user (created during instance creation, will be granted DBADM and used for operations)
+                  db2admin_user = 'DB2ADMIN'
+                  db2admin_password = os.getenv('DB2ADMIN_PASSWORD', rds_master_password)
+                  
+                  # Generate maximo user password (deterministic based on master password)
+                  maximo_user = 'maximo'
+                  maximo_password = hashlib.sha256(f"{rds_master_password}-maximo-{rds_dbname}".encode()).hexdigest()[:32]
+                  
                   # Extract SSL version from JDBC URL if provided
-                  ssl_version = 'TLSv1.2'  # Default from environment
+                  ssl_version = 'TLSv1.2'
                   if jdbc_connection_url:
                       ssl_version_match = re.search(r'sslVersion=([^;]+)', jdbc_connection_url, re.IGNORECASE)
                       if ssl_version_match:
                           ssl_version = ssl_version_match.group(1)
                           print(f"✅ Extracted SSL Version from JDBC URL: {ssl_version}")
-                      else:
-                          print(f"ℹ️  SSL Version not found in JDBC URL, using provided value: {ssl_version}")
-                  else:
-                      print(f"ℹ️  No JDBC URL provided, using SSL Version: {ssl_version}")
                   
-                  # Build connection string for admin database (for role creation using rdsadmin procedures)
-                  conn_str_admin = (
+                  # Build connection string for admin database using masteradmin (for initial DBADM grant to DB2ADMIN)
+                  conn_str_master_admin = (
                       f"DATABASE={rds_admin_dbname};"
                       f"HOSTNAME={rds_host};"
                       f"PORT={rds_port};"
                       f"PROTOCOL=TCPIP;"
-                      f"UID={rds_admin_user};"
-                      f"PWD={rds_admin_password};"
+                      f"UID={rds_master_user};"
+                      f"PWD={rds_master_password};"
                       f"SECURITY=SSL;"
                       f"SSLVersion={ssl_version};"
                       f"SSLServerCertificate={ssl_cert_path};"
                   )
                   
-                  # Build connection string for target database (for table checks and permission grants)
+                  # Build connection string for admin database using DB2ADMIN (for role creation)
+                  conn_str_admin = (
+                      f"DATABASE={rds_admin_dbname};"
+                      f"HOSTNAME={rds_host};"
+                      f"PORT={rds_port};"
+                      f"PROTOCOL=TCPIP;"
+                      f"UID={db2admin_user};"
+                      f"PWD={db2admin_password};"
+                      f"SECURITY=SSL;"
+                      f"SSLVersion={ssl_version};"
+                      f"SSLServerCertificate={ssl_cert_path};"
+                  )
+                  
+                  # Build connection string for target database using DB2ADMIN (for grants)
                   conn_str_target = (
                       f"DATABASE={rds_dbname};"
                       f"HOSTNAME={rds_host};"
                       f"PORT={rds_port};"
                       f"PROTOCOL=TCPIP;"
-                      f"UID={rds_admin_user};"
-                      f"PWD={rds_admin_password};"
+                      f"UID={db2admin_user};"
+                      f"PWD={db2admin_password};"
                       f"SECURITY=SSL;"
                       f"SSLVersion={ssl_version};"
                       f"SSLServerCertificate={ssl_cert_path};"
                   )
                   
                   print(f"Connecting to RDS DB2 - Admin DB: {rds_admin_dbname}, Target DB: {rds_dbname}")
+                  print(f"Master User: {rds_master_user}, DB2ADMIN User: {db2admin_user}")
                   print("Creating roles for MAS applications: manage, facilities")
                   print("Note: IoT uses admin user (DB2_iot) with full admin privileges - no separate roles")
                   
@@ -345,21 +364,58 @@ spec:
                           print(f"⚠️  Error checking table existence: {str(e)}")
                           return False
                   
-                  try:
-                      # Connect to admin database for role creation
-                      print(f"Connecting to admin database: {rds_admin_dbname}...")
-                      conn_admin = ibm_db.connect(conn_str_admin, "", "")
-                      print(f"✅ Successfully connected to {rds_admin_dbname} database")
+                  def grant_dbadm_to_db2admin(conn_master_admin):
+                      """Grant DBADM privilege to DB2ADMIN user"""
+                      print(f"\n{'='*80}")
+                      print(f"Granting DBADM to DB2ADMIN user")
+                      print(f"{'='*80}")
                       
-                      # Connect to target database for table checks and permission grants
-                      print(f"Connecting to target database: {rds_dbname}...")
+                      try:
+                          # Grant DBADM using rdsadmin.dbadm_grant
+                          print(f"Executing: CALL rdsadmin.dbadm_grant('DB2ADMIN')")
+                          sql = "CALL rdsadmin.dbadm_grant('DB2ADMIN')"
+                          ibm_db.exec_immediate(conn_master_admin, sql)
+                          print(f"✅ DBADM granted to DB2ADMIN successfully")
+                          return True
+                      except Exception as e:
+                          error_msg = str(e)
+                          if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
+                              print(f"ℹ️  DB2ADMIN already has DBADM privilege")
+                              return True
+                          else:
+                              print(f"⚠️  Error granting DBADM to DB2ADMIN: {error_msg}")
+                              print(f"ℹ️  Continuing anyway - DB2ADMIN may already have sufficient privileges")
+                              return True
+                  
+                  try:
+                      # Step 0: Connect as masteradmin to grant DBADM to DB2ADMIN
+                      print(f"\n{'='*80}")
+                      print(f"STEP 0: Granting DBADM to DB2ADMIN User")
+                      print(f"{'='*80}")
+                      print(f"Connecting to admin database as {rds_master_user}...")
+                      conn_master_admin = ibm_db.connect(conn_str_master_admin, "", "")
+                      print(f"✅ Successfully connected to {rds_admin_dbname} database as {rds_master_user}")
+                      
+                      # Grant DBADM to DB2ADMIN
+                      grant_dbadm_to_db2admin(conn_master_admin)
+                      
+                      # Close masteradmin connection
+                      ibm_db.close(conn_master_admin)
+                      print(f"✅ Closed connection as {rds_master_user}")
+                      
+                      # Now connect as DB2ADMIN for all subsequent operations
+                      print(f"\nConnecting to admin database as {db2admin_user}...")
+                      conn_admin = ibm_db.connect(conn_str_admin, "", "")
+                      print(f"✅ Successfully connected to {rds_admin_dbname} database as {db2admin_user}")
+                      
+                      print(f"\nConnecting to target database as {db2admin_user}...")
                       conn_target = ibm_db.connect(conn_str_target, "", "")
-                      print(f"✅ Successfully connected to {rds_dbname} database")
+                      print(f"✅ Successfully connected to {rds_dbname} database as {db2admin_user}")
                   
                       # Process MANAGE application
-                      print("\n" + "=" * 60)
-                      print("Processing MANAGE application")
-                      print("=" * 60)
+                      print("\n" + "=" * 80)
+                      print("STEP 1: Processing MANAGE application (MAXIMO schema)")
+                      print("=" * 80)
                       
                       if check_table_exists(conn_target, "MAXIMO", "MAXUSER"):
                           print("✅ Table MAXIMO.MAXUSER exists. Proceeding with role creation...")
@@ -393,9 +449,9 @@ spec:
                           print("⚠️  Table MAXIMO.MAXUSER does not exist yet. Skipping manage role creation.")
                       
                       # Process FACILITIES application
-                      print("\n" + "=" * 60)
-                      print("Processing FACILITIES application")
-                      print("=" * 60)
+                      print("\n" + "=" * 80)
+                      print("STEP 2: Processing FACILITIES application (TRIDATA schema)")
+                      print("=" * 80)
                       
                       if check_table_exists(conn_target, "TRIDATA", "TRIDATA_DATA"):
                           print("✅ Table TRIDATA.TRIDATA_DATA exists. Proceeding with role creation...")

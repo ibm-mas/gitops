@@ -338,26 +338,42 @@ spec:
                       print(f"   Password: {password}")
                       
                   # ========================================================================
-                  # STEP 1.5: Grant DBADM to db2admin User (so it can grant roles)
+                  # STEP 1.5: Grant DBADM and SECADM to db2admin User (so it can grant roles)
                   # ========================================================================
                   print(f"\n{'='*80}")
-                  print("STEP 1.5: Granting DBADM to db2admin User")
+                  print("STEP 1.5: Granting DBADM and SECADM to db2admin User")
                   print(f"{'='*80}")
-                  print(f"Granting DBADM to {jdbc_username} so it can grant application roles...")
+                  print(f"Granting DBADM and SECADM to {jdbc_username} so it can grant application roles...")
                   
+                  # Grant DBADM
                   try:
                       task_id = ibm_db.callproc(
                           conn,
                           "rdsadmin.dbadm_grant",
                           (None, rds_dbname, "DBADM", f"USER {jdbc_username}")
                       )
-                      print(f"✅ Granted DBADM to {jdbc_username} (task_id: {task_id})")
+                      print(f"✅ Granted DBADM to {jdbc_username}")
                   except Exception as e:
                       error_msg = str(e)
                       if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
                           print(f"ℹ️  {jdbc_username} already has DBADM privilege")
                       else:
-                          print(f"⚠️  Error granting DBADM to {jdbc_username}: {error_msg}")
+                          print(f"⚠️  Error granting DBADM: {error_msg}")
+                  
+                  # Grant SECADM (required to grant roles)
+                  try:
+                      task_id = ibm_db.callproc(
+                          conn,
+                          "rdsadmin.dbadm_grant",
+                          (None, rds_dbname, "SECADM", f"USER {jdbc_username}")
+                      )
+                      print(f"✅ Granted SECADM to {jdbc_username}")
+                  except Exception as e:
+                      error_msg = str(e)
+                      if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
+                          print(f"ℹ️  {jdbc_username} already has SECADM privilege")
+                      else:
+                          print(f"⚠️  Error granting SECADM: {error_msg}")
                           print(f"ℹ️  Continuing anyway - may already have sufficient privileges")
               
                   # ========================================================================

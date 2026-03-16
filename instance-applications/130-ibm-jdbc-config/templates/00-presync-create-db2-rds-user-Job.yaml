@@ -346,6 +346,27 @@ spec:
                   print(f"{'='*80}")
                   print(f"Non-admin user: {jdbc_username} (from AWS Secrets Manager)")
                   
+                  # Close connection to rdsadmin database
+                  ibm_db.close(conn)
+                  print(f"ℹ️  Closed connection to rdsadmin database")
+                  
+                  # Reconnect to application database where roles exist
+                  app_conn_str = (
+                      f"DATABASE={rds_dbname};"
+                      f"HOSTNAME={rds_host};"
+                      f"PORT={rds_port};"
+                      f"PROTOCOL=TCPIP;"
+                      f"UID={jdbc_username};"
+                      f"PWD={jdbc_password};"
+                      f"SECURITY=SSL;"
+                      f"SSLVersion={ssl_version};"
+                      f"SSLServerCertificate={ssl_cert_path};"
+                  )
+                  
+                  print(f"ℹ️  Connecting to application database: {rds_host}:{rds_port}/{rds_dbname}")
+                  conn = ibm_db.connect(app_conn_str, "", "")
+                  print(f"✅ Connected to application database {rds_dbname}")
+                  
                   # Grant application-specific roles to non-admin user
                   # Note: Skipping user existence check - GRANT is idempotent and safe to re-run
                   print(f"ℹ️  Proceeding to grant application roles to {jdbc_username}")
@@ -409,4 +430,5 @@ spec:
   backoffLimit: 4
   
   {{- end }}
+
 

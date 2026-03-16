@@ -301,25 +301,18 @@ spec:
                       print(f"Password: {'*' * len(password)} (length: {len(password)})")
               
                       # STEP 1a: Create the user with password using RDS stored procedure
-                      # RDS DB2 uses: CALL rdsadmin.create_user(username, password)
+                      # RDS DB2 uses: CALL rdsadmin.add_user(username, password, NULL)
                       print(f"\n🔧 Creating user {username}...")
                       try:
                           # First, try to create the user using RDS stored procedure
-                          create_user_sql = f"CALL rdsadmin.create_user('{username}', '{password}')"
+                          create_user_sql = f"CALL rdsadmin.add_user('{username}', '{password}', NULL)"
                           ibm_db.exec_immediate(conn, create_user_sql)
-                          print(f"✅ User {username} created successfully using rdsadmin.create_user()")
+                          print(f"✅ User {username} created successfully using rdsadmin.add_user()")
                       except Exception as e:
                           error_msg = str(e)
                           # Check if user already exists
                           if 'already exists' in error_msg.lower() or 'sql0551n' in error_msg.lower():
                               print(f"ℹ️  User {username} already exists, skipping creation")
-                              # Try to update password for existing user
-                              try:
-                                  update_pwd_sql = f"CALL rdsadmin.change_password('{username}', '{password}')"
-                                  ibm_db.exec_immediate(conn, update_pwd_sql)
-                                  print(f"✅ Password updated for existing user {username}")
-                              except Exception as pwd_error:
-                                  print(f"⚠️  Could not update password: {str(pwd_error)}")
                           else:
                               print(f"⚠️  Error creating user {username}: {error_msg}")
                               print(f"ℹ️  Attempting to proceed with privilege grants...")

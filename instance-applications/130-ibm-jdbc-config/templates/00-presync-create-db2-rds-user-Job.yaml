@@ -232,21 +232,21 @@ spec:
               admin_users_to_create = [
                   {
                       'username': 'db2_manage',
-                      'password': admin_user_password if admin_user_password else 'db2_manage',
+                      'password': 'db2_manage',
                       'role': 'DBADM',
                       'description': 'Manage Admin User (DBADM for schema management)',
                       'app_type': 'manage'
                   },
                   {
                       'username': 'db2_facilities',
-                      'password': admin_user_password if admin_user_password else 'db2_facilities',
+                      'password': 'db2_facilities',
                       'role': 'DBADM',
                       'description': 'Facilities Admin User (DBADM for schema management)',
                       'app_type': 'facilities'
                   },
                   {
                       'username': 'db2_iot',
-                      'password': admin_user_password if admin_user_password else 'db2_iot',
+                      'password': 'db2_iot',
                       'role': 'DBADM',
                       'description': 'IoT Admin User (DBADM for schema management)',
                       'app_type': 'iot'
@@ -317,51 +317,17 @@ spec:
                               print(f"⚠️  Error creating user {username}: {error_msg}")
                               print(f"ℹ️  Attempting to proceed with privilege grants...")
               
-                      # STEP 1b: Grant comprehensive admin privileges using RDS stored procedure
-                      # RDS DB2 uses: CALL rdsadmin.grant_dbauth(database, grantee, dbadm, createtab, bindadd, connect, ...)
-                      # Parameters: Y = grant, N = don't grant, NULL = no change
+                      # STEP 1b: Grant DBADM privileges using RDS stored procedure
+                      # RDS DB2 uses: CALL rdsadmin.dbadm_grant(database_name, authorization, grantee)
+                      # authorization: 'G' = GRANT, 'R' = REVOKE
                       print(f"\n🔧 Granting DBADM privileges to {username}...")
                       try:
-                          grant_sql = f"""
-                          CALL rdsadmin.grant_dbauth(
-                              '{rds_dbname}',
-                              '{username}',
-                              'Y',  -- DBADM
-                              'Y',  -- CREATETAB
-                              'Y',  -- BINDADD
-                              'Y',  -- CONNECT
-                              'Y',  -- CREATE_NOT_FENCED
-                              'Y',  -- IMPLICIT_SCHEMA
-                              'Y',  -- LOAD
-                              'Y',  -- CREATE_EXTERNAL_ROUTINE
-                              'Y',  -- QUIESCE_CONNECT
-                              'Y',  -- SECADM
-                              'Y',  -- DATAACCESS
-                              'Y'   -- ACCESSCTRL
-                          )
-                          """
+                          grant_sql = f"CALL rdsadmin.dbadm_grant('{rds_dbname}', 'G', '{username}')"
                           ibm_db.exec_immediate(conn, grant_sql)
-                          print(f"✅ Granted comprehensive admin privileges to {username} using rdsadmin.grant_dbauth()")
+                          print(f"✅ Granted DBADM privileges to {username} using rdsadmin.dbadm_grant()")
                       except Exception as e:
                           error_msg = str(e)
-                          print(f"⚠️  Error granting admin privileges via rdsadmin.grant_dbauth(): {error_msg}")
-                          print(f"ℹ️  Attempting individual GRANT statements as fallback...")
-                          
-                          # Fallback: try individual GRANT statements (may work if user already exists with some privileges)
-                          fallback_grants = [
-                              f"GRANT CONNECT ON DATABASE TO USER {username}",
-                              f"GRANT CREATETAB ON DATABASE TO USER {username}",
-                              f"GRANT BINDADD ON DATABASE TO USER {username}",
-                              f"GRANT IMPLICIT_SCHEMA ON DATABASE TO USER {username}",
-                              f"GRANT LOAD ON DATABASE TO USER {username}"
-                          ]
-                          
-                          for grant_stmt in fallback_grants:
-                              try:
-                                  ibm_db.exec_immediate(conn, grant_stmt)
-                                  print(f"✅ Executed: {grant_stmt}")
-                              except Exception as fallback_error:
-                                  print(f"⚠️  Fallback grant failed: {str(fallback_error)}")
+                          print(f"⚠️  Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
                       
                       # Store password information for later retrieval
                       print(f"\n📝 IMPORTANT: Store these credentials securely!")

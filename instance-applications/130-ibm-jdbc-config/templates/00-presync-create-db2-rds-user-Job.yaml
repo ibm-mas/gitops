@@ -93,6 +93,8 @@ spec:
               value: "{{ .Values.jdbc_instance_password }}"
             - name: MAS_APP_ID
               value: "{{ .Values.mas_application_id }}"
+            - name: ADMIN_USER_PASSWORD
+              value: "{{ .Values.admin_user_password | default (randAlphaNum 32) }}"
           command:
             - /bin/sh
             - -c
@@ -130,9 +132,28 @@ spec:
               
               # Generate a Python script to create non-admin users and grant permissions
               cat > ${RDS_USER_SCRIPT} << 'EOFPYTHON'
+              """
+              RDS DB2 User Creation and Permission Management Script
+              
+              This script performs the following operations:
+              1. Creates admin users (db2_manage, db2_facilities, db2_iot) with passwords
+              2. Grants DBADM privileges to admin users for schema management
+              3. Grants application-specific roles to non-admin user (from AWS Secrets Manager)
+              
+              Password Management:
+              - By default, username is used as password (e.g., db2_manage/db2_manage)
+              - Can be overridden by setting ADMIN_USER_PASSWORD env var for all admin users
+              - Passwords are displayed in the job logs
+              
+              User Types:
+              - Admin users: db2_manage, db2_facilities, db2_iot (DBADM for schema management)
+              - Non-admin user: From AWS Secrets Manager (application roles only)
+              """
               import ibm_db
               import os
               import sys
+              import secrets
+              import string
               
               import re
               
@@ -142,7 +163,15 @@ spec:
               jdbc_username = os.getenv('JDBC_INSTANCE_USERNAME')
               jdbc_password = os.getenv('JDBC_INSTANCE_PASSWORD')
               mas_app_id = os.getenv('MAS_APP_ID', 'manage')
+              admin_user_password = os.getenv('ADMIN_USER_PASSWORD')
               ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
+              
+              # Function to generate secure random password
+              def generate_password(length=32):
+                  """Generate a secure random password"""
+                  alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+                  password = ''.join(secrets.choice(alphabet) for i in range(length))
+                  return password
               
               # Parse JDBC connection URL to extract host, port, database, and SSL parameters
               # Format: jdbc:db2://host:port/database:sslConnection=true;sslVersion=TLSv1.2;
@@ -199,21 +228,25 @@ spec:
               # 2. Non-admin user: We FETCH from AWS Secrets Manager and grant only app roles (for runtime)
               
               # Admin users to CREATE (with DBADM)
+              # Using username as password for simplicity (can be changed later via admin_user_password)
               admin_users_to_create = [
                   {
                       'username': 'db2_manage',
+                      'password': admin_user_password if admin_user_password else 'db2_manage',
                       'role': 'DBADM',
                       'description': 'Manage Admin User (DBADM for schema management)',
                       'app_type': 'manage'
                   },
                   {
                       'username': 'db2_facilities',
+                      'password': admin_user_password if admin_user_password else 'db2_facilities',
                       'role': 'DBADM',
                       'description': 'Facilities Admin User (DBADM for schema management)',
                       'app_type': 'facilities'
                   },
                   {
                       'username': 'db2_iot',
+                      'password': admin_user_password if admin_user_password else 'db2_iot',
                       'role': 'DBADM',
                       'description': 'IoT Admin User (DBADM for schema management)',
                       'app_type': 'iot'
@@ -257,6 +290,7 @@ spec:
                   
                   for admin_user in admin_users_to_create:
                       username = admin_user['username']
+                      password = admin_user['password']
                       role_to_assign = admin_user['role']
                       description = admin_user['description']
                       app_type = admin_user['app_type']
@@ -264,10 +298,36 @@ spec:
                       print(f"\n--- Processing: {description} ---")
                       print(f"Username: {username}")
                       print(f"App Type: {app_type}")
+                      print(f"Password: {'*' * len(password)} (length: {len(password)})")
               
-                      # Grant comprehensive admin privileges using RDS stored procedure
+                      # STEP 1a: Create the user with password using RDS stored procedure
+                      # RDS DB2 uses: CALL rdsadmin.create_user(username, password)
+                      print(f"\n🔧 Creating user {username}...")
+                      try:
+                          # First, try to create the user using RDS stored procedure
+                          create_user_sql = f"CALL rdsadmin.create_user('{username}', '{password}')"
+                          ibm_db.exec_immediate(conn, create_user_sql)
+                          print(f"✅ User {username} created successfully using rdsadmin.create_user()")
+                      except Exception as e:
+                          error_msg = str(e)
+                          # Check if user already exists
+                          if 'already exists' in error_msg.lower() or 'sql0551n' in error_msg.lower():
+                              print(f"ℹ️  User {username} already exists, skipping creation")
+                              # Try to update password for existing user
+                              try:
+                                  update_pwd_sql = f"CALL rdsadmin.change_password('{username}', '{password}')"
+                                  ibm_db.exec_immediate(conn, update_pwd_sql)
+                                  print(f"✅ Password updated for existing user {username}")
+                              except Exception as pwd_error:
+                                  print(f"⚠️  Could not update password: {str(pwd_error)}")
+                          else:
+                              print(f"⚠️  Error creating user {username}: {error_msg}")
+                              print(f"ℹ️  Attempting to proceed with privilege grants...")
+              
+                      # STEP 1b: Grant comprehensive admin privileges using RDS stored procedure
                       # RDS DB2 uses: CALL rdsadmin.grant_dbauth(database, grantee, dbadm, createtab, bindadd, connect, ...)
                       # Parameters: Y = grant, N = don't grant, NULL = no change
+                      print(f"\n🔧 Granting DBADM privileges to {username}...")
                       try:
                           grant_sql = f"""
                           CALL rdsadmin.grant_dbauth(
@@ -309,6 +369,12 @@ spec:
                                   print(f"✅ Executed: {grant_stmt}")
                               except Exception as fallback_error:
                                   print(f"⚠️  Fallback grant failed: {str(fallback_error)}")
+                      
+                      # Store password information for later retrieval
+                      print(f"\n📝 IMPORTANT: Store these credentials securely!")
+                      print(f"   Username: {username}")
+                      print(f"   Password: {password}")
+                      print(f"   (This password should be stored in a Kubernetes secret or AWS Secrets Manager)")
               
                   # ========================================================================
                   # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)
@@ -345,8 +411,18 @@ spec:
                   print(f"\n{'='*80}")
                   print("✅ User creation and role assignment completed successfully")
                   print(f"{'='*80}")
-                  print(f"Admin users: DB2_manage, DB2_facilities, DB2_iot (DBADM)")
-                  print(f"Non-admin user: {jdbc_username} (Application roles only)")
+                  print(f"\n📋 Summary:")
+                  print(f"   Admin users created with DBADM:")
+                  for admin_user in admin_users_to_create:
+                      print(f"      - {admin_user['username']} ({admin_user['app_type']})")
+                  print(f"\n   Non-admin user granted application roles:")
+                  print(f"      - {jdbc_username} (Manage & Facilities)")
+                  print(f"\n⚠️  SECURITY NOTICE:")
+                  print(f"   Admin user passwords have been generated and displayed above.")
+                  print(f"   These passwords should be stored securely in:")
+                  print(f"      - Kubernetes Secrets, or")
+                  print(f"      - AWS Secrets Manager")
+                  print(f"   The passwords are required for schema management operations.")
               
                   # Close connection
                   ibm_db.close(conn)

@@ -332,6 +332,39 @@ spec:
                           error_msg = str(e)
                           print(f"⚠️  Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
               
+                      # STEP 1c: Grant DB-level privileges
+                      try:
+                        # Grant all allowed DB-level privileges (hardcoded)
+                        db_privileges = [
+                        "CREATETAB",
+                        "BINDADD",
+                        "CONNECT",
+                        "CREATE_NOT_FENCED_ROUTINE",
+                        "IMPLICIT_SCHEMA",
+                        "LOAD",
+                        "CREATE_EXTERNAL_ROUTINE",
+                        "QUIESCE_CONNECT"
+                        ]
+                        
+                        query = f"GRANT {', '.join(db_privileges)} ON DATABASE TO USER {username}"
+                        print(f"Query to grant {query}")
+                        ibm_db.exec_immediate(conn, query)
+                        print(f"Granted: {', '.join(db_privileges)}")
+                      
+                      except Exception as e:
+                        print(f"❌ Error while granting privileges: {str(e)}")
+              
+                      # STEP 1d: Grant authorities
+                      authorities = ["SECADM", "DATAACCESS", "ACCESSCTRL"]
+                      
+                      for auth in authorities:
+                        try:
+                          query = f"GRANT {auth} ON DATABASE TO USER {username}"
+                          ibm_db.exec_immediate(conn, query)
+                          print(f"✅ Granted {auth}")
+                        except Exception as e:
+                          print(f"❌ Failed {auth}: {str(e)}")
+              
                       # Store password information for later retrieval
                       print(f"\n📝 IMPORTANT: Store these credentials securely!")
                       print(f"   Username: {username}")
@@ -360,39 +393,7 @@ spec:
                           print(f"ℹ️  {jdbc_username} already has DBADM privilege")
                       else:
                           print(f"⚠️  Error granting DBADM: {error_msg}")
-                          print(f"ℹ️  Continuing anyway - may already have sufficient privileges")              
-                  try:
-                    # 2️⃣ Grant all allowed DB-level privileges (hardcoded)
-                    db_privileges = [
-                    "CREATETAB",
-                    "BINDADD",
-                    "CONNECT",
-                    "CREATE_NOT_FENCED_ROUTINE",
-                    "IMPLICIT_SCHEMA",
-                    "LOAD",
-                    "CREATE_EXTERNAL_ROUTINE",
-                    "QUIESCE_CONNECT"
-                    ]
-                    
-                    
-                    
-                    query = f"GRANT {', '.join(db_privileges)} ON DATABASE TO USER {username}"
-                    print(f"Query to grant {query}")
-                    ibm_db.exec_immediate(conn, query)
-                    print(f"Granted: {', '.join(db_privileges)}")
-                  
-                  except Exception as e:
-                    print(f"❌ Error while granting privileges: {str(e)}")
-              
-                  authorities = ["SECADM", "DATAACCESS", "ACCESSCTRL"]
-                  
-                  for auth in authorities:
-                    try:
-                      query = f"GRANT {auth} ON DATABASE TO USER {username}"
-                      ibm_db.exec_immediate(conn, query)
-                      print(f"✅ Granted {auth}")
-                    except Exception as e:
-                      print(f"❌ Failed {auth}: {str(e)}")              
+                          print(f"ℹ️  Continuing anyway - may already have sufficient privileges")
               
                   # ========================================================================
                   # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)

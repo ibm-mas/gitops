@@ -64,9 +64,10 @@ data:
     else:
         print(f"ℹ️  No JDBC URL provided, using default SSL Version: {ssl_version}")
     
-    # Create connection string for rdsadmin database (matching init script format)
-    conn_rds_admin_str = (
-        f"DATABASE={os.environ['RDS_ADMIN_DB']};"
+    # Create connection string for target database (BLUDB) where backup procedure exists
+    # Note: Connect to the actual database to backup, not rdsadmin
+    conn_target_db_str = (
+        f"DATABASE={database_name};"
         f"HOSTNAME={os.environ['DB_HOST']};"
         f"PORT={os.environ['DB_PORT']};"
         f"PROTOCOL=TCPIP;"
@@ -97,9 +98,9 @@ data:
         sys.exit(1)
     
     try:
-        # Connect to rdsadmin database
-        print("📡 Connecting to RDS DB2 rdsadmin database...")
-        admin_conn = db2.connect(conn_rds_admin_str, "", "")
+        # Connect to target database (BLUDB) where backup procedure exists
+        print(f"📡 Connecting to RDS DB2 database: {database_name}...")
+        target_conn = db2.connect(conn_target_db_str, "", "")
         print("✅ Connected successfully\n")
         
         # Step 1: Check VPC Gateway Endpoint for S3
@@ -153,7 +154,7 @@ data:
             print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, (None, '{database_name}', '{s3_full_uri}', '{backup_type}'))")
             
             result = db2.callproc(
-                admin_conn,
+                target_conn,
                 "rdsadmin.backup_database",
                 (None, database_name, s3_full_uri, backup_type)
             )
@@ -182,7 +183,7 @@ data:
             
             while elapsed_time < max_wait_time:
                 status_sql = f"CALL rdsadmin.get_task_status('{task_id}')"
-                status_stmt = db2.exec_immediate(admin_conn, status_sql)
+                status_stmt = db2.exec_immediate(target_conn, status_sql)
                 status_result = db2.fetch_tuple(status_stmt)
                 
                 if status_result:
@@ -225,7 +226,7 @@ data:
         
         # Step 7: Terminate connection
         print(f"🔌 Step 7: Closing database connection...")
-        db2.close(admin_conn)
+        db2.close(target_conn)
         print(f"   ✅ Connection closed\n")
         
         print(f"{'='*80}")

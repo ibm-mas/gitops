@@ -1,28 +1,26 @@
 #!/bin/bash
-#set -x
-
 #########################################################
-#              RUN_OnDemandFULL_BKP.sh 
-#   RUN_OnDemandFULL_BKP.sh will be called from the Cron Jobs 
+#   RUN_OnDemandFULL_BKP.sh 
+#   RUN_OnDemandFULL_BKP.sh will be called by OnDemand Jobs 
 #   This script will list all local databases running in the instance on a node.  It will call the
 #   DB2_Backup.sh script to run a backup for each running database.
 #   Variables are set at the top of the DB2_Backup.sh script to determine if a full backup needs to be run
 #   based on the day of the week.  Currently, Saturday is when the full backup runs, incremental backups run
 #   every all other days.
 #
-#    Variables to be set
+#   Variables to be set
 #   SLACKURL = The channel were notifications are send
 #   BACKUP_SCRIPT =  The backup script that RUN_OnDemandFULL_BKP.sh calls
 #   DAYOFFULL = Defines the day of the week that the full backup will on on (must match the same format as the output from `date`)
 #   NUMOFBKUPTOKEEP = This defines the number of days to keep a backup image on local disk
 #
-#    Variables determined by the environment
+#   Variables determined by the environment
 #   BACKUPTYPE = Is determined from the `date` command and the DAYOFFULL value
 #   DB2INSTANCE = Pulled from the environment
 #   HOSTNAME
 #   DBNAME = Pulled from the `db2 list db directory`
 #   
-#    Backup command issued
+#   Backup command issued
 #   ./DB2_Backup.sh ${DB2INSTANCE} ${DBNAME} ${NUMOFBKUPTOKEEP} ${BACKUPTYPE} 2>>.BackupLOG.stderr > .BackupLOG.out
 #########################################################
 
@@ -45,6 +43,10 @@ else
    . ${INSTANCE_HOME}/sqllib/db2profile
 fi
 
+# -- Debug Mode 
+# set -x;       # Uncomment to debug this shell script
+# set -n;       # Uncomment to check your syntax, without execution.
+
 # -- Backup parameters 
 BACKUPTYPE=full
 BACKUP_SCRIPT="${SCRIPT_DIR}/DB2_Backup.sh"
@@ -52,7 +54,6 @@ CUSTNAME=`hostname | sed 's/c-db2wh-//; s/c-//; s/-db2u-0//; s/db2u/-/; s/-manag
 BUCKET_ALIAS=`db2 list storage access | grep ${CONTAINER} -B4 | grep ALIAS | awk -F '=' '{print $2}'`
 HSTYPE="Backup"
 ICD_LOG=${SCRIPT_DIR}/.Maillive.log
-
 
 # -- Valid only for MAS-CP4D customers 
 if (( ${CUSTNAME} )) ; then 
@@ -66,13 +67,12 @@ else
 	DBENV="MAS SaaS"
 fi
 
-
 # -- Create ICD Incident , If Backup fails 
 
 CREATE_ICD() {
 	HTYPE=`echo ${HSTYPE} | tr '[:lower:]' '[:upper:]'`
 	DES="$1"
-	echo "############################" >> ${ICD_LOG}
+#	echo "############################" >> ${ICD_LOG}
 	LONGDES=`cat ${ICD_LOG} | sed 's/"//g' | sed "s/'//g"`
 	LONGDES=`echo "<pre> ${LONGDES} </pre>"`
 

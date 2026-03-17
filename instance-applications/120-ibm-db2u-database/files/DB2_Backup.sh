@@ -1,6 +1,4 @@
 #!/bin/ksh
-#set -x
-
 #########################################################
 #	DB2_Backup.sh 
 #
@@ -48,7 +46,10 @@ else
    . ${INSTANCE_HOME}/sqllib/db2profile
 fi
 
-set -x 
+# -- Debug Mode 
+# set -x;       # Uncomment to debug this shell script
+# set -n;       # Uncomment to check your syntax, without execution.
+
 # -- Source the PROPS file 		
 . /mnt/backup/bin/.PROPS
 
@@ -73,9 +74,9 @@ fi
 
 # -- Database Environment 
 if [[ ${BUCKET_ALIAS} == "IBMCOS" ]]; then 
-	DBENV="MASMS"
+	DBENV="MAS MS"
 else
-	DBENV="MAS_SaaS"
+	DBENV="MAS SaaS"
 fi
 
 # -- Function to send Slack notification  
@@ -96,7 +97,7 @@ SLACK_NOTIFY() {
 CREATE_ICD() {
 	HTYPE=`echo ${HSTYPE} | tr '[:lower:]' '[:upper:]'`
 	DES="$1"
-	echo "############################" >> ${ICD_LOG}
+#	echo "############################" >> ${ICD_LOG}
 	LONGDES=`cat ${ICD_LOG} | sed 's/"//g' | sed "s/'//g"`
 	LONGDES=`echo "<pre> ${LONGDES} </pre>"`
 
@@ -166,13 +167,13 @@ fi
 # -- Check to see if the Instance is up and Running
 ps -ef | grep db2sysc | grep -v grep  > /dev/null 2>&1
 if [[ $? -eq 1 ]]; then
-	echo "Instance is not active "      
-	echo "${HOSTNAME}, Instance is not Active, BACKUP cannot Run!" | tee ${INSTANCE_HOME}/bin/LASTbkupRUN ${ICD_LOG} >/dev/null
-	echo "############################"     >> ${ICD_LOG}
+	#echo "Instance is not active "      
+	echo "Instance is not Active, Backup cannot Initiate !!!" | tee ${INSTANCE_HOME}/bin/LASTbkupRUN ${ICD_LOG} >/dev/null
+#	echo "############################"     >> ${ICD_LOG}
 	cat ${BACK_LOG}                         >> ${ICD_LOG}
 
-	SLACKDES="${CUSTNAME} - ${DBENV} - ${HOSTNAME}, Instance is not Active, Backup cannot Run! " 
-    DES="${CUSTNAME} - ${DBENV} - ${DBNAME} - ${HOSTNAME} -- Instance is not Active,  Backup cannot Run!! "
+	SLACKDES="${CUSTNAME} - ${DBENV} - ${HOSTNAME}, Instance is not Active, Backup cannot Initiate !! " 
+    DES="${CUSTNAME} - ${DBENV} - ${DBNAME} - ${HOSTNAME} -- Instance is not Active, Backup cannot Initiate !! "
 
 	# -- Send error notification to Slack 
 	SLACK_NOTIFY "${SLACKDES}"
@@ -208,11 +209,11 @@ if [[ ${NUM_BACKUPS_TO_KEEP} -gt 0 ]]; then
 
 	grep -Fq "Backup successful." ${BACK_LOG}
 	if [[ $? -ne 0 ]]; then 
-		echo "${CUSTNAME} - ${DBENV} - ${HOSTNAME}, ${BKPTYPE} DB Backup Failed ! Database Backup issues !!!" > ${ICD_LOG}
-		echo "############################"     >> ${ICD_LOG}
+		echo "${CUSTNAME} - ${DBENV} - ${HOSTNAME} - ${BKPTYPE} ${HSTYPE} Failed !!!" > ${ICD_LOG}
+	#	echo "############################"     >> ${ICD_LOG}
 		cat ${BACK_LOG}                         >> ${ICD_LOG}
 
-		SLACKDES="${CUSTNAME} - ${DBENV} - ${HOSTNAME}, ${BKPTYPE} DB Backup Failed . . . Please investigate ! ! ! "
+		SLACKDES="${CUSTNAME} - ${DBENV} - ${HOSTNAME} -- ${BKPTYPE} ${HSTYPE} Failed . . . Please investigate ! ! ! "
    		DES="${CUSTNAME} - ${DBENV} - ${DBNAME} - ${HOSTNAME} -- ${BKPTYPE} ${HSTYPE} Failed !"
 
 		# -- Send error notification to Slack 

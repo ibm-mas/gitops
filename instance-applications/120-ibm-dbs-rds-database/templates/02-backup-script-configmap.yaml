@@ -23,15 +23,16 @@ data:
     from datetime import datetime
 
     # Configuration from environment variables
-    backup_type = 'FULL'  # FULL or INCREMENTAL
+    backup_type = os.getenv("BACKUP_TYPE", "ONLINE")  # ONLINE, OFFLINE, or INCREMENTAL
     database_name = os.getenv("DB_NAME")
     s3_bucket_name = os.getenv("S3_BUCKET_NAME")
     s3_prefix = os.getenv("S3_PREFIX", "db2-backups")
     compression = os.getenv("COMPRESSION", "INCLUDE")
-    util_impact_priority = os.getenv("UTIL_IMPACT_PRIORITY", "50")
-    num_files = os.getenv("NUM_FILES", "4")
-    parallelism = os.getenv("PARALLELISM", "4")
-    num_buffers = os.getenv("NUM_BUFFERS", "8")
+    # Convert numeric parameters to integers (required by rdsadmin.backup_database)
+    util_impact_priority = int(os.getenv("UTIL_IMPACT_PRIORITY", "50"))
+    num_files = int(os.getenv("NUM_FILES", "4"))
+    parallelism = int(os.getenv("PARALLELISM", "4"))
+    num_buffers = int(os.getenv("NUM_BUFFERS", "8"))
     
     ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
     jdbc_connection_url = os.environ.get("JDBC_CONNECTION_URL", "")
@@ -107,12 +108,10 @@ data:
         
         # Step 3: Prepare backup parameters
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Shorten the path to avoid AWS RDS DB2 parameter length limits (typically 64 chars for S3 URI)
-        # Use ultra-compact format: prefix/type-timestamp (no underscore, single char type)
-        # The full S3 URI (s3://bucket/path) must be under 64 characters
-        backup_type_short = "f" if backup_type.upper() == "FULL" else "i"
-        # Remove prefix if it makes URI too long, use just type-timestamp
-        s3_backup_path = f"{backup_type_short}-{timestamp}"
+        # Create S3 prefix with trailing slash as required by rdsadmin.backup_database
+        # Format: prefix/type-timestamp/
+        backup_type_short = "f" if backup_type.upper() in ["FULL", "ONLINE"] else "i"
+        s3_backup_path = f"{backup_type_short}-{timestamp}/"
         
         print(f"📦 Step 3: Preparing backup parameters...")
         print(f"   Database: {database_name}")
@@ -134,13 +133,13 @@ data:
         #    ?,                    -- 1. Output: Task ID
         #    'database_name',      -- 2. Database Name
         #    's3_bucket_name',     -- 3. S3 Bucket Name
-        #    's3_prefix',          -- 4. S3 Prefix (path within bucket)
+        #    's3_prefix/',         -- 4. S3 Prefix (with trailing /)
         #    'backup_type',        -- 5. Backup Type (OFFLINE/ONLINE/INCREMENTAL)
-        #    'compression',        -- 6. Compression (INCLUDE/EXCLUDE/NONE)
-        #    'util_impact',        -- 7. Util Impact Priority (0-100)
-        #    'num_buffers',        -- 8. Number of Buffers
-        #    'parallelism',        -- 9. Parallelism
-        #    'buffer_size'         -- 10. Buffer Size
+        #    'compression',        -- 6. Compression (INCLUDE/NONE)
+        #    util_impact,          -- 7. Util Impact Priority (integer 0-100)
+        #    num_files,            -- 8. Number of Files (integer)
+        #    parallelism,          -- 9. Parallelism (integer)
+        #    num_buffers           -- 10. Number of Buffers (integer)
         # )
         
         print(f"   Executing backup procedure...")
@@ -150,15 +149,16 @@ data:
         print(f"     - S3 Prefix: {s3_backup_path}")
         print(f"     - Backup Type: {backup_type}")
         print(f"     - Compression: {compression}")
-        print(f"     - Util Impact Priority: {util_impact_priority}")
-        print(f"     - Num Buffers: {num_buffers}")
-        print(f"     - Parallelism: {parallelism}")
-        print(f"     - Buffer Size: {num_buffers}")
+        print(f"     - Util Impact Priority: {util_impact_priority} (int)")
+        print(f"     - Num Files: {num_files} (int)")
+        print(f"     - Parallelism: {parallelism} (int)")
+        print(f"     - Num Buffers: {num_buffers} (int)")
         
         # Use ibm_db.callproc for stored procedure call (consistent with other RDS operations)
         try:
-            # Call the stored procedure using ibm_db.callproc with correct parameter order
-            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, (None, '{database_name}', '{s3_bucket_name}', '{s3_backup_path}', '{backup_type}', '{compression}', '{util_impact_priority}', '{num_buffers}', '{parallelism}', '{num_buffers}'))")
+            # Call the stored procedure using ibm_db.callproc with correct parameter types
+            # IMPORTANT: Numeric parameters must be integers, not strings
+            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, (None, '{database_name}', '{s3_bucket_name}', '{s3_backup_path}', '{backup_type}', '{compression}', {util_impact_priority}, {num_files}, {parallelism}, {num_buffers}))")
             
             result = db2.callproc(
                 admin_conn,
@@ -167,13 +167,13 @@ data:
                     None,                    # 1. Output: Task ID
                     database_name,           # 2. Database Name (BLUDB - target to backup)
                     s3_bucket_name,          # 3. S3 Bucket Name
-                    s3_backup_path,          # 4. S3 Prefix
-                    backup_type,             # 5. Backup Type
-                    compression,             # 6. Compression
-                    util_impact_priority,    # 7. Util Impact Priority
-                    num_buffers,             # 8. Number of Buffers
-                    parallelism,             # 9. Parallelism
-                    num_buffers              # 10. Buffer Size
+                    s3_backup_path,          # 4. S3 Prefix (with trailing /)
+                    backup_type,             # 5. Backup Type (ONLINE/OFFLINE/INCREMENTAL)
+                    compression,             # 6. Compression (INCLUDE/NONE)
+                    util_impact_priority,    # 7. Util Impact Priority (integer)
+                    num_files,               # 8. Number of Files (integer)
+                    parallelism,             # 9. Parallelism (integer)
+                    num_buffers              # 10. Number of Buffers (integer)
                 )
             )
             

@@ -129,26 +129,52 @@ data:
         print(f"🚀 Step 4: Initiating {backup_type} backup...")
         
         # Prepare parameters for the stored procedure
-        # AWS RDS DB2 backup_database stored procedure expects full S3 URI
-        # Format: s3://bucket-name/path
-        s3_full_uri = f"s3://{s3_bucket_name}/{s3_backup_path}"
+        # AWS RDS DB2 backup_database stored procedure signature:
+        # CALL rdsadmin.backup_database(
+        #    ?,                    -- 1. Output: Task ID
+        #    'database_name',      -- 2. Database Name
+        #    's3_bucket_name',     -- 3. S3 Bucket Name
+        #    's3_prefix',          -- 4. S3 Prefix (path within bucket)
+        #    'backup_type',        -- 5. Backup Type (OFFLINE/ONLINE/INCREMENTAL)
+        #    'compression',        -- 6. Compression (INCLUDE/EXCLUDE/NONE)
+        #    'util_impact',        -- 7. Util Impact Priority (0-100)
+        #    'num_buffers',        -- 8. Number of Buffers
+        #    'parallelism',        -- 9. Parallelism
+        #    'buffer_size'         -- 10. Buffer Size
+        # )
         
         print(f"   Executing backup procedure...")
-        print(f"   Parameter lengths:")
-        print(f"     - database_name: {len(database_name)} chars")
-        print(f"     - s3_full_uri: {len(s3_full_uri)} chars")
-        print(f"     - backup_type: {len(backup_type)} chars")
+        print(f"   Parameters:")
+        print(f"     - Database Name: {database_name}")
+        print(f"     - S3 Bucket: {s3_bucket_name}")
+        print(f"     - S3 Prefix: {s3_backup_path}")
+        print(f"     - Backup Type: {backup_type}")
+        print(f"     - Compression: {compression}")
+        print(f"     - Util Impact Priority: {util_impact_priority}")
+        print(f"     - Num Buffers: {num_buffers}")
+        print(f"     - Parallelism: {parallelism}")
+        print(f"     - Buffer Size: {num_buffers}")
         
         # Use ibm_db.callproc for stored procedure call (consistent with other RDS operations)
         try:
-            # Call the stored procedure using ibm_db.callproc
-            # AWS RDS DB2 backup_database signature: (task_id OUT, database_name, s3_uri, backup_type)
-            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, (None, '{database_name}', '{s3_full_uri}', '{backup_type}'))")
+            # Call the stored procedure using ibm_db.callproc with correct parameter order
+            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, (None, '{database_name}', '{s3_bucket_name}', '{s3_backup_path}', '{backup_type}', '{compression}', '{util_impact_priority}', '{num_buffers}', '{parallelism}', '{num_buffers}'))")
             
             result = db2.callproc(
                 target_conn,
                 "rdsadmin.backup_database",
-                (None, database_name, s3_full_uri, backup_type)
+                (
+                    None,                    # 1. Output: Task ID
+                    database_name,           # 2. Database Name
+                    s3_bucket_name,          # 3. S3 Bucket Name
+                    s3_backup_path,          # 4. S3 Prefix
+                    backup_type,             # 5. Backup Type
+                    compression,             # 6. Compression
+                    util_impact_priority,    # 7. Util Impact Priority
+                    num_buffers,             # 8. Number of Buffers
+                    parallelism,             # 9. Parallelism
+                    num_buffers              # 10. Buffer Size
+                )
             )
             
             task_id = None

@@ -273,6 +273,8 @@ spec:
               
               print(f"\n✅ Creating users:")
               print(f"   1. Admin users: DB2_manage, DB2_facilities, DB2_iot (DBADM)")
+              print(f"   2. Non-admin user: {jdbc_username} (App roles for Manage & Facilities only)")
+              print(f"   Note: IoT uses admin user (DB2_iot) with DBADM only")
               
               try:
                   # Connect to the database
@@ -296,6 +298,7 @@ spec:
                       print(f"\n--- Processing: {description} ---")
                       print(f"Username: {username}")
                       print(f"App Type: {app_type}")
+                      print(f"Password: {'*' * len(password)} (length: {len(password)})")
               
                       # STEP 1a: Create the user with password using RDS stored procedure
                       # RDS DB2 uses: CALL rdsadmin.add_user(username, password, NULL)
@@ -307,8 +310,12 @@ spec:
                           print(f"✅ User {username} created successfully using rdsadmin.add_user()")
                       except Exception as e:
                           error_msg = str(e)
-                          print(f"⚠️  Error creating user {username}: {error_msg}")
-
+                          # Check if user already exists
+                          if 'already exists' in error_msg.lower() or 'sql0551n' in error_msg.lower():
+                              print(f"ℹ️  User {username} already exists, skipping creation")
+                          else:
+                              print(f"⚠️  Error creating user {username}: {error_msg}")
+                              print(f"ℹ️  Attempting to proceed with privilege grants...")
               
                       # STEP 1b: Grant DBADM privileges using RDS stored procedure
                       # RDS DB2 uses: ibm_db.callproc() with rdsadmin.dbadm_grant
@@ -325,121 +332,121 @@ spec:
                           error_msg = str(e)
                           print(f"⚠️  Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
               
-#                      # STEP 1c: Note about DB-level privileges
-#                      # In AWS RDS DB2, DBADM privilege (granted above) includes all necessary database privileges:
-#                      # - CREATETAB, BINDADD, CONNECT, CREATE_NOT_FENCED_ROUTINE, IMPLICIT_SCHEMA,
-#                      #   LOAD, CREATE_EXTERNAL_ROUTINE, QUIESCE_CONNECT
-#                      #
-#                      # AWS RDS DB2 does not provide a stored procedure to grant individual database privileges.
-#                      # The rds instance user cannot use direct GRANT statements (SQL0552N error).
-#                      # Therefore, we rely on DBADM which provides all these privileges implicitly.
-#                      
-#                      print(f"\nℹ️  Database privileges for {username}:")
-#                      print(f"   DBADM privilege includes all necessary database privileges:")
-#                      print(f"   - CREATETAB, BINDADD, CONNECT")
-#                      print(f"   - CREATE_NOT_FENCED_ROUTINE, IMPLICIT_SCHEMA")
-#                      print(f"   - LOAD, CREATE_EXTERNAL_ROUTINE, QUIESCE_CONNECT")
-#                      print(f"   ✅ All privileges available via DBADM")
-#
-#                      # Store password information for later retrieval
-#                      print(f"\n📝 IMPORTANT: Store these credentials securely!")
-#                      print(f"   Username: {username}")
-#                      print(f"   Password: {password}")
-#
-#                  # ========================================================================
-#                  # STEP 1.5: Grant DBADM to db2admin User
-#                  # ========================================================================
-#                  print(f"\n{'='*80}")
-#                  print("STEP 1.5: Granting DBADM to db2admin User")
-#                  print(f"{'='*80}")
-#                  print(f"Granting DBADM to {jdbc_username}...")
-#                  print(f"Note: Application role grants will be handled by the postsync job with master credentials")
-#
-#                  # Grant DBADM
-#                  try:
-#                      task_id = ibm_db.callproc(
-#                          conn,
-#                          "rdsadmin.dbadm_grant",
-#                          (None, rds_dbname, "DBADM", f"USER {jdbc_username}")
-#                      )
-#                      print(f"✅ Granted DBADM to {jdbc_username}")
-#                  except Exception as e:
-#                      error_msg = str(e)
-#                      if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
-#                          print(f"ℹ️  {jdbc_username} already has DBADM privilege")
-#                      else:
-#                          print(f"⚠️  Error granting DBADM: {error_msg}")
-#                          print(f"ℹ️  Continuing anyway - may already have sufficient privileges")
-#
-#                  # ========================================================================
-#                  # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)
-#                  # ========================================================================
-#                  print(f"\n{'='*80}")
-#                  print("STEP 2: Granting Application Roles to Non-Admin User")
-#                  print(f"{'='*80}")
-#                  print(f"Non-admin user: {jdbc_username} (from AWS Secrets Manager)")
-#
-#                  # Close connection to rdsadmin database
-#                  ibm_db.close(conn)
-#                  print(f"ℹ️  Closed connection to rdsadmin database")
-#
-#                  # Reconnect to application database where roles exist
-#                  app_conn_str = (
-#                      f"DATABASE={rds_dbname};"
-#                      f"HOSTNAME={rds_host};"
-#                      f"PORT={rds_port};"
-#                      f"PROTOCOL=TCPIP;"
-#                      f"UID={jdbc_username};"
-#                      f"PWD={jdbc_password};"
-#                      f"SECURITY=SSL;"
-#                      f"SSLVersion={ssl_version};"
-#                      f"SSLServerCertificate={ssl_cert_path};"
-#                  )
-#
-#                  print(f"ℹ️  Connecting to application database: {rds_host}:{rds_port}/{rds_dbname}")
-#                  conn = ibm_db.connect(app_conn_str, "", "")
-#                  print(f"✅ Connected to application database {rds_dbname}")
-#
-#                  # Grant application-specific roles to non-admin user
-#                  # Note: Skipping user existence check - GRANT is idempotent and safe to re-run
-#                  print(f"ℹ️  Proceeding to grant application roles to {jdbc_username}")
-#                  # Grant application-specific roles to non-admin user
-#                  for user_info in nonadmin_user_roles:
-#                      grants = user_info['grants']
-#                      description = user_info['description']
-#                      app_type = user_info['app_type']
-#
-#                      print(f"\n--- Processing: {description} ---")
-#                      print(f"App Type: {app_type}")
-#
-#                      # Grant application role permissions
-#                      if grants:
-#                          print(f"✅ Granting {app_type} application roles to {jdbc_username}...")
-#                          for grant_role in grants:
-#                              try:
-#                                  grant_role_sql = f"GRANT ROLE {grant_role} TO USER {jdbc_username}"
-#                                  ibm_db.exec_immediate(conn, grant_role_sql)
-#                                  print(f"✅ Granted role {grant_role} to {jdbc_username}")
-#                              except Exception as e:
-#                                  print(f"⚠️  Error granting role {grant_role}: {str(e)}")
-#                                  print(f"   Note: Role {grant_role} may not exist yet. It will be created by the role creation job.")
-#
-#                  print(f"\n{'='*80}")
-#                  print("✅ User creation and role assignment completed successfully")
-#                  print(f"{'='*80}")
-#                  print(f"\n📋 Summary:")
-#                  print(f"   Admin users created with DBADM:")
-#                  for admin_user in admin_users_to_create:
-#                      print(f"      - {admin_user['username']} ({admin_user['app_type']})")
-#                  print(f"\n   Non-admin user granted application roles:")
-#                  print(f"      - {jdbc_username} (Manage & Facilities)")
-#                  print(f"\n⚠️  SECURITY NOTICE:")
-#                  print(f"   Admin user passwords have been displayed above.")
-#                  print(f"   These passwords should be stored securely in:")
-#                  print(f"      - Kubernetes Secrets, or")
-#                  print(f"      - AWS Secrets Manager")
-#                  print(f"   The passwords are required for schema management operations.")
-#
+                      # STEP 1c: Note about DB-level privileges
+                      # In AWS RDS DB2, DBADM privilege (granted above) includes all necessary database privileges:
+                      # - CREATETAB, BINDADD, CONNECT, CREATE_NOT_FENCED_ROUTINE, IMPLICIT_SCHEMA,
+                      #   LOAD, CREATE_EXTERNAL_ROUTINE, QUIESCE_CONNECT
+                      #
+                      # AWS RDS DB2 does not provide a stored procedure to grant individual database privileges.
+                      # The rds instance user cannot use direct GRANT statements (SQL0552N error).
+                      # Therefore, we rely on DBADM which provides all these privileges implicitly.
+                      
+                      print(f"\nℹ️  Database privileges for {username}:")
+                      print(f"   DBADM privilege includes all necessary database privileges:")
+                      print(f"   - CREATETAB, BINDADD, CONNECT")
+                      print(f"   - CREATE_NOT_FENCED_ROUTINE, IMPLICIT_SCHEMA")
+                      print(f"   - LOAD, CREATE_EXTERNAL_ROUTINE, QUIESCE_CONNECT")
+                      print(f"   ✅ All privileges available via DBADM")
+              
+                      # Store password information for later retrieval
+                      print(f"\n📝 IMPORTANT: Store these credentials securely!")
+                      print(f"   Username: {username}")
+                      print(f"   Password: {password}")
+                      
+                  # ========================================================================
+                  # STEP 1.5: Grant DBADM to db2admin User
+                  # ========================================================================
+                  print(f"\n{'='*80}")
+                  print("STEP 1.5: Granting DBADM to db2admin User")
+                  print(f"{'='*80}")
+                  print(f"Granting DBADM to {jdbc_username}...")
+                  print(f"Note: Application role grants will be handled by the postsync job with master credentials")
+                  
+                  # Grant DBADM
+                  try:
+                      task_id = ibm_db.callproc(
+                          conn,
+                          "rdsadmin.dbadm_grant",
+                          (None, rds_dbname, "DBADM", f"USER {jdbc_username}")
+                      )
+                      print(f"✅ Granted DBADM to {jdbc_username}")
+                  except Exception as e:
+                      error_msg = str(e)
+                      if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
+                          print(f"ℹ️  {jdbc_username} already has DBADM privilege")
+                      else:
+                          print(f"⚠️  Error granting DBADM: {error_msg}")
+                          print(f"ℹ️  Continuing anyway - may already have sufficient privileges")
+              
+                  # ========================================================================
+                  # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)
+                  # ========================================================================
+                  print(f"\n{'='*80}")
+                  print("STEP 2: Granting Application Roles to Non-Admin User")
+                  print(f"{'='*80}")
+                  print(f"Non-admin user: {jdbc_username} (from AWS Secrets Manager)")
+                  
+                  # Close connection to rdsadmin database
+                  ibm_db.close(conn)
+                  print(f"ℹ️  Closed connection to rdsadmin database")
+                  
+                  # Reconnect to application database where roles exist
+                  app_conn_str = (
+                      f"DATABASE={rds_dbname};"
+                      f"HOSTNAME={rds_host};"
+                      f"PORT={rds_port};"
+                      f"PROTOCOL=TCPIP;"
+                      f"UID={jdbc_username};"
+                      f"PWD={jdbc_password};"
+                      f"SECURITY=SSL;"
+                      f"SSLVersion={ssl_version};"
+                      f"SSLServerCertificate={ssl_cert_path};"
+                  )
+                  
+                  print(f"ℹ️  Connecting to application database: {rds_host}:{rds_port}/{rds_dbname}")
+                  conn = ibm_db.connect(app_conn_str, "", "")
+                  print(f"✅ Connected to application database {rds_dbname}")
+                  
+                  # Grant application-specific roles to non-admin user
+                  # Note: Skipping user existence check - GRANT is idempotent and safe to re-run
+                  print(f"ℹ️  Proceeding to grant application roles to {jdbc_username}")
+                  # Grant application-specific roles to non-admin user
+                  for user_info in nonadmin_user_roles:
+                      grants = user_info['grants']
+                      description = user_info['description']
+                      app_type = user_info['app_type']
+              
+                      print(f"\n--- Processing: {description} ---")
+                      print(f"App Type: {app_type}")
+              
+                      # Grant application role permissions
+                      if grants:
+                          print(f"✅ Granting {app_type} application roles to {jdbc_username}...")
+                          for grant_role in grants:
+                              try:
+                                  grant_role_sql = f"GRANT ROLE {grant_role} TO USER {jdbc_username}"
+                                  ibm_db.exec_immediate(conn, grant_role_sql)
+                                  print(f"✅ Granted role {grant_role} to {jdbc_username}")
+                              except Exception as e:
+                                  print(f"⚠️  Error granting role {grant_role}: {str(e)}")
+                                  print(f"   Note: Role {grant_role} may not exist yet. It will be created by the role creation job.")
+              
+                  print(f"\n{'='*80}")
+                  print("✅ User creation and role assignment completed successfully")
+                  print(f"{'='*80}")
+                  print(f"\n📋 Summary:")
+                  print(f"   Admin users created with DBADM:")
+                  for admin_user in admin_users_to_create:
+                      print(f"      - {admin_user['username']} ({admin_user['app_type']})")
+                  print(f"\n   Non-admin user granted application roles:")
+                  print(f"      - {jdbc_username} (Manage & Facilities)")
+                  print(f"\n⚠️  SECURITY NOTICE:")
+                  print(f"   Admin user passwords have been displayed above.")
+                  print(f"   These passwords should be stored securely in:")
+                  print(f"      - Kubernetes Secrets, or")
+                  print(f"      - AWS Secrets Manager")
+                  print(f"   The passwords are required for schema management operations.")
+              
                   # Close connection
                   ibm_db.close(conn)
               

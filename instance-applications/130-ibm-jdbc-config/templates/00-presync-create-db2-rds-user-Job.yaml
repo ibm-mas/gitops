@@ -338,12 +338,13 @@ spec:
                       print(f"   Password: {password}")
                       
                   # ========================================================================
-                  # STEP 1.5: Grant DBADM and SECADM to db2admin User (so it can grant roles)
+                  # STEP 1.5: Grant DBADM to db2admin User
                   # ========================================================================
                   print(f"\n{'='*80}")
-                  print("STEP 1.5: Granting DBADM and SECADM to db2admin User")
+                  print("STEP 1.5: Granting DBADM to db2admin User")
                   print(f"{'='*80}")
-                  print(f"Granting DBADM and SECADM to {jdbc_username} so it can grant application roles...")
+                  print(f"Granting DBADM to {jdbc_username}...")
+                  print(f"Note: Application role grants will be handled by the postsync job with master credentials")
                   
                   # Grant DBADM
                   try:
@@ -359,22 +360,37 @@ spec:
                           print(f"ℹ️  {jdbc_username} already has DBADM privilege")
                       else:
                           print(f"⚠️  Error granting DBADM: {error_msg}")
-                  
-                  # Grant SECADM (required to grant roles)
+                          print(f"ℹ️  Continuing anyway - may already have sufficient privileges")              
                   try:
-                      task_id = ibm_db.callproc(
-                          conn,
-                          "rdsadmin.dbadm_grant",
-                          (None, rds_dbname, "SECADM", f"USER {jdbc_username}")
-                      )
-                      print(f"✅ Granted SECADM to {jdbc_username}")
+                    # 2️⃣ Grant all allowed DB-level privileges (hardcoded)
+                    db_privileges = [
+                    "CREATETAB",
+                    "BINDADD",
+                    "CONNECT",
+                    "CREATE_NOT_FENCED_ROUTINE",
+                    "IMPLICIT_SCHEMA",
+                    "LOAD",
+                    "CREATE_EXTERNAL_ROUTINE",
+                    "QUIESCE_CONNECT"
+                    ]
+                    
+                    query = f"GRANT {', '.join(db_privileges)} ON DATABASE TO USER {username}"
+                    print(f"Query to grant {query}")
+                    ibm_db.exec_immediate(conn, query)
+                    print(f"Granted: {', '.join(db_privileges)}")
+                  
                   except Exception as e:
-                      error_msg = str(e)
-                      if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
-                          print(f"ℹ️  {jdbc_username} already has SECADM privilege")
-                      else:
-                          print(f"⚠️  Error granting SECADM: {error_msg}")
-                          print(f"ℹ️  Continuing anyway - may already have sufficient privileges")
+                    print(f"❌ Error while granting privileges: {str(e)}")
+              
+                  authorities = ["SECADM", "DATAACCESS", "ACCESSCTRL"]
+                  
+                  for auth in authorities:
+                    try:
+                      query = f"GRANT {auth} ON DATABASE TO USER {username}"
+                      ibm_db.exec_immediate(conn, query)
+                      print(f"✅ Granted {auth}")
+                    except Exception as e:
+                      print(f"❌ Failed {auth}: {str(e)}")              
               
                   # ========================================================================
                   # STEP 2: Grant Application Roles to Non-Admin User (from AWS Secrets)
@@ -439,7 +455,7 @@ spec:
                   print(f"\n   Non-admin user granted application roles:")
                   print(f"      - {jdbc_username} (Manage & Facilities)")
                   print(f"\n⚠️  SECURITY NOTICE:")
-                  print(f"   Admin user passwords have been generated and displayed above.")
+                  print(f"   Admin user passwords have been displayed above.")
                   print(f"   These passwords should be stored securely in:")
                   print(f"      - Kubernetes Secrets, or")
                   print(f"      - AWS Secrets Manager")

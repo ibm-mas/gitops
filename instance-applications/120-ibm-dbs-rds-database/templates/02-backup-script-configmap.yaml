@@ -106,10 +106,12 @@ data:
         
         # Step 3: Prepare backup parameters
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Shorten the path to avoid AWS RDS DB2 parameter length limits (typically 64 chars)
-        # Use shorter format: prefix/db/type_timestamp instead of prefix/db/type/timestamp
-        backup_type_short = "full" if backup_type.upper() == "FULL" else "incr"
-        s3_backup_path = f"{s3_prefix}/{database_name}/{backup_type_short}_{timestamp}"
+        # Shorten the path to avoid AWS RDS DB2 parameter length limits (typically 64 chars for S3 URI)
+        # Use ultra-compact format: prefix/type-timestamp (no underscore, single char type)
+        # The full S3 URI (s3://bucket/path) must be under 64 characters
+        backup_type_short = "f" if backup_type.upper() == "FULL" else "i"
+        # Remove prefix if it makes URI too long, use just type-timestamp
+        s3_backup_path = f"{backup_type_short}-{timestamp}"
         
         print(f"📦 Step 3: Preparing backup parameters...")
         print(f"   Database: {database_name}")
@@ -126,21 +128,26 @@ data:
         print(f"🚀 Step 4: Initiating {backup_type} backup...")
         
         # Prepare parameters for the stored procedure
-        # AWS RDS DB2 backup_database stored procedure signature (per AWS docs):
-        # backup_database(database_name, s3_bucket, s3_path, backup_type)
-        # Returns: task_id
+        # AWS RDS DB2 backup_database stored procedure expects full S3 URI
+        # Format: s3://bucket-name/path
+        s3_full_uri = f"s3://{s3_bucket_name}/{s3_backup_path}"
+        
         print(f"   Executing backup procedure...")
+        print(f"   Parameter lengths:")
+        print(f"     - database_name: {len(database_name)} chars")
+        print(f"     - s3_full_uri: {len(s3_full_uri)} chars")
+        print(f"     - backup_type: {len(backup_type)} chars")
         
         # Use ibm_db.callproc for stored procedure call (consistent with other RDS operations)
         try:
             # Call the stored procedure using ibm_db.callproc
-            # Parameters: (task_id_out, database_name, s3_bucket, s3_path, backup_type)
-            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, (None, '{database_name}', '{s3_bucket_name}', '{s3_backup_path}', '{backup_type}'))")
+            # AWS RDS DB2 backup_database signature: (task_id OUT, database_name, s3_uri, backup_type)
+            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, (None, '{database_name}', '{s3_full_uri}', '{backup_type}'))")
             
             result = db2.callproc(
                 admin_conn,
                 "rdsadmin.backup_database",
-                (None, database_name, s3_bucket_name, s3_backup_path, backup_type)
+                (None, database_name, s3_full_uri, backup_type)
             )
             
             task_id = None

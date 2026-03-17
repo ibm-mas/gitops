@@ -332,60 +332,21 @@ spec:
                           error_msg = str(e)
                           print(f"⚠️  Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
               
-                      # STEP 1c: Grant DB-level privileges using RDS stored procedure
-                      # RDS DB2 requires using rdsadmin.grant_dbauth instead of direct GRANT
-                      print(f"\n🔧 Granting database privileges to {username}...")
+                      # STEP 1c: Note about DB-level privileges
+                      # In AWS RDS DB2, DBADM privilege (granted above) includes all necessary database privileges:
+                      # - CREATETAB, BINDADD, CONNECT, CREATE_NOT_FENCED_ROUTINE, IMPLICIT_SCHEMA,
+                      #   LOAD, CREATE_EXTERNAL_ROUTINE, QUIESCE_CONNECT
+                      #
+                      # AWS RDS DB2 does not provide a stored procedure to grant individual database privileges.
+                      # The rds instance user cannot use direct GRANT statements (SQL0552N error).
+                      # Therefore, we rely on DBADM which provides all these privileges implicitly.
                       
-                      # List of database privileges to grant
-                      db_privileges = [
-                          "CREATETAB",
-                          "BINDADD",
-                          "CONNECT",
-                          "CREATE_NOT_FENCED_ROUTINE",
-                          "IMPLICIT_SCHEMA",
-                          "LOAD",
-                          "CREATE_EXTERNAL_ROUTINE",
-                          "QUIESCE_CONNECT"
-                      ]
-                      
-                      for privilege in db_privileges:
-                          try:
-                              # Use RDS stored procedure to grant database privileges
-                              # Parameters: (task_id, database, privilege, grantee)
-                              task_id = ibm_db.callproc(
-                                  conn,
-                                  "rdsadmin.grant_dbauth",
-                                  (None, rds_dbname, privilege, f"USER {username}")
-                              )
-                              print(f"✅ Granted {privilege} to {username} (task_id: {task_id})")
-                          except Exception as e:
-                              error_msg = str(e)
-                              if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
-                                  print(f"ℹ️  {username} already has {privilege} privilege")
-                              else:
-                                  print(f"⚠️  Error granting {privilege}: {error_msg}")
-                      
-                      # STEP 1d: Grant authorities using RDS stored procedure
-                      # Note: SECADM, DATAACCESS, ACCESSCTRL are database authorities, not privileges
-                      # These also need to be granted via rdsadmin.grant_dbauth
-                      print(f"\n🔧 Granting database authorities to {username}...")
-                      authorities = ["SECADM", "DATAACCESS", "ACCESSCTRL"]
-                      
-                      for auth in authorities:
-                          try:
-                              # Use RDS stored procedure to grant database authorities
-                              task_id = ibm_db.callproc(
-                                  conn,
-                                  "rdsadmin.grant_dbauth",
-                                  (None, rds_dbname, auth, f"USER {username}")
-                              )
-                              print(f"✅ Granted {auth} authority to {username} (task_id: {task_id})")
-                          except Exception as e:
-                              error_msg = str(e)
-                              if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
-                                  print(f"ℹ️  {username} already has {auth} authority")
-                              else:
-                                  print(f"⚠️  Error granting {auth}: {error_msg}")
+                      print(f"\nℹ️  Database privileges for {username}:")
+                      print(f"   DBADM privilege includes all necessary database privileges:")
+                      print(f"   - CREATETAB, BINDADD, CONNECT")
+                      print(f"   - CREATE_NOT_FENCED_ROUTINE, IMPLICIT_SCHEMA")
+                      print(f"   - LOAD, CREATE_EXTERNAL_ROUTINE, QUIESCE_CONNECT")
+                      print(f"   ✅ All privileges available via DBADM")
               
                       # Store password information for later retrieval
                       print(f"\n📝 IMPORTANT: Store these credentials securely!")

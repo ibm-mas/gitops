@@ -127,25 +127,21 @@ data:
         # Returns: task_id
         print(f"   Executing backup procedure...")
         
-        # Use exec_immediate for stored procedure call
+        # Use ibm_db.callproc for stored procedure call (consistent with other RDS operations)
         try:
-            # Build the CALL statement with proper parameter format
-            # The S3 path should be the full S3 URI
-            s3_uri = f"s3://{s3_bucket_name}/{s3_backup_path}"
+            # Call the stored procedure using ibm_db.callproc
+            # Parameters: (task_id_out, database_name, s3_bucket, s3_path, backup_type)
+            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, (None, '{database_name}', '{s3_bucket_name}', '{s3_backup_path}', '{backup_type}'))")
             
-            backup_sql = f"""
-            CALL rdsadmin.backup_database('{database_name}', '{s3_bucket_name}', '{s3_backup_path}', '{backup_type}')
-            """
+            result = db2.callproc(
+                admin_conn,
+                "rdsadmin.backup_database",
+                (None, database_name, s3_bucket_name, s3_backup_path, backup_type)
+            )
             
-            print(f"   SQL: {backup_sql}")
-            
-            # Execute the statement
-            stmt = db2.exec_immediate(admin_conn, backup_sql)
-            
-            # Fetch the result which contains task_id
-            result = db2.fetch_tuple(stmt)
             task_id = None
             if result:
+                # The first element of the result tuple is the task_id
                 task_id = result[0]
                 print(f"   ✅ Backup task initiated successfully")
                 print(f"   📋 Task ID: {task_id}\n")

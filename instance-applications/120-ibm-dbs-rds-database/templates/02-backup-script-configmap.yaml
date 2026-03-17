@@ -130,22 +130,23 @@ data:
         # Prepare parameters for the stored procedure
         # AWS RDS DB2 backup_database stored procedure signature:
         # CALL rdsadmin.backup_database(
-        #    ?,                    -- 1. Output: Task ID
-        #    'database_name',      -- 2. Database Name
-        #    's3_bucket_name',     -- 3. S3 Bucket Name
-        #    's3_prefix/',         -- 4. S3 Prefix (with trailing /)
-        #    'backup_type',        -- 5. Backup Type (OFFLINE/ONLINE/INCREMENTAL)
-        #    'compression',        -- 6. Compression (INCLUDE/NONE)
-        #    util_impact,          -- 7. Util Impact Priority (integer 0-100)
-        #    num_files,            -- 8. Number of Files (integer)
-        #    parallelism,          -- 9. Parallelism (integer)
-        #    num_buffers           -- 10. Number of Buffers (integer)
+        #    'err_message',        -- 1. IN: Error Message (VARCHAR - pass empty string)
+        #    'database_name',      -- 2. IN: Database Name
+        #    's3_bucket_name',     -- 3. IN: S3 Bucket Name (VARCHAR(32) - max 32 chars!)
+        #    's3_prefix/',         -- 4. IN: S3 Prefix (with trailing /)
+        #    'backup_type',        -- 5. IN: Backup Type (OFFLINE/ONLINE/INCREMENTAL)
+        #    'compression',        -- 6. IN: Compression (INCLUDE/NONE)
+        #    util_impact,          -- 7. IN: Util Impact Priority (integer 0-100)
+        #    num_files,            -- 8. IN: Number of Files (integer)
+        #    parallelism,          -- 9. IN: Parallelism (integer)
+        #    num_buffers           -- 10. IN: Number of Buffers (integer)
         # )
         
         print(f"   Executing backup procedure...")
         print(f"   Parameters:")
+        print(f"     - Error Message: '' (empty string)")
         print(f"     - Database Name: {database_name}")
-        print(f"     - S3 Bucket: {s3_bucket_name}")
+        print(f"     - S3 Bucket: {s3_bucket_name} ({len(s3_bucket_name)} chars)")
         print(f"     - S3 Prefix: {s3_backup_path}")
         print(f"     - Backup Type: {backup_type}")
         print(f"     - Compression: {compression}")
@@ -157,30 +158,32 @@ data:
         # Use ibm_db.callproc for stored procedure call (consistent with other RDS operations)
         try:
             # Call the stored procedure using ibm_db.callproc with correct parameter types
+            # IMPORTANT: First parameter is ERR_MESSAGE (input), not a task ID output
             # IMPORTANT: Numeric parameters must be integers, not strings
-            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, (None, '{database_name}', '{s3_bucket_name}', '{s3_backup_path}', '{backup_type}', '{compression}', {util_impact_priority}, {num_files}, {parallelism}, {num_buffers}))")
+            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, ('', '{database_name}', '{s3_bucket_name}', '{s3_backup_path}', '{backup_type}', '{compression}', {util_impact_priority}, {num_files}, {parallelism}, {num_buffers}))")
             
             result = db2.callproc(
                 admin_conn,
                 "rdsadmin.backup_database",
                 (
-                    None,                    # 1. Output: Task ID
-                    database_name,           # 2. Database Name (BLUDB - target to backup)
-                    s3_bucket_name,          # 3. S3 Bucket Name
-                    s3_backup_path,          # 4. S3 Prefix (with trailing /)
-                    backup_type,             # 5. Backup Type (ONLINE/OFFLINE/INCREMENTAL)
-                    compression,             # 6. Compression (INCLUDE/NONE)
-                    util_impact_priority,    # 7. Util Impact Priority (integer)
-                    num_files,               # 8. Number of Files (integer)
-                    parallelism,             # 9. Parallelism (integer)
-                    num_buffers              # 10. Number of Buffers (integer)
+                    '',                      # 1. IN: Error Message (pass empty string)
+                    database_name,           # 2. IN: Database Name (BLUDB - target to backup)
+                    s3_bucket_name,          # 3. IN: S3 Bucket Name (max 32 chars)
+                    s3_backup_path,          # 4. IN: S3 Prefix (with trailing /)
+                    backup_type,             # 5. IN: Backup Type (ONLINE/OFFLINE/INCREMENTAL)
+                    compression,             # 6. IN: Compression (INCLUDE/NONE)
+                    util_impact_priority,    # 7. IN: Util Impact Priority (integer)
+                    num_files,               # 8. IN: Number of Files (integer)
+                    parallelism,             # 9. IN: Parallelism (integer)
+                    num_buffers              # 10. IN: Number of Buffers (integer)
                 )
             )
             
+            # The procedure may return a task ID or status information
             task_id = None
-            if result:
-                # The first element of the result tuple is the task_id
-                task_id = result[0]
+            if result and len(result) > 0:
+                # Check if we got a task ID back (could be in first or second position)
+                task_id = result[0] if result[0] else (result[1] if len(result) > 1 else None)
                 print(f"   ✅ Backup task initiated successfully")
                 print(f"   📋 Task ID: {task_id}\n")
             else:

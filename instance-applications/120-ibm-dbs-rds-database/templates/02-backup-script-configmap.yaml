@@ -109,14 +109,24 @@ data:
         # Step 3: Prepare backup parameters
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         # Create S3 prefix with trailing slash as required by rdsadmin.backup_database
-        # Format: prefix/type-timestamp/
-        backup_type_short = "f" if backup_type.upper() in ["FULL", "ONLINE"] else "i"
-        s3_backup_path = f"{backup_type_short}-{timestamp}/"
+        # Format: s3_prefix/type-timestamp/
+        # OFFLINE and ONLINE are both full backups (use 'f'), INCREMENTAL uses 'i'
+        backup_type_short = "f" if backup_type.upper() in ["FULL", "ONLINE", "OFFLINE"] else "i"
+        
+        # Construct full S3 path including the base prefix
+        if s3_prefix:
+            # Ensure s3_prefix doesn't have trailing slash, then add our backup folder
+            s3_backup_path = f"{s3_prefix.rstrip('/')}/{backup_type_short}-{timestamp}/"
+        else:
+            # No prefix, store at bucket root
+            s3_backup_path = f"{backup_type_short}-{timestamp}/"
         
         print(f"📦 Step 3: Preparing backup parameters...")
         print(f"   Database: {database_name}")
         print(f"   Backup Type: {backup_type}")
-        print(f"   S3 Path: s3://{s3_bucket_name}/{s3_backup_path}")
+        print(f"   S3 Bucket: {s3_bucket_name}")
+        print(f"   S3 Base Prefix: {s3_prefix if s3_prefix else '(root)'}")
+        print(f"   S3 Full Path: s3://{s3_bucket_name}/{s3_backup_path}")
         print(f"   Path Length: {len(s3_backup_path)} characters")
         print(f"   Compression: {compression}")
         print(f"   Util Impact Priority: {util_impact_priority}")
@@ -179,73 +189,25 @@ data:
                 )
             )
             
-            # The procedure may return a task ID or status information
-            task_id = None
-            if result and len(result) > 0:
-                # Check if we got a task ID back (could be in first or second position)
-                task_id = result[0] if result[0] else (result[1] if len(result) > 1 else None)
-                print(f"   ✅ Backup task initiated successfully")
-                print(f"   📋 Task ID: {task_id}\n")
-            else:
-                print(f"   ⚠️ Backup procedure executed but no task ID returned")
+            print(f"   ✅ Backup task initiated successfully")
+            print(f"   ℹ️  Backup procedure called: rdsadmin.backup_database")
+            print(f"   ℹ️  Backup is running asynchronously in the background\n")
+            
         except Exception as proc_error:
             print(f"   ❌ Failed to call stored procedure: {str(proc_error)}")
             raise
         
-        if result and task_id:
-            task_id = str(task_id).strip()
-            print(f"   Using Task ID: {task_id}")
-            
-            # Step 5: Monitor backup status
-            print(f"⏳ Step 5: Monitoring backup status...")
-            max_wait_time = 3600  # 1 hour max wait
-            check_interval = 30  # Check every 30 seconds
-            elapsed_time = 0
-            
-            while elapsed_time < max_wait_time:
-                try:
-                    # Use callproc for get_task_status procedure
-                    # Signature: CALL rdsadmin.get_task_status(task_id)
-                    # Returns: status, message
-                    status_result = db2.callproc(
-                        admin_conn,
-                        "rdsadmin.get_task_status",
-                        (task_id,)
-                    )
-                    
-                    if status_result and len(status_result) > 0:
-                        task_status = status_result[0] if status_result[0] else ""
-                        task_message = status_result[1] if len(status_result) > 1 else ""
-                        
-                        print(f"   Status: {task_status} - {task_message}")
-                        
-                        if task_status in ['COMPLETED', 'SUCCESS']:
-                            print(f"\n   ✅ Backup completed successfully!")
-                            break
-                        elif task_status in ['FAILED', 'ERROR']:
-                            print(f"\n   ❌ Backup failed: {task_message}")
-                            sys.exit(1)
-                        elif task_status in ['RUNNING', 'IN_PROGRESS']:
-                            print(f"   ⏳ Backup in progress... (elapsed: {elapsed_time}s)")
-                            time.sleep(check_interval)
-                            elapsed_time += check_interval
-                        else:
-                            print(f"   ℹ️  Unknown status: {task_status}")
-                            time.sleep(check_interval)
-                            elapsed_time += check_interval
-                    else:
-                        print(f"   ⚠️  Could not retrieve task status")
-                        break
-                except Exception as status_error:
-                    print(f"   ⚠️  Error checking task status: {str(status_error)}")
-                    print(f"   ℹ️  Backup may still be running. Check task {task_id} manually.")
-                    break
-            
-            if elapsed_time >= max_wait_time:
-                print(f"\n   ⚠️  Backup monitoring timed out after {max_wait_time}s")
-                print(f"   ℹ️  Backup may still be running. Check task {task_id} manually.")
-        else:
-            print(f"   ⚠️  Could not retrieve task ID from backup procedure")
+        # Step 5: Note about backup monitoring
+        print(f"⏳ Step 5: Backup Status Monitoring")
+        print(f"   ℹ️  AWS RDS DB2 backups run asynchronously")
+        print(f"   ℹ️  The backup procedure has been initiated successfully")
+        print(f"   ℹ️  To check backup status, you can:")
+        print(f"      1. Check S3 bucket for backup files: s3://{s3_bucket_name}/{s3_backup_path}")
+        print(f"      2. Query DB2 backup history: SELECT * FROM SYSIBMADM.DB_HISTORY WHERE OPERATION='B'")
+        print(f"      3. Check RDS CloudWatch logs for backup progress")
+        print(f"   ⏳ Waiting 60 seconds for backup to start...")
+        time.sleep(60)
+        print(f"   ✅ Initial wait complete\n")
         
         # Step 6: Verify upload to S3 (optional)
         print(f"\n📊 Step 6: Backup Summary")

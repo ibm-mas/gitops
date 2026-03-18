@@ -12,6 +12,24 @@
   {{ $job := printf "%s-job" $prefix }}
 
 ---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: "aws-{{ .Values.mas_config_name }}"
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+  {{- if .Values.custom_labels }}
+labels:
+  {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+type: Opaque
+
+---
 kind: ServiceAccount
 apiVersion: v1
 metadata:
@@ -83,6 +101,14 @@ spec:
               cpu: 10m
               memory: 64Mi
           env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id }}
+            - name: MAS_INSTANCE_ID
+              value: {{ .Values.instance_id }}
             - name: JDBC_CONNECTION_URL
               value: "{{ .Values.jdbc_connection_url }}"
             - name: RDS_ADMIN_DB_NAME
@@ -93,8 +119,9 @@ spec:
               value: "{{ .Values.jdbc_instance_password }}"
             - name: MAS_APP_ID
               value: "{{ .Values.mas_application_id }}"
-            - name: ADMIN_USER_PASSWORD
-              value: "{{ .Values.admin_user_password | default (randAlphaNum 32) }}"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
           command:
             - /bin/sh
             - -c
@@ -102,14 +129,24 @@ spec:
               
               set -e
               
+              source /mascli/functions/gitops_utils
+              
               echo ""
               echo "================================================================================"
               echo "Settings"
               echo "================================================================================"
+              echo "ACCOUNT_ID .......................... ${ACCOUNT_ID}"
+              echo "REGION_ID ........................... ${REGION_ID}"
+              echo "CLUSTER_ID .......................... ${CLUSTER_ID}"
+              echo "MAS_INSTANCE_ID ..................... ${MAS_INSTANCE_ID}"
               echo "JDBC_CONNECTION_URL ................. ${JDBC_CONNECTION_URL}"
               echo "JDBC_INSTANCE_USERNAME .............. ${JDBC_INSTANCE_USERNAME}"
               echo "RDS_ADMIN_DB_NAME ................... ${RDS_ADMIN_DB_NAME}"
               echo "MAS_APP_ID .......................... ${MAS_APP_ID}"
+              
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              export SM_AWS_REGION=${REGION_ID}
               
               echo ""
               echo "Installing required Python packages..."
@@ -141,8 +178,7 @@ spec:
               3. Grants application-specific roles to non-admin user (from AWS Secrets Manager)
               
               Password Management:
-              - By default, username is used as password (e.g., db2_manage/db2_manage)
-              - Can be overridden by setting ADMIN_USER_PASSWORD env var for all admin users
+              - Username is used as password (e.g., db2_manage/db2_manage)
               - Passwords are displayed in the job logs
               
               User Types:
@@ -163,7 +199,6 @@ spec:
               jdbc_username = os.getenv('JDBC_INSTANCE_USERNAME')
               jdbc_password = os.getenv('JDBC_INSTANCE_PASSWORD')
               mas_app_id = os.getenv('MAS_APP_ID', 'manage')
-              admin_user_password = os.getenv('ADMIN_USER_PASSWORD')
               ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
               
               # Function to generate secure random password
@@ -229,6 +264,7 @@ spec:
               
               # Admin users to CREATE (with DBADM)
               # Using username as password for simplicity (can be changed later via admin_user_password)
+              # Admin users with username as password
               admin_users_to_create = [
                   {
                       'username': 'db2_manage',
@@ -252,6 +288,15 @@ spec:
                       'app_type': 'iot'
                   }
               ]
+              
+              # Export admin credentials for later use
+              with open('/tmp/admin_credentials.txt', 'w') as f:
+                  f.write(f"DB2_MANAGE_USERNAME=db2_manage\n")
+                  f.write(f"DB2_MANAGE_PASSWORD=db2_manage\n")
+                  f.write(f"DB2_FACILITIES_USERNAME=db2_facilities\n")
+                  f.write(f"DB2_FACILITIES_PASSWORD=db2_facilities\n")
+                  f.write(f"DB2_IOT_USERNAME=db2_iot\n")
+                  f.write(f"DB2_IOT_PASSWORD=db2_iot\n")
               
               # Non-admin user from AWS Secrets Manager (grant only app roles)
               # Note: IoT does NOT get non-admin roles - only admin user with DBADM
@@ -378,11 +423,64 @@ spec:
               python ${RDS_USER_SCRIPT} || exit $?
               
               echo ""
-              echo "✅ RDS app-specific admin user creation job completed successfully"
+              echo "================================================================================"
+              echo "Uploading credentials to AWS Secrets Manager"
+              echo "================================================================================"
+              
+              # Source the admin credentials created by Python script
+              source /tmp/admin_credentials.txt
+              
+              # Determine the secret path and credentials based on MAS_APP_ID
+              case "${MAS_APP_ID}" in
+                manage)
+                  ADMIN_USERNAME="${DB2_MANAGE_USERNAME}"
+                  ADMIN_PASSWORD="${DB2_MANAGE_PASSWORD}"
+                  JDBC_CREDENTIALS_SECRET="aws-dev/mas-cluster-8/inst04/jdbc/rds-inst04-manage/credentials"
+                  ;;
+                facilities)
+                  ADMIN_USERNAME="${DB2_FACILITIES_USERNAME}"
+                  ADMIN_PASSWORD="${DB2_FACILITIES_PASSWORD}"
+                  JDBC_CREDENTIALS_SECRET="aws-dev/mas-cluster-8/inst04/jdbc/rds-inst04-facilities/credentials"
+                  ;;
+                iot)
+                  ADMIN_USERNAME="${DB2_IOT_USERNAME}"
+                  ADMIN_PASSWORD="${DB2_IOT_PASSWORD}"
+                  JDBC_CREDENTIALS_SECRET="aws-dev/mas-cluster-8/inst04/jdbc/rds-inst04-iot/credentials"
+                  ;;
+                *)
+                  echo "❌ Unknown MAS_APP_ID: ${MAS_APP_ID}"
+                  exit 1
+                  ;;
+              esac
+              
+              echo "MAS Application: ${MAS_APP_ID}"
+              echo "Secret Name: ${JDBC_CREDENTIALS_SECRET}"
+              echo "Username: ${ADMIN_USERNAME}"
+              
+              # Login to Secrets Manager
+              sm_login
+              
+              # Create JSON payload with app-specific admin username and password
+              SECRET_JSON="{\"username\": \"${ADMIN_USERNAME}\", \"password\": \"${ADMIN_PASSWORD}\"}"
+              
+              # Update the secret with tags
+              TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-db2-rds-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}, {\"Key\": \"user_type\", \"Value\": \"admin\"}]"
+              
+              echo "Updating AWS Secrets Manager secret..."
+              sm_update_secret "${JDBC_CREDENTIALS_SECRET}" "${SECRET_JSON}" "${TAGS}" || exit $?
+              
+              echo "✅ Admin credentials (${ADMIN_USERNAME}) uploaded to AWS Secrets Manager successfully"
+              
+              echo ""
+              echo "✅ RDS app-specific admin user creation and AWS secret upload completed successfully"
 
       restartPolicy: Never
       serviceAccountName: {{ $sa }}
-      volumes: []
+      volumes:
+        - name: aws
+          secret:
+            secretName: "aws-{{ .Values.mas_config_name }}"
+            defaultMode: 420
   backoffLimit: 4
   
   {{- end }}

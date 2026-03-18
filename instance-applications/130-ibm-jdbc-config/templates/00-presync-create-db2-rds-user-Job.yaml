@@ -286,6 +286,7 @@ spec:
               with open('/tmp/admin_credentials.txt', 'w') as f:
                   f.write(f"ADMIN_USERNAME={admin_username}\n")
                   f.write(f"ADMIN_PASSWORD={admin_password}\n")
+                  f.write(f"USER_EXISTS=true\n")  # Default to true (assume exists)
               
               print(f"\nCreating user for MAS Application: {mas_app_id}")
               
@@ -301,7 +302,7 @@ spec:
                       description = admin_user['description']
                       app_type = admin_user['app_type']
                   
-                      # Check if user already exists (commented out for now)
+                      # Check if user already exists
                       user_exists = False
                       try:
                          check_user_sql = f"SELECT GRANTEE FROM SYSCAT.DBAUTH WHERE GRANTEE = '{username.upper()}'"
@@ -325,6 +326,7 @@ spec:
                               # Check if user already exists (fallback check)
                               if 'already exists' in error_msg.lower() or 'sql0551n' in error_msg.lower():
                                   print(f"User {username} already exists, skipping creation")
+                                  user_exists = True  # Update flag
                               else:
                                   print(f"Error creating user {username}: {error_msg}")
                       else:
@@ -342,6 +344,14 @@ spec:
                           print(f"Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
                   
                   ibm_db.close(conn)
+                  
+                  # Update the credentials file with user existence status
+                  with open('/tmp/admin_credentials.txt', 'w') as f:
+                      f.write(f"ADMIN_USERNAME={admin_username}\n")
+                      f.write(f"ADMIN_PASSWORD={admin_password}\n")
+                      f.write(f"USER_EXISTS={'true' if user_exists else 'false'}\n")
+                  
+                  print(f"\nUser status: {'User already existed' if user_exists else 'New user created'}")
                   
               except Exception as e:
                   print(f" Error: {str(e)}")
@@ -370,28 +380,43 @@ spec:
               
               echo ""
               echo "================================================================================"
-              echo "Preparing to upload credentials to AWS Secrets Manager"
+              echo "Checking if Secrets Manager update is needed"
               echo "================================================================================"
               echo "MAS Application: ${MAS_APP_ID}"
-              echo "Secret Name: ${JDBC_CREDENTIALS_SECRET}"
               echo "Username: ${ADMIN_USERNAME}"
+              echo "User exists: ${USER_EXISTS}"
               echo ""
               
-              # Login to Secrets Manager
-              sm_login
+              # Only update Secrets Manager if user did NOT already exist (i.e., was newly created)
+              if [ "${USER_EXISTS}" = "false" ]; then
+                echo "New user was created - updating AWS Secrets Manager..."
+                echo "Secret Name: ${JDBC_CREDENTIALS_SECRET}"
+                echo ""
+                
+                # Login to Secrets Manager
+                sm_login
+                
+                # Create JSON payload with app-specific admin username and password
+                SECRET_JSON="{\"username\": \"${ADMIN_USERNAME}\", \"password\": \"${ADMIN_PASSWORD}\"}"
+                
+                echo "Secret JSON payload:"
+                echo "${SECRET_JSON}"
+                echo ""
+                
+                # Update the secret with tags
+                TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-db2-rds-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}, {\"Key\": \"user_type\", \"Value\": \"admin\"}]"
+                
+                echo "Updating AWS Secrets Manager secret..."
+                sm_update_secret "${JDBC_CREDENTIALS_SECRET}" "${SECRET_JSON}" "${TAGS}" || exit $?
+                
+                echo "✅ Admin credentials (${ADMIN_USERNAME}) uploaded to AWS Secrets Manager successfully"
+              else
+                echo "ℹ️  User already existed - skipping AWS Secrets Manager update"
+                echo "   Existing credentials in Secrets Manager will be preserved"
+              fi
               
-              # Create JSON payload with app-specific admin username and password
-              SECRET_JSON="{\"username\": \"${ADMIN_USERNAME}\", \"password\": \"${ADMIN_PASSWORD}\"}"
-              
-              # Update the secret with tags
-              TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-db2-rds-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}, {\"Key\": \"user_type\", \"Value\": \"admin\"}]"
-              
-              echo "Updating AWS Secrets Manager secret..."
-              sm_update_secret "${JDBC_CREDENTIALS_SECRET}" "${SECRET_JSON}" "${TAGS}" || exit $?
-              
-              echo " Admin credentials (${ADMIN_USERNAME}) uploaded to AWS Secrets Manager successfully"
               echo ""
-              echo " RDS app-specific admin user creation and AWS secret upload completed successfully"
+              echo "✅ RDS user management completed successfully"
 
       restartPolicy: Never
       serviceAccountName: {{ $sa }}

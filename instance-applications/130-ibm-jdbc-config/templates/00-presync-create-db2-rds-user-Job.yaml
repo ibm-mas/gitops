@@ -282,16 +282,16 @@ spec:
                   }
               ]
               
-              # Export admin credentials to environment for shell script to use
-              os.environ['ADMIN_USERNAME'] = admin_username
-              os.environ['ADMIN_PASSWORD'] = admin_password
+              # Export admin credentials for shell script to use
+              with open('/tmp/admin_credentials.txt', 'w') as f:
+                  f.write(f"ADMIN_USERNAME={admin_username}\n")
+                  f.write(f"ADMIN_PASSWORD={admin_password}\n")
+              
+              print(f"\n📝 Admin credentials generated:")
+              print(f"   Username: {admin_username}")
+              print(f"   Password: {admin_password}")
               
               print(f"\n✅ Creating user for MAS Application: {mas_app_id}")
-              print(f"   1. Admin user: db2_{mas_app_id} (DBADM for schema management)")
-              if mas_app_id in ['manage', 'facilities']:
-                  print(f"   2. Non-admin user: {jdbc_username} (App roles for {mas_app_id})")
-              else:
-                  print(f"   Note: IoT uses admin user (db2_{mas_app_id}) with DBADM only")
               
               try:
                   # Connect to the database
@@ -330,21 +330,21 @@ spec:
                           print(f"⚠️  Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
               
                   
-                  # Grant DBADM
-                  try:
-                      task_id = ibm_db.callproc(
-                          conn,
-                          "rdsadmin.dbadm_grant",
-                          (None, rds_dbname, "DBADM", f"USER {jdbc_username}")
-                      )
-                      print(f"✅ Granted DBADM to {jdbc_username}")
-                  except Exception as e:
-                      error_msg = str(e)
-                      if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
-                          print(f"{jdbc_username} already has DBADM privilege")
-                      else:
-                          print(f"⚠️  Error granting DBADM: {error_msg}")
-                          pass
+                      # Grant DBADM
+                      try:
+                          task_id = ibm_db.callproc(
+                              conn,
+                              "rdsadmin.dbadm_grant",
+                              (None, rds_dbname, "DBADM", f"USER {username}")
+                          )
+                          print(f"✅ Granted DBADM to {username}")
+                      except Exception as e:
+                          error_msg = str(e)
+                          if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
+                              print(f"{username} already has DBADM privilege")
+                          else:
+                              print(f"⚠️  Error granting DBADM: {error_msg}")
+                              pass
                   
                   ibm_db.close(conn)
                   
@@ -367,18 +367,31 @@ spec:
               # Admin credentials are already set by Python script via os.environ
               # ADMIN_USERNAME and ADMIN_PASSWORD are available from Python
               
+              # Source the admin credentials created by Python script
+              source /tmp/admin_credentials.txt
+              
               # Determine the secret path based on MAS_APP_ID
               JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${MAS_APP_ID}/credentials-test"
               
+              echo ""
+              echo "================================================================================"
+              echo "Preparing to upload credentials to AWS Secrets Manager"
+              echo "================================================================================"
               echo "MAS Application: ${MAS_APP_ID}"
               echo "Secret Name: ${JDBC_CREDENTIALS_SECRET}"
               echo "Username: ${ADMIN_USERNAME}"
+              echo "Password: ${ADMIN_PASSWORD}"
+              echo ""
               
               # Login to Secrets Manager
               sm_login
               
               # Create JSON payload with app-specific admin username and password
               SECRET_JSON="{\"username\": \"${ADMIN_USERNAME}\", \"password\": \"${ADMIN_PASSWORD}\"}"
+              
+              echo "Secret JSON payload:"
+              echo "${SECRET_JSON}"
+              echo ""
               
               # Update the secret with tags
               TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-db2-rds-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}, {\"Key\": \"user_type\", \"Value\": \"admin\"}]"

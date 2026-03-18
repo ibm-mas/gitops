@@ -1,6 +1,6 @@
 {{- /*
-  Test Job for Incremental Backup
-  This is a one-time job to test the incremental backup functionality
+  Test Job for Online Backup
+  This is a one-time job to test the online backup functionality
   Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
 {{- $_cli_image_digest := "sha256:1b88f88a1a719d006ea1f4b8dcfd1c2625fa7ecc529c3267e7b4b6afaa1c8da0" }}
@@ -9,7 +9,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "{{ .Values.db2_rds_instance_name }}-test-incremental-backup"
+  name: "{{ .Values.db2_rds_instance_name }}-test-online-backup"
   annotations:
     argocd.argoproj.io/sync-wave: "139"
 {{- if .Values.custom_labels }}
@@ -27,7 +27,7 @@ spec:
     spec:
       restartPolicy: Never
       containers:
-        - name: rds-db2-test-incremental-backup
+        - name: rds-db2-test-online-backup
           image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
           resources:
             limits:
@@ -41,7 +41,7 @@ spec:
             - |
               set -e
               echo "=========================================="
-              echo "TEST INCREMENTAL BACKUP JOB"
+              echo "TEST ONLINE BACKUP JOB"
               echo "=========================================="
               echo "Downloading RDS SSL certificate..."
               mkdir -p /etc/mas/rds-ssl
@@ -52,12 +52,12 @@ spec:
               pip install ibm_db
               echo "✅ ibm_db installed successfully"
               
-              echo "Starting TEST INCREMENTAL backup..."
+              echo "Starting TEST ONLINE backup..."
               export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem
               python /etc/mas/backup-script/rds-db2-backup.py
           env:
             - name: BACKUP_TYPE
-              value: "OFFLINE"  # Changed from INCREMENTAL to OFFLINE for testing
+              value: "ONLINE"
             - name: DB_HOST
               value: {{ .Values.host | quote }}
             - name: RDS_ADMIN_DB
@@ -73,7 +73,7 @@ spec:
             - name: S3_PREFIX
               value: {{ .Values.backup.s3_prefix | quote }}
             - name: COMPRESSION
-              value: "NONE"  # Changed from INCLUDE to NONE for testing
+              value: "NONE"
             - name: UTIL_IMPACT_PRIORITY
               value: {{ .Values.backup.util_impact_priority | quote }}
             - name: NUM_FILES
@@ -99,4 +99,3 @@ spec:
             secretName: dbs-rds-secret-store
             defaultMode: 0420
             optional: false
-

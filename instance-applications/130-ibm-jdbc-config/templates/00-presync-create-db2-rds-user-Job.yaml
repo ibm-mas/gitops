@@ -269,7 +269,7 @@ spec:
               # Admin users to CREATE (with DBADM)
               # Generate secure random password for the admin user
               # Populate admin_users_to_create based on MAS_APP_ID
-              admin_username = 'db2_manage_test'
+              admin_username = 'db2_manage_test-01'
               admin_password = generate_password(length=20)
               
               admin_users_to_create = [
@@ -301,18 +301,34 @@ spec:
                       description = admin_user['description']
                       app_type = admin_user['app_type']
                   
+                      # Check if user already exists
+                      user_exists = False
                       try:
-                          # First, try to create the user using RDS stored procedure
-                          create_user_sql = f"CALL rdsadmin.add_user('{username}', '{password}', NULL)"
-                          ibm_db.exec_immediate(conn, create_user_sql)
-                          print(f"User {username} created successfully using rdsadmin.add_user()")
+                          check_user_sql = f"SELECT AUTHID FROM SYSCAT.DBAUTH WHERE AUTHID = '{username.upper()}'"
+                          stmt = ibm_db.exec_immediate(conn, check_user_sql)
+                          result = ibm_db.fetch_assoc(stmt)
+                          if result:
+                              user_exists = True
+                              print(f"User {username} already exists in database")
                       except Exception as e:
-                          error_msg = str(e)
-                          # Check if user already exists
-                          if 'already exists' in error_msg.lower() or 'sql0551n' in error_msg.lower():
-                              print(f"User {username} already exists, skipping creation")
-                          else:
-                              print(f"Error creating user {username}: {error_msg}")
+                          print(f"Could not check if user exists: {str(e)}")
+                  
+                      # Create user only if it doesn't exist
+                      if not user_exists:
+                          try:
+                              # Create the user using RDS stored procedure
+                              create_user_sql = f"CALL rdsadmin.add_user('{username}', '{password}', NULL)"
+                              ibm_db.exec_immediate(conn, create_user_sql)
+                              print(f"User {username} created successfully using rdsadmin.add_user()")
+                          except Exception as e:
+                              error_msg = str(e)
+                              # Check if user already exists (fallback check)
+                              if 'already exists' in error_msg.lower() or 'sql0551n' in error_msg.lower():
+                                  print(f"User {username} already exists, skipping creation")
+                              else:
+                                  print(f"Error creating user {username}: {error_msg}")
+                      else:
+                          print(f"Skipping user creation for {username} (already exists)")
                   
                       try:
                           task_id = ibm_db.callproc(

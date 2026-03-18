@@ -301,8 +301,17 @@ spec:
                       description = admin_user['description']
                       app_type = admin_user['app_type']
                   
-                      # Check if user already exists
+                      # Check if user already exists (commented out for now)
                       user_exists = False
+                      # try:
+                      #     check_user_sql = f"SELECT GRANTEE FROM SYSCAT.DBAUTH WHERE GRANTEE = '{username.upper()}'"
+                      #     stmt = ibm_db.exec_immediate(conn, check_user_sql)
+                      #     result = ibm_db.fetch_assoc(stmt)
+                      #     if result:
+                      #         user_exists = True
+                      #         print(f"User {username} already exists in database")
+                      # except Exception as e:
+                      #     print(f"Could not check if user exists: {str(e)}")
                   
                       # Create user only if it doesn't exist
                       if not user_exists:
@@ -321,16 +330,16 @@ spec:
                       else:
                           print(f"Skipping user creation for {username} (already exists)")
                   
-                       try:
-                           task_id = ibm_db.callproc(
-                               conn,
-                               "rdsadmin.dbadm_grant",
-                               (None, rds_dbname, "DBADM", f"USER {username}")
-                           )
-                           print(f"Granted DBADM privileges to {username} (task_id: {task_id})")
-                       except Exception as e:
-                           error_msg = str(e)
-                           print(f"Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
+                      try:
+                          task_id = ibm_db.callproc(
+                              conn,
+                              "rdsadmin.dbadm_grant",
+                              (None, rds_dbname, "DBADM", f"USER {username}")
+                          )
+                          print(f"Granted DBADM privileges to {username} (task_id: {task_id})")
+                      except Exception as e:
+                          error_msg = str(e)
+                          print(f"Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
                   
                   ibm_db.close(conn)
                   

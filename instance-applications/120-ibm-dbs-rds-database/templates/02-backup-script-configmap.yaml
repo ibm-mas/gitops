@@ -203,32 +203,42 @@ data:
             elapsed_time = 0
             
             while elapsed_time < max_wait_time:
-                status_sql = f"CALL rdsadmin.get_task_status('{task_id}')"
-                status_stmt = db2.exec_immediate(admin_conn, status_sql)
-                status_result = db2.fetch_tuple(status_stmt)
-                
-                if status_result:
-                    task_status = status_result[0]
-                    task_message = status_result[1] if len(status_result) > 1 else ""
+                try:
+                    # Use callproc for get_task_status procedure
+                    # Signature: CALL rdsadmin.get_task_status(task_id)
+                    # Returns: status, message
+                    status_result = db2.callproc(
+                        admin_conn,
+                        "rdsadmin.get_task_status",
+                        (task_id,)
+                    )
                     
-                    print(f"   Status: {task_status} - {task_message}")
-                    
-                    if task_status in ['COMPLETED', 'SUCCESS']:
-                        print(f"\n   ✅ Backup completed successfully!")
-                        break
-                    elif task_status in ['FAILED', 'ERROR']:
-                        print(f"\n   ❌ Backup failed: {task_message}")
-                        sys.exit(1)
-                    elif task_status in ['RUNNING', 'IN_PROGRESS']:
-                        print(f"   ⏳ Backup in progress... (elapsed: {elapsed_time}s)")
-                        time.sleep(check_interval)
-                        elapsed_time += check_interval
+                    if status_result and len(status_result) > 0:
+                        task_status = status_result[0] if status_result[0] else ""
+                        task_message = status_result[1] if len(status_result) > 1 else ""
+                        
+                        print(f"   Status: {task_status} - {task_message}")
+                        
+                        if task_status in ['COMPLETED', 'SUCCESS']:
+                            print(f"\n   ✅ Backup completed successfully!")
+                            break
+                        elif task_status in ['FAILED', 'ERROR']:
+                            print(f"\n   ❌ Backup failed: {task_message}")
+                            sys.exit(1)
+                        elif task_status in ['RUNNING', 'IN_PROGRESS']:
+                            print(f"   ⏳ Backup in progress... (elapsed: {elapsed_time}s)")
+                            time.sleep(check_interval)
+                            elapsed_time += check_interval
+                        else:
+                            print(f"   ℹ️  Unknown status: {task_status}")
+                            time.sleep(check_interval)
+                            elapsed_time += check_interval
                     else:
-                        print(f"   ℹ️  Unknown status: {task_status}")
-                        time.sleep(check_interval)
-                        elapsed_time += check_interval
-                else:
-                    print(f"   ⚠️  Could not retrieve task status")
+                        print(f"   ⚠️  Could not retrieve task status")
+                        break
+                except Exception as status_error:
+                    print(f"   ⚠️  Error checking task status: {str(status_error)}")
+                    print(f"   ℹ️  Backup may still be running. Check task {task_id} manually.")
                     break
             
             if elapsed_time >= max_wait_time:

@@ -306,13 +306,18 @@ spec:
                       user_exists = False
                       try:
                          check_user_sql = f"SELECT GRANTEE FROM SYSCAT.DBAUTH WHERE GRANTEE = '{username.upper()}'"
+                         print(f"\nExecuting SQL query to check if user exists:")
+                         print(f"  SQL: {check_user_sql}")
                          stmt = ibm_db.exec_immediate(conn, check_user_sql)
                          result = ibm_db.fetch_assoc(stmt)
+                         print(f"  Query result: {result}")
                          if result:
                              user_exists = True
-                             print(f"User {username} already exists in database")
+                             print(f"  ✓ User {username} already exists in database")
+                         else:
+                             print(f"  ✓ User {username} does not exist")
                       except Exception as e:
-                         print(f"Could not check if user exists: {str(e)}")
+                         print(f"  ✗ Could not check if user exists: {str(e)}")
                   
                       # Create user only if it doesn't exist
                       if not user_exists:

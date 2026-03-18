@@ -283,7 +283,7 @@ spec:
               # Admin users to CREATE (with DBADM)
               # Generate secure random password for the admin user
               # Populate admin_users_to_create based on MAS_APP_ID
-              admin_username = 'db2_manage_t10'
+              admin_username = f'db2_{mas_app_id}'
               admin_password = generate_password(length=20)
               
               admin_users_to_create = [
@@ -307,11 +307,11 @@ spec:
               try:
                   # Connect to the admin database
                   conn = ibm_db.connect(conn_str, "", "")
-                  print("✓ Successfully connected to RDS DB2 admin database")
+                  print(" Successfully connected to RDS DB2 admin database")
                   
                   # Connect to the actual database (BLUDB) for checking user existence
                   conn_bludb = ibm_db.connect(conn_str_bludb, "", "")
-                  print(f"✓ Successfully connected to actual database: {rds_dbname}")
+                  print(f" Successfully connected to actual database: {rds_dbname}")
               
                   for admin_user in admin_users_to_create:
                       username = admin_user['username']
@@ -324,18 +324,15 @@ spec:
                       user_exists = False
                       try:
                          check_user_sql = f"SELECT GRANTEE FROM SYSCAT.DBAUTH WHERE GRANTEE = '{username.upper()}'"
-                         print(f"\nChecking if user exists in {rds_dbname}:")
-                         print(f"  SQL: {check_user_sql}")
                          stmt = ibm_db.exec_immediate(conn_bludb, check_user_sql)
                          result = ibm_db.fetch_assoc(stmt)
-                         print(f"  Query result: {result}")
                          if result:
                              user_exists = True
-                             print(f"  ✓ User {username} already exists in database")
+                             print(f"User {username} already exists in database")
                          else:
-                             print(f"  ✓ User {username} does not exist")
+                             print(f"User {username} does not exist")
                       except Exception as e:
-                         print(f"  ✗ Could not check if user exists: {str(e)}")
+                         print(f"Could not check if user exists: {str(e)}")
                   
                       # Create user only if it doesn't exist
                       if not user_exists:
@@ -397,7 +394,7 @@ spec:
               source /tmp/admin_credentials.txt
               
               # Determine the secret path based on MAS_APP_ID
-              JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${MAS_APP_ID}/credentials-test"
+              JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${MAS_APP_ID}/credentials"
               
               echo ""
               echo "================================================================================"
@@ -430,14 +427,14 @@ spec:
                 echo "Updating AWS Secrets Manager secret..."
                 sm_update_secret "${JDBC_CREDENTIALS_SECRET}" "${SECRET_JSON}" "${TAGS}" || exit $?
                 
-                echo "✅ Admin credentials (${ADMIN_USERNAME}) uploaded to AWS Secrets Manager successfully"
+                echo "Admin credentials (${ADMIN_USERNAME}) uploaded to AWS Secrets Manager successfully"
               else
-                echo "ℹ️  User already existed - skipping AWS Secrets Manager update"
-                echo "   Existing credentials in Secrets Manager will be preserved"
+                echo "User already existed - skipping AWS Secrets Manager update"
+                echo "Existing credentials in Secrets Manager will be preserved"
               fi
               
               echo ""
-              echo "✅ RDS user management completed successfully"
+              echo "RDS user management completed successfully"
 
       restartPolicy: Never
       serviceAccountName: {{ $sa }}

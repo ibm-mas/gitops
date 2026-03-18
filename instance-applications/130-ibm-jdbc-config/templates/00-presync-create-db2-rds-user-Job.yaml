@@ -262,64 +262,38 @@ spec:
               # 1. Admin users: We CREATE these with DBADM (for schema management)
               # 2. Non-admin user: We FETCH from AWS Secrets Manager and grant only app roles (for runtime)
               
+              # Validate MAS_APP_ID
+              valid_apps = ['manage', 'facilities', 'iot']
+              if mas_app_id not in valid_apps:
+                  print(f"❌ Unknown MAS_APP_ID: {mas_app_id}")
+                  sys.exit(1)
+              
               # Admin users to CREATE (with DBADM)
               # Using username as password for simplicity (can be changed later via admin_user_password)
-              # Admin users with username as password
+              # Populate admin_users_to_create based on MAS_APP_ID
               admin_users_to_create = [
                   {
-                      'username': 'db2_manage',
-                      'password': 'db2_manage',
+                      'username': f'db2_{mas_app_id}',
+                      'password': f'db2_{mas_app_id}',
                       'role': 'DBADM',
-                      'description': 'Manage Admin User (DBADM for schema management)',
-                      'app_type': 'manage'
-                  },
-                  {
-                      'username': 'db2_facilities',
-                      'password': 'db2_facilities',
-                      'role': 'DBADM',
-                      'description': 'Facilities Admin User (DBADM for schema management)',
-                      'app_type': 'facilities'
-                  },
-                  {
-                      'username': 'db2_iot',
-                      'password': 'db2_iot',
-                      'role': 'DBADM',
-                      'description': 'IoT Admin User (DBADM for schema management)',
-                      'app_type': 'iot'
+                      'description': f'{mas_app_id.capitalize()} Admin User (DBADM for schema management)',
+                      'app_type': mas_app_id
                   }
               ]
               
-              # Export admin credentials for later use
+              # Export admin credentials for later use (only for the current app)
+              username_var = f"DB2_{mas_app_id.upper()}_USERNAME"
+              password_var = f"DB2_{mas_app_id.upper()}_PASSWORD"
               with open('/tmp/admin_credentials.txt', 'w') as f:
-                  f.write(f"DB2_MANAGE_USERNAME=db2_manage\n")
-                  f.write(f"DB2_MANAGE_PASSWORD=db2_manage\n")
-                  f.write(f"DB2_FACILITIES_USERNAME=db2_facilities\n")
-                  f.write(f"DB2_FACILITIES_PASSWORD=db2_facilities\n")
-                  f.write(f"DB2_IOT_USERNAME=db2_iot\n")
-                  f.write(f"DB2_IOT_PASSWORD=db2_iot\n")
+                  f.write(f"{username_var}=db2_{mas_app_id}\n")
+                  f.write(f"{password_var}=db2_{mas_app_id}\n")
               
-              # Non-admin user from AWS Secrets Manager (grant only app roles)
-              # Note: IoT does NOT get non-admin roles - only admin user with DBADM
-              nonadmin_user_roles = [
-                  {
-                      'username': jdbc_username,  # From AWS Secrets Manager
-                      'grants': ['MAXIMO_READ', 'MAXIMO_WRITE', 'MAXIMO_SEQ', 'EXPLAIN'],
-                      'description': 'Manage Application User (from AWS Secrets Manager)',
-                      'app_type': 'manage'
-                  },
-                  {
-                      'username': jdbc_username,
-                      'grants': ['TRIDATA_READ', 'TRIDATA_WRITE'],
-                      'description': 'Facilities Application User (from AWS Secrets Manager)',
-                      'app_type': 'facilities'
-                  }
-                  # IoT: No non-admin roles - uses admin user (DB2_iot) with DBADM only
-              ]
-              
-              print(f"\n✅ Creating users:")
-              print(f"   1. Admin users: DB2_manage, DB2_facilities, DB2_iot (DBADM)")
-              print(f"   2. Non-admin user: {jdbc_username} (App roles for Manage & Facilities only)")
-              print(f"   Note: IoT uses admin user (DB2_iot) with DBADM only")
+              print(f"\n✅ Creating user for MAS Application: {mas_app_id}")
+              print(f"   1. Admin user: db2_{mas_app_id} (DBADM for schema management)")
+              if mas_app_id in ['manage', 'facilities']:
+                  print(f"   2. Non-admin user: {jdbc_username} (App roles for {mas_app_id})")
+              else:
+                  print(f"   Note: IoT uses admin user (db2_{mas_app_id}) with DBADM only")
               
               try:
                   # Connect to the database
@@ -400,7 +374,7 @@ spec:
                 manage)
                   ADMIN_USERNAME="${DB2_MANAGE_USERNAME}"
                   ADMIN_PASSWORD="${DB2_MANAGE_PASSWORD}"
-                  JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-manage/credentials"
+                  JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-manage/credentials-test"
                   ;;
                 facilities)
                   ADMIN_USERNAME="${DB2_FACILITIES_USERNAME}"

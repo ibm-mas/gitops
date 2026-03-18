@@ -158,7 +158,7 @@ spec:
               echo "--------------------------------------------------------------------------------"
               mkdir -p /tmp/rds-ssl
               curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
-              echo "✅ Certificate downloaded"
+              echo " Certificate downloaded"
               
               # Path to the generated Python script
               RDS_USER_SCRIPT="/tmp/create_rds_nonadmin_users.py"
@@ -212,7 +212,7 @@ spec:
               # Format: jdbc:db2://host:port/database:sslConnection=true;sslVersion=TLSv1.2;
               match = re.match(r'jdbc:db2://([^:]+):(\d+)/(.+)', jdbc_connection_url)
               if not match:
-                  print(f"❌ Failed to parse JDBC connection URL: {jdbc_connection_url}")
+                  print(f" Failed to parse JDBC connection URL: {jdbc_connection_url}")
                   sys.exit(1)
               
               rds_host = match.group(1)
@@ -233,11 +233,11 @@ spec:
                   ssl_version_match = re.search(r'sslVersion=([^;]+)', url_params, re.IGNORECASE)
                   if ssl_version_match:
                       ssl_version = ssl_version_match.group(1)
-                      print(f"✅ Extracted SSL Version from JDBC URL: {ssl_version}")
+                      print(f" Extracted SSL Version from JDBC URL: {ssl_version}")
                   else:
-                      print(f"ℹ️  SSL Version not found in URL, using default: {ssl_version}")
+                      print(f"  SSL Version not found in URL, using default: {ssl_version}")
               else:
-                  print(f"ℹ️  No URL parameters found, using default SSL Version: {ssl_version}")
+                  print(f" No URL parameters found, using default SSL Version: {ssl_version}")
               
               # Build connection string with SSL
               # Connect to the admin database (rds_admin_db_name) to create users
@@ -263,7 +263,7 @@ spec:
               # Validate MAS_APP_ID
               valid_apps = ['manage', 'facilities', 'iot']
               if mas_app_id not in valid_apps:
-                  print(f"❌ Unknown MAS_APP_ID: {mas_app_id}")
+                  print(f"Unknown MAS_APP_ID: {mas_app_id}")
                   sys.exit(1)
               
               # Admin users to CREATE (with DBADM)
@@ -287,16 +287,12 @@ spec:
                   f.write(f"ADMIN_USERNAME={admin_username}\n")
                   f.write(f"ADMIN_PASSWORD={admin_password}\n")
               
-              print(f"\n📝 Admin credentials generated:")
-              print(f"   Username: {admin_username}")
-              print(f"   Password: {admin_password}")
-              
-              print(f"\n✅ Creating user for MAS Application: {mas_app_id}")
+              print(f"\nCreating user for MAS Application: {mas_app_id}")
               
               try:
                   # Connect to the database
                   conn = ibm_db.connect(conn_str, "", "")
-                  print("✅ Successfully connected to RDS DB2")
+                  print("Successfully connected to RDS DB2")
               
                   for admin_user in admin_users_to_create:
                       username = admin_user['username']
@@ -309,14 +305,14 @@ spec:
                           # First, try to create the user using RDS stored procedure
                           create_user_sql = f"CALL rdsadmin.add_user('{username}', '{password}', NULL)"
                           ibm_db.exec_immediate(conn, create_user_sql)
-                          print(f"✅ User {username} created successfully using rdsadmin.add_user()")
+                          print(f"User {username} created successfully using rdsadmin.add_user()")
                       except Exception as e:
                           error_msg = str(e)
                           # Check if user already exists
                           if 'already exists' in error_msg.lower() or 'sql0551n' in error_msg.lower():
                               print(f"User {username} already exists, skipping creation")
                           else:
-                              print(f"⚠️  Error creating user {username}: {error_msg}")
+                              print(f"Error creating user {username}: {error_msg}")
                   
                       try:
                           task_id = ibm_db.callproc(
@@ -324,10 +320,10 @@ spec:
                               "rdsadmin.dbadm_grant",
                               (None, rds_dbname, "DBADM", f"USER {username}")
                           )
-                          print(f"✅ Granted DBADM privileges to {username} (task_id: {task_id})")
+                          print(f"Granted DBADM privileges to {username} (task_id: {task_id})")
                       except Exception as e:
                           error_msg = str(e)
-                          print(f"⚠️  Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
+                          print(f"Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
               
                   
                       # Grant DBADM
@@ -337,19 +333,19 @@ spec:
                               "rdsadmin.dbadm_grant",
                               (None, rds_dbname, "DBADM", f"USER {username}")
                           )
-                          print(f"✅ Granted DBADM to {username}")
+                          print(f" Granted DBADM to {username}")
                       except Exception as e:
                           error_msg = str(e)
                           if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
                               print(f"{username} already has DBADM privilege")
                           else:
-                              print(f"⚠️  Error granting DBADM: {error_msg}")
+                              print(f"  Error granting DBADM: {error_msg}")
                               pass
                   
                   ibm_db.close(conn)
                   
               except Exception as e:
-                  print(f"❌ Error: {str(e)}")
+                  print(f" Error: {str(e)}")
                   sys.exit(1)
               EOFPYTHON
               # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
@@ -380,7 +376,6 @@ spec:
               echo "MAS Application: ${MAS_APP_ID}"
               echo "Secret Name: ${JDBC_CREDENTIALS_SECRET}"
               echo "Username: ${ADMIN_USERNAME}"
-              echo "Password: ${ADMIN_PASSWORD}"
               echo ""
               
               # Login to Secrets Manager
@@ -389,20 +384,15 @@ spec:
               # Create JSON payload with app-specific admin username and password
               SECRET_JSON="{\"username\": \"${ADMIN_USERNAME}\", \"password\": \"${ADMIN_PASSWORD}\"}"
               
-              echo "Secret JSON payload:"
-              echo "${SECRET_JSON}"
-              echo ""
-              
               # Update the secret with tags
               TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-db2-rds-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}, {\"Key\": \"user_type\", \"Value\": \"admin\"}]"
               
               echo "Updating AWS Secrets Manager secret..."
               sm_update_secret "${JDBC_CREDENTIALS_SECRET}" "${SECRET_JSON}" "${TAGS}" || exit $?
               
-              echo "✅ Admin credentials (${ADMIN_USERNAME}) uploaded to AWS Secrets Manager successfully"
-              
+              echo " Admin credentials (${ADMIN_USERNAME}) uploaded to AWS Secrets Manager successfully"
               echo ""
-              echo "✅ RDS app-specific admin user creation and AWS secret upload completed successfully"
+              echo " RDS app-specific admin user creation and AWS secret upload completed successfully"
 
       restartPolicy: Never
       serviceAccountName: {{ $sa }}

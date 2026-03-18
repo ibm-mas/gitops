@@ -376,41 +376,6 @@ spec:
                   
                   ibm_db.close(conn)
                   
-                  # Reconnect to application database where roles exist
-                  app_conn_str = (
-                      f"DATABASE={rds_dbname};"
-                      f"HOSTNAME={rds_host};"
-                      f"PORT={rds_port};"
-                      f"PROTOCOL=TCPIP;"
-                      f"UID={jdbc_username};"
-                      f"PWD={jdbc_password};"
-                      f"SECURITY=SSL;"
-                      f"SSLVersion={ssl_version};"
-                      f"SSLServerCertificate={ssl_cert_path};"
-                  )
-                  
-                  conn = ibm_db.connect(app_conn_str, "", "")
-                  print(f"✅ Connected to application database {rds_dbname}")
-                  
-                  for user_info in nonadmin_user_roles:
-                      grants = user_info['grants']
-                      description = user_info['description']
-                      app_type = user_info['app_type']
-                  
-                      if grants:
-                          for grant_role in grants:
-                              try:
-                                  grant_role_sql = f"GRANT ROLE {grant_role} TO USER {jdbc_username}"
-                                  ibm_db.exec_immediate(conn, grant_role_sql)
-                                  print(f"✅ Granted role {grant_role} to {jdbc_username}")
-                              except Exception as e:
-                                  print(f"⚠️  Error granting role {grant_role}: {str(e)}")
-                  
-                  print(f"✅ User creation and role assignment completed successfully")
-              
-                  # Close connection
-                  ibm_db.close(conn)
-              
               except Exception as e:
                   print(f"❌ Error: {str(e)}")
                   sys.exit(1)
@@ -435,17 +400,17 @@ spec:
                 manage)
                   ADMIN_USERNAME="${DB2_MANAGE_USERNAME}"
                   ADMIN_PASSWORD="${DB2_MANAGE_PASSWORD}"
-                  JDBC_CREDENTIALS_SECRET="aws-dev/mas-cluster-8/inst04/jdbc/rds-inst04-manage/credentials"
+                  JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-manage/credentials"
                   ;;
                 facilities)
                   ADMIN_USERNAME="${DB2_FACILITIES_USERNAME}"
                   ADMIN_PASSWORD="${DB2_FACILITIES_PASSWORD}"
-                  JDBC_CREDENTIALS_SECRET="aws-dev/mas-cluster-8/inst04/jdbc/rds-inst04-facilities/credentials"
+                  JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-facilities/credentials"
                   ;;
                 iot)
                   ADMIN_USERNAME="${DB2_IOT_USERNAME}"
                   ADMIN_PASSWORD="${DB2_IOT_PASSWORD}"
-                  JDBC_CREDENTIALS_SECRET="aws-dev/mas-cluster-8/inst04/jdbc/rds-inst04-iot/credentials"
+                  JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-iot/credentials"
                   ;;
                 *)
                   echo "❌ Unknown MAS_APP_ID: ${MAS_APP_ID}"

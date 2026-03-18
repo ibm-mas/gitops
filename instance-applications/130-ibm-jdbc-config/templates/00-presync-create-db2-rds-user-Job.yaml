@@ -202,9 +202,9 @@ spec:
               ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
               
               # Function to generate secure random password
-              def generate_password(length=32):
-                  """Generate a secure random password"""
-                  alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+              def generate_password(length=20):
+                  """Generate a secure random password (alphanumeric only, no special chars)"""
+                  alphabet = string.ascii_letters + string.digits
                   password = ''.join(secrets.choice(alphabet) for i in range(length))
                   return password
               
@@ -257,10 +257,8 @@ spec:
               print(f"Connecting to RDS DB2 admin database: {rds_host}:{rds_port}/{rds_admin_db_name}")
               print(f"MAS Application ID: {mas_app_id}")
               print(f"JDBC Username: {jdbc_username}")
-              
-              # Option 2: Create TWO types of users
+
               # 1. Admin users: We CREATE these with DBADM (for schema management)
-              # 2. Non-admin user: We FETCH from AWS Secrets Manager and grant only app roles (for runtime)
               
               # Validate MAS_APP_ID
               valid_apps = ['manage', 'facilities', 'iot']
@@ -269,24 +267,24 @@ spec:
                   sys.exit(1)
               
               # Admin users to CREATE (with DBADM)
-              # Using username as password for simplicity (can be changed later via admin_user_password)
+              # Generate secure random password for the admin user
               # Populate admin_users_to_create based on MAS_APP_ID
+              admin_username = f'db2_{mas_app_id}'
+              admin_password = generate_password(length=20)
+              
               admin_users_to_create = [
                   {
-                      'username': f'db2_{mas_app_id}',
-                      'password': f'db2_{mas_app_id}',
+                      'username': admin_username,
+                      'password': admin_password,
                       'role': 'DBADM',
                       'description': f'{mas_app_id.capitalize()} Admin User (DBADM for schema management)',
                       'app_type': mas_app_id
                   }
               ]
               
-              # Export admin credentials for later use (only for the current app)
-              username_var = f"DB2_{mas_app_id.upper()}_USERNAME"
-              password_var = f"DB2_{mas_app_id.upper()}_PASSWORD"
-              with open('/tmp/admin_credentials.txt', 'w') as f:
-                  f.write(f"{username_var}=db2_{mas_app_id}\n")
-                  f.write(f"{password_var}=db2_{mas_app_id}\n")
+              # Export admin credentials to environment for shell script to use
+              os.environ['ADMIN_USERNAME'] = admin_username
+              os.environ['ADMIN_PASSWORD'] = admin_password
               
               print(f"\n✅ Creating user for MAS Application: {mas_app_id}")
               print(f"   1. Admin user: db2_{mas_app_id} (DBADM for schema management)")
@@ -366,31 +364,11 @@ spec:
               echo "Uploading credentials to AWS Secrets Manager"
               echo "================================================================================"
               
-              # Source the admin credentials created by Python script
-              source /tmp/admin_credentials.txt
+              # Admin credentials are already set by Python script via os.environ
+              # ADMIN_USERNAME and ADMIN_PASSWORD are available from Python
               
-              # Determine the secret path and credentials based on MAS_APP_ID
-              case "${MAS_APP_ID}" in
-                manage)
-                  ADMIN_USERNAME="${DB2_MANAGE_USERNAME}"
-                  ADMIN_PASSWORD="${DB2_MANAGE_PASSWORD}"
-                  JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-manage/credentials-test"
-                  ;;
-                facilities)
-                  ADMIN_USERNAME="${DB2_FACILITIES_USERNAME}"
-                  ADMIN_PASSWORD="${DB2_FACILITIES_PASSWORD}"
-                  JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-facilities/credentials"
-                  ;;
-                iot)
-                  ADMIN_USERNAME="${DB2_IOT_USERNAME}"
-                  ADMIN_PASSWORD="${DB2_IOT_PASSWORD}"
-                  JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-iot/credentials"
-                  ;;
-                *)
-                  echo "❌ Unknown MAS_APP_ID: ${MAS_APP_ID}"
-                  exit 1
-                  ;;
-              esac
+              # Determine the secret path based on MAS_APP_ID
+              JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${MAS_APP_ID}/credentials-test"
               
               echo "MAS Application: ${MAS_APP_ID}"
               echo "Secret Name: ${JDBC_CREDENTIALS_SECRET}"

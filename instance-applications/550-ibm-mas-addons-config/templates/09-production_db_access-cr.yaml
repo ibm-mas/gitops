@@ -8,8 +8,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "559"
   labels:
-  mas.ibm.com/configScope: system
-  mas.ibm.com/instanceId: {{ .Values.instance_id }}
+    mas.ibm.com/configScope: system
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
@@ -18,13 +18,7 @@ spec:
   addonType: production-database-access
   config:
     addonIdentifier: {{ .Values.instance_id }}
-    accessTypes:
-{{- if .Values.production_database_access.accessTypes }}
-{{- range .Values.production_database_access.accessTypes }}
-      - type: {{ .type }}
-        points: {{ .points }}
-{{- end }}
-{{- end }}
-      []
-{{- end }}
+    instances:
+      - name: "{{ .Values.instance_id }}-ProductionDatabaseAccess"
+        accessType: "{{ .Values.production_database_access.type }}"
 {{- end }}

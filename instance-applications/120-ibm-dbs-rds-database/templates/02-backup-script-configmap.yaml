@@ -107,19 +107,28 @@ data:
         print("   ✅ Assuming S3 integration is configured\n")
         
         # Step 3: Prepare backup parameters
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Use shorter timestamp format to avoid exceeding 32-char limit on S3 prefix
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")  # Removed underscores: YYYYMMDDHHmmss
         # Create S3 prefix with trailing slash as required by rdsadmin.backup_database
         # Format: s3_prefix/type-timestamp/
         # OFFLINE and ONLINE are both full backups (use 'f'), INCREMENTAL uses 'i'
         backup_type_short = "f" if backup_type.upper() in ["FULL", "ONLINE", "OFFLINE"] else "i"
         
         # Construct full S3 path including the base prefix
+        # AWS RDS DB2 has a 32-character limit on the S3 prefix parameter
         if s3_prefix:
             # Ensure s3_prefix doesn't have trailing slash, then add our backup folder
-            s3_backup_path = f"{s3_prefix.rstrip('/')}/{backup_type_short}-{timestamp}/"
+            s3_backup_path = f"{s3_prefix.rstrip('/')}/{backup_type_short}{timestamp}/"
         else:
             # No prefix, store at bucket root
-            s3_backup_path = f"{backup_type_short}-{timestamp}/"
+            s3_backup_path = f"{backup_type_short}{timestamp}/"
+        
+        # Validate S3 prefix length (AWS RDS DB2 limit is 32 characters)
+        if len(s3_backup_path) > 32:
+            print(f"   ⚠️  WARNING: S3 prefix length ({len(s3_backup_path)}) exceeds 32 characters!")
+            print(f"   ⚠️  Truncating to 32 characters to avoid errors...")
+            s3_backup_path = s3_backup_path[:31] + "/"  # Keep trailing slash
+            print(f"   ✅ Truncated path: {s3_backup_path}")
         
         print(f"📦 Step 3: Preparing backup parameters...")
         print(f"   Database: {database_name}")

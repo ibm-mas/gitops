@@ -254,7 +254,21 @@ spec:
                   f"SSLServerCertificate={ssl_cert_path};"
               )
               
+              # Build connection string for actual database (BLUDB/rds_dbname) to check user existence
+              conn_str_bludb = (
+                  f"DATABASE={rds_dbname};"
+                  f"HOSTNAME={rds_host};"
+                  f"PORT={rds_port};"
+                  f"PROTOCOL=TCPIP;"
+                  f"UID={jdbc_username};"
+                  f"PWD={jdbc_password};"
+                  f"SECURITY=SSL;"
+                  f"SSLVersion={ssl_version};"
+                  f"SSLServerCertificate={ssl_cert_path};"
+              )
+              
               print(f"Connecting to RDS DB2 admin database: {rds_host}:{rds_port}/{rds_admin_db_name}")
+              print(f"Actual database for queries: {rds_host}:{rds_port}/{rds_dbname}")
               print(f"MAS Application ID: {mas_app_id}")
               print(f"JDBC Username: {jdbc_username}")
 
@@ -291,9 +305,13 @@ spec:
               print(f"\nCreating user for MAS Application: {mas_app_id}")
               
               try:
-                  # Connect to the database
+                  # Connect to the admin database
                   conn = ibm_db.connect(conn_str, "", "")
-                  print("Successfully connected to RDS DB2")
+                  print("✓ Successfully connected to RDS DB2 admin database")
+                  
+                  # Connect to the actual database (BLUDB) for checking user existence
+                  conn_bludb = ibm_db.connect(conn_str_bludb, "", "")
+                  print(f"✓ Successfully connected to actual database: {rds_dbname}")
               
                   for admin_user in admin_users_to_create:
                       username = admin_user['username']
@@ -302,13 +320,13 @@ spec:
                       description = admin_user['description']
                       app_type = admin_user['app_type']
                   
-                      # Check if user already exists
+                      # Check if user already exists using BLUDB connection
                       user_exists = False
                       try:
                          check_user_sql = f"SELECT GRANTEE FROM SYSCAT.DBAUTH WHERE GRANTEE = '{username.upper()}'"
-                         print(f"\nExecuting SQL query to check if user exists:")
+                         print(f"\nChecking if user exists in {rds_dbname}:")
                          print(f"  SQL: {check_user_sql}")
-                         stmt = ibm_db.exec_immediate(conn, check_user_sql)
+                         stmt = ibm_db.exec_immediate(conn_bludb, check_user_sql)
                          result = ibm_db.fetch_assoc(stmt)
                          print(f"  Query result: {result}")
                          if result:
@@ -348,7 +366,9 @@ spec:
                           error_msg = str(e)
                           print(f"Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
                   
+                  # Close both connections
                   ibm_db.close(conn)
+                  ibm_db.close(conn_bludb)
                   
                   # Update the credentials file with user existence status
                   with open('/tmp/admin_credentials.txt', 'w') as f:

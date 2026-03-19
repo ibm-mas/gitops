@@ -66,15 +66,6 @@ data:
         f"SSLServerCertificate={ssl_cert_path};"
     )
     
-    print(f"{'='*80}")
-    print(f"RDS DB2 Backup Script")
-    print(f"{'='*80}")
-    print(f"Timestamp: {datetime.now().isoformat()}")
-    print(f"Database: {database_name}")
-    print(f"Backup Type: {backup_type}")
-    print(f"S3 Bucket: {s3_bucket_name}")
-    print(f"S3 Prefix: {s3_prefix}")
-    print(f"{'='*80}\n")
     
     # Validate required parameters
     if not database_name:
@@ -87,11 +78,9 @@ data:
     
     try:
         # Connect to rdsadmin database to execute backup procedure
-        print(f"📡 Connecting to RDS DB2 rdsadmin database...")
         admin_conn = db2.connect(conn_rds_admin_str, "", "")
-        print("✅ Connected successfully\n")
         
-        # Step 3: Prepare backup parameters
+        # Prepare backup parameters
         # Use compact timestamp format
         timestamp = datetime.now().strftime("%y%m%d%H%M")  # Shorter: YYMMDDHHmm (10 chars)
         # Create S3 prefix with trailing slash as required by rdsadmin.backup_database
@@ -109,13 +98,8 @@ data:
         else:
             s3_display_path = s3_backup_folder
         
-        print(f"📦 Preparing backup parameters...")
-        print(f"   Database: {database_name}")
-        print(f"   Backup Type: {backup_type}")
-        print(f"   S3 Location: s3://{s3_bucket_name}/{s3_display_path}\n")
-        
         # Call rdsadmin.backup_database stored procedure
-        print(f"🚀 Initiating {backup_type} backup...")
+        print(f"Step 1: Initiating {backup_type} backup...")
         
         # Prepare parameters for the stored procedure
         # AWS RDS DB2 backup_database stored procedure signature:
@@ -134,6 +118,7 @@ data:
         
         # Use ibm_db.callproc for stored procedure call
         try:
+            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, ('NONE', '{database_name}', '{s3_bucket_name}', '{s3_backup_folder}', '{backup_type}', '{compression}', {util_impact_priority}, {num_files}, {parallelism}, {num_buffers}))")
             result = db2.callproc(
                 admin_conn,
                 "rdsadmin.backup_database",
@@ -151,30 +136,31 @@ data:
                 )
             )
             
-            print(f"✅ Backup task initiated successfully\n")
+            print(f"   ✅ Backup task initiated successfully")
+            print(f"   ℹ️  Backup procedure called: rdsadmin.backup_database")
+            print(f"   ℹ️  Backup is running asynchronously in the background\n")
             
         except Exception as proc_error:
             print(f"   ❌ Failed to call stored procedure: {str(proc_error)}")
             raise
         
-        # Wait for backup to start
-        print(f"⏳ Waiting 60 seconds for backup to start...")
+        # Backup Status Monitoring
+        print(f"\nStep 2: Backup Status Monitoring")
+        print(f"   ℹ️  To check backup status:")
+        print(f"      1. S3 bucket: s3://{s3_bucket_name}/{s3_display_path}")
+        print(f"      2. DB2 history: SELECT * FROM SYSIBMADM.DB_HISTORY WHERE OPERATION='B'")
+        print(f"   ⏳ Waiting 60 seconds...")
         time.sleep(60)
-        print(f"✅ Initial wait complete\n")
+        print(f"   ✅ Complete")
         
         # Backup Summary
-        print(f"📊 Backup Summary")
+        print(f"\nStep 3: Backup Summary")
         print(f"   S3 Location: s3://{s3_bucket_name}/{s3_display_path}")
-        print(f"   Timestamp: {timestamp}\n")
         
         # Close connection
-        print(f"🔌 Closing database connection...")
+        print(f"\nStep 4: Closing connection...")
         db2.close(admin_conn)
-        print(f"✅ Connection closed\n")
-        
-        print(f"{'='*80}")
-        print(f"✅ RDS DB2 {backup_type} Backup Completed Successfully")
-        print(f"{'='*80}")
+        print(f"   ✅ Closed")
         
     except Exception as e:
         print(f"\n{'='*80}")

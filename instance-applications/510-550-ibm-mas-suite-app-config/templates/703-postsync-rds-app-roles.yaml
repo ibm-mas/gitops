@@ -3,7 +3,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_cli_image_digest := "sha256:1b88f88a1a719d006ea1f4b8dcfd1c2625fa7ecc529c3267e7b4b6afaa1c8da0" }}
 
 {{ $app_ns          := .Values.mas_app_namespace }}
 {{ $np_name            := "postsync-app-rds-roles-np" }}
@@ -112,10 +112,12 @@ are required here.
 
 {{ $rds_host           := $db.rds_host }}
 {{ $rds_port           := $db.rds_port }}
+{{ $rds_admin_dbname   := $db.rds_admin_dbname | default "rdsadmin" }}
 {{ $rds_dbname         := $db.rds_dbname }}
 {{ $rds_instance_name  := $db.rds_instance_name }}
 {{ $rds_admin_user     := $db.rds_admin_user }}
 {{ $rds_admin_password := $db.rds_admin_password }}
+{{ $jdbc_connection_url := $db.jdbc_connection_url }}
 
 ---
 apiVersion: batch/v1
@@ -151,16 +153,10 @@ spec:
 {{ $.Values.custom_labels | toYaml | indent 12 }}
 {{- end }}
         spec:
-          securityContext:
-            runAsUser: 0
-            runAsNonRoot: false
           containers:
             - name: run
               image: {{ $.Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
               imagePullPolicy: IfNotPresent
-              securityContext:
-                runAsUser: 0
-                allowPrivilegeEscalation: true
               resources:
                 limits:
                   cpu: 200m
@@ -173,7 +169,9 @@ spec:
                   value: "{{ $rds_host }}"
                 - name: RDS_PORT
                   value: "{{ $rds_port }}"
-                - name: RDS_DBNAME
+                - name: RDS_ADMIN_DBNAME
+                  value: "{{ $rds_admin_dbname }}"
+                - name: DBNAME
                   value: "{{ $rds_dbname }}"
                 - name: RDS_INSTANCE_NAME
                   value: "{{ $rds_instance_name }}"
@@ -181,6 +179,8 @@ spec:
                   value: "{{ $rds_admin_user }}"
                 - name: RDS_ADMIN_PASSWORD
                   value: "{{ $rds_admin_password }}"
+                - name: jdbc_connection_url
+                  value: "{{ $jdbc_connection_url }}"
                 - name: MAS_APP_ID
                   value: "{{ $.Values.mas_app_id }}"
                 - name: OPERATIONAL_MODE
@@ -193,24 +193,18 @@ spec:
                 - |
 
                   set -e
-                  source /mascli/functions/gitops_utils
 
                   echo ""
                   echo "================================================================================"
                   echo "Settings"
                   echo "================================================================================"
                   echo "RDS_INSTANCE_NAME ................... ${RDS_INSTANCE_NAME}"
-                  echo "RDS_DBNAME .......................... ${RDS_DBNAME}"
+                  echo "RDS_ADMIN_DBNAME .................... ${RDS_ADMIN_DBNAME}"
+                  echo "DBNAME (Target DB) .................. ${DBNAME}"
                   echo "RDS_HOST ............................ ${RDS_HOST}"
                   echo "RDS_PORT ............................ ${RDS_PORT}"
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
-                  echo ""
-                  echo "Installing system dependencies..."
-                  echo "--------------------------------------------------------------------------------"
-                  # Install libxcrypt-compat which provides libcrypt.so.1 required by ibm_db
-                  microdnf install -y libxcrypt-compat || yum install -y libxcrypt-compat || dnf install -y libxcrypt-compat || apt-get update && apt-get install -y libcrypt1
-                  
                   echo ""
                   echo "Installing required Python packages..."
                   echo "--------------------------------------------------------------------------------"
@@ -223,242 +217,246 @@ spec:
                   curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
                   echo "✅ Certificate downloaded"
 
-                  # Path to the generated Python script
+                  # Path to the Python script for DB2 operations
                   RDS_ROLES_SCRIPT="/tmp/create_rds_roles.py"
 
                   echo ""
                   echo "Create ${RDS_ROLES_SCRIPT}"
                   echo "--------------------------------------------------------------------------------"
 
-                  # Generate a Python script to check table and create roles
+                  # Generate a Python script using ibm_db
                   cat > ${RDS_ROLES_SCRIPT} << 'EOFPYTHON'
                   import ibm_db
                   import os
                   import sys
-
+                  import re
+                  import hashlib
+                  
                   # Get environment variables
                   rds_host = os.getenv('RDS_HOST')
                   rds_port = os.getenv('RDS_PORT')
-                  rds_dbname = os.getenv('RDS_DBNAME')
-                  rds_admin_user = os.getenv('RDS_ADMIN_USER')
-                  rds_admin_password = os.getenv('RDS_ADMIN_PASSWORD')
+                  rds_admin_dbname = os.getenv('RDS_ADMIN_DBNAME', 'rdsadmin')
+                  rds_dbname = os.getenv('DBNAME', 'BLUDB')
+                  rds_master_user = os.getenv('RDS_ADMIN_USER')  # db2admin - for initial DBADM grant
+                  rds_master_password = os.getenv('RDS_ADMIN_PASSWORD')
+                  jdbc_connection_url = os.getenv('jdbc_connection_url', '')
                   ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
-
-                  # Build connection string with SSL
-                  conn_str = (
+                  
+                  # Extract SSL version from JDBC URL if provided
+                  ssl_version = 'TLSv1.2'
+                  if jdbc_connection_url:
+                      ssl_version_match = re.search(r'sslVersion=([^;]+)', jdbc_connection_url, re.IGNORECASE)
+                      if ssl_version_match:
+                          ssl_version = ssl_version_match.group(1)
+                          print(f"✅ Extracted SSL Version from JDBC URL: {ssl_version}")
+                  
+                  # Build connection string for admin database using masteradmin (for initial DBADM grant to DB2ADMIN)
+                  conn_str_master_admin = (
+                      f"DATABASE={rds_admin_dbname};"
+                      f"HOSTNAME={rds_host};"
+                      f"PORT={rds_port};"
+                      f"PROTOCOL=TCPIP;"
+                      f"UID={rds_master_user};"
+                      f"PWD={rds_master_password};"
+                      f"SECURITY=SSL;"
+                      f"SSLVersion={ssl_version};"
+                      f"SSLServerCertificate={ssl_cert_path};"
+                  )
+                  
+                  # Build connection string for target database (for grants)
+                  conn_str_target = (
                       f"DATABASE={rds_dbname};"
                       f"HOSTNAME={rds_host};"
                       f"PORT={rds_port};"
                       f"PROTOCOL=TCPIP;"
-                      f"UID={rds_admin_user};"
-                      f"PWD={rds_admin_password};"
-                      f"Security=SSL;"
+                      f"UID={rds_master_user};"
+                      f"PWD={rds_master_password};"
+                      f"SECURITY=SSL;"
+                      f"SSLVersion={ssl_version};"
                       f"SSLServerCertificate={ssl_cert_path};"
                   )
-
-                  print(f"Connecting to RDS DB2 instance: {rds_host}:{rds_port}/{rds_dbname}")
+                  
+                  print(f"Connecting to RDS DB2 - Admin DB: {rds_admin_dbname}, Target DB: {rds_dbname}")
+                  print(f"Master User: {rds_master_user}")
                   print("Creating roles for MAS applications: manage, facilities")
                   print("Note: IoT uses admin user (DB2_iot) with full admin privileges - no separate roles")
-
-                  try:
-                      # Connect to the database
-                      conn = ibm_db.connect(conn_str, "", "")
-                      print("✅ Successfully connected to RDS DB2")
-
-                      # Define app configurations with table checks and roles
-                      # Note: IoT is NOT included - it uses admin user (DB2_iot) with full privileges only
-                      app_configs = [
-                          {
-                              'app_name': 'manage',
-                              'schema': 'MAXIMO',
-                              'check_table': 'MAXUSERS',
-                              'roles': ['MAXIMO_READ', 'MAXIMO_WRITE', 'MAXIMO_SEQ', 'EXPLAIN']
-                          },
-                          {
-                              'app_name': 'facilities',
-                              'schema': 'TRIDATA',
-                              'check_table': 'TRIDATA_DATA',
-                              'roles': ['TRIDATA_READ', 'TRIDATA_WRITE']
-                          }
-                          # IoT: No roles created - uses DB2_iot admin user with full privileges
-                      ]
-
-                      # Process each app configuration
-                      for app_config in app_configs:
-                          app_name = app_config['app_name']
-                          schema_name = app_config['schema']
-                          table_name = app_config['check_table']
-                          roles = app_config['roles']
-
-                          print(f"\n{'='*60}")
-                          print(f"Processing {app_name.upper()} application")
-                          print(f"{'='*60}")
-
-                          # Check if the required table exists
-                          check_table_sql = f"""
-                              SELECT COUNT(*) as table_count
-                              FROM SYSCAT.TABLES
-                              WHERE TABSCHEMA = '{schema_name}' AND TABNAME = '{table_name}'
-                          """
+                  
+                  def execute_db2_sql(conn, sql, description):
+                      """Execute a DB2 SQL statement"""
+                      print(f"Executing: {description}")
+                      try:
+                          stmt = ibm_db.exec_immediate(conn, sql)
+                          print(f"✅ {description}")
+                          return True
+                      except Exception as e:
+                          error_msg = str(e)
+                          # Check if error is because object already exists
+                          if "already exists" in error_msg.lower() or "duplicate" in error_msg.lower():
+                              print(f"ℹ️  {description} - already exists")
+                              return True
+                          else:
+                              print(f"⚠️  {description} - {error_msg}")
+                              return False
+                  
+                  def create_role_rds(conn_admin, role_name, target_dbname):
+                      """Create a role using RDS admin procedure with server output enabled"""
+                      print(f"Creating role: {role_name} in database: {target_dbname}")
+                      try:
+                          # Enable server output
+                          ibm_db.exec_immediate(conn_admin, "CALL DBMS_OUTPUT.ENABLE()")
                           
-                          stmt = ibm_db.exec_immediate(conn, check_table_sql)
-                          result = ibm_db.fetch_assoc(stmt)
-                          table_exists = result['TABLE_COUNT'] > 0
-
-                          if not table_exists:
-                              print(f"⚠️  Table {schema_name}.{table_name} does not exist yet. Skipping {app_name} role creation.")
-                              continue
-
-                          print(f"✅ Table {schema_name}.{table_name} exists. Proceeding with role creation...")
-
-                          # Create roles if they don't exist
-                          for role in roles:
-                              try:
-                                  # Check if role exists
-                                  check_role_sql = f"""
-                                      SELECT COUNT(*) as role_count
-                                      FROM SYSCAT.ROLES
-                                      WHERE ROLENAME = '{role}'
-                                  """
-                                  stmt = ibm_db.exec_immediate(conn, check_role_sql)
-                                  result = ibm_db.fetch_assoc(stmt)
-                                  role_exists = result['ROLE_COUNT'] > 0
-
-                                  if not role_exists:
-                                      create_role_sql = f"CREATE ROLE {role}"
-                                      ibm_db.exec_immediate(conn, create_role_sql)
-                                      print(f"✅ Created role: {role}")
-                                  else:
-                                      print(f"ℹ️  Role {role} already exists")
-
-                              except Exception as e:
-                                  print(f"⚠️  Error creating role {role}: {str(e)}")
-
-                          # Grant permissions based on app type
-                          if app_name == 'manage':
-                              # Grant permissions to MAXIMO_READ role
-                              print("\n✅ Granting permissions to MAXIMO_READ role...")
-                              read_grants = [
-                                  "GRANT SELECT ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_READ",
-                                  "GRANT SELECT ON SCHEMA MAXIMO TO ROLE MAXIMO_READ",
-                              ]
-                              
-                              for grant_sql in read_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                              # Grant permissions to MAXIMO_WRITE role
-                              print("\n✅ Granting permissions to MAXIMO_WRITE role...")
-                              write_grants = [
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE MAXIMO.MAXUSERS TO ROLE MAXIMO_WRITE",
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA MAXIMO TO ROLE MAXIMO_WRITE",
-                              ]
-                              
-                              for grant_sql in write_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                              # Grant permissions to MAXIMO_SEQ role
-                              print("\n✅ Granting permissions to MAXIMO_SEQ role...")
-                              seq_grants = [
-                                  "GRANT USAGE ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ",
-                                  "GRANT ALTER ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ",
-                              ]
-                              
-                              for grant_sql in seq_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                              # Grant permissions to EXPLAIN role
-                              print("\n✅ Granting permissions to EXPLAIN role...")
-                              explain_grants = [
-                                  "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE EXPLAIN",
-                                  "GRANT SELECT ON TABLE SYSTOOLS.EXPLAIN_INSTANCE TO ROLE EXPLAIN",
-                              ]
-                              
-                              for grant_sql in explain_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                          elif app_name == 'facilities':
-                              # Grant permissions to TRIDATA_READ role
-                              print("\n✅ Granting permissions to TRIDATA_READ role...")
-                              read_grants = [
-                                  "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ",
-                                  "GRANT SELECT ON SCHEMA TRIDATA TO ROLE TRIDATA_READ",
-                              ]
-                              
-                              for grant_sql in read_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                              # Grant permissions to TRIDATA_WRITE role
-                              print("\n✅ Granting permissions to TRIDATA_WRITE role...")
-                              write_grants = [
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_WRITE",
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA TRIDATA TO ROLE TRIDATA_WRITE",
-                              ]
-                              
-                              for grant_sql in write_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                          elif app_name == 'iot':
-                              # Grant permissions to IOT_READ role
-                              print("\n✅ Granting permissions to IOT_READ role...")
-                              read_grants = [
-                                  "GRANT SELECT ON TABLE IOT.IOT_DATA TO ROLE IOT_READ",
-                                  "GRANT SELECT ON SCHEMA IOT TO ROLE IOT_READ",
-                              ]
-                              
-                              for grant_sql in read_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                              # Grant permissions to IOT_WRITE role
-                              print("\n✅ Granting permissions to IOT_WRITE role...")
-                              write_grants = [
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE IOT.IOT_DATA TO ROLE IOT_WRITE",
-                                  "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA IOT TO ROLE IOT_WRITE",
-                              ]
-                              
-                              for grant_sql in write_grants:
-                                  try:
-                                      ibm_db.exec_immediate(conn, grant_sql)
-                                      print(f"✅ Executed: {grant_sql}")
-                                  except Exception as e:
-                                      print(f"⚠️  Error executing grant: {str(e)}")
-
-                      print("\n" + "="*60)
-                      print("✅ Role creation and permission grants completed for all applications")
-                      print("="*60)
-
-                      # Close connection
-                      ibm_db.close(conn)
-
+                          # Create role using rdsadmin procedure
+                          sql = f"CALL rdsadmin.create_role('{target_dbname}', '{role_name}')"
+                          stmt = ibm_db.exec_immediate(conn_admin, sql)
+                          
+                          # Disable server output
+                          ibm_db.exec_immediate(conn_admin, "CALL DBMS_OUTPUT.DISABLE()")
+                          
+                          print(f"✅ Created role: {role_name}")
+                          return True
+                      except Exception as e:
+                          error_msg = str(e)
+                          # Disable server output on error
+                          try:
+                              ibm_db.exec_immediate(conn_admin, "CALL DBMS_OUTPUT.DISABLE()")
+                          except:
+                              pass
+                          
+                          # Check if error is because role already exists
+                          if "already exists" in error_msg.lower() or "duplicate" in error_msg.lower() or "SQL0601N" in error_msg:
+                              print(f"ℹ️  Role {role_name} already exists")
+                              return True
+                          else:
+                              print(f"⚠️  Failed to create role {role_name}: {error_msg}")
+                              return False
+                  
+                  def check_table_exists(conn, schema, table):
+                      """Check if a table exists in the database"""
+                      try:
+                          sql = f"SELECT COUNT(*) FROM SYSCAT.TABLES WHERE TABSCHEMA='{schema}' AND TABNAME='{table}'"
+                          stmt = ibm_db.exec_immediate(conn, sql)
+                          result = ibm_db.fetch_tuple(stmt)
+                          if result and result[0] > 0:
+                              return True
+                          return False
+                      except Exception as e:
+                          print(f"⚠️  Error checking table existence: {str(e)}")
+                          return False
+                  
+                  def grant_dbadm_to_db2admin(conn_master_admin):
+                      """Grant DBADM privilege to DB2ADMIN user"""
+                      print(f"\n{'='*80}")
+                      print(f"Granting DBADM to DB2ADMIN user")
+                      print(f"{'='*80}")
+                      
+                      try:
+                          # Grant DBADM using ibm_db.callproc with rdsadmin.dbadm_grant
+                          print(f"Executing: ibm_db.callproc(rdsadmin.dbadm_grant, (None, '{rds_dbname}', 'DBADM', 'USER DB2ADMIN'))")
+                          task_id = ibm_db.callproc(
+                              conn_master_admin,
+                              "rdsadmin.dbadm_grant",
+                              (None, rds_dbname, "DBADM", "USER DB2ADMIN")
+                          )
+                          print(f"✅ DBADM granted to DB2ADMIN successfully (task_id: {task_id})")
+                          return True
+                      except Exception as e:
+                          error_msg = str(e)
+                          if "already" in error_msg.lower() or "duplicate" in error_msg.lower():
+                              print(f"ℹ️  DB2ADMIN already has DBADM privilege")
+                              return True
+                          else:
+                              print(f"⚠️  Error granting DBADM to DB2ADMIN: {error_msg}")
+                              print(f"ℹ️  Continuing anyway - DB2ADMIN may already have sufficient privileges")
+                              return True
+                  
+                  try:
+                      # Step 0: Connect as masteradmin to grant DBADM to DB2ADMIN
+                      print(f"\n{'='*80}")
+                      print(f"STEP 0: Granting DBADM to DB2ADMIN User")
+                      print(f"{'='*80}")
+                      print(f"Connecting to admin database as {rds_master_user}...")
+                      conn_master_admin = ibm_db.connect(conn_str_master_admin, "", "")
+                      print(f"✅ Successfully connected to {rds_admin_dbname} database as {rds_master_user}")
+                      
+                      # Grant DBADM to DB2ADMIN
+                      grant_dbadm_to_db2admin(conn_master_admin)
+                      
+                      # Connect to target database for role operations
+                      print(f"\nConnecting to target database ({rds_dbname})...")
+                      conn_target = ibm_db.connect(conn_str_target, "", "")
+                      print(f"✅ Successfully connected to {rds_dbname} database")
+                  
+                      # Process MANAGE application
+                      print("\n" + "=" * 80)
+                      print("STEP 1: Processing MANAGE application (MAXIMO schema)")
+                      print("=" * 80)
+                      
+                      if check_table_exists(conn_target, "MAXIMO", "MAXUSER"):
+                          print("✅ Table MAXIMO.MAXUSER exists. Proceeding with role creation...")
+                          
+                          # Create roles using RDS admin procedure (connected to admin database)
+                          create_role_rds(conn_master_admin, "MAXIMO_READ", rds_dbname)
+                          create_role_rds(conn_master_admin, "MAXIMO_WRITE", rds_dbname)
+                          create_role_rds(conn_master_admin, "MAXIMO_SEQ", rds_dbname)
+                          create_role_rds(conn_master_admin, "EXPLAIN", rds_dbname)
+                          
+                          # Grant permissions to MAXIMO_READ (connected to target database)
+                          print("\nGranting permissions to MAXIMO_READ role...")
+                          execute_db2_sql(conn_target, "GRANT SELECT ON TABLE MAXIMO.MAXUSER TO ROLE MAXIMO_READ", "Grant SELECT on MAXUSER")
+                          execute_db2_sql(conn_target, "GRANT SELECTIN ON SCHEMA MAXIMO TO ROLE MAXIMO_READ", "Grant SELECTIN on MAXIMO schema")
+                          
+                          # Grant permissions to MAXIMO_WRITE
+                          print("\nGranting permissions to MAXIMO_WRITE role...")
+                          execute_db2_sql(conn_target, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE MAXIMO.MAXUSER TO ROLE MAXIMO_WRITE", "Grant DML on MAXUSER")
+                          execute_db2_sql(conn_target, "GRANT SELECTIN, INSERTIN, UPDATEIN, DELETEIN ON SCHEMA MAXIMO TO ROLE MAXIMO_WRITE", "Grant DML on MAXIMO schema")
+                          
+                          # Grant permissions to MAXIMO_SEQ
+                          print("\nGranting permissions to MAXIMO_SEQ role...")
+                          execute_db2_sql(conn_target, "GRANT USAGE ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ", "Grant USAGE on MAXSEQ")
+                          execute_db2_sql(conn_target, "GRANT ALTER ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ", "Grant ALTER on MAXSEQ")
+                          
+                          # Grant permissions to EXPLAIN
+                          print("\nGranting permissions to EXPLAIN role...")
+                          execute_db2_sql(conn_target, "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE EXPLAIN", "Grant EXECUTE on SYSSH200")
+                          execute_db2_sql(conn_target, "GRANT SELECT ON TABLE SYSTOOLS.EXPLAIN_INSTANCE TO ROLE EXPLAIN", "Grant SELECT on EXPLAIN_INSTANCE")
+                      else:
+                          print("⚠️  Table MAXIMO.MAXUSER does not exist yet. Skipping manage role creation.")
+                      
+                      # Process FACILITIES application
+                      print("\n" + "=" * 80)
+                      print("STEP 2: Processing FACILITIES application (TRIDATA schema)")
+                      print("=" * 80)
+                      
+                      if check_table_exists(conn_target, "TRIDATA", "TRIDATA_DATA"):
+                          print("✅ Table TRIDATA.TRIDATA_DATA exists. Proceeding with role creation...")
+                          
+                          # Create roles using RDS admin procedure (connected to admin database)
+                          create_role_rds(conn_master_admin, "TRIDATA_READ", rds_dbname)
+                          create_role_rds(conn_master_admin, "TRIDATA_WRITE", rds_dbname)
+                          
+                          # Grant permissions to TRIDATA_READ (connected to target database)
+                          print("\nGranting permissions to TRIDATA_READ role...")
+                          execute_db2_sql(conn_target, "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ", "Grant SELECT on TRIDATA_DATA")
+                          execute_db2_sql(conn_target, "GRANT SELECTIN ON SCHEMA TRIDATA TO ROLE TRIDATA_READ", "Grant SELECTIN on TRIDATA schema")
+                          
+                          # Grant permissions to TRIDATA_WRITE
+                          print("\nGranting permissions to TRIDATA_WRITE role...")
+                          execute_db2_sql(conn_target, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_WRITE", "Grant DML on TRIDATA_DATA")
+                          execute_db2_sql(conn_target, "GRANT SELECTIN, INSERTIN, UPDATEIN, DELETEIN ON SCHEMA TRIDATA TO ROLE TRIDATA_WRITE", "Grant DML on TRIDATA schema")
+                      else:
+                          print("⚠️  Table TRIDATA.TRIDATA_DATA does not exist yet. Skipping facilities role creation.")
+                      
+                      print("\n" + "=" * 60)
+                      print("✅ Role creation and permission grants completed")
+                      print("=" * 60)
+                      
+                      # Close connections
+                      ibm_db.close(conn_master_admin)
+                      ibm_db.close(conn_target)
+                      sys.exit(0)
+                  
                   except Exception as e:
-                      print(f"Error: {str(e)}")
+                      print(f"❌ Error: {str(e)}")
                       sys.exit(1)
                   EOFPYTHON
                   # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
@@ -477,3 +475,4 @@ spec:
       backoffLimit: 4
 {{- end }}
 {{- end }}
+

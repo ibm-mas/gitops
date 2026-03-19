@@ -1,0 +1,101 @@
+{{- /*
+  Test Job for Online Backup
+  This is a one-time job to test the online backup functionality
+  Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:1b88f88a1a719d006ea1f4b8dcfd1c2625fa7ecc529c3267e7b4b6afaa1c8da0" }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ .Values.db2_rds_instance_name }}-test-online-backup"
+  annotations:
+    argocd.argoproj.io/sync-wave: "139"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  backoffLimit: 2
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: rds-db2-test-online-backup
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "=========================================="
+              echo "TEST ONLINE BACKUP JOB"
+              echo "=========================================="
+              echo "Downloading RDS SSL certificate..."
+              mkdir -p /etc/mas/rds-ssl
+              curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
+              echo "✅ Certificate downloaded"
+              
+              echo "Installing ibm_db Python package..."
+              pip install ibm_db
+              echo "✅ ibm_db installed successfully"
+              
+              echo "Starting TEST ONLINE backup..."
+              export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem
+              python /etc/mas/backup-script/rds-db2-backup.py
+          env:
+            - name: BACKUP_TYPE
+              value: "ONLINE"
+            - name: DB_HOST
+              value: {{ .Values.host | quote }}
+            - name: RDS_ADMIN_DB
+              value: {{ .Values.rds_admin_db_name | quote }}
+            - name: DB_PORT
+              value: {{ .Values.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.dbname | quote }}
+            - name: JDBC_CONNECTION_URL
+              value: {{ .Values.jdbc_connection_url | quote }}
+            - name: S3_BUCKET_NAME
+              value: {{ .Values.backup.s3_bucket_name | quote }}
+            - name: S3_PREFIX
+              value: {{ .Values.backup.s3_prefix | quote }}
+            - name: COMPRESSION
+              value: "NONE"
+            - name: UTIL_IMPACT_PRIORITY
+              value: {{ .Values.backup.util_impact_priority | quote }}
+            - name: NUM_FILES
+              value: {{ .Values.backup.num_files | quote }}
+            - name: PARALLELISM
+              value: {{ .Values.backup.parallelism | quote }}
+            - name: NUM_BUFFERS
+              value: {{ .Values.backup.num_buffers | quote }}
+            - name: SSL_CERT_PATH
+              value: "/etc/mas/rds-ssl/global-bundle.pem"
+          volumeMounts:
+            - name: dbs-rds-secret-store
+              mountPath: /etc/mas/dbs-rds-creds/
+            - name: backup-script
+              mountPath: /etc/mas/backup-script/
+      volumes:
+        - name: backup-script
+          configMap:
+            name: {{ .Values.scriptConfigMapName }}-backup
+            defaultMode: 0755
+        - name: dbs-rds-secret-store
+          secret:
+            secretName: dbs-rds-secret-store
+            defaultMode: 0420
+            optional: false

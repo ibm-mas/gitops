@@ -25,7 +25,7 @@ data:
     
     ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
     jdbc_connection_url = os.environ.get("JDBC_CONNECTION_URL", "")
-        
+    
     with open("/etc/mas/dbs-rds-creds/username", 'r') as f:
       username = f.read().strip()
     
@@ -115,21 +115,21 @@ data:
               )
               """
             db2.exec_immediate(admin_conn, sql)
-            
+    
             # Wait for bufferpool to appear (AWS RDS DB2 creates bufferpools asynchronously)
             print(f"⏳ Waiting for bufferpool {bpname} to be created...")
             max_retries = 12  # 12 retries = up to 60 seconds
             retry_delay = 5   # Start with 5 seconds
-            
+    
             for attempt in range(max_retries):
                 time.sleep(retry_delay)
-                
+    
                 if bufferpool_exists(bpname):
                     print(f"✅ Created bufferpool: {bpname} (verified after {(attempt + 1) * retry_delay} seconds)")
                     return
                 else:
                     print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Bufferpool {bpname} not yet visible, waiting...")
-            
+    
             # If we get here, bufferpool still doesn't exist after all retries
             error_msg = f"Bufferpool {bpname} not found after {max_retries * retry_delay} seconds. Possible causes: insufficient permissions or RDS limitation."
             print(f"❌ {error_msg}")
@@ -165,21 +165,21 @@ data:
               )
               """
             db2.exec_immediate(admin_conn, sql)
-            
+    
             # CRITICAL: Wait for tablespace to appear (AWS RDS DB2 creates tablespaces asynchronously)
             print(f"⏳ Waiting for tablespace {tbname} to be created...")
             max_retries = 12  # 12 retries = up to 60 seconds
             retry_delay = 5   # Start with 5 seconds
-            
+    
             for attempt in range(max_retries):
                 time.sleep(retry_delay)
-                
+    
                 if tablespace_exists(tbname):
                     print(f"✅ Created tablespace: {tbname} (verified after {(attempt + 1) * retry_delay} seconds)")
                     return
                 else:
                     print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Tablespace {tbname} not yet visible, waiting...")
-            
+    
             # If we get here, tablespace still doesn't exist after all retries
             error_msg = f"Tablespace {tbname} not found after {max_retries * retry_delay} seconds. Possible causes: pagesize mismatch with bufferpool, insufficient permissions, or RDS limitation."
             print(f"❌ {error_msg}")

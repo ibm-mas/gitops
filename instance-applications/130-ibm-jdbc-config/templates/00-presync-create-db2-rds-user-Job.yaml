@@ -1,7 +1,7 @@
 {{- if eq .Values.jdbc_type "rds-db2"  }}
 
   {{- /*
-    Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+        Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
     */}}
   {{- $_cli_image_digest := "sha256:1b88f88a1a719d006ea1f4b8dcfd1c2625fa7ecc529c3267e7b4b6afaa1c8da0" }}
 
@@ -23,7 +23,7 @@ metadata:
   {{- if .Values.custom_labels }}
 labels:
   {{ .Values.custom_labels | toYaml | indent 4 }}
-  {{- end }}
+    {{- end }}
 data:
   aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
@@ -41,7 +41,7 @@ metadata:
   {{- if .Values.custom_labels }}
 labels:
   {{ .Values.custom_labels | toYaml | indent 4 }}
-  {{- end }}
+    {{- end }}
 
 ---
 # Permit outbound communication by the Job pods
@@ -57,7 +57,7 @@ metadata:
   {{- if .Values.custom_labels }}
 labels:
   {{ .Values.custom_labels | toYaml | indent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
   podSelector:
     matchLabels:
@@ -79,372 +79,372 @@ metadata:
   {{- if .Values.custom_labels }}
 labels:
   {{ .Values.custom_labels | toYaml | indent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
   template:
     metadata:
       labels:
         app: {{ $job }}
   {{- if .Values.custom_labels }}
-      {{ .Values.custom_labels | toYaml | indent 8 }}
+  {{ .Values.custom_labels | toYaml | indent 8 }}
   {{- end }}
-    spec:
-      containers:
-        - name: run
-          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
-          imagePullPolicy: IfNotPresent
-          resources:
-            limits:
-              cpu: 200m
-              memory: 512Mi
-            requests:
-              cpu: 10m
-              memory: 64Mi
-          env:
-            - name: ACCOUNT_ID
-              value: {{ .Values.account_id }}
-            - name: REGION_ID
-              value: {{ .Values.region_id }}
-            - name: CLUSTER_ID
-              value: {{ .Values.cluster_id }}
-            - name: MAS_INSTANCE_ID
-              value: {{ .Values.instance_id }}
-            - name: JDBC_CONNECTION_URL
-              value: "{{ .Values.jdbc_connection_url }}"
-            - name: RDS_ADMIN_DB_NAME
-              value: "{{ .Values.rds_admin_db_name }}"
-            - name: JDBC_INSTANCE_USERNAME
-              value: "{{ .Values.jdbc_instance_username }}"
-            - name: JDBC_INSTANCE_PASSWORD
-              value: "{{ .Values.jdbc_instance_password }}"
-            - name: MAS_APP_ID
-              value: "{{ .Values.mas_application_id }}"
-          volumeMounts:
-            - name: aws
-              mountPath: /etc/mas/creds/aws
-          command:
-            - /bin/sh
-            - -c
-            - |
-              
-              set -e
-              
-              source /mascli/functions/gitops_utils
-              
+  spec:
+    containers:
+      - name: run
+        image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: 200m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        env:
+          - name: ACCOUNT_ID
+            value: {{ .Values.account_id }}
+          - name: REGION_ID
+            value: {{ .Values.region_id }}
+          - name: CLUSTER_ID
+            value: {{ .Values.cluster_id }}
+          - name: MAS_INSTANCE_ID
+            value: {{ .Values.instance_id }}
+          - name: JDBC_CONNECTION_URL
+            value: "{{ .Values.jdbc_connection_url }}"
+          - name: RDS_ADMIN_DB_NAME
+            value: "{{ .Values.rds_admin_db_name }}"
+          - name: JDBC_INSTANCE_USERNAME
+            value: "{{ .Values.jdbc_instance_username }}"
+          - name: JDBC_INSTANCE_PASSWORD
+            value: "{{ .Values.jdbc_instance_password }}"
+          - name: MAS_APP_ID
+            value: "{{ .Values.mas_application_id }}"
+        volumeMounts:
+          - name: aws
+            mountPath: /etc/mas/creds/aws
+        command:
+          - /bin/sh
+          - -c
+          - |
+            
+            set -e
+            
+            source /mascli/functions/gitops_utils
+            
+            echo ""
+            echo "================================================================================"
+            echo "Settings"
+            echo "================================================================================"
+            echo "ACCOUNT_ID .......................... ${ACCOUNT_ID}"
+            echo "REGION_ID ........................... ${REGION_ID}"
+            echo "CLUSTER_ID .......................... ${CLUSTER_ID}"
+            echo "MAS_INSTANCE_ID ..................... ${MAS_INSTANCE_ID}"
+            echo "JDBC_CONNECTION_URL ................. ${JDBC_CONNECTION_URL}"
+            echo "JDBC_INSTANCE_USERNAME .............. ${JDBC_INSTANCE_USERNAME}"
+            echo "RDS_ADMIN_DB_NAME ................... ${RDS_ADMIN_DB_NAME}"
+            echo "MAS_APP_ID .......................... ${MAS_APP_ID}"
+            
+            export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+            export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+            export SM_AWS_REGION=${REGION_ID}
+            
+            echo ""
+            echo "Installing required Python packages..."
+            echo "--------------------------------------------------------------------------------"
+            pip install ibm_db
+            
+            echo ""
+            echo "Downloading RDS SSL certificate..."
+            echo "--------------------------------------------------------------------------------"
+            mkdir -p /tmp/rds-ssl
+            curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
+            echo " Certificate downloaded"
+            
+            # Path to the generated Python script
+            RDS_USER_SCRIPT="/tmp/create_rds_users.py"
+            
+            echo ""
+            echo "Create ${RDS_USER_SCRIPT}"
+            echo "--------------------------------------------------------------------------------"
+            
+            # Generate a Python script to create non-admin users and grant permissions
+            cat > ${RDS_USER_SCRIPT} << 'EOFPYTHON'
+            """
+            RDS DB2 User Creation and Permission Management Script
+            
+            This script performs the following operations:
+            1. Creates admin users (db2_manage, db2_facilities, db2_iot) with passwords
+            2. Grants DBADM privileges to admin users for schema management
+            3. Grants application-specific roles to non-admin user (from AWS Secrets Manager)
+            
+            Password Management:
+            - Username is used as password (e.g., db2_manage/db2_manage)
+            - Passwords are displayed in the job logs
+            
+            User Types:
+            - Admin users: db2_manage, db2_facilities, db2_iot (DBADM for schema management)
+            - Non-admin user: From AWS Secrets Manager (application roles only)
+            """
+            import ibm_db
+            import os
+            import sys
+            import secrets
+            import string
+            
+            import re
+            
+            # Get environment variables
+            jdbc_connection_url = os.getenv('JDBC_CONNECTION_URL')
+            rds_admin_db_name = os.getenv('RDS_ADMIN_DB_NAME')
+            jdbc_username = os.getenv('JDBC_INSTANCE_USERNAME')
+            jdbc_password = os.getenv('JDBC_INSTANCE_PASSWORD')
+            mas_app_id = os.getenv('MAS_APP_ID', 'manage')
+            ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
+            
+            # Function to generate secure random password
+            def generate_password(length=20):
+                """Generate a secure random password (alphanumeric only, no special chars)"""
+                alphabet = string.ascii_letters + string.digits
+                password = ''.join(secrets.choice(alphabet) for i in range(length))
+                return password
+            
+            # Parse JDBC connection URL to extract host, port, database, and SSL parameters
+            # Format: jdbc:db2://host:port/database:sslConnection=true;sslVersion=TLSv1.2;
+            match = re.match(r'jdbc:db2://([^:]+):(\d+)/(.+)', jdbc_connection_url)
+            if not match:
+                print(f" Failed to parse JDBC connection URL: {jdbc_connection_url}")
+                sys.exit(1)
+            
+            rds_host = match.group(1)
+            rds_port = match.group(2)
+            url_remainder = match.group(3)
+            
+            # Split database name from parameters
+            if ':' in url_remainder:
+                rds_dbname = url_remainder.split(':')[0]
+                url_params = url_remainder.split(':', 1)[1]
+            else:
+                rds_dbname = url_remainder.split(';')[0]
+                url_params = ''
+            
+            # Extract sslVersion from URL parameters if present
+            ssl_version = 'TLSv1.2'  # Default value
+            if url_params:
+                ssl_version_match = re.search(r'sslVersion=([^;]+)', url_params, re.IGNORECASE)
+                if ssl_version_match:
+                    ssl_version = ssl_version_match.group(1)
+                    print(f" Extracted SSL Version from JDBC URL: {ssl_version}")
+                else:
+                    print(f"  SSL Version not found in URL, using default: {ssl_version}")
+            else:
+                print(f" No URL parameters found, using default SSL Version: {ssl_version}")
+            
+            # Build connection string with SSL
+            # Connect to the admin database (rds_admin_db_name) to create users
+            # User creation must be done on the admin database (rdsadmin)
+            conn_str = (
+                f"DATABASE={rds_admin_db_name};"
+                f"HOSTNAME={rds_host};"
+                f"PORT={rds_port};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={jdbc_username};"
+                f"PWD={jdbc_password};"
+                f"SECURITY=SSL;"
+                f"SSLVersion={ssl_version};"
+                f"SSLServerCertificate={ssl_cert_path};"
+            )
+            
+            # Build connection string for actual database (BLUDB/rds_dbname) to check user existence
+            conn_str_bludb = (
+                f"DATABASE={rds_dbname};"
+                f"HOSTNAME={rds_host};"
+                f"PORT={rds_port};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={jdbc_username};"
+                f"PWD={jdbc_password};"
+                f"SECURITY=SSL;"
+                f"SSLVersion={ssl_version};"
+                f"SSLServerCertificate={ssl_cert_path};"
+            )
+            
+            print(f"Connecting to RDS DB2 admin database: {rds_host}:{rds_port}/{rds_admin_db_name}")
+            print(f"Actual database for queries: {rds_host}:{rds_port}/{rds_dbname}")
+            print(f"MAS Application ID: {mas_app_id}")
+            print(f"JDBC Username: {jdbc_username}")
+            
+            # 1. Admin users: We CREATE these with DBADM (for schema management)
+            
+            # Validate MAS_APP_ID
+            valid_apps = ['manage', 'facilities', 'iot']
+            if mas_app_id not in valid_apps:
+                print(f"Unknown MAS_APP_ID: {mas_app_id}")
+                sys.exit(1)
+            
+            # Admin users to CREATE (with DBADM)
+            # Generate secure random password for the admin user
+            # Populate admin_users_to_create based on MAS_APP_ID
+            admin_username = f'db2_{mas_app_id}'
+            admin_password = generate_password(length=20)
+            
+            admin_users_to_create = [
+                {
+                    'username': admin_username,
+                    'password': admin_password,
+                    'role': 'DBADM',
+                    'description': f'{mas_app_id.capitalize()} Admin User (DBADM for schema management)',
+                    'app_type': mas_app_id
+                }
+            ]
+            
+            # Export admin credentials for shell script to use
+            with open('/tmp/admin_credentials.txt', 'w') as f:
+                f.write(f"ADMIN_USERNAME={admin_username}\n")
+                f.write(f"ADMIN_PASSWORD={admin_password}\n")
+                f.write(f"USER_EXISTS=true\n")  # Default to true (assume exists)
+            
+            print(f"\nCreating user for MAS Application: {mas_app_id}")
+            
+            try:
+                # Connect to the admin database
+                conn = ibm_db.connect(conn_str, "", "")
+                print(" Successfully connected to RDS DB2 admin database")
+            
+                # Connect to the actual database (BLUDB) for checking user existence
+                conn_bludb = ibm_db.connect(conn_str_bludb, "", "")
+                print(f" Successfully connected to actual database: {rds_dbname}")
+            
+                for admin_user in admin_users_to_create:
+                    username = admin_user['username']
+                    password = admin_user['password']
+                    role_to_assign = admin_user['role']
+                    description = admin_user['description']
+                    app_type = admin_user['app_type']
+            
+                    # Check if user already exists using BLUDB connection
+                    user_exists = False
+                    try:
+                       check_user_sql = f"SELECT GRANTEE FROM SYSCAT.DBAUTH WHERE GRANTEE = '{username.upper()}'"
+                       stmt = ibm_db.exec_immediate(conn_bludb, check_user_sql)
+                       result = ibm_db.fetch_assoc(stmt)
+                       if result:
+                           user_exists = True
+                           print(f"User {username} already exists in database")
+                       else:
+                           print(f"User {username} does not exist")
+                    except Exception as e:
+                       print(f"Could not check if user exists: {str(e)}")
+            
+                    # Create user only if it doesn't exist
+                    if not user_exists:
+                        try:
+                            # Create the user using RDS stored procedure
+                            create_user_sql = f"CALL rdsadmin.add_user('{username}', '{password}', NULL)"
+                            ibm_db.exec_immediate(conn, create_user_sql)
+                            print(f"User {username} created successfully using rdsadmin.add_user()")
+                        except Exception as e:
+                            error_msg = str(e)
+                            # Check if user already exists (fallback check)
+                            if 'already exists' in error_msg.lower() or 'sql0551n' in error_msg.lower():
+                                print(f"User {username} already exists, skipping creation")
+                                user_exists = True  # Update flag
+                            else:
+                                print(f"Error creating user {username}: {error_msg}")
+                    else:
+                        print(f"Skipping user creation for {username} (already exists)")
+            
+                    try:
+                        task_id = ibm_db.callproc(
+                            conn,
+                            "rdsadmin.dbadm_grant",
+                            (None, rds_dbname, "DBADM", f"USER {username}")
+                        )
+                        print(f"Granted DBADM privileges to {username} (task_id: {task_id})")
+                    except Exception as e:
+                        error_msg = str(e)
+                        print(f"Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
+            
+                # Close both connections
+                ibm_db.close(conn)
+                ibm_db.close(conn_bludb)
+            
+                # Update the credentials file with user existence status
+                with open('/tmp/admin_credentials.txt', 'w') as f:
+                    f.write(f"ADMIN_USERNAME={admin_username}\n")
+                    f.write(f"ADMIN_PASSWORD={admin_password}\n")
+                    f.write(f"USER_EXISTS={'true' if user_exists else 'false'}\n")
+            
+                print(f"\nUser status: {'User already existed' if user_exists else 'New user created'}")
+            
+            except Exception as e:
+                print(f" Error: {str(e)}")
+                sys.exit(1)
+            EOFPYTHON
+            # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
+            
+            echo ""
+            echo "Executing ${RDS_USER_SCRIPT}"
+            echo "--------------------------------------------------------------------------------"
+            python ${RDS_USER_SCRIPT} || exit $?
+            
+            
+            # Admin credentials are already set by Python script via os.environ
+            # ADMIN_USERNAME and ADMIN_PASSWORD are available from Python
+            
+            # Source the admin credentials created by Python script
+            source /tmp/admin_credentials.txt
+            
+            # Determine the secret path based on MAS_APP_ID
+            JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${MAS_APP_ID}/credentials"
+            
+            echo ""
+            echo "================================================================================"
+            echo "Checking if Secrets Manager update is needed"
+            echo "================================================================================"
+            echo "MAS Application: ${MAS_APP_ID}"
+            echo "Username: ${ADMIN_USERNAME}"
+            echo "User exists: ${USER_EXISTS}"
+            echo ""
+            
+            # Only update Secrets Manager if user did NOT already exist (i.e., was newly created)
+            if [ "${USER_EXISTS}" = "false" ]; then
+              echo "New user was created - updating AWS Secrets Manager..."
+              echo "Secret Name: ${JDBC_CREDENTIALS_SECRET}"
               echo ""
-              echo "================================================================================"
-              echo "Settings"
-              echo "================================================================================"
-              echo "ACCOUNT_ID .......................... ${ACCOUNT_ID}"
-              echo "REGION_ID ........................... ${REGION_ID}"
-              echo "CLUSTER_ID .......................... ${CLUSTER_ID}"
-              echo "MAS_INSTANCE_ID ..................... ${MAS_INSTANCE_ID}"
-              echo "JDBC_CONNECTION_URL ................. ${JDBC_CONNECTION_URL}"
-              echo "JDBC_INSTANCE_USERNAME .............. ${JDBC_INSTANCE_USERNAME}"
-              echo "RDS_ADMIN_DB_NAME ................... ${RDS_ADMIN_DB_NAME}"
-              echo "MAS_APP_ID .......................... ${MAS_APP_ID}"
-              
-              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-              export SM_AWS_REGION=${REGION_ID}
-              
+            
+              # Login to Secrets Manager
+              sm_login
+            
+              # Create JSON payload with app-specific admin username and password
+              SECRET_JSON="{\"username\": \"${ADMIN_USERNAME}\", \"password\": \"${ADMIN_PASSWORD}\"}"
+            
+              echo "Secret JSON payload:"
+              echo "${SECRET_JSON}"
               echo ""
-              echo "Installing required Python packages..."
-              echo "--------------------------------------------------------------------------------"
-              pip install ibm_db
-              
-              echo ""
-              echo "Downloading RDS SSL certificate..."
-              echo "--------------------------------------------------------------------------------"
-              mkdir -p /tmp/rds-ssl
-              curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
-              echo " Certificate downloaded"
-              
-              # Path to the generated Python script
-              RDS_USER_SCRIPT="/tmp/create_rds_users.py"
-              
-              echo ""
-              echo "Create ${RDS_USER_SCRIPT}"
-              echo "--------------------------------------------------------------------------------"
-              
-              # Generate a Python script to create non-admin users and grant permissions
-              cat > ${RDS_USER_SCRIPT} << 'EOFPYTHON'
-              """
-              RDS DB2 User Creation and Permission Management Script
-              
-              This script performs the following operations:
-              1. Creates admin users (db2_manage, db2_facilities, db2_iot) with passwords
-              2. Grants DBADM privileges to admin users for schema management
-              3. Grants application-specific roles to non-admin user (from AWS Secrets Manager)
-              
-              Password Management:
-              - Username is used as password (e.g., db2_manage/db2_manage)
-              - Passwords are displayed in the job logs
-              
-              User Types:
-              - Admin users: db2_manage, db2_facilities, db2_iot (DBADM for schema management)
-              - Non-admin user: From AWS Secrets Manager (application roles only)
-              """
-              import ibm_db
-              import os
-              import sys
-              import secrets
-              import string
-              
-              import re
-              
-              # Get environment variables
-              jdbc_connection_url = os.getenv('JDBC_CONNECTION_URL')
-              rds_admin_db_name = os.getenv('RDS_ADMIN_DB_NAME')
-              jdbc_username = os.getenv('JDBC_INSTANCE_USERNAME')
-              jdbc_password = os.getenv('JDBC_INSTANCE_PASSWORD')
-              mas_app_id = os.getenv('MAS_APP_ID', 'manage')
-              ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
-              
-              # Function to generate secure random password
-              def generate_password(length=20):
-                  """Generate a secure random password (alphanumeric only, no special chars)"""
-                  alphabet = string.ascii_letters + string.digits
-                  password = ''.join(secrets.choice(alphabet) for i in range(length))
-                  return password
-              
-              # Parse JDBC connection URL to extract host, port, database, and SSL parameters
-              # Format: jdbc:db2://host:port/database:sslConnection=true;sslVersion=TLSv1.2;
-              match = re.match(r'jdbc:db2://([^:]+):(\d+)/(.+)', jdbc_connection_url)
-              if not match:
-                  print(f" Failed to parse JDBC connection URL: {jdbc_connection_url}")
-                  sys.exit(1)
-              
-              rds_host = match.group(1)
-              rds_port = match.group(2)
-              url_remainder = match.group(3)
-              
-              # Split database name from parameters
-              if ':' in url_remainder:
-                  rds_dbname = url_remainder.split(':')[0]
-                  url_params = url_remainder.split(':', 1)[1]
-              else:
-                  rds_dbname = url_remainder.split(';')[0]
-                  url_params = ''
-              
-              # Extract sslVersion from URL parameters if present
-              ssl_version = 'TLSv1.2'  # Default value
-              if url_params:
-                  ssl_version_match = re.search(r'sslVersion=([^;]+)', url_params, re.IGNORECASE)
-                  if ssl_version_match:
-                      ssl_version = ssl_version_match.group(1)
-                      print(f" Extracted SSL Version from JDBC URL: {ssl_version}")
-                  else:
-                      print(f"  SSL Version not found in URL, using default: {ssl_version}")
-              else:
-                  print(f" No URL parameters found, using default SSL Version: {ssl_version}")
-              
-              # Build connection string with SSL
-              # Connect to the admin database (rds_admin_db_name) to create users
-              # User creation must be done on the admin database (rdsadmin)
-              conn_str = (
-                  f"DATABASE={rds_admin_db_name};"
-                  f"HOSTNAME={rds_host};"
-                  f"PORT={rds_port};"
-                  f"PROTOCOL=TCPIP;"
-                  f"UID={jdbc_username};"
-                  f"PWD={jdbc_password};"
-                  f"SECURITY=SSL;"
-                  f"SSLVersion={ssl_version};"
-                  f"SSLServerCertificate={ssl_cert_path};"
-              )
-              
-              # Build connection string for actual database (BLUDB/rds_dbname) to check user existence
-              conn_str_bludb = (
-                  f"DATABASE={rds_dbname};"
-                  f"HOSTNAME={rds_host};"
-                  f"PORT={rds_port};"
-                  f"PROTOCOL=TCPIP;"
-                  f"UID={jdbc_username};"
-                  f"PWD={jdbc_password};"
-                  f"SECURITY=SSL;"
-                  f"SSLVersion={ssl_version};"
-                  f"SSLServerCertificate={ssl_cert_path};"
-              )
-              
-              print(f"Connecting to RDS DB2 admin database: {rds_host}:{rds_port}/{rds_admin_db_name}")
-              print(f"Actual database for queries: {rds_host}:{rds_port}/{rds_dbname}")
-              print(f"MAS Application ID: {mas_app_id}")
-              print(f"JDBC Username: {jdbc_username}")
+            
+              # Update the secret with tags
+              TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-db2-rds-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}, {\"Key\": \"user_type\", \"Value\": \"admin\"}]"
+            
+              echo "Updating AWS Secrets Manager secret..."
+              sm_update_secret "${JDBC_CREDENTIALS_SECRET}" "${SECRET_JSON}" "${TAGS}" || exit $?
+            
+              echo "Admin credentials (${ADMIN_USERNAME}) uploaded to AWS Secrets Manager successfully"
+            else
+              echo "User already existed - skipping AWS Secrets Manager update"
+              echo "Existing credentials in Secrets Manager will be preserved"
+            fi
+            
+            echo ""
+            echo "RDS user management completed successfully"
 
-              # 1. Admin users: We CREATE these with DBADM (for schema management)
-              
-              # Validate MAS_APP_ID
-              valid_apps = ['manage', 'facilities', 'iot']
-              if mas_app_id not in valid_apps:
-                  print(f"Unknown MAS_APP_ID: {mas_app_id}")
-                  sys.exit(1)
-              
-              # Admin users to CREATE (with DBADM)
-              # Generate secure random password for the admin user
-              # Populate admin_users_to_create based on MAS_APP_ID
-              admin_username = f'db2_{mas_app_id}'
-              admin_password = generate_password(length=20)
-              
-              admin_users_to_create = [
-                  {
-                      'username': admin_username,
-                      'password': admin_password,
-                      'role': 'DBADM',
-                      'description': f'{mas_app_id.capitalize()} Admin User (DBADM for schema management)',
-                      'app_type': mas_app_id
-                  }
-              ]
-              
-              # Export admin credentials for shell script to use
-              with open('/tmp/admin_credentials.txt', 'w') as f:
-                  f.write(f"ADMIN_USERNAME={admin_username}\n")
-                  f.write(f"ADMIN_PASSWORD={admin_password}\n")
-                  f.write(f"USER_EXISTS=true\n")  # Default to true (assume exists)
-              
-              print(f"\nCreating user for MAS Application: {mas_app_id}")
-              
-              try:
-                  # Connect to the admin database
-                  conn = ibm_db.connect(conn_str, "", "")
-                  print(" Successfully connected to RDS DB2 admin database")
-                  
-                  # Connect to the actual database (BLUDB) for checking user existence
-                  conn_bludb = ibm_db.connect(conn_str_bludb, "", "")
-                  print(f" Successfully connected to actual database: {rds_dbname}")
-              
-                  for admin_user in admin_users_to_create:
-                      username = admin_user['username']
-                      password = admin_user['password']
-                      role_to_assign = admin_user['role']
-                      description = admin_user['description']
-                      app_type = admin_user['app_type']
-                  
-                      # Check if user already exists using BLUDB connection
-                      user_exists = False
-                      try:
-                         check_user_sql = f"SELECT GRANTEE FROM SYSCAT.DBAUTH WHERE GRANTEE = '{username.upper()}'"
-                         stmt = ibm_db.exec_immediate(conn_bludb, check_user_sql)
-                         result = ibm_db.fetch_assoc(stmt)
-                         if result:
-                             user_exists = True
-                             print(f"User {username} already exists in database")
-                         else:
-                             print(f"User {username} does not exist")
-                      except Exception as e:
-                         print(f"Could not check if user exists: {str(e)}")
-                  
-                      # Create user only if it doesn't exist
-                      if not user_exists:
-                          try:
-                              # Create the user using RDS stored procedure
-                              create_user_sql = f"CALL rdsadmin.add_user('{username}', '{password}', NULL)"
-                              ibm_db.exec_immediate(conn, create_user_sql)
-                              print(f"User {username} created successfully using rdsadmin.add_user()")
-                          except Exception as e:
-                              error_msg = str(e)
-                              # Check if user already exists (fallback check)
-                              if 'already exists' in error_msg.lower() or 'sql0551n' in error_msg.lower():
-                                  print(f"User {username} already exists, skipping creation")
-                                  user_exists = True  # Update flag
-                              else:
-                                  print(f"Error creating user {username}: {error_msg}")
-                      else:
-                          print(f"Skipping user creation for {username} (already exists)")
-                  
-                      try:
-                          task_id = ibm_db.callproc(
-                              conn,
-                              "rdsadmin.dbadm_grant",
-                              (None, rds_dbname, "DBADM", f"USER {username}")
-                          )
-                          print(f"Granted DBADM privileges to {username} (task_id: {task_id})")
-                      except Exception as e:
-                          error_msg = str(e)
-                          print(f"Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
-                  
-                  # Close both connections
-                  ibm_db.close(conn)
-                  ibm_db.close(conn_bludb)
-                  
-                  # Update the credentials file with user existence status
-                  with open('/tmp/admin_credentials.txt', 'w') as f:
-                      f.write(f"ADMIN_USERNAME={admin_username}\n")
-                      f.write(f"ADMIN_PASSWORD={admin_password}\n")
-                      f.write(f"USER_EXISTS={'true' if user_exists else 'false'}\n")
-                  
-                  print(f"\nUser status: {'User already existed' if user_exists else 'New user created'}")
-                  
-              except Exception as e:
-                  print(f" Error: {str(e)}")
-                  sys.exit(1)
-              EOFPYTHON
-              # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
-              
-              echo ""
-              echo "Executing ${RDS_USER_SCRIPT}"
-              echo "--------------------------------------------------------------------------------"
-              python ${RDS_USER_SCRIPT} || exit $?
-              
-              
-              # Admin credentials are already set by Python script via os.environ
-              # ADMIN_USERNAME and ADMIN_PASSWORD are available from Python
-              
-              # Source the admin credentials created by Python script
-              source /tmp/admin_credentials.txt
-              
-              # Determine the secret path based on MAS_APP_ID
-              JDBC_CREDENTIALS_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${MAS_APP_ID}/credentials"
-              
-              echo ""
-              echo "================================================================================"
-              echo "Checking if Secrets Manager update is needed"
-              echo "================================================================================"
-              echo "MAS Application: ${MAS_APP_ID}"
-              echo "Username: ${ADMIN_USERNAME}"
-              echo "User exists: ${USER_EXISTS}"
-              echo ""
-              
-              # Only update Secrets Manager if user did NOT already exist (i.e., was newly created)
-              if [ "${USER_EXISTS}" = "false" ]; then
-                echo "New user was created - updating AWS Secrets Manager..."
-                echo "Secret Name: ${JDBC_CREDENTIALS_SECRET}"
-                echo ""
-                
-                # Login to Secrets Manager
-                sm_login
-                
-                # Create JSON payload with app-specific admin username and password
-                SECRET_JSON="{\"username\": \"${ADMIN_USERNAME}\", \"password\": \"${ADMIN_PASSWORD}\"}"
-                
-                echo "Secret JSON payload:"
-                echo "${SECRET_JSON}"
-                echo ""
-                
-                # Update the secret with tags
-                TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-db2-rds-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}, {\"Key\": \"user_type\", \"Value\": \"admin\"}]"
-                
-                echo "Updating AWS Secrets Manager secret..."
-                sm_update_secret "${JDBC_CREDENTIALS_SECRET}" "${SECRET_JSON}" "${TAGS}" || exit $?
-                
-                echo "Admin credentials (${ADMIN_USERNAME}) uploaded to AWS Secrets Manager successfully"
-              else
-                echo "User already existed - skipping AWS Secrets Manager update"
-                echo "Existing credentials in Secrets Manager will be preserved"
-              fi
-              
-              echo ""
-              echo "RDS user management completed successfully"
-
-      restartPolicy: Never
-      serviceAccountName: {{ $sa }}
-      volumes:
-        - name: aws
-          secret:
-            secretName: "aws-{{ .Values.mas_config_name }}"
-            defaultMode: 420
+    restartPolicy: Never
+    serviceAccountName: {{ $sa }}
+    volumes:
+      - name: aws
+        secret:
+          secretName: "aws-{{ .Values.mas_config_name }}"
+          defaultMode: 420
   backoffLimit: 4
-  
+
   {{- end }}
 
 

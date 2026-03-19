@@ -22,13 +22,11 @@ data:
     import time
     from datetime import datetime
 
-    # Configuration from environment variables
-    backup_type = os.getenv("BACKUP_TYPE", "ONLINE")  # ONLINE, OFFLINE, or FULL
+    backup_type = os.getenv("BACKUP_TYPE", "ONLINE")
     database_name = os.getenv("DB_NAME")
     s3_bucket_name = os.getenv("S3_BUCKET_NAME")
     s3_prefix = os.getenv("S3_PREFIX", "db2-backups")
     compression = os.getenv("COMPRESSION", "INCLUDE")
-    # Convert numeric parameters to integers (required by rdsadmin.backup_database)
     util_impact_priority = int(os.getenv("UTIL_IMPACT_PRIORITY", "50"))
     num_files = int(os.getenv("NUM_FILES", "4"))
     parallelism = int(os.getenv("PARALLELISM", "4"))
@@ -37,23 +35,19 @@ data:
     ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
     jdbc_connection_url = os.environ.get("JDBC_CONNECTION_URL", "")
     
-    # Read credentials (matching the init script format)
     with open("/etc/mas/dbs-rds-creds/username", 'r') as f:
         username = f.read().strip()
     
     with open("/etc/mas/dbs-rds-creds/password", 'r') as f:
         password = f.read().strip()
     
-    # Extract SSL version from JDBC URL if provided (matching init script)
-    ssl_version = 'TLSv1.2'  # Default value
+    ssl_version = 'TLSv1.2'
     if jdbc_connection_url:
         import re
         ssl_version_match = re.search(r'sslVersion=([^;]+)', jdbc_connection_url, re.IGNORECASE)
         if ssl_version_match:
             ssl_version = ssl_version_match.group(1)
     
-    # Create connection string for rdsadmin database
-    # Note: Connect to rdsadmin to execute administrative procedures
     conn_rds_admin_str = (
         f"DATABASE={os.environ['RDS_ADMIN_DB']};"
         f"HOSTNAME={os.environ['DB_HOST']};"
@@ -67,7 +61,6 @@ data:
     )
     
     
-    # Validate required parameters
     if not database_name:
         print("❌ ERROR: DB_NAME environment variable is required")
         sys.exit(1)
@@ -77,62 +70,34 @@ data:
         sys.exit(1)
     
     try:
-        # Connect to rdsadmin database to execute backup procedure
         admin_conn = db2.connect(conn_rds_admin_str, "", "")
         
-        # Prepare backup parameters
-        # Use compact timestamp format
-        timestamp = datetime.now().strftime("%y%m%d%H%M")  # Shorter: YYMMDDHHmm (10 chars)
-        # Create S3 prefix with trailing slash as required by rdsadmin.backup_database
-        # OFFLINE and ONLINE are both full backups (use 'f'), INCREMENTAL uses 'i'
+        timestamp = datetime.now().strftime("%y%m%d%H%M")
         backup_type_short = "f" if backup_type.upper() in ["FULL", "ONLINE", "OFFLINE"] else "i"
+        s3_backup_folder = f"{backup_type_short}{timestamp}/"
         
-        # AWS RDS DB2 S3 prefix parameter has strict length limits
-        # Use ONLY the backup folder name (type+timestamp), not the full path
-        # The s3_prefix will be used in the display path only
-        s3_backup_folder = f"{backup_type_short}{timestamp}/"  # e.g., "f2603180756/" = 12 chars
-        
-        # For display purposes, show the full intended path
         if s3_prefix:
             s3_display_path = f"{s3_prefix.rstrip('/')}/{s3_backup_folder}"
         else:
             s3_display_path = s3_backup_folder
         
-        # Call rdsadmin.backup_database stored procedure
         print(f"Step 1: Initiating {backup_type} backup...")
-        
-        # Prepare parameters for the stored procedure
-        # AWS RDS DB2 backup_database stored procedure signature:
-        # CALL rdsadmin.backup_database(
-        #    'err_message',        -- 1. IN: Error Message (VARCHAR - pass empty string)
-        #    'database_name',      -- 2. IN: Database Name
-        #    's3_bucket_name',     -- 3. IN: S3 Bucket Name (VARCHAR(32) - max 32 chars!)
-        #    's3_prefix/',         -- 4. IN: S3 Prefix (with trailing /)
-        #    'backup_type',        -- 5. IN: Backup Type (OFFLINE/ONLINE/INCREMENTAL)
-        #    'compression',        -- 6. IN: Compression (INCLUDE/NONE)
-        #    util_impact,          -- 7. IN: Util Impact Priority (integer 0-100)
-        #    num_files,            -- 8. IN: Number of Files (integer)
-        #    parallelism,          -- 9. IN: Parallelism (integer)
-        #    num_buffers           -- 10. IN: Number of Buffers (integer)
-        # )
-        
-        # Use ibm_db.callproc for stored procedure call
         try:
             print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, ('NONE', '{database_name}', '{s3_bucket_name}', '{s3_backup_folder}', '{backup_type}', '{compression}', {util_impact_priority}, {num_files}, {parallelism}, {num_buffers}))")
             result = db2.callproc(
                 admin_conn,
                 "rdsadmin.backup_database",
                 (
-                    'NONE',                  # 1. IN: Error Message (pass 'NONE')
-                    database_name,           # 2. IN: Database Name (BLUDB - target to backup)
-                    s3_bucket_name,          # 3. IN: S3 Bucket Name (max 32 chars)
-                    s3_backup_folder,        # 4. IN: S3 Prefix (SHORT - just folder name with trailing /)
-                    backup_type,             # 5. IN: Backup Type (ONLINE/OFFLINE/INCREMENTAL)
-                    compression,             # 6. IN: Compression (INCLUDE/NONE)
-                    util_impact_priority,    # 7. IN: Util Impact Priority (integer)
-                    num_files,               # 8. IN: Number of Files (integer)
-                    parallelism,             # 9. IN: Parallelism (integer)
-                    num_buffers              # 10. IN: Number of Buffers (integer)
+                    'NONE',
+                    database_name,
+                    s3_bucket_name,
+                    s3_backup_folder,
+                    backup_type,
+                    compression,
+                    util_impact_priority,
+                    num_files,
+                    parallelism,
+                    num_buffers
                 )
             )
             
@@ -144,7 +109,6 @@ data:
             print(f"   ❌ Failed to call stored procedure: {str(proc_error)}")
             raise
         
-        # Backup Status Monitoring
         print(f"\nStep 2: Backup Status Monitoring")
         print(f"   ℹ️  To check backup status:")
         print(f"      1. S3 bucket: s3://{s3_bucket_name}/{s3_display_path}")
@@ -153,11 +117,9 @@ data:
         time.sleep(60)
         print(f"   ✅ Complete")
         
-        # Backup Summary
         print(f"\nStep 3: Backup Summary")
         print(f"   S3 Location: s3://{s3_bucket_name}/{s3_display_path}")
         
-        # Close connection
         print(f"\nStep 4: Closing connection...")
         db2.close(admin_conn)
         print(f"   ✅ Closed")

@@ -173,17 +173,14 @@ spec:
             RDS DB2 User Creation and Permission Management Script
             
             This script performs the following operations:
-            1. Creates admin users (db2_manage, db2_facilities, db2_iot) with passwords
+            1. Creates admin users (db2_manage, db2_facilities, db2_iot) with passwords based on MAS_APP_ID
             2. Grants DBADM privileges to admin users for schema management
-            3. Grants application-specific roles to non-admin user (from AWS Secrets Manager)
             
             Password Management:
-            - Username is used as password (e.g., db2_manage/db2_manage)
-            - Passwords are displayed in the job logs
+            - Random password generated
             
             User Types:
-            - Admin users: db2_manage, db2_facilities, db2_iot (DBADM for schema management)
-            - Non-admin user: From AWS Secrets Manager (application roles only)
+            - Admin users: db2_manage, db2_facilities, db2_iot (DBADM for schema management)  based on MAS_APP_ID
             """
             import ibm_db
             import os
@@ -416,10 +413,6 @@ spec:
             
               # Create JSON payload with app-specific admin username and password
               SECRET_JSON="{\"username\": \"${ADMIN_USERNAME}\", \"password\": \"${ADMIN_PASSWORD}\"}"
-            
-              echo "Secret JSON payload:"
-              echo "${SECRET_JSON}"
-              echo ""
             
               # Update the secret with tags
               TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-db2-rds-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}, {\"Key\": \"user_type\", \"Value\": \"admin\"}]"

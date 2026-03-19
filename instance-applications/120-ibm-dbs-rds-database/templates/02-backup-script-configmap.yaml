@@ -51,11 +51,6 @@ data:
         ssl_version_match = re.search(r'sslVersion=([^;]+)', jdbc_connection_url, re.IGNORECASE)
         if ssl_version_match:
             ssl_version = ssl_version_match.group(1)
-            print(f"✅ Extracted SSL Version from JDBC URL: {ssl_version}")
-        else:
-            print(f"ℹ️  SSL Version not found in JDBC URL, using default: {ssl_version}")
-    else:
-        print(f"ℹ️  No JDBC URL provided, using default SSL Version: {ssl_version}")
     
     # Create connection string for rdsadmin database
     # Note: Connect to rdsadmin to execute administrative procedures
@@ -96,16 +91,6 @@ data:
         admin_conn = db2.connect(conn_rds_admin_str, "", "")
         print("✅ Connected successfully\n")
         
-        # Step 1: Check VPC Gateway Endpoint for S3
-        print("🔍 Step 1: Checking VPC Gateway Endpoint for S3...")
-        print("   (This should be configured at the VPC level)")
-        print("   ✅ Assuming VPC Gateway Endpoint is configured\n")
-        
-        # Step 2: Configure S3 Integration (IAM roles, bucket permissions)
-        print("🔧 Step 2: S3 Integration Configuration...")
-        print("   (IAM roles and bucket permissions should be pre-configured)")
-        print("   ✅ Assuming S3 integration is configured\n")
-        
         # Step 3: Prepare backup parameters
         # Use compact timestamp format
         timestamp = datetime.now().strftime("%y%m%d%H%M")  # Shorter: YYMMDDHHmm (10 chars)
@@ -124,21 +109,13 @@ data:
         else:
             s3_display_path = s3_backup_folder
         
-        print(f"📦 Step 3: Preparing backup parameters...")
+        print(f"📦 Preparing backup parameters...")
         print(f"   Database: {database_name}")
         print(f"   Backup Type: {backup_type}")
-        print(f"   S3 Bucket: {s3_bucket_name}")
-        print(f"   S3 Base Prefix: {s3_prefix if s3_prefix else '(root)'}")
-        print(f"   S3 Backup Folder: {s3_backup_folder} ({len(s3_backup_folder)} chars)")
-        print(f"   S3 Display Path: s3://{s3_bucket_name}/{s3_display_path}")
-        print(f"   Compression: {compression}")
-        print(f"   Util Impact Priority: {util_impact_priority}")
-        print(f"   Num Files: {num_files}")
-        print(f"   Parallelism: {parallelism}")
-        print(f"   Num Buffers: {num_buffers}\n")
+        print(f"   S3 Location: s3://{s3_bucket_name}/{s3_display_path}\n")
         
-        # Step 4: Call rdsadmin.backup_database stored procedure
-        print(f"🚀 Step 4: Initiating {backup_type} backup...")
+        # Call rdsadmin.backup_database stored procedure
+        print(f"🚀 Initiating {backup_type} backup...")
         
         # Prepare parameters for the stored procedure
         # AWS RDS DB2 backup_database stored procedure signature:
@@ -155,27 +132,8 @@ data:
         #    num_buffers           -- 10. IN: Number of Buffers (integer)
         # )
         
-        print(f"   Executing backup procedure...")
-        print(f"   Parameters:")
-        print(f"     - Error Message: 'NONE'")
-        print(f"     - Database Name: {database_name}")
-        print(f"     - S3 Bucket: {s3_bucket_name} ({len(s3_bucket_name)} chars)")
-        print(f"     - S3 Prefix: {s3_backup_folder} ({len(s3_backup_folder)} chars)")
-        print(f"     - Backup Type: {backup_type}")
-        print(f"     - Compression: {compression}")
-        print(f"     - Util Impact Priority: {util_impact_priority} (int)")
-        print(f"     - Num Files: {num_files} (int)")
-        print(f"     - Parallelism: {parallelism} (int)")
-        print(f"     - Num Buffers: {num_buffers} (int)")
-        
-        # Use ibm_db.callproc for stored procedure call (consistent with other RDS operations)
+        # Use ibm_db.callproc for stored procedure call
         try:
-            # Call the stored procedure using ibm_db.callproc with correct parameter types
-            # IMPORTANT: First parameter is ERR_MESSAGE (input), not a task ID output
-            # IMPORTANT: Numeric parameters must be integers, not strings
-            # IMPORTANT: S3 prefix must be short (use only backup folder name, not full path)
-            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, ('NONE', '{database_name}', '{s3_bucket_name}', '{s3_backup_folder}', '{backup_type}', '{compression}', {util_impact_priority}, {num_files}, {parallelism}, {num_buffers}))")
-            
             result = db2.callproc(
                 admin_conn,
                 "rdsadmin.backup_database",
@@ -193,38 +151,26 @@ data:
                 )
             )
             
-            print(f"   ✅ Backup task initiated successfully")
-            print(f"   ℹ️  Backup procedure called: rdsadmin.backup_database")
-            print(f"   ℹ️  Backup is running asynchronously in the background\n")
+            print(f"✅ Backup task initiated successfully\n")
             
         except Exception as proc_error:
             print(f"   ❌ Failed to call stored procedure: {str(proc_error)}")
             raise
         
-        # Step 5: Note about backup monitoring
-        print(f"⏳ Step 5: Backup Status Monitoring")
-        print(f"   ℹ️  AWS RDS DB2 backups run asynchronously")
-        print(f"   ℹ️  The backup procedure has been initiated successfully")
-        print(f"   ℹ️  To check backup status, you can:")
-        print(f"      1. Check S3 bucket for backup files: s3://{s3_bucket_name}/{s3_display_path}")
-        print(f"      2. Query DB2 backup history: SELECT * FROM SYSIBMADM.DB_HISTORY WHERE OPERATION='B'")
-        print(f"      3. Check RDS CloudWatch logs for backup progress")
-        print(f"   ⏳ Waiting 60 seconds for backup to start...")
+        # Wait for backup to start
+        print(f"⏳ Waiting 60 seconds for backup to start...")
         time.sleep(60)
-        print(f"   ✅ Initial wait complete\n")
+        print(f"✅ Initial wait complete\n")
         
-        # Step 6: Verify upload to S3 (optional)
-        print(f"\n📊 Step 6: Backup Summary")
-        print(f"   Backup Type: {backup_type}")
-        print(f"   Database: {database_name}")
+        # Backup Summary
+        print(f"📊 Backup Summary")
         print(f"   S3 Location: s3://{s3_bucket_name}/{s3_display_path}")
-        print(f"   Timestamp: {timestamp}")
-        print(f"   ✅ Backup process completed\n")
+        print(f"   Timestamp: {timestamp}\n")
         
-        # Step 7: Terminate connection
-        print(f"🔌 Step 7: Closing database connection...")
+        # Close connection
+        print(f"🔌 Closing database connection...")
         db2.close(admin_conn)
-        print(f"   ✅ Connection closed\n")
+        print(f"✅ Connection closed\n")
         
         print(f"{'='*80}")
         print(f"✅ RDS DB2 {backup_type} Backup Completed Successfully")

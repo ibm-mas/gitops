@@ -286,7 +286,6 @@ spec:
                       print(f"Executing: {description}")
                       try:
                           stmt = ibm_db.exec_immediate(conn, sql)
-                          print(f"✅ {description}")
                           return True
                       except Exception as e:
                           error_msg = str(e)
@@ -393,8 +392,12 @@ spec:
                               if execute_db2_sql(conn, grant_sql, f"Grant {privileges} on {schema}.{table}"):
                                   success_count += 1
                           
-                          print(f"✅ Granted {privileges} on {success_count}/{len(tables)} tables")
-                          return True
+                          if success_count == len(tables):
+                              print(f"✅ Granted {privileges} on {success_count}/{len(tables)} tables")
+                              return True
+                          else:
+                              print(f"❌ Failed to grant {privileges} on all tables: {success_count}/{len(tables)} succeeded")
+                              return False
                       except Exception as e:
                           print(f"⚠️  Error granting on all tables: {str(e)}")
                           return False

@@ -133,7 +133,7 @@ metadata:
 {{ $.Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  schedule: "*/30 * * * *"  # Run every 30 minute */30 * * * *
+  schedule: "* * * * *"  # Run every 30 minute */30 * * * *
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -394,7 +394,7 @@ spec:
                           print("=" * 80)
                           
                           if check_table_exists(conn_target, "MAXIMO", "MAXUSER"):
-                              print("✅ Table MAXIMO.MAXUSER exists. Proceeding with role creation...")
+                              print("✅ SCHEMA MAXIMO exists. Proceeding with role creation...")
                               
                               # Create roles using RDS admin procedure (connected to admin database)
                               create_role_rds(conn_master_admin, "MAXIMO_READ", rds_dbname)
@@ -406,21 +406,28 @@ spec:
                               print("\nGranting permissions to MAXIMO_READ role...")
                               execute_db2_sql(conn_target, "GRANT SELECT ON TABLE MAXIMO.MAXUSER TO ROLE MAXIMO_READ", "Grant SELECT on MAXUSER")
                               execute_db2_sql(conn_target, "GRANT SELECTIN ON SCHEMA MAXIMO TO ROLE MAXIMO_READ", "Grant SELECTIN on MAXIMO schema")
+                              execute_db2_sql(conn_target,"GRANT SELECT ON ALL TABLES IN SCHEMA MAXIMO TO ROLE MAXIMO_READ","Existing tables access")
                               
                               # Grant permissions to MAXIMO_WRITE
                               print("\nGranting permissions to MAXIMO_WRITE role...")
                               execute_db2_sql(conn_target, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE MAXIMO.MAXUSER TO ROLE MAXIMO_WRITE", "Grant DML on MAXUSER")
                               execute_db2_sql(conn_target, "GRANT SELECTIN, INSERTIN, UPDATEIN, DELETEIN ON SCHEMA MAXIMO TO ROLE MAXIMO_WRITE", "Grant DML on MAXIMO schema")
+                              execute_db2_sql(conn_target,"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA MAXIMO TO ROLE MAXIMO_WRITE","Existing DML access")
                               
                               # Grant permissions to MAXIMO_SEQ
                               print("\nGranting permissions to MAXIMO_SEQ role...")
                               execute_db2_sql(conn_target, "GRANT USAGE ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ", "Grant USAGE on MAXSEQ")
                               execute_db2_sql(conn_target, "GRANT ALTER ON SEQUENCE MAXIMO.MAXSEQ TO ROLE MAXIMO_SEQ", "Grant ALTER on MAXSEQ")
+                              execute_db2_sql(conn_target,"GRANT USAGE ON ALL SEQUENCES IN SCHEMA MAXIMO TO ROLE MAXIMO_SEQ","Sequence usage")
+                              execute_db2_sql(conn_target,"GRANT ALTER ON ALL SEQUENCES IN SCHEMA MAXIMO TO ROLE MAXIMO_SEQ","Sequence alter")
                               
                               # Grant permissions to EXPLAIN
                               print("\nGranting permissions to EXPLAIN role...")
                               execute_db2_sql(conn_target, "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE EXPLAIN", "Grant EXECUTE on SYSSH200")
                               execute_db2_sql(conn_target, "GRANT SELECT ON TABLE SYSTOOLS.EXPLAIN_INSTANCE TO ROLE EXPLAIN", "Grant SELECT on EXPLAIN_INSTANCE")
+                              execute_db2_sql(conn_target,"GRANT SELECT ON ALL TABLES IN SCHEMA SYSTOOLS TO ROLE EXPLAIN","Explain tables access")
+                              execute_db2_sql(conn_target,"GRANT EXECUTE ON ALL PACKAGES IN SCHEMA NULLID TO ROLE EXPLAIN","Explain packages access”)
+
                           else:
                               print("⚠️  Table MAXIMO.MAXUSER does not exist yet. Skipping manage role creation.")
                       else:
@@ -433,7 +440,7 @@ spec:
                           print("=" * 80)
                           
                           if check_table_exists(conn_target, "TRIDATA", "TRIDATA_DATA"):
-                              print("✅ Table TRIDATA.TRIDATA_DATA exists. Proceeding with role creation...")
+                              print("✅ SCHEMA TRIDATA exists. Proceeding with role creation...")
                               
                               # Create roles using RDS admin procedure (connected to admin database)
                               create_role_rds(conn_master_admin, "TRIDATA_READ", rds_dbname)
@@ -443,11 +450,13 @@ spec:
                               print("\nGranting permissions to TRIDATA_READ role...")
                               execute_db2_sql(conn_target, "GRANT SELECT ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_READ", "Grant SELECT on TRIDATA_DATA")
                               execute_db2_sql(conn_target, "GRANT SELECTIN ON SCHEMA TRIDATA TO ROLE TRIDATA_READ", "Grant SELECTIN on TRIDATA schema")
+                              execute_db2_sql(conn_target,"GRANT SELECT ON ALL TABLES IN SCHEMA TRIDATA TO ROLE TRIDATA_READ","Existing tables access")
                               
                               # Grant permissions to TRIDATA_WRITE
                               print("\nGranting permissions to TRIDATA_WRITE role...")
                               execute_db2_sql(conn_target, "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TRIDATA.TRIDATA_DATA TO ROLE TRIDATA_WRITE", "Grant DML on TRIDATA_DATA")
                               execute_db2_sql(conn_target, "GRANT SELECTIN, INSERTIN, UPDATEIN, DELETEIN ON SCHEMA TRIDATA TO ROLE TRIDATA_WRITE", "Grant DML on TRIDATA schema")
+                              execute_db2_sql(conn_target,"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA TRIDATA TO ROLE TRIDATA_WRITE","Existing DML access")
                           else:
                               print("⚠️  Table TRIDATA.TRIDATA_DATA does not exist yet. Skipping facilities role creation.")
                       else:

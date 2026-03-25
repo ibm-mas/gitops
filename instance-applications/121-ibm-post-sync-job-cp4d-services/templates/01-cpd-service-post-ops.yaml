@@ -234,11 +234,12 @@ spec:
               CCS_COUCHDB_RES=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.couchdb_resources}')
               CCS_BLOCKSTORAGE=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.blockStorageClass}')
               CCS_IMAGEPULLSECRET=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.imagePullSecret}')
+              CCS_STORAGECLASS=$(oc get CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -ojsonpath='{.spec.storageClass}')
 
               if [[ -z $CCS_COUCHDB_RES || -z $CCS_BLOCKSTORAGE || -z $CCS_IMAGEPULLSECRET ]]; then
                 echo "CCS CR needs to be patched"
                 echo "patching CCS Cr..."
-                oc patch --type='merge' CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\",\"blockStorageClass\":\"$CPD_SERVICE_BLOCK_STORAGE_CLASS\",\"fileStorageClass\":\"$CPD_SERVICE_STORAGE_CLASS\",\"couchdb_resources\":{ \"limits\":{ \"cpu\":\"16\",\"memory\":\"16Gi\"},\"requests\":{ \"cpu\":\"3\",\"memory\":\"256Mi\"},\"couchdb_search_resources\":{ \"limits\":{ \"cpu\":\"4\",\"memory\":\"6Gi\"},\"requests\":{ \"cpu\":\"250m\",\"memory\":\"256Mi\"}}}}}"
+                oc patch --type='merge' CCS ccs-cr -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\",\"blockStorageClass\":\"$CPD_SERVICE_BLOCK_STORAGE_CLASS\",\"fileStorageClass\":\"$CPD_SERVICE_STORAGE_CLASS\",\"storageClass\":\"$CCS_STORAGECLASS\",\"couchdb_resources\":{ \"limits\":{ \"cpu\":\"16\",\"memory\":\"16Gi\"},\"requests\":{ \"cpu\":\"3\",\"memory\":\"256Mi\"}}}}"
                 echo "scaling CCS operator down and up to force reconcile when the pod is restarted"
                 oc scale deployment ibm-cpd-ccs-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
                 oc scale deployment ibm-cpd-ccs-operator -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
@@ -266,7 +267,7 @@ spec:
 
               COMP=$(compare_versions ${CPD_PRODUCT_VERSION} 5.2.0)
 
-              if [[ $COMP < 0 ]]; then
+              if [[ ${COMP} -lt 0 ]]; then
                 echo
                 echo "================================================================================"
                 echo "Wait for Elastic Search to be ready and patch if needed before checking ccsStatus"
@@ -300,29 +301,27 @@ spec:
                 if [[ -z $ELASTICSEARCH_IMAGEPULLSECRET ]]; then
                   echo "elasticsearch-master needs to be patched"
                   echo "patching elasticsearch-master and forcing reconcile..."
-                  oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=0
                   oc delete Job elasticsearch-master-ibm-elasticsearch-create-snapshot-repo-job -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
                   oc delete StatefulSet -n ${CPD_INSTANCE_NAMESPACE} --selector="app.kubernetes.io/instance=elasticsearch-master" --ignore-not-found
                   oc patch --type='merge' ElasticsearchCluster elasticsearch-master -n ${CPD_INSTANCE_NAMESPACE} -p "{\"spec\":{ \"imagePullSecret\":\"ibm-entitlement-key\"}}"
-                  oc scale deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n ${CPD_OPERATORS_NAMESPACE} --replicas=1
                 fi
 
                 echo
-                echo "Waiting for ibm-elasticsearch-operator to be ready again..."
+                echo "Waiting for ElasticsearchCluster elasticsearch-master to be ready again..."
 
                 wait_period=0
                 while true; do
                   wait_period=$(($wait_period+60))
                   if [ $wait_period -gt 1200 ]; then
-                    echo "Elasticsearch operator is not ready after 20 minutes of waiting. exiting..."
+                    echo "ElasticsearchCluster elasticsearch-master is not ready after 20 minutes of waiting. exiting..."
                     exit 1
                   else
                     sleep 60
                   fi
 
-                  ELASTICSEARCH_OPERATOR_LOOKUP=$(oc get deployment ibm-elasticsearch-operator-ibm-es-controller-manager -n $CPD_OPERATORS_NAMESPACE --ignore-not-found -ojsonpath='{.status.availableReplicas}')
-                  if [[ ! -z $ELASTICSEARCH_OPERATOR_LOOKUP ]]; then
-                    echo "Elasticsearch Operator is ready again"
+                  ELASTICSEARCH_CLUSTER_LOOKUP=$(oc get ElasticsearchCluster elasticsearch-master -n $CPD_INSTANCE_NAMESPACE --ignore-not-found -ojsonpath='{.status.phase}')
+                  if [[ ! -z ${ELASTICSEARCH_CLUSTER_LOOKUP} && ${ELASTICSEARCH_CLUSTER_LOOKUP} == *"Ready"* ]]; then
+                    echo "ElasticsearchCluster elasticsearch-master elasticsearch-master is ready"
                     break
                   fi
                 done

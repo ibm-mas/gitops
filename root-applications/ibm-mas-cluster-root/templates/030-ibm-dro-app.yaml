@@ -1,22 +1,18 @@
+{{- if not (empty .Values.ibm_dro) }}
 ---
-
-{{- $ibm_mas_suite := default (dict) .Values.ibm_mas_suite -}}
-{{- $mas_annotations := default (dict) $ibm_mas_suite.mas_annotations -}}
-{{- $hyperscalerLifecycle := default "" (index $mas_annotations "mas.ibm.com/hyperscalerLifecycle") -}}
-{{- $mas_is_active := eq $hyperscalerLifecycle "active" }}
-
+# IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: postsyncjobs.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: dro.{{ .Values.cluster.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
-    instance: '{{ .Values.instance.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "600"
+    argocd.argoproj.io/sync-wave: "030"
+    healthCheckTimeout: "1800"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
@@ -25,17 +21,17 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   ignoreDifferences:
-  - group: '*'
-    kind: ServiceAccount
+  - group: 'marketplace.redhat.com/v1alpha1'
+    kind: MarketplaceConfig
     jsonPointers:
-    - /imagePullSecrets
+    - /spec
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: "mas-{{.Values.instance.id}}-postsyncjobs"
+    namespace: "{{ .Values.ibm_dro.dro_namespace }}"
   source:
     repoURL: "{{ .Values.source.repo_url }}"
-    path: instance-applications/600-ibm-post-sync-jobs
+    path: cluster-applications/030-ibm-dro
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
       name: {{ .Values.avp.name }} 
@@ -45,41 +41,39 @@ spec:
             account_id: "{{ .Values.account.id }}"
             region_id: "{{ .Values.region.id }}"
             cluster_id: "{{ .Values.cluster.id }}"
-            instance_id: "{{ .Values.instance.id }}"
-            cli_image_repo: {{ .Values.cli_image_repo }}
-
+            argo_namespace: "{{ .Values.argo.namespace }}"
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
-            sm_aws_region: "{{ .Values.region.id }}"
-
-            {{- /* Just selects the first (and only) workspace. This will need more work in future if/when we add support for >1 workspace */}}
-            {{- if not (empty .Values.ibm_mas_workspaces) }}
-            mas_workspace_id: "{{ (.Values.ibm_mas_workspaces | first).mas_workspace_id }}"
-            {{- end }}
-
-            mas_is_active: {{ $mas_is_active }}
-            manage_is_installed: {{ not (empty .Values.ibm_suite_app_manage_install) }}
-            {{- range $i, $value := .Values.ibm_mas_masapp_configs }}
-            {{- if eq $value.mas_app_id "manage" }}
-            mas_appws_spec: {{- $value.mas_appws_spec | toYaml | nindent 14 }}
-            {{- end }}
-            {{- end }}
-
-            {{- if .Values.custom_labels }}
-            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
-            {{- end }}
-
+            run_sync_hooks: {{.Values.ibm_dro.run_sync_hooks }}
+            dro_namespace: "{{ .Values.ibm_dro.dro_namespace }}"
+            ibm_entitlement_key: "{{ .Values.ibm_dro.ibm_entitlement_key }}"
+            dro_cmm_setup: "{{ .Values.ibm_dro.dro_cmm_setup }}"
+            dro_install_plan: "{{ .Values.ibm_dro.dro_install_plan }}"
+            dro_public_domain: "{{ .Values.ibm_dro.dro_public_domain }}"
+            dns_provider: "{{ .Values.ibm_cis_cert_manager.dns_provider }}"
+            ocp_cluster_domain: "{{ .Values.ibm_cis_cert_manager.ocp_cluster_domain }}"
+            cis_apikey: "{{ .Values.ibm_cis_cert_manager.cis_apikey }}"
+            cis_crn: "{{ .Values.ibm_dro.cis_crn }}"
+            imo_install_plan: "{{ .Values.ibm_dro.imo_install_plan }}"
+            cli_image_repo: {{ .Values.cli_image_repo }}
             junitreporter:
-              reporter_name: "ibm-postsync-jobs-{{ .Values.instance.id }}"
+              reporter_name: "ibm-dro"
               cluster_id: "{{ .Values.cluster.id }}"
               devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
               devops_build_number: "{{ .Values.devops.build_number }}"
               gitops_version: "{{ .Values.source.revision }}"
               cli_image_repo: {{ .Values.cli_image_repo }}
-
-
+            {{- if .Values.ibm_dro.dro_cmm_setup  }}
+            dro_cmm:
+              auth_apikey: "{{ .Values.ibm_dro.dro_cmm.auth_apikey }}"
+              auth_url: "{{ .Values.ibm_dro.dro_cmm.auth_url }}"
+              cmm_url: "{{ .Values.ibm_dro.dro_cmm.cmm_url }}"
+            {{- end }}
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
         - name: ARGOCD_APP_NAME
-          value: postsyncres
+          value: droapp
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}
@@ -95,3 +89,9 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - RespectIgnoreDifferences=true
+{{- if .Values.custom_labels }}
+    managedNamespaceMetadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+{{- end }}

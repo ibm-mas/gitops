@@ -1,0 +1,24 @@
+{{- if not (empty .Values.ecr_host) }}
+
+---
+# Initial Job to run ECR token updater immediately on deployment
+# This ensures pull secrets are configured before the CronJob's first scheduled run
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "ecr-token-updater-init"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "06"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  backoffLimit: 3
+  template:
+{{- include "ecr-token-updater.podTemplate" . | indent 4 }}
+{{- end }}
+
+# Made with Bob

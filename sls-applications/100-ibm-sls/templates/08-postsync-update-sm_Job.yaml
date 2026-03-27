@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -144,8 +144,14 @@ rules:
       - ""
     resources:
       - configmaps
-
-
+  - verbs:
+      - get
+      - list
+      - patch
+    apiGroups:
+      - "route.openshift.io"
+    resources:
+      - routes
 
 ---
 kind: RoleBinding
@@ -267,7 +273,25 @@ spec:
               SECRET_NAME_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/sls
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
               sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\":\"$SLS_URL\" }" "${TAGS}"
+    
+              # 1. Define the namespace using the environment variables passed to the container
+              namespace="mas-${ICN}-${SUBSCRIPTION_ID}-sls"
 
+              echo "Fetching routes from ${namespace}"
+
+              routes=$(oc get routes -n ${namespace} -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+
+              echo "Routes found:"
+              echo "${routes}"
+
+              for route in $routes; do
+                echo "Adding label to route - ${route}"
+
+              oc patch route ${route} \
+                -n ${namespace} \
+                --type=merge \
+                -p '{"metadata":{"labels":{"type":"external"}}}'
+              done 
 
       restartPolicy: Never
 

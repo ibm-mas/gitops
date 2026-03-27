@@ -9,4 +9,3 @@ Documentation
 
 [https://github.com/ibm-mas/gitops-demo/tree/002](https://github.com/ibm-mas/gitops-demo/tree/002)
 
-

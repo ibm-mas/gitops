@@ -60,8 +60,8 @@ shift $((OPTIND - 1))
 if [[ $# == 1 ]]; then
     path=$1
     if [[ -d $path ]]; then
-        files=$(grep -Erl --include '*.yaml' 'quay.io/ibmmas/cli' ${path})
-        echo "Checking all YAML files with quay.io/ibmmas/cli references under directory ${path}"
+        files=$(grep -Erl --include '*.yaml' --include '*.tpl' 'quay.io/ibmmas/cli' ${path})
+        echo "Checking all YAML and TPL files with quay.io/ibmmas/cli references under directory ${path}"
         echo "---------"
         shift
     fi

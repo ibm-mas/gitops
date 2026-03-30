@@ -4,9 +4,14 @@
 {{- $mas_annotations := default (dict) $ibm_mas_suite.mas_annotations -}}
 {{- $hyperscalerLifecycle := default "" (index $mas_annotations "mas.ibm.com/hyperscalerLifecycle") -}}
 {{- $mas_is_active := eq $hyperscalerLifecycle "active" }}
-{{- $mas_channel := $ibm_mas_suite.mas_channel -}}
-{{- $parts := regexSplit "\\." $mas_channel -1 -}}
-{{- $mas_version := printf "%s.%s" (index $parts 0) (index $parts 1) -}}
+{{- $mas_channel := default "" $ibm_mas_suite.mas_channel -}}
+{{- $mas_version := "" -}}
+{{- if $mas_channel -}}
+  {{- $parts := regexSplit "\\." $mas_channel -1 -}}
+  {{- if ge (len $parts) 2 -}}
+    {{- $mas_version = printf "%s.%s" (index $parts 0) (index $parts 1) -}}
+  {{- end -}}
+{{- end -}}
 
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -61,7 +66,9 @@ spec:
             {{- end }}
 
             mas_is_active: {{ $mas_is_active }}
+            {{- if $mas_version }}
             mas_version: "{{ $mas_version }}"
+            {{- end }}
             manage_is_installed: {{ not (empty .Values.ibm_suite_app_manage_install) }}
             {{- range $i, $value := .Values.ibm_mas_masapp_configs }}
             {{- if eq $value.mas_app_id "manage" }}

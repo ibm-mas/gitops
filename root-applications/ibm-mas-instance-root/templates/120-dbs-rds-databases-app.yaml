@@ -40,6 +40,7 @@ spec:
         - name: {{ $.Values.avp.values_varname }}
           value: |
             # Basic connection configuration
+            jdbc_connection_url: "{{ $value.jdbc_connection_url }}"
             rds_admin_db_name: "{{ $value.rds_admin_db_name }}"
             host: "{{ $value.host }}"
             port: "{{ $value.port }}"
@@ -49,6 +50,7 @@ spec:
             
             # Additional basic values
             db2_namespace: "{{ $value.db2_namespace }}"
+            db2_rds_instance_name: "{{ $value.db2_instance_name }}"
             {{- if $value.mas_application_id }}
             mas_application_id: "{{ $value.mas_application_id }}"
             {{- end }}
@@ -64,6 +66,26 @@ spec:
             db2_database_db_config:
               {{- range $key, $val := $value.db2_database_db_config }}
               {{ $key }}: "{{ $val }}"
+              {{- end }}
+            {{- end }}
+
+            # DB2 RDS Backup Configuration
+            {{- if $value.backup }}
+            backup:
+              enabled: {{ $value.backup.enabled }}
+              {{- if $value.backup.s3_bucket_name }}
+              s3_bucket_name: "{{ $value.backup.s3_bucket_name }}"
+              {{- end }}
+              s3_prefix: "{{ $value.backup.s3_prefix }}"
+              compression: "{{ $value.backup.compression }}"
+              util_impact_priority: {{ $value.backup.util_impact_priority }}
+              num_files: {{ $value.backup.num_files }}
+              parallelism: {{ $value.backup.parallelism }}
+              num_buffers: {{ $value.backup.num_buffers }}
+              {{- if $value.backup.full }}
+              full:
+                enabled: {{ $value.backup.full.enabled }}
+                schedule: "{{ $value.backup.full.schedule }}"
               {{- end }}
             {{- end }}
             

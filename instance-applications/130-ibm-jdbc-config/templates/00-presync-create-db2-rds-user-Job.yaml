@@ -173,14 +173,14 @@ spec:
             RDS DB2 User Creation and Permission Management Script
             
             This script performs the following operations:
-            1. Creates admin users (db2_manage, db2_facilities, db2_iot) with passwords for specific app
+            1. Creates admin users (db2_manage, db2_facilities, db2_iot, rdsusr_ssp) with passwords for specific app
             2. Grants DBADM privileges to admin users for schema management
             
             Password Management:
             - Random password is created
             
             User Types:
-            - Admin users: db2_manage, db2_facilities, db2_iot (DBADM for schema management)
+            - Admin users: db2_manage, db2_facilities, db2_iot, rdsusr_ssp (DBADM for schema management)
             - Non-admin user: From AWS Secrets Manager (application roles only)
             """
             import ibm_db
@@ -284,6 +284,10 @@ spec:
             admin_username = f'db2_{mas_app_id}'
             admin_password = generate_password(length=20)
             
+            # Generate password for db2rds_ssp
+            rdsusr_ssp_username = 'db2rds_ssp'
+            rdsusr_ssp_password = generate_password(length=20)
+            
             admin_users_to_create = [
                 {
                     'username': admin_username,
@@ -291,6 +295,13 @@ spec:
                     'role': 'DBADM',
                     'description': f'{mas_app_id.capitalize()} Admin User (DBADM for schema management)',
                     'app_type': mas_app_id
+                },
+                {
+                    'username': rdsusr_ssp_username,
+                    'password': rdsusr_ssp_password,
+                    'role': 'DBADM',
+                    'description': 'RDS SSP Admin User (DBADM for schema management)',
+                    'app_type': 'rds-ssp'
                 }
             ]
             
@@ -298,9 +309,12 @@ spec:
             with open('/tmp/admin_credentials.txt', 'w') as f:
                 f.write(f"ADMIN_USERNAME={admin_username}\n")
                 f.write(f"ADMIN_PASSWORD={admin_password}\n")
+                f.write(f"RDSUSR_SSP_USERNAME={rdsusr_ssp_username}\n")
+                f.write(f"RDSUSR_SSP_PASSWORD={rdsusr_ssp_password}\n")
                 f.write(f"USER_EXISTS=true\n")  # Default to true (assume exists)
+                f.write(f"RDSUSR_SSP_EXISTS=true\n")  # Default to true (assume exists)
             
-            print(f"\nCreating user for MAS Application: {mas_app_id}")
+            print(f"\nCreating users for MAS Application: {mas_app_id} and {rdsusr_ssp_username}")
             
             try:
                 # Connect to the admin database
@@ -310,6 +324,9 @@ spec:
                 # Connect to the actual database (BLUDB) for checking user existence
                 conn_bludb = ibm_db.connect(conn_str_bludb, "", "")
                 print(f" Successfully connected to actual database: {rds_dbname}")
+            
+                # Track user existence status
+                rdsusr_ssp_exists = True  # Default to true
             
                 for admin_user in admin_users_to_create:
                     username = admin_user['username']
@@ -350,6 +367,10 @@ spec:
                     else:
                         print(f"Skipping user creation for {username} (already exists)")
             
+                    # Track db2rds_ssp existence status
+                    if username == rdsusr_ssp_username:
+                        rdsusr_ssp_exists = user_exists
+            
                     try:
                         task_id = ibm_db.callproc(
                             conn,
@@ -369,9 +390,13 @@ spec:
                 with open('/tmp/admin_credentials.txt', 'w') as f:
                     f.write(f"ADMIN_USERNAME={admin_username}\n")
                     f.write(f"ADMIN_PASSWORD={admin_password}\n")
+                    f.write(f"RDSUSR_SSP_USERNAME={rdsusr_ssp_username}\n")
+                    f.write(f"RDSUSR_SSP_PASSWORD={rdsusr_ssp_password}\n")
                     f.write(f"USER_EXISTS={'true' if user_exists else 'false'}\n")
+                    f.write(f"RDSUSR_SSP_EXISTS={'true' if rdsusr_ssp_exists else 'false'}\n")
             
                 print(f"\nUser status: {'User already existed' if user_exists else 'New user created'}")
+                print(f"{rdsusr_ssp_username} status: {'User already existed' if rdsusr_ssp_exists else 'New user created'}")
             
             except Exception as e:
                 print(f" Error: {str(e)}")
@@ -427,6 +452,35 @@ spec:
               echo "User already existed - skipping AWS Secrets Manager update"
               echo "Existing credentials in Secrets Manager will be preserved"
             fi
+            
+            # Handle db2rds_ssp credentials
+            RDSUSR_SSP_SECRET="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/rds-ssp/credentials"
+            
+            echo ""
+            echo "================================================================================"
+            echo "Updating Secrets Manager for ${RDSUSR_SSP_USERNAME}"
+            echo "================================================================================"
+            echo "Username: ${RDSUSR_SSP_USERNAME}"
+            echo "User exists: ${RDSUSR_SSP_EXISTS}"
+            echo "Secret Name: ${RDSUSR_SSP_SECRET}"
+            echo ""
+            
+            # ALWAYS update Secrets Manager for db2rds_ssp (regardless of whether user existed)
+            echo "Updating AWS Secrets Manager secret for ${RDSUSR_SSP_USERNAME}..."
+            
+            # Login to Secrets Manager (if not already logged in)
+            sm_login
+            
+            # Create JSON payload for db2rds_ssp
+            SSP_SECRET_JSON="{\"username\": \"${RDSUSR_SSP_USERNAME}\", \"password\": \"${RDSUSR_SSP_PASSWORD}\"}"
+            
+            # Update the secret with tags
+            SSP_TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-db2-rds-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"rds-ssp\"}, {\"Key\": \"user_type\", \"Value\": \"admin\"}]"
+            
+            echo "Updating AWS Secrets Manager secret..."
+            sm_update_secret "${RDSUSR_SSP_SECRET}" "${SSP_SECRET_JSON}" "${SSP_TAGS}" || exit $?
+            
+            echo "${RDSUSR_SSP_USERNAME} credentials uploaded to AWS Secrets Manager successfully"
             
             echo ""
             echo "RDS user management completed successfully"

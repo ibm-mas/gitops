@@ -356,6 +356,15 @@ spec:
                             create_user_sql = f"CALL rdsadmin.add_user('{username}', '{password}', NULL)"
                             ibm_db.exec_immediate(conn, create_user_sql)
                             print(f"User {username} created successfully using rdsadmin.add_user()")
+                            
+                            # Add user to masterdba group if this is the ssp user
+                            if username == rdsusr_ssp_username:
+                                try:
+                                    add_groups_sql = f"CALL rdsadmin.add_groups('{username}','masterdba')"
+                                    ibm_db.exec_immediate(conn, add_groups_sql)
+                                    print(f"Added {username} to masterdba group successfully")
+                                except Exception as e:
+                                    print(f"Error adding {username} to masterdba group: {str(e)}")
                         except Exception as e:
                             error_msg = str(e)
                             # Check if user already exists (fallback check)

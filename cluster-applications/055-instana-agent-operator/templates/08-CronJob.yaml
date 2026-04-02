@@ -278,13 +278,22 @@ spec:
                   else
                 
                     echo "[INFO] Getting InstanaAgent custom resource"
-                    instana_cr=$(get_instana_cr)
+                    if ! instana_cr=$(get_instana_cr); then
+                      echo "[ERROR] Failed to get InstanaAgent custom resource"
+                      exit 1
+                    fi
+                    
+                    if [[ -z "${instana_cr}" ]]; then
+                      echo "[ERROR] InstanaAgent custom resource is empty"
+                      exit 1
+                    fi
+                    
                     echo "[DEBUG] Generating updated agent configuration with ${processed_count} DB2 remotes"
                     agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${remotes_list}")
                     instana_cr=$(generate_updated_instana_cr "${instana_cr}" "${agent_config_yaml}")
                     echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
                     submit_instana_cr "${instana_cr}"
-                    echo "[INFO] Successfully updating Instana agent configuration for DB2"
+                    echo "[INFO] Successfully updated Instana agent configuration for DB2"
                   fi
                   echo "[INFO] Completed Instana agent configuration update for DB2"
                   echo "[INFO] Total execution time: $SECONDS seconds"

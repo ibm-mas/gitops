@@ -276,7 +276,14 @@ spec:
 
                   for secret_name in ${secret_names}; do
                     echo "[INFO] Processing JDBC secret ${secret_name}"
-                    db2_credentials=$(get_db2_credentials "${secret_name}")
+                    
+                    # Get DB2 credentials with error handling
+                    if ! db2_credentials=$(get_db2_credentials "${secret_name}" 2>&1); then
+                      echo "[WARN] Failed to get DB2 credentials for ${secret_name}: ${db2_credentials}"
+                      ((skipped_count++))
+                      continue
+                    fi
+                    
                     db2_user=$(echo "${db2_credentials}" | awk '{print $1}')
                     db2_pass=$(echo "${db2_credentials}" | awk '{print $2}')
 
@@ -290,8 +297,14 @@ spec:
                       ((skipped_count++))
                       continue
                     fi
+                    
                     echo "[DEBUG] Creating JDBC remote configuration for ${secret_name}"
-                    jdbc_remote=$(create_jdbc_remote "${secret_name}" "${db2_user}" "${db2_pass}")
+                    if ! jdbc_remote=$(create_jdbc_remote "${secret_name}" "${db2_user}" "${db2_pass}" 2>&1); then
+                      echo "[WARN] Failed to create JDBC remote configuration for ${secret_name}: ${jdbc_remote}"
+                      ((skipped_count++))
+                      continue
+                    fi
+                    
                     if write_cert_file "${secret_name}"; then
                      remotes_list=$(update_remotes_list "${remotes_list}" "${jdbc_remote}")
                      ((processed_count++))

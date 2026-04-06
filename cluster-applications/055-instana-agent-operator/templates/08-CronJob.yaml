@@ -37,6 +37,9 @@ spec:
         spec:
           restartPolicy: Never
           serviceAccountName: instana-agent-db2-config
+          securityContext:
+            seLinuxOptions:
+              type: spc_t  # Allow shared access to PVC with Instana agent pods
           volumes:
             - name: instana-db2-jks
               persistentVolumeClaim:
@@ -274,15 +277,19 @@ spec:
                   processed_count=0
                   skipped_count=0
 
+                  secret_number=0
                   for secret_name in ${secret_names}; do
-                    echo "[INFO] Processing JDBC secret ${secret_name}"
+                    ((secret_number++))
+                    echo "[INFO] [$secret_number/$num_secrets] Processing JDBC secret ${secret_name}"
                     
                     # Get DB2 credentials with error handling
+                    echo "[DEBUG] Retrieving DB2 credentials for ${secret_name}"
                     if ! db2_credentials=$(get_db2_credentials "${secret_name}" 2>&1); then
                       echo "[WARN] Failed to get DB2 credentials for ${secret_name}: ${db2_credentials}"
                       ((skipped_count++))
                       continue
                     fi
+                    echo "[DEBUG] Successfully retrieved DB2 credentials"
                     
                     db2_user=$(echo "${db2_credentials}" | awk '{print $1}')
                     db2_pass=$(echo "${db2_credentials}" | awk '{print $2}')

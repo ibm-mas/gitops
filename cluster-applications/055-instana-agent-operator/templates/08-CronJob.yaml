@@ -284,7 +284,7 @@ spec:
                     echo "[DEBUG] Retrieving DB2 credentials for ${secret_name}"
                     if ! db2_credentials=$(get_db2_credentials "${secret_name}" 2>&1); then
                       echo "[WARN] Failed to get DB2 credentials for ${secret_name}: ${db2_credentials}"
-                      ((skipped_count++))
+                      skipped_count=$((skipped_count + 1))
                       continue
                     fi
                     echo "[DEBUG] Successfully retrieved DB2 credentials"
@@ -294,29 +294,29 @@ spec:
 
                     if [[ -z "${db2_user}" || "${db2_user}" == "null" ]]; then
                       echo "[WARN] Skipping JDBC secret ${secret_name} as username is null or empty"
-                      ((skipped_count++))
+                      skipped_count=$((skipped_count + 1))
                       continue
                     fi
                     if [[ -z "${db2_pass}" || "${db2_pass}" == "null" ]]; then
                       echo "[WARN] Skipping JDBC secret ${secret_name} as password is null or empty"
-                      ((skipped_count++))
+                      skipped_count=$((skipped_count + 1))
                       continue
                     fi
                     
                     echo "[DEBUG] Creating JDBC remote configuration for ${secret_name}"
                     if ! jdbc_remote=$(create_jdbc_remote "${secret_name}" "${db2_user}" "${db2_pass}" 2>&1); then
                       echo "[WARN] Failed to create JDBC remote configuration for ${secret_name}: ${jdbc_remote}"
-                      ((skipped_count++))
+                      skipped_count=$((skipped_count + 1))
                       continue
                     fi
                     
                     if write_cert_file "${secret_name}"; then
                      remotes_list=$(update_remotes_list "${remotes_list}" "${jdbc_remote}")
-                     ((processed_count++))
+                     processed_count=$((processed_count + 1))
                      echo "[INFO] Successfully processed JDBC secret ${secret_name}"
                     else
                      echo "[WARN] Failed to write certificate file for ${secret_name}, skipping remote configuration"
-                     ((skipped_count++))
+                     skipped_count=$((skipped_count + 1))
                     fi
         
                   done

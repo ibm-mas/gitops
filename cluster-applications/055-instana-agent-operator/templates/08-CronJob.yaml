@@ -25,7 +25,8 @@ spec:
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
-      backoffLimit: 5
+      backoffLimit: 2  # Reduced from 5 to limit retries
+      activeDeadlineSeconds: 600  # Kill job after 10 minutes to prevent indefinite runs
       template:
         metadata:
           labels:
@@ -221,10 +222,26 @@ spec:
                     echo "${db2_username} ${db2_password}"
                   }
 
+                  # Validate AWS credentials exist before proceeding
+                  if [[ ! -f /etc/mas/creds/aws/aws_access_key_id ]] || [[ ! -f /etc/mas/creds/aws/aws_secret_access_key ]]; then
+                    echo "[ERROR] AWS credentials not found. Cannot proceed."
+                    exit 1
+                  fi
+
                   SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
                   SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
                   SM_AWS_REGION=${REGION_ID}
-                  sm_login
+                  
+                  # Validate credentials are not empty
+                  if [[ -z "${SM_AWS_ACCESS_KEY_ID}" ]] || [[ -z "${SM_AWS_SECRET_ACCESS_KEY}" ]]; then
+                    echo "[ERROR] AWS credentials are empty. Cannot proceed."
+                    exit 1
+                  fi
+                  
+                  if ! sm_login; then
+                    echo "[ERROR] Failed to login to AWS Secrets Manager. Check credentials and permissions."
+                    exit 1
+                  fi
 
                   echo '[INFO] Starting Instana agent configuration update for DB2 ...'
                   # To understand which account are we working on
@@ -236,7 +253,20 @@ spec:
                   echo "[INFO] Cleanup completed"
 
                   remotes_list=$(yq eval -n '."com.instana.plugin.db2".remote = []')
-                  secret_names=$(get_all_jdbc_secret_names)
+                  
+                  # Get JDBC secrets with error handling
+                  if ! secret_names=$(get_all_jdbc_secret_names); then
+                    echo "[ERROR] Failed to retrieve JDBC secrets from Secrets Manager"
+                    exit 1
+                  fi
+                  
+                  # Check if any secrets were found
+                  if [[ -z "${secret_names}" ]]; then
+                    echo "[INFO] No JDBC secrets found matching pattern ${JDBC_SECRET_NAME_PATTERN}"
+                    echo "[INFO] Nothing to process. Exiting successfully."
+                    exit 0
+                  fi
+                  
                   num_secrets=$(echo "${secret_names}" | wc -l)
                   echo "[INFO] Found ${num_secrets} JDBC secrets"
 

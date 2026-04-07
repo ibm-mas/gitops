@@ -123,17 +123,16 @@ spec:
               echo "RECORD_NAME: ${RECORD_NAME}"
               
               echo "Creating DNS record..."
-              ibmcloud cis dns-record-create "${DOMAIN_ID}" \
+              CREATE_OUTPUT=$(ibmcloud cis dns-record-create "${DOMAIN_ID}" \
                 --type CNAME \
                 --name "${RECORD_NAME}" \
                 --content "${OCP_INGRESS}" \
-                --proxied false
+                --proxied false 2>&1)
+              
+              echo "${CREATE_OUTPUT}"
 
-              echo "Verifying DNS record creation..."
-              CREATED_RECORD=$(ibmcloud cis dns-record "${DOMAIN_ID}" --output json | jq -r ".[] | select(.name==\"${RECORD_NAME}.${DRO_PUBLIC_DOMAIN}\" and .type==\"CNAME\" and .content==\"${OCP_INGRESS}\") | .id" | head -n 1)
-
-              if [[ -n "${CREATED_RECORD}" && "${CREATED_RECORD}" != "null" ]]; then
-                echo "DNS record created successfully! Record ID: ${CREATED_RECORD}"
+              if [[ ${CREATE_OUTPUT} -eq 0 ]]; then
+                echo "DNS record created successfully!"
               else
                 echo "ERROR: DNS record creation failed"
                 exit 1

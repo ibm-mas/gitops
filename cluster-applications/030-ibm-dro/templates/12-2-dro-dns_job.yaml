@@ -97,11 +97,11 @@ spec:
               export IBMCLOUD_HOME=/tmp/bluemix
               mkdir -p ${IBMCLOUD_HOME}
 
+              echo "Disabling version check..."
+              ibmcloud config --check-version=false
+
               echo "Logging into IBM Cloud..."
               ibmcloud login --apikey ${IBM_APIKEY} -r us-east
-
-              # 1. Disable the interactive update check to prevent the [y/N] prompt
-              ibmcloud config --check-version=false
 
               echo "Installing CIS plugin..."
               ibmcloud plugin install cis -f
@@ -119,17 +119,11 @@ spec:
                 exit 1
               fi
 
+              echo "cluster id: ${CLUSTER_ID}"
+              export CLUSTER_ID="noble4"
+
               RECORD_NAME="dro.{{ .Values.cluster_id }}"
               
-              # Check if DNS record already exists
-              echo "Checking if DNS record already exists..."
-              EXISTING_RECORD=$(ibmcloud cis dns-records "${DOMAIN_ID}" --output json | jq -r ".[] | select(.name==\"${RECORD_NAME}.${DRO_PUBLIC_DOMAIN}\" and .type==\"CNAME\") | .id" | head -n 1)
-
-              if [[ -n "${EXISTING_RECORD}" && "${EXISTING_RECORD}" != "null" ]]; then
-                echo "DNS record ${RECORD_NAME}.${DRO_PUBLIC_DOMAIN} already exists (ID: ${EXISTING_RECORD}). Skipping creation."
-                exit 0
-              fi
-
               echo "Creating DNS record..."
               ibmcloud cis dns-record-create "${DOMAIN_ID}" \
                 --type CNAME \
@@ -141,9 +135,9 @@ spec:
               CREATED_RECORD=$(ibmcloud cis dns-record "${DOMAIN_ID}" --output json | jq -r ".[] | select(.name==\"${RECORD_NAME}.${DRO_PUBLIC_DOMAIN}\" and .type==\"CNAME\" and .content==\"${OCP_INGRESS}\") | .id" | head -n 1)
 
               if [[ -n "${CREATED_RECORD}" && "${CREATED_RECORD}" != "null" ]]; then
-                echo "DNS record created successfully!"
+                echo "DNS record created successfully! Record ID: ${CREATED_RECORD}"
               else
-                echo "ERROR: DNS record was not found after creation"
+                echo "ERROR: DNS record creation failed"
                 exit 1
               fi
 

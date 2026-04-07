@@ -127,15 +127,18 @@ spec:
                 --type CNAME \
                 --name "${RECORD_NAME}" \
                 --content "${OCP_INGRESS}" \
-                --proxied false 2>&1)
-              
-              CREATE_EXIT_CODE=$?
+                --proxied false 2>&1 || true)
+
               echo "${CREATE_OUTPUT}"
 
-              if [[ ${CREATE_EXIT_CODE} -eq 0 ]]; then
+              if echo "${CREATE_OUTPUT}" | grep -qi "already exists\|duplicate"; then
+                echo "DNS record already exists. Continuing..."
+                exit 0
+              elif echo "${CREATE_OUTPUT}" | grep -qi "OK\|Created\|success"; then
                 echo "DNS record created successfully!"
               else
                 echo "ERROR: DNS record creation failed"
+                echo "${CREATE_OUTPUT}"
                 exit 1
               fi
 

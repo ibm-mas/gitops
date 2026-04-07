@@ -14,7 +14,7 @@ metadata:
   namespace: {{ .Values.dro_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "138"
-    argocd.argoproj.io/sync-options: Force=true
+    argocd.argoproj.io/sync-options: Prune=true
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -119,8 +119,18 @@ spec:
                 exit 1
               fi
 
-              echo "Creating DNS record..."
               RECORD_NAME="dro.{{ .Values.cluster_id }}"
+              
+              # Check if DNS record already exists
+              echo "Checking if DNS record already exists..."
+              EXISTING_RECORD=$(ibmcloud cis dns-record "${DOMAIN_ID}" --output json | jq -r ".[] | select(.name==\"${RECORD_NAME}.${DRO_PUBLIC_DOMAIN}\" and .type==\"CNAME\") | .id" | head -n 1)
+
+              if [[ -n "${EXISTING_RECORD}" && "${EXISTING_RECORD}" != "null" ]]; then
+                echo "DNS record ${RECORD_NAME}.${DRO_PUBLIC_DOMAIN} already exists (ID: ${EXISTING_RECORD}). Skipping creation."
+                exit 0
+              fi
+
+              echo "Creating DNS record..."
               ibmcloud cis dns-record-create "${DOMAIN_ID}" \
                 --type CNAME \
                 --name "${RECORD_NAME}" \

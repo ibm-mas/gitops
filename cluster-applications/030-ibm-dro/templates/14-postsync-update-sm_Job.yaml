@@ -238,6 +238,13 @@ spec:
               fi
               export DRO_URL="https://${DRO_HOST}"
 
+              echo "Fetching ca from ibm-data-reporter-operator-api-token Secret in ${DRO_NAMESPACE}"
+              DRO_CA_B64ENC=$(cat /etc/mas/creds/ibm-data-reporter-operator-api-token/ca | base64 -w0)
+              if [[ -z "${DRO_CA_B64ENC}" ]]; then
+                echo "Failed to fetch ca"
+                exit 1
+              fi
+
               echo "Fetching token from ibm-data-reporter-operator-api-token Secret in ${DRO_NAMESPACE}"
               export DRO_API_TOKEN=$(cat /etc/mas/creds/ibm-data-reporter-operator-api-token/token)
               if [[ -z "${DRO_API_TOKEN}" ]]; then
@@ -270,7 +277,7 @@ spec:
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
               SECRET_NAME_DRO=${ACCOUNT_ID}/${CLUSTER_ID}/dro
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-dro-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\", \"dro_ca_b64enc\": \"$DRO_API_TOKEN\", }" "${TAGS}"
+              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\", \"dro_ca_b64enc\": \"$DRO_CA_B64ENC\", }" "${TAGS}"
 
 
       restartPolicy: Never

@@ -1,0 +1,54 @@
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: "{{ .Values.mas_config_name }}-credentials"
+  namespace: "mas-{{ .Values.instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/sync-wave: "150"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  apiKey: "{{ .Values.aiservice_api_key }}"  # pragma: allowlist secret
+---
+apiVersion: config.mas.ibm.com/v1
+kind: AiCfg
+metadata:
+  name: "{{ .Values.mas_config_name }}"
+  namespace: "mas-{{ .Values.instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/sync-wave: "151"
+  labels:
+{{- if eq .Values.mas_config_scope "system" }}
+{{ .Values.system_suite_aicfg_labels | toYaml  | indent 4 }}
+{{ end }}
+{{- if eq .Values.mas_config_scope "ws" }}
+{{ .Values.ws_suite_aicfg_labels | toYaml  | indent 4 }}
+{{ end }}
+{{- if eq .Values.mas_config_scope "app" }}
+{{ .Values.app_suite_aicfg_labels | toYaml  | indent 4 }}
+{{ end }}
+{{- if eq .Values.mas_config_scope "wsapp" }}
+{{ .Values.wsapp_suite_aicfg_labels | toYaml  | indent 4 }}
+{{ end }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  displayName: "{{ .Values.aiservice_display_name }}"
+  config:
+    enabled: {{ .Values.aiservice_enabled }}
+    url: "{{ .Values.aiservice_url }}"
+    tenantId: "{{ .Values.aiservice_tenant_id }}"
+    sslEnabled: {{ .Values.aiservice_ssl_enabled }}
+    credentials:
+      secretName: "{{ .Values.mas_config_name }}-credentials"
+  metaAgent:
+    enabled: {{ .Values.aiservice_meta_agent_enabled }}
+{{- if .Values.aiservice_certificates }}
+  certificates:
+{{ .Values.aiservice_certificates | toYaml | indent 4 }}
+{{- end }}

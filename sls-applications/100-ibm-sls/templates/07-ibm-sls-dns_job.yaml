@@ -1,0 +1,158 @@
+
+{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{ $aws_secret := "aws"}}
+{{- $_job_name_prefix := "ibm-sls-dns" }}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v5" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+{{- if not (empty .Values.dns_provider) }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name  }}
+  namespace: mas-{{ .Values.ibm_customer_number }}-{{ .Values.subscription_id }}-sls
+  annotations:
+    argocd.argoproj.io/sync-wave: "113"
+    argocd.argoproj.io/sync-options: Force=true
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: "postsync-ibm-sls-update-sm-job"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id}}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: ICN
+              value: '{{ .Values.ibm_customer_number }}'
+            - name: SUBSCRIPTION_ID
+              value: '{{ .Values.subscription_id }}'
+            - name: DOMAIN
+              value: '{{ .Values.sls_domain }}'
+            - name: CIS_SERVICE_NAME
+              value: '{{ .Values.cis_service_name }}'
+            - name: CIS_CRN
+              value: '{{ .Values.cis_crn }}'
+            - name: AVP_TYPE
+              value: "aws"
+            - name: IBMCLOUD_HOME
+              value: /tmp/bluemix
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+              readOnly: true
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+
+              set -e
+
+              echo "Reading AWS credentials..." 
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              export SM_AWS_REGION=${REGION_ID}
+
+              echo $SM_AWS_REGION
+
+
+              source /mascli/functions/gitops_utils
+              sm_login
+
+              echo "Fetching IBM API key from AWS Secrets Manager"
+
+              SECRET_NAME_CIS="${ACCOUNT_ID}/${CLUSTER_ID}/cis"
+
+              SECRET_JSON=$(aws secretsmanager get-secret-value \
+                --secret-id ${SECRET_NAME_CIS} \
+                --query SecretString \
+                --output text)
+
+              echo "Fetching OCP_INGRESS from AWS Secrets Manager"
+
+              export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"
+              sm_get_secret_file ${ACCOUNT_ID}/${CLUSTER_ID}/public-elb ${PUBLIC_ELB_DNS_NAME_FILE}
+              export OCP_INGRESS=$(jq -r .dns $PUBLIC_ELB_DNS_NAME_FILE)
+
+              IBM_APIKEY=$(echo ${SECRET_JSON} | jq -r '.ibm_apikey')
+
+               if [[ -z "${IBM_APIKEY}" || "${IBM_APIKEY}" == "null" ]]; then
+                echo "Failed to fetch ibm_apikey from ${SECRET_NAME_CIS}"
+                exit 1
+              fi
+
+              if [[ -z "${OCP_INGRESS}" || "${OCP_INGRESS}" == "null" ]]; then
+              echo "Failed to fetch dns value from public-elb secret"
+              exit 1
+              fi
+
+              echo "Setting IBM CLI home to writable location..."
+              export IBMCLOUD_HOME=/tmp/bluemix
+              mkdir -p $IBMCLOUD_HOME
+
+              echo "Logging into IBM Cloud..."
+              ibmcloud login --apikey ${IBM_APIKEY} -r us-east
+
+              #echo "Targeting resource group..."
+              #ibmcloud target -g Default
+            
+              # 1. Disable the interactive update check to prevent the [y/N] prompt
+              ibmcloud config --check-version=false
+
+              # 2. Install the Cloud Internet Services (CIS) plug-in
+              # The -f flag forces installation without a confirmation prompt
+              echo "Installing CIS plugin..."
+              ibmcloud plugin install cis -f
+
+
+              echo "Setting CIS instance..."
+              ibmcloud cis instance-set ${CIS_CRN}
+
+              echo "Exporting DOMAIN_NAME..."
+              export DOMAIN_NAME=$(echo "$CIS_SERVICE_NAME" | sed 's/^CIS - //') 
+
+              echo "Domain Name: $DOMAIN_NAME"
+
+              echo "Listing all available CIS domains:"
+              ibmcloud cis domains --output json
+
+              echo "Fetching DOMAIN_ID..."
+              DOMAIN_ID=$(ibmcloud cis domains --output json | jq -r ".[] | select(.name==\"$DOMAIN_NAME\") | .id")
+
+              echo "domain id : $DOMAIN_ID"
+
+              if [ -z "$DOMAIN_ID" ] || [ "$DOMAIN_ID" == "null" ]; then
+              echo "ERROR: Could not find Domain ID for name: $DOMAIN_NAME"
+              exit 1
+              fi
+
+              echo "Creating DNS record..."
+               ibmcloud cis dns-record-create "$DOMAIN_ID" \
+               --type CNAME \
+               --name "SLS.mas-${ICN}-${SUBSCRIPTION_ID}-SLS" \
+               --content "${OCP_INGRESS}" \
+               --proxied false
+
+              echo "DNS record created successfully!"
+
+      volumes:
+          - name: aws
+            secret:
+              secretName: aws       # make sure this Secret exists in the same namespace
+              defaultMode: 420
+{{- end }}
+

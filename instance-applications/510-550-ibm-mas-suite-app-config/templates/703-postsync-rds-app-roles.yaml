@@ -295,8 +295,28 @@ spec:
                               print(f"⚠️  {description} - {error_msg}")
                               return False
                   
+                  def check_role_exists(conn, role_name):
+                      """Check if a role exists in the database"""
+                      try:
+                          sql = f"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='{role_name}'"
+                          stmt = ibm_db.exec_immediate(conn, sql)
+                          result = ibm_db.fetch_tuple(stmt)
+                          if result and result[0] > 0:
+                              return True
+                          return False
+                      except Exception as e:
+                          print(f"⚠️  Error checking role existence: {str(e)}")
+                          return False
+                  
                   def create_role_rds(conn_admin, role_name, target_dbname):
                       """Create a role using RDS admin procedure with server output enabled"""
+                      print(f"Checking if role {role_name} exists in database: {target_dbname}")
+                      
+                      # Check if role already exists before attempting to create
+                      if check_role_exists(conn_admin, role_name):
+                          print(f"ℹ️  Role {role_name} already exists, skipping creation")
+                          return True
+                      
                       print(f"Creating role: {role_name} in database: {target_dbname}")
                       try:
                           # Enable server output
@@ -319,9 +339,9 @@ spec:
                           except:
                               pass
                           
-                          # Check if error is because role already exists
+                          # Check if error is because role already exists (race condition fallback)
                           if "already exists" in error_msg.lower() or "duplicate" in error_msg.lower() or "SQL0601N" in error_msg:
-                              print(f"ℹ️  Role {role_name} already exists")
+                              print(f"ℹ️  Role {role_name} already exists (detected during creation)")
                               return True
                           else:
                               print(f"⚠️  Failed to create role {role_name}: {error_msg}")

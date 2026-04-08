@@ -308,12 +308,14 @@ spec:
                           print(f"⚠️  Error checking role existence: {str(e)}")
                           return False
                   
-                  def create_role_rds(conn_admin, role_name, target_dbname):
+                  def create_role_rds(conn_admin, role_name, target_dbname, conn_target=None):
                       """Create a role using RDS admin procedure with server output enabled"""
                       print(f"Checking if role {role_name} exists in database: {target_dbname}")
                       
                       # Check if role already exists before attempting to create
-                      if check_role_exists(conn_admin, role_name):
+                      # Use target connection if provided, otherwise fall back to admin connection
+                      check_conn = conn_target if conn_target else conn_admin
+                      if check_role_exists(check_conn, role_name):
                           print(f"ℹ️  Role {role_name} already exists, skipping creation")
                           return True
                       
@@ -482,10 +484,11 @@ spec:
                               print("✅ SCHEMA MAXIMO exists. Proceeding with role creation...")
                               
                               # Create roles using RDS admin procedure (connected to admin database)
-                              create_role_rds(conn_master_admin, "MAXIMO_READ", rds_dbname)
-                              create_role_rds(conn_master_admin, "MAXIMO_WRITE", rds_dbname)
-                              create_role_rds(conn_master_admin, "MAXIMO_SEQ", rds_dbname)
-                              create_role_rds(conn_master_admin, "EXPLAIN", rds_dbname)
+                              # Check role existence on target database to avoid SQL0601 errors
+                              create_role_rds(conn_master_admin, "MAXIMO_READ", rds_dbname, conn_target)
+                              create_role_rds(conn_master_admin, "MAXIMO_WRITE", rds_dbname, conn_target)
+                              create_role_rds(conn_master_admin, "MAXIMO_SEQ", rds_dbname, conn_target)
+                              create_role_rds(conn_master_admin, "EXPLAIN", rds_dbname, conn_target)
                               
                               # Grant permissions to MAXIMO_READ (connected to target database)
                               print("\nGranting permissions to MAXIMO_READ role...")
@@ -524,8 +527,9 @@ spec:
                               print("✅ SCHEMA TRIDATA exists. Proceeding with role creation...")
                               
                               # Create roles using RDS admin procedure (connected to admin database)
-                              create_role_rds(conn_master_admin, "TRIDATA_READ", rds_dbname)
-                              create_role_rds(conn_master_admin, "TRIDATA_WRITE", rds_dbname)
+                              # Check role existence on target database to avoid SQL0601 errors
+                              create_role_rds(conn_master_admin, "TRIDATA_READ", rds_dbname, conn_target)
+                              create_role_rds(conn_master_admin, "TRIDATA_WRITE", rds_dbname, conn_target)
                               
                               # Grant permissions to TRIDATA_READ (connected to target database)
                               print("\nGranting permissions to TRIDATA_READ role...")

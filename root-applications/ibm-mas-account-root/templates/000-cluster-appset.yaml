@@ -112,6 +112,11 @@ spec:
               revision: "{{ .Values.generator.revision }}"
               files:
               - path: "{{ .Values.account.id }}/*/efs-csi-driver.yaml"
+          - git:
+              repoURL: "{{ .Values.generator.repo_url }}"
+              revision: "{{ .Values.generator.revision }}"
+              files:
+              - path: "{{ .Values.account.id }}/*/mongodb-atlas.yaml"
   syncPolicy:
     applicationsSync: "{{- if .Values.auto_delete }}sync{{- else }}create-update{{- end }}"
   template:
@@ -163,6 +168,13 @@ spec:
 
               - name: disable_docdb_instance_user_management
                 value: "{{ .Values.disable_docdb_instance_user_management }}"
+
+              {{- if .Values.mongodb_helm_source }}
+              - name: "mongodb_helm_source.revision"
+                value: "{{ .Values.mongodb_helm_source.revision }}"
+              - name: "mongodo_helm_source.repo_url"
+                value: "{{ .Values.mongodb_helm_source.repo_url }}"
+              {{- end }}
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}

@@ -46,7 +46,7 @@ metadata:
   name: "{{ $sa_name }}"
   namespace: "{{ $app_ns }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "600"
+    argocd.argoproj.io/sync-wave: "703"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -126,7 +126,7 @@ metadata:
   name: {{ $_cronjob_name }}
   namespace: "{{ $app_ns }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "600"
+    argocd.argoproj.io/sync-wave: "704"
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if $.Values.custom_labels }}
@@ -279,7 +279,6 @@ spec:
                   print(f"Connecting to RDS DB2 - Admin DB: {rds_admin_dbname}, Target DB: {rds_dbname}")
                   print(f"Master User: {rds_master_user}")
                   print("Creating roles for MAS applications: manage, facilities")
-                  print("Note: IoT uses admin user (DB2_iot) with full admin privileges - no separate roles")
                   
                   def execute_db2_sql(conn, sql, description):
                       """Execute a DB2 SQL statement"""
@@ -296,8 +295,28 @@ spec:
                               print(f"⚠️  {description} - {error_msg}")
                               return False
                   
+                  def check_role_exists(conn, role_name):
+                      """Check if a role exists in the database"""
+                      try:
+                          sql = f"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='{role_name}'"
+                          stmt = ibm_db.exec_immediate(conn, sql)
+                          result = ibm_db.fetch_tuple(stmt)
+                          if result and result[0] > 0:
+                              return True
+                          return False
+                      except Exception as e:
+                          print(f"⚠️  Error checking role existence: {str(e)}")
+                          return False
+                  
                   def create_role_rds(conn_admin, role_name, target_dbname):
                       """Create a role using RDS admin procedure with server output enabled"""
+                      print(f"Checking if role {role_name} exists in database: {target_dbname}")
+                      
+                      # Check if role already exists before attempting to create
+                      if check_role_exists(conn_admin, role_name):
+                          print(f"ℹ️  Role {role_name} already exists, skipping creation")
+                          return True
+                      
                       print(f"Creating role: {role_name} in database: {target_dbname}")
                       try:
                           # Enable server output
@@ -320,9 +339,9 @@ spec:
                           except:
                               pass
                           
-                          # Check if error is because role already exists
+                          # Check if error is because role already exists (race condition fallback)
                           if "already exists" in error_msg.lower() or "duplicate" in error_msg.lower() or "SQL0601N" in error_msg:
-                              print(f"ℹ️  Role {role_name} already exists")
+                              print(f"ℹ️  Role {role_name} already exists (detected during creation)")
                               return True
                           else:
                               print(f"⚠️  Failed to create role {role_name}: {error_msg}")
@@ -437,7 +456,6 @@ spec:
                           return False
                   
                   try:
-                      # Step 0: Connect as masteradmin to grant DBADM to DB2ADMIN
                       print(f"\n{'='*80}")
                       print(f"STEP 0: Granting DBADM to DB2ADMIN User")
                       print(f"{'='*80}")

@@ -13,7 +13,7 @@ metadata:
     instance: '{{ .Values.instance.id }}'
     masapp: 'monitor'
   annotations:
-    argocd.argoproj.io/sync-wave: "520"
+    argocd.argoproj.io/sync-wave: "{{- if .Values.ibm_suite_app_monitor_install.mas_app_channel }}{{- $channel := .Values.ibm_suite_app_monitor_install.mas_app_channel | toString }}{{- $version := regexFind `^[0-9]+\.[0-9]+` $channel }}{{- if $version }}{{- $parts := splitList "." $version }}{{- $major := index $parts 0 | int }}{{- $minor := index $parts 1 | int }}{{- if or (gt $major 9) (and (eq $major 9) (ge $minor 2)) }}510{{- else }}520{{- end }}{{- else }}520{{- end }}{{- else }}520{{- end }}"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}

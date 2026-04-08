@@ -1,0 +1,264 @@
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "postsync-setup-atlas" }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Since jobs must be idemopotent, it's generally safe to pass in values here that are not
+strictly necessary (i.e. including some values that don't actually influence job behaviour).
+We may want to refine this further though for jobs that can take a long time to complete.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
+This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
+immutable field of any existing Job resource.
+*/}}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
+{{- /*
+Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+
+When the auto_delete flag is not set on the root application, a CronJob in the cluster uses this label 
+to identify old Job resources that should be pruned on behalf of ArgoCD.
+
+Any Job resources in the same namespace that have the mas.ibm.com/job-cleanup-group with this value
+will be considered to belong to the same cleanup group. All but the most recent (i.e. with the latest "creation_timestamp")
+Jobs will be automatically deleted.
+
+$_job_cleanup_group can usually just be based on $_job_name_prefix. There are some special cases
+where multiple Jobs are created in our templates using a Helm loop. In those cases, additional descriminators
+must be added to $_job_cleanup_group.
+
+By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators
+are required here.
+
+*/}}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+{{ $ns := .Values.mongo.namespace }}
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ $ns }}
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "8"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        mas.ibm.com/job-cleanup-group: "{{ $_job_cleanup_group }}"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: atlas-vpc-endpoint-creator
+      restartPolicy: Never
+      containers:
+        - name: create-aws-secret
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account.id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster.id }}"
+            - name: PROJECT_ID
+              value: "{{ .Values.mongo.project_id }}"
+            - name: AWS_REGION
+              value: "{{ .Values.region.id }}"
+            - name: NAMESPACE
+              value: "{{ .Values.mongo.namespace }}"
+            - name: UPDATE_MONGO_SECRET
+              value: "{{ .Values.mongo.update_mongo_secret }}"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              
+              echo "Waiting for Atlas connection secret to be created..."
+              
+              # Wait for the connection secret to be created by the operator
+              MAX_RETRIES=60
+              RETRY_COUNT=0
+              
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                if oc get secret ${CLUSTER_ID}-atlas-conn -n ${NAMESPACE} &>/dev/null; then
+                  echo "Atlas connection secret found!"
+                  break
+                fi
+                
+                echo "Waiting for connection secret... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+                sleep 10
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+              done
+              
+              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                echo "ERROR: Atlas connection secret not found after $MAX_RETRIES attempts"
+                exit 1
+              fi
+              
+              echo "Retrieving MongoDB connection details from Kubernetes secret..."
+              
+              # Get connection details from the secret
+              CONNECTION_STRING_PRIVATE=$(oc get secret ${CLUSTER_ID}-atlas-conn -n ${NAMESPACE} -o jsonpath='{.data.connectionString\.private}' | base64 -d)
+              MONGO_USERNAME=$(oc get secret ${CLUSTER_ID}-atlas-conn -n ${NAMESPACE} -o jsonpath='{.data.username}' | base64 -d)
+              MONGO_PASSWORD=$(oc get secret ${CLUSTER_ID}-database-user-password -n ${NAMESPACE} -o jsonpath='{.data.password}' | base64 -d)
+              
+              # Get CA certificate from Atlas connection secret or download from Atlas
+              echo "Fetching MongoDB Atlas CA certificate..."
+              
+              # Try to get CA cert from the connection secret first
+              CA_CERT=$(oc get secret ${CLUSTER_ID}-atlas-conn -n ${NAMESPACE} -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d || echo "")
+              
+              # If still empty, fail
+              if [ -z "$CA_CERT" ]; then
+                echo "ERROR: Could not fetch CA certificate from secret"
+                exit 1
+              fi
+              
+              # Parse connection string to extract hosts
+              echo "Parsing MongoDB connection string..."
+              # Extract hosts from private connection string (format: mongodb+srv://host1,host2,host3/...)
+              HOSTS_STRING=$(echo "$CONNECTION_STRING_PRIVATE" | sed -n 's/.*@\([^/]*\).*/\1/p')
+              
+              # Create YAML info structure
+              INFO_YAML=$(cat <<'EOFINFO'
+              config:
+                hosts:
+              EOFINFO
+              )
+              
+              # Parse and add each host
+              IFS=',' read -ra HOSTS <<< "$HOSTS_STRING"
+              for HOST_PORT in "${HOSTS[@]}"; do
+                HOST=$(echo "$HOST_PORT" | cut -d':' -f1)
+                PORT=$(echo "$HOST_PORT" | cut -d':' -f2)
+                if [ -z "$PORT" ]; then
+                  PORT="27017"
+                fi
+                INFO_YAML+=$(cat <<EOFHOST
+              
+                - host: $HOST
+                  port: $PORT
+              EOFHOST
+              )
+              done
+              
+              # Add remaining config with fetched CA certificate
+              INFO_YAML+=$(cat <<EOFCONFIG
+                configDb: admin
+                authMechanism: DEFAULT
+              certificates:
+                - alias: ca
+                  crt: |
+              EOFCONFIG
+              )
+              
+              # Append the CA certificate with proper indentation (20 spaces for YAML literal block)
+              INFO_YAML+=$'\n'
+              INFO_YAML+=$(echo "$CA_CERT" | sed 's/^/                    /')
+              
+              # Escape the YAML for JSON
+              ESCAPED_INFO=${INFO_YAML//\"/\\\"}
+              ESCAPED_INFO=${ESCAPED_INFO//$'\n'/\\n}
+              
+              # Prepare AWS Secrets Manager secret data
+              TAGS="Key=account,Value=${ACCOUNT_ID} Key=cluster,Value=${CLUSTER_ID} Key=managed-by,Value=argocd"
+              SECRET_JSON="{\"info\": \"$ESCAPED_INFO\", \"username\": \"$MONGO_USERNAME\", \"password\": \"$MONGO_PASSWORD\"}"
+              SECRET_NAME="${ACCOUNT_ID}/${CLUSTER_ID}/mongo"
+              
+              echo "=========================================="
+              echo "MongoDB Atlas Connection Secret Details"
+              echo "=========================================="
+              echo "Secret Name: $SECRET_NAME"
+              echo "Region: ${AWS_REGION}"
+              echo ""
+              echo "Secret JSON Content:"
+              echo "$SECRET_JSON" | jq '.' || echo "$SECRET_JSON"
+              echo "=========================================="
+              
+              # Conditionally create/update AWS Secrets Manager secret
+              if [ "${UPDATE_MONGO_SECRET}" = "true" ]; then
+                echo ""
+                echo "Creating/updating AWS Secrets Manager secret..."
+                
+                # Check if secret exists
+                if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${AWS_REGION} &>/dev/null; then
+                  echo "Updating existing AWS Secrets Manager secret..."
+                  aws secretsmanager update-secret \
+                    --secret-id "$SECRET_NAME" \
+                    --secret-string "$SECRET_JSON" \
+                    --region ${AWS_REGION}
+                  echo "AWS Secrets Manager secret updated successfully!"
+                else
+                  echo "Creating new AWS Secrets Manager secret..."
+                  aws secretsmanager create-secret \
+                    --name "$SECRET_NAME" \
+                    --description "MongoDB Atlas connection details for ${ACCOUNT_ID}/${CLUSTER_ID}" \
+                    --secret-string "$SECRET_JSON" \
+                    --region ${AWS_REGION} \
+                    --tags ${TAGS}
+                  echo "AWS Secrets Manager secret created successfully!"
+                fi
+              else
+                echo ""
+                echo "AWS Secrets Manager secret creation SKIPPED (update_mongo_secret=false)"
+                echo "To enable secret creation, set mongo.update_mongo_secret=true in your configuration"
+              fi
+              
+              # Store the AWS secret name in a ConfigMap for reference
+              cat <<EOF | oc apply -f -
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: ${CLUSTER_ID}-mongodb-atlas-info
+                namespace: ${NAMESPACE}
+                labels:
+                  app.kubernetes.io/name: mongodb-atlas
+                  app.kubernetes.io/instance: ${CLUSTER_ID}
+              data:
+                awsSecretName: $SECRET_NAME
+                awsRegion: ${AWS_REGION}
+                clusterId: ${CLUSTER_ID}
+                projectId: ${PROJECT_ID}
+              EOF
+              
+              echo "Post-sync job completed successfully!"

@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.cluster.id }}-database-user-password
+  namespace: {{ .Values.mongo.namespace }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "7"
+type: Opaque
+stringData:
+  password: {{ randAlphaNum 32 | quote }}
+---
+apiVersion: atlas.mongodb.com/v1
+kind: AtlasDatabaseUser
+metadata:
+  name: {{ .Values.cluster.id }}-database-user
+  namespace: {{ .Values.mongo.namespace }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  projectRef:
+    name: {{ .Values.mongo.project_id }}
+  
+  username: {{ .Values.cluster.id }}-app-user
+  
+  passwordSecretRef:
+    name: {{ .Values.cluster.id }}-database-user-password
+  
+  databaseName: admin
+  
+  roles:
+    - roleName: readWriteAnyDatabase
+      databaseName: admin
+    - roleName: dbAdminAnyDatabase
+      databaseName: admin

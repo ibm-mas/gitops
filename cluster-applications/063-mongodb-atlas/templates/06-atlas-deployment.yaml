@@ -1,0 +1,37 @@
+apiVersion: atlas.mongodb.com/v1
+kind: AtlasDeployment
+metadata:
+  name: {{ .Values.cluster.id }}-atlas-cluster
+  namespace: {{ .Values.mongo.namespace }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  projectRef:
+    name: {{ .Values.mongo.project_id }}
+  
+  deploymentSpec:
+    name: {{ .Values.cluster.id }}
+    mongoDBMajorVersion: {{ .Values.mongo.major_db_version | quote }}
+    clusterType: REPLICASET
+    backupEnabled: {{ .Values.mongo.backup_enabled }}
+    pitEnabled: {{ .Values.mongo.pit_enabled }}
+    
+    replicationSpecs:
+      - numShards: {{ .Values.mongo.shards }}
+        zoneName: Zone 1
+        
+        regionConfigs:
+          - providerName: AWS
+            regionName: {{ .Values.region.id }}
+            
+            electableSpecs:
+              instanceSize: {{ .Values.mongo.instance_size }}
+              nodeCount: {{ .Values.mongo.node_count }}
+  
+  connectionSecretRef:
+    name: {{ .Values.cluster.id }}-atlas-conn
+    namespace: {{ .Values.mongo.namespace }}

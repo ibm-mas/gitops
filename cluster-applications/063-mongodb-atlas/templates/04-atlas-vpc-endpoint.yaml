@@ -1,0 +1,325 @@
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "sync-atlas-vpc-endpoint" }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Since jobs must be idemopotent, it's generally safe to pass in values here that are not
+strictly necessary (i.e. including some values that don't actually influence job behaviour).
+We may want to refine this further though for jobs that can take a long time to complete.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
+This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
+immutable field of any existing Job resource.
+*/}}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
+{{- /*
+Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+
+$_job_cleanup_group can usually just be based on $_job_name_prefix. There are some special cases
+where multiple Jobs are created in our templates using a Helm loop. In those cases, additional descriminators
+must be added to $_job_cleanup_group.
+
+By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators
+are required here.
+*/}}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+{{ $ns := .Values.mongo.namespace }}
+{{ $sa_name := "atlas-vpc-endpoint-creator" }}
+{{ $role_name := "atlas-vpc-endpoint-creator" }}
+{{ $rb_name := "atlas-vpc-endpoint-creator" }}
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+rules:
+  - apiGroups:
+      - ''
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+  - apiGroups:
+      - atlas.mongodb.com
+    resources:
+      - atlasprivateendpoints
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ $ns }}
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mongodb-atlas
+        app.kubernetes.io/instance: {{ .Values.cluster.id }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: create-vpc-endpoint
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster.id }}"
+            - name: VPC_ID
+              value: "{{ .Values.mongo.vpc_id }}"
+            - name: SUBNET_IDS
+              value: "{{ join "," .Values.mongo.subnet_ids }}"
+            - name: AWS_REGION
+              value: "{{ .Values.region.id }}"
+            - name: NAMESPACE
+              value: "{{ .Values.mongo.namespace }}"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              
+              echo "Waiting for Atlas Private Endpoint to be ready..."
+              
+              # Wait for the AtlasPrivateEndpoint resource to have the service name
+              MAX_RETRIES=60
+              RETRY_COUNT=0
+              
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                SERVICE_NAME=$(oc get atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} -o jsonpath='{.status.serviceName}' 2>/dev/null || echo "")
+                
+                if [ -n "$SERVICE_NAME" ]; then
+                  echo "Atlas Private Endpoint service name found: $SERVICE_NAME"
+                  break
+                fi
+                
+                echo "Waiting for service name... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+                sleep 10
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+              done
+              
+              if [ -z "$SERVICE_NAME" ]; then
+                echo "ERROR: Failed to get Atlas Private Endpoint service name after $MAX_RETRIES attempts"
+                exit 1
+              fi
+              
+              echo "Creating VPC Endpoint in AWS..."
+              echo "Cluster ID: ${CLUSTER_ID}"
+              echo "VPC ID: ${VPC_ID}"
+              echo "Subnet IDs: ${SUBNET_IDS}"
+              echo "AWS Region: ${AWS_REGION}"
+              
+              # Create security group for VPC endpoint
+              echo "Creating security group for VPC endpoint..."
+              SG_ID=$(aws ec2 create-security-group \
+                --group-name ${CLUSTER_ID}-mongodb-atlas-vpce-sg \
+                --description "Security group for MongoDB Atlas VPC Endpoint" \
+                --vpc-id ${VPC_ID} \
+                --region ${AWS_REGION} \
+                --output text --query 'GroupId' 2>/dev/null || echo "")
+              
+              if [ -z "$SG_ID" ]; then
+                # Security group might already exist, try to get it
+                SG_ID=$(aws ec2 describe-security-groups \
+                  --filters "Name=group-name,Values=${CLUSTER_ID}-mongodb-atlas-vpce-sg" "Name=vpc-id,Values=${VPC_ID}" \
+                  --region ${AWS_REGION} \
+                  --output text --query 'SecurityGroups[0].GroupId' 2>/dev/null || echo "")
+              fi
+              
+              if [ -z "$SG_ID" ]; then
+                echo "ERROR: Failed to create or find security group"
+                exit 1
+              fi
+              
+              echo "Security group ID: $SG_ID"
+              
+              # Get security groups attached to the subnets
+              echo "Retrieving security groups from subnets..."
+              SUBNET_SECURITY_GROUPS=""
+              for SUBNET_ID in ${SUBNET_IDS//,/ }; do
+                # Get security groups associated with instances in the subnet
+                SUBNET_SG=$(aws ec2 describe-network-interfaces \
+                  --filters "Name=subnet-id,Values=$SUBNET_ID" \
+                  --region ${AWS_REGION} \
+                  --query 'NetworkInterfaces[*].Groups[*].GroupId' \
+                  --output text 2>/dev/null | tr '\t' '\n' | sort -u | tr '\n' ' ')
+                
+                if [ -n "$SUBNET_SG" ]; then
+                  SUBNET_SECURITY_GROUPS="$SUBNET_SECURITY_GROUPS $SUBNET_SG"
+                fi
+              done
+              
+              # Remove duplicates and trim
+              SUBNET_SECURITY_GROUPS=$(echo "$SUBNET_SECURITY_GROUPS" | tr ' ' '\n' | sort -u | tr '\n' ' ' | xargs)
+              
+              echo "Security groups found in subnets: $SUBNET_SECURITY_GROUPS"
+              
+              # Add ingress rules to allow MongoDB traffic (27017) from subnet security groups
+              if [ -n "$SUBNET_SECURITY_GROUPS" ]; then
+                for SOURCE_SG in $SUBNET_SECURITY_GROUPS; do
+                  echo "Adding ingress rule from security group: $SOURCE_SG"
+                  aws ec2 authorize-security-group-ingress \
+                    --group-id $SG_ID \
+                    --protocol tcp \
+                    --port 27017 \
+                    --source-group $SOURCE_SG \
+                    --region ${AWS_REGION} 2>/dev/null || echo "Ingress rule may already exist for $SOURCE_SG"
+                done
+              else
+                echo "WARNING: No security groups found in subnets. VPC endpoint may not be accessible."
+              fi
+              
+              # Create VPC endpoint
+              echo "Creating VPC endpoint..."
+              VPC_ENDPOINT_ID=$(aws ec2 create-vpc-endpoint \
+                --vpc-id ${VPC_ID} \
+                --vpc-endpoint-type Interface \
+                --service-name $SERVICE_NAME \
+                --subnet-ids ${SUBNET_IDS} \
+                --security-group-ids $SG_ID \
+                --region ${AWS_REGION} \
+                --output text --query 'VpcEndpoint.VpcEndpointId' 2>/dev/null || echo "")
+              
+              if [ -z "$VPC_ENDPOINT_ID" ]; then
+                # VPC endpoint might already exist, try to find it
+                VPC_ENDPOINT_ID=$(aws ec2 describe-vpc-endpoints \
+                  --filters "Name=service-name,Values=$SERVICE_NAME" "Name=vpc-id,Values=${VPC_ID}" \
+                  --region ${AWS_REGION} \
+                  --output text --query 'VpcEndpoints[0].VpcEndpointId' 2>/dev/null || echo "")
+              fi
+              
+              if [ -z "$VPC_ENDPOINT_ID" ]; then
+                echo "ERROR: Failed to create or find VPC endpoint"
+                exit 1
+              fi
+              
+              echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
+              
+              # Wait for VPC endpoint to be available
+              echo "Waiting for VPC endpoint to be available..."
+              aws ec2 wait vpc-endpoint-available \
+                --vpc-endpoint-ids $VPC_ENDPOINT_ID \
+                --region ${AWS_REGION}
+              
+              # Get VPC endpoint private IP addresses
+              PRIVATE_IPS=$(aws ec2 describe-vpc-endpoints \
+                --vpc-endpoint-ids $VPC_ENDPOINT_ID \
+                --region ${AWS_REGION} \
+                --output text --query 'VpcEndpoints[0].NetworkInterfaceIds[]')
+              
+              echo "VPC Endpoint Network Interface IDs: $PRIVATE_IPS"
+              
+              # Add egress rules to subnet security groups to allow traffic to VPC endpoint
+              echo "Adding egress rules to subnet security groups..."
+              if [ -n "$SUBNET_SECURITY_GROUPS" ]; then
+                for SOURCE_SG in $SUBNET_SECURITY_GROUPS; do
+                  echo "Adding egress rule to security group: $SOURCE_SG"
+                  aws ec2 authorize-security-group-egress \
+                    --group-id $SOURCE_SG \
+                    --protocol tcp \
+                    --port 27017 \
+                    --destination-group $SG_ID \
+                    --region ${AWS_REGION} 2>/dev/null || echo "Egress rule may already exist for $SOURCE_SG"
+                done
+              fi
+              
+              # Store VPC endpoint ID in a secret for later use
+              echo "Storing VPC endpoint ID in secret..."
+              oc create secret generic ${CLUSTER_ID}-vpc-endpoint-info \
+                --from-literal=vpcEndpointId=$VPC_ENDPOINT_ID \
+                --from-literal=securityGroupId=$SG_ID \
+                --from-literal=serviceName=$SERVICE_NAME \
+                -n ${NAMESPACE} \
+                --dry-run=client -o yaml | oc apply -f -
+              
+              echo "VPC Endpoint creation completed successfully!"
+              echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
+              echo "Security Group ID: $SG_ID"

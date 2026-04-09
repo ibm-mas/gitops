@@ -50,22 +50,6 @@ are required here.
 {{ $ns := .Values.mongo.namespace }}
 {{ $sa_name := "atlas-vpc-endpoint-creator" }}
 
-apiVersion: atlas.mongodb.com/v1
-kind: AtlasPrivateEndpointInterfaceLink
-metadata:
-  name: {{ .Values.cluster.id }}-pe-link
-  namespace: {{ .Values.mongo.namespace }}
-  labels:
-    app.kubernetes.io/name: mongodb-atlas
-    app.kubernetes.io/instance: {{ .Values.cluster.id }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "5"
-spec:
-  projectRef:
-    name: {{ .Values.mongo.project_id }}
-  privateEndpointId: {{ .Values.cluster.id }}-private-endpoint
-  interfaceEndpointId: "placeholder"  # Will be patched by job in wave 5.5
----
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -77,9 +61,7 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
   annotations:
-    argocd.argoproj.io/sync-wave: "5.5"
-    argocd.argoproj.io/hook: Sync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "5"
 spec:
   backoffLimit: 3
   template:
@@ -143,32 +125,54 @@ spec:
               fi
               
               echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
-              
-              # Wait for AtlasPrivateEndpointInterfaceLink to be created
-              echo "Waiting for AtlasPrivateEndpointInterfaceLink resource..."
+
+              # Wait for AtlasPrivateEndpoint to be created
+              echo "Waiting for AtlasPrivateEndpoint resource..."
               RETRY_COUNT=0
-              
+
               while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-                if oc get atlasprivateendpointinterfacelink ${CLUSTER_ID}-pe-link -n ${NAMESPACE} &>/dev/null; then
-                  echo "AtlasPrivateEndpointInterfaceLink found!"
+                if oc get atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} &>/dev/null; then
+                  echo "AtlasPrivateEndpoint found!"
                   break
                 fi
-                
-                echo "Waiting for AtlasPrivateEndpointInterfaceLink... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+
+                echo "Waiting for AtlasPrivateEndpoint... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
                 sleep 5
                 RETRY_COUNT=$((RETRY_COUNT + 1))
               done
-              
+
               if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-                echo "ERROR: AtlasPrivateEndpointInterfaceLink not found after $MAX_RETRIES attempts"
+                echo "ERROR: AtlasPrivateEndpoint not found after $MAX_RETRIES attempts"
                 exit 1
               fi
-              
-              # Patch the AtlasPrivateEndpointInterfaceLink with the actual VPC endpoint ID
-              echo "Patching AtlasPrivateEndpointInterfaceLink with VPC Endpoint ID..."
-              oc patch atlasprivateendpointinterfacelink ${CLUSTER_ID}-pe-link -n ${NAMESPACE} \
+
+              # Patch the AtlasPrivateEndpoint with the actual VPC endpoint ID
+              echo "Patching AtlasPrivateEndpoint with VPC Endpoint ID..."
+              oc patch atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} \
                 --type='json' \
-                -p="[{'op': 'replace', 'path': '/spec/interfaceEndpointId', 'value': '${VPC_ENDPOINT_ID}'}]"
-              
-              echo "AtlasPrivateEndpointInterfaceLink patched successfully!"
+                -p="[{'op': 'add', 'path': '/spec/interfaceEndpoints', 'value': [{'id': '${VPC_ENDPOINT_ID}'}]}]"
+
+              echo "AtlasPrivateEndpoint patched successfully!"
               echo "Interface Endpoint ID set to: $VPC_ENDPOINT_ID"
+
+              # Wait for the private endpoint to become available
+              echo "Waiting for AtlasPrivateEndpoint status to become AVAILABLE..."
+              RETRY_COUNT=0
+
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                STATUS=$(oc get atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} -o jsonpath='{.status.status}' 2>/dev/null || echo "")
+
+                if [ "$STATUS" = "AVAILABLE" ]; then
+                  echo "AtlasPrivateEndpoint is now AVAILABLE!"
+                  break
+                fi
+
+                echo "Current status: $STATUS. Waiting... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+                sleep 10
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+              done
+
+              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                echo "WARNING: AtlasPrivateEndpoint did not reach AVAILABLE status after $MAX_RETRIES attempts"
+                echo "Current status: $(oc get atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} -o jsonpath='{.status.status}' 2>/dev/null || echo 'unknown')"
+              fi

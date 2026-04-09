@@ -17,49 +17,57 @@ spec:
     repoURL: "{{ .Values.source.repo_url }}"
     targetRevision: "{{ .Values.source.revision }}"
     path: cluster-applications/063-mongodb-atlas
-    helm:
-      values: |
-        account:
-          id: "{{ .Values.account.id }}"
-        
-        cluster:
-          id: "{{ .Values.cluster.id }}"
-        
-        mongo:
-          action: "{{ .Values.mongo.action }}"
-          major_db_version: "{{ .Values.mongo.major_db_version }}"
-          vpc_id: "{{ .Values.mongo.vpc_id }}"
-          subnet_ids:
-          {{- range .Values.mongo.subnet_ids }}
-            - "{{ . }}"
-          {{- end }}
-          project_id: "{{ .Values.mongo.project_id }}"
-          organization_id: "{{ .Values.mongo.organization_id }}"
-          instance_size: "{{ .Values.mongo.instance_size }}"
-          node_count: "{{ .Values.mongo.node_count }}"
-          shards: "{{ .Values.mongo.shards }}"
-          backup_enabled: {{ .Values.mongo.backup_enabled }}
-          pit_enabled: {{ .Values.mongo.pit_enabled }}
-          helm_repo: "{{ .Values.mongo.helm_repo }}"
-          namespace: "{{ .Values.mongo.namespace }}"
-          orgId: "{{ .Values.mongo.organization_id }}"
-          publicApiKey: "{{ .Values.mongo.publicApiKey }}"
-          privateApiKey: "{{ .Values.mongo.privateApiKey }}"
-          update_mongo_secret: "{{ .Values.mongo.update_mongo_secret }}"
-        
-        region:
-          id: "{{ .Values.region.id }}"
-        junitreporter:
-          reporter_name: "mongodb-atlas-resources"
-          cluster_id: "{{ .Values.cluster.id }}"
-          devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
-          devops_build_number: "{{ .Values.devops.build_number }}"
-          gitops_version: "{{ .Values.source.revision }}"
-          cli_image_repo: {{ .Values.cli_image_repo }}
-        {{- if .Values.custom_labels }}
-          custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
-        {{- end }}
+    plugin:
+      name: {{ .Values.avp.name }}
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            account:
+              id: "{{ .Values.account.id }}"
 
+            cluster:
+              id: "{{ .Values.cluster.id }}"
+
+            mongo:
+              action: "{{ .Values.mongo.action }}"
+              major_db_version: "{{ .Values.mongo.major_db_version }}"
+              vpc_id: "{{ .Values.mongo.vpc_id }}"
+              subnet_ids:
+              {{- range .Values.mongo.subnet_ids }}
+                - "{{ . }}"
+              {{- end }}
+              project_id: "{{ .Values.mongo.project_id }}"
+              organization_id: "{{ .Values.mongo.organization_id }}"
+              instance_size: "{{ .Values.mongo.instance_size }}"
+              node_count: "{{ .Values.mongo.node_count }}"
+              shards: "{{ .Values.mongo.shards }}"
+              backup_enabled: {{ .Values.mongo.backup_enabled }}
+              pit_enabled: {{ .Values.mongo.pit_enabled }}
+              helm_repo: "{{ .Values.mongo.helm_repo }}"
+              namespace: "{{ .Values.mongo.namespace }}"
+              orgId: "{{ .Values.mongo.organization_id }}"
+              publicApiKey: "{{ .Values.mongo.publicApiKey }}"
+              privateApiKey: "{{ .Values.mongo.privateApiKey }}"
+              update_mongo_secret: "{{ .Values.mongo.update_mongo_secret }}"
+
+            region:
+              id: "{{ .Values.region.id }}"
+            junitreporter:
+              reporter_name: "mongodb-atlas-resources"
+              cluster_id: "{{ .Values.cluster.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+              cli_image_repo: {{ .Values.cli_image_repo }}
+            {{- if .Values.custom_labels }}
+              custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+        - name: ARGOCD_APP_NAME
+          value: mongdbatlas
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
 
   syncPolicy:
     automated:
@@ -72,6 +80,7 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
   
   # Ignore differences for fields that are patched by jobs
   ignoreDifferences:

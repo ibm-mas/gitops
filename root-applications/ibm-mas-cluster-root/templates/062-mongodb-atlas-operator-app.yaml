@@ -42,10 +42,17 @@ spec:
 
             # Cannot rely on chart dependency in GovCloud since we are 
             # working from an internal clone of the Helm charts hosted in GitLab
+            # NOTE: this alone is not sufficient to prevent the AVP plugin from attempting (and failing) to run helm dependency update
+            # Instead, the dependency has been removed from the charts in the GovCloud mirror of mongodb/helm-charts
             mongodb-atlas-operator-crds:
               enabled: false
 
             atlasURI: {{ .Values.mongo.atlasURI }}
+
+            # Override security context for OpenShift
+            podSecurityContext:
+              runAsNonRoot: true
+              # Removed runAsUser to let OpenShift assign it
 
 
         - name: ARGOCD_APP_NAME

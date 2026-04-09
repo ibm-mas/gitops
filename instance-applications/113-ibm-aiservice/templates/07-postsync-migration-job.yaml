@@ -1,0 +1,147 @@
+{{- if hasPrefix "9.2." (toString .Values.aiservice_channel) }}
+
+{{- $_job_name_prefix := "postsync-aiservice-migration" }}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v1" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postsync-aiservice-migration
+  namespace: "{{ .Values.aiservice_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: postsync-aiservice-migration
+  namespace: "{{ .Values.aiservice_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps", "serviceaccounts"]
+    verbs: ["get", "list", "patch", "delete"]
+  - apiGroups: ["operators.coreos.com"]
+    resources: ["subscriptions", "clusterserviceversions"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: postsync-aiservice-migration
+  namespace: "{{ .Values.aiservice_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+subjects:
+  - kind: ServiceAccount
+    name: postsync-aiservice-migration
+    namespace: "{{ .Values.aiservice_namespace }}"
+roleRef:
+  kind: Role
+  name: postsync-aiservice-migration
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postsync-aiservice-migration
+  namespace: "{{ .Values.aiservice_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  podSelector:
+    matchLabels:
+      app: postsync-job
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: "{{ .Values.aiservice_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: postsync-job
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: postsync-aiservice-migration
+      restartPolicy: OnFailure
+      containers:
+        - name: main
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AISERVICE_INSTANCE_ID
+              value: "{{ .Values.aiservice_instance_id }}"
+            - name: AISERVICE_NAMESPACE
+              value: "{{ .Values.aiservice_namespace }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              function is_v92_installed() {
+                export IS_V92_INSTALLED=$(oc get subscription ibm-aiservice -n ${AISERVICE_NAMESPACE} -o json | \
+                jq -r '.status.installedCSV | test("^ibm-aiservice\\.v9\\.2\\.")')
+              }
+
+              function delete_resource() {
+                local type="${1}"
+                local name="${2}"
+                if oc delete ${type} ${name} -n ${AISERVICE_NAMESPACE} --wait &>/dev/null; then
+                  echo "[INFO] ${type} ${name} deleted successfully"
+                else
+                  echo "[WARNING] ${type} ${name} not found. Skipping deletion"
+                fi
+              }
+
+              is_v92_installed
+              while [[ "${IS_V92_INSTALLED}" != "true" ]]; do
+                echo "[INFO] ibm-aiservice operator v9.2 is not installed. Checking again in 30 seconds ..."
+                sleep 30
+                is_v92_installed
+              done
+              echo "[INFO] ibm-aiservice operator v9.2 is installed. Proceeding with migration ..."
+
+              delete_resource deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant
+              delete_resource secret provision-tenant----apikey-secret
+              delete_resource configmap ${AISERVICE_INSTANCE_ID}-entitymgr-tenant-reconcile
+              delete_resource serviceaccount ibm-aiservice-tenant-operator
+
+              exit 0
+{{- end }}

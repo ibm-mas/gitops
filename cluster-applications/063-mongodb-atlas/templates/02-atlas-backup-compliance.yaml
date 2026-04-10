@@ -1,0 +1,40 @@
+apiVersion: atlas.mongodb.com/v1
+kind: AtlasBackupCompliancePolicy
+metadata:
+  name: {{ .Values.mongo.project_id | lower | replace " " "-" }}-backup-compliance
+  namespace: {{ .Values.mongo.namespace }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  authorizedEmail: Nivedithaa.Mahendran@ibm.com
+  authorizedUserFirstName: Nivedithaa
+  authorizedUserLastName: Mahendran
+  restoreWindowDays: 7
+  onDemandPolicy:
+    retentionUnit: days
+    retentionValue: 3
+  scheduledPolicyItems:
+    - frequencyInterval: 6
+      frequencyType: hourly
+      retentionUnit: days
+      retentionValue: 7
+    - frequencyInterval: 1
+      frequencyType: daily
+      retentionUnit: days
+      retentionValue: 7
+    - frequencyInterval: 1
+      frequencyType: weekly
+      retentionUnit: weeks
+      retentionValue: 4
+    - frequencyInterval: 1
+      frequencyType: monthly
+      retentionUnit: months
+      retentionValue: 12
+    - frequencyInterval: 1
+      frequencyType: yearly
+      retentionUnit: years
+      retentionValue: 1

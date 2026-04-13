@@ -176,19 +176,22 @@ spec:
                 fi
               else
                 echo "Patching AtlasPrivateEndpoint with VPC Endpoint ID..."
+                echo "VPC Endpoint ID to patch: $VPC_ENDPOINT_ID"
                 
                 # Try to patch with proper JSON format
+                echo "Attempting patch operation (add)..."
                 PATCH_OUTPUT=$(oc patch atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} \
                   --type='json' \
                   -p="[{\"op\": \"add\", \"path\": \"/spec/awsConfiguration/0/id\", \"value\": [{\"id\": \"${VPC_ENDPOINT_ID}\"}]}]" 2>&1)
                 
                 PATCH_STATUS=$?
+                echo "Patch command exit status: $PATCH_STATUS"
                 
                 if [ $PATCH_STATUS -ne 0 ]; then
-                  echo "ERROR: Failed to patch AtlasPrivateEndpoint"
+                  echo "ERROR: Failed to patch AtlasPrivateEndpoint with 'add' operation"
                   echo "Patch output: $PATCH_OUTPUT"
                   echo ""
-                  echo "Attempting alternative patch method..."
+                  echo "Attempting alternative patch method (replace)..."
                   
                   # Try replace operation instead of add
                   PATCH_OUTPUT=$(oc patch atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} \
@@ -196,6 +199,7 @@ spec:
                     -p="[{\"op\": \"replace\", \"path\": \"/spec/awsConfiguration/0/id\", \"value\": [{\"id\": \"${VPC_ENDPOINT_ID}\"}]}]" 2>&1)
                   
                   PATCH_STATUS=$?
+                  echo "Alternative patch command exit status: $PATCH_STATUS"
                   
                   if [ $PATCH_STATUS -ne 0 ]; then
                     echo "ERROR: Alternative patch method also failed"
@@ -204,13 +208,16 @@ spec:
                     echo "Current AtlasPrivateEndpoint spec:"
                     oc get atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} -o yaml
                     exit 1
+                  else
+                    echo "✓ AtlasPrivateEndpoint patched successfully using 'replace' operation!"
                   fi
+                else
+                  echo "✓ AtlasPrivateEndpoint patched successfully using 'add' operation!"
                 fi
-                
-                echo "AtlasPrivateEndpoint patched successfully!"
               fi
               
-              echo "Interface Endpoint ID: $VPC_ENDPOINT_ID"
+              echo ""
+              echo "Interface Endpoint ID configured: $VPC_ENDPOINT_ID"
 
               # Wait for the private endpoint to become available
               echo "Waiting for AtlasPrivateEndpoint status to become AVAILABLE..."

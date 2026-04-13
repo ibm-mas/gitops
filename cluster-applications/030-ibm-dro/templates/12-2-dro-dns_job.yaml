@@ -1,3 +1,22 @@
+{{- $aws_secret := "aws" }}
+{{- $ns := .Values.dro_namespace }}
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "138"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | default "" | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | default "" | b64enc }}
+type: Opaque
+---
 {{- if (eq .Values.dns_provider "cis") }}
 {{- if .Values.dro_public_domain }}
 {{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}

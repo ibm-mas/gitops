@@ -270,47 +270,68 @@ spec:
                 echo "WARNING: No security groups found in subnets. VPC endpoint may not be accessible."
               fi
               
-              # Create VPC endpoint
-              echo "Creating VPC endpoint..."
-
-              # Convert comma-separated subnet IDs to space-separated for AWS CLI
-              SUBNET_IDS_SPACE_SEPARATED=$(echo "${SUBNET_IDS}" | tr ',' ' ')
-              echo "Subnet IDs (space-separated): $SUBNET_IDS_SPACE_SEPARATED"
-
-              # Capture both stdout and stderr for better error reporting
-              VPC_ENDPOINT_OUTPUT=$(aws ec2 create-vpc-endpoint \
-                --vpc-id ${VPC_ID} \
-                --vpc-endpoint-type Interface \
-                --service-name $SERVICE_NAME \
-                --subnet-ids ${SUBNET_IDS_SPACE_SEPARATED} \
-                --security-group-ids $SG_ID \
+              # Check for existing VPC endpoint first (idempotency)
+              echo "Checking for existing VPC endpoint..."
+              EXISTING_VPC_ENDPOINT=$(aws ec2 describe-vpc-endpoints \
+                --filters "Name=service-name,Values=$SERVICE_NAME" "Name=vpc-id,Values=${VPC_ID}" "Name=tag:cluster-id,Values=${CLUSTER_ID}" \
                 --region ${AWS_REGION} \
-                --output json 2>&1)
+                --output json 2>/dev/null || echo "")
 
-              VPC_ENDPOINT_CREATION_STATUS=$?
-              
-              if [ $VPC_ENDPOINT_CREATION_STATUS -eq 0 ]; then
-                VPC_ENDPOINT_ID=$(echo "$VPC_ENDPOINT_OUTPUT" | jq -r '.VpcEndpoint.VpcEndpointId // empty')
-                if [ -n "$VPC_ENDPOINT_ID" ] && [ "$VPC_ENDPOINT_ID" != "null" ]; then
-                  echo "VPC endpoint created successfully!"
-                  echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
-                else
-                  echo "ERROR: VPC endpoint creation returned success but no VPC Endpoint ID found"
-                  echo "AWS Response: $VPC_ENDPOINT_OUTPUT"
-                  exit 1
+              if [ -n "$EXISTING_VPC_ENDPOINT" ] && [ "$EXISTING_VPC_ENDPOINT" != "null" ]; then
+                VPC_ENDPOINT_ID=$(echo "$EXISTING_VPC_ENDPOINT" | jq -r '.VpcEndpoints[0].VpcEndpointId // empty')
+                VPC_ENDPOINT_STATE=$(echo "$EXISTING_VPC_ENDPOINT" | jq -r '.VpcEndpoints[0].State // empty')
+
+                if [ -n "$VPC_ENDPOINT_ID" ] && [ "$VPC_ENDPOINT_ID" != "null" ] && [ "$VPC_ENDPOINT_ID" != "None" ]; then
+                  echo "Found existing VPC endpoint: $VPC_ENDPOINT_ID (State: $VPC_ENDPOINT_STATE)"
+
+                  # Check if the endpoint is in a usable state
+                  if [ "$VPC_ENDPOINT_STATE" = "available" ] || [ "$VPC_ENDPOINT_STATE" = "pending" ] || [ "$VPC_ENDPOINT_STATE" = "pendingAcceptance" ]; then
+                    echo "Reusing existing VPC endpoint in state: $VPC_ENDPOINT_STATE"
+                  elif [ "$VPC_ENDPOINT_STATE" = "failed" ] || [ "$VPC_ENDPOINT_STATE" = "rejected" ]; then
+                    echo "WARNING: Existing VPC endpoint is in failed state: $VPC_ENDPOINT_STATE"
+                    echo "Deleting failed endpoint and will create a new one..."
+                    aws ec2 delete-vpc-endpoints --vpc-endpoint-ids $VPC_ENDPOINT_ID --region ${AWS_REGION} 2>/dev/null || true
+                    sleep 5
+                    VPC_ENDPOINT_ID=""
+                  else
+                    echo "Existing VPC endpoint state: $VPC_ENDPOINT_STATE"
+                  fi
                 fi
-              else
-                echo "WARNING: VPC endpoint creation failed. Attempting to find existing endpoint..."
-                echo "Error details: $VPC_ENDPOINT_OUTPUT"
+              fi
 
-                # VPC endpoint might already exist, try to find it
-                VPC_ENDPOINT_ID=$(aws ec2 describe-vpc-endpoints \
-                  --filters "Name=service-name,Values=$SERVICE_NAME" "Name=vpc-id,Values=${VPC_ID}" \
+              # Create VPC endpoint only if one doesn't exist
+              if [ -z "$VPC_ENDPOINT_ID" ] || [ "$VPC_ENDPOINT_ID" = "None" ] || [ "$VPC_ENDPOINT_ID" = "null" ]; then
+                echo "Creating new VPC endpoint..."
+
+                # Convert comma-separated subnet IDs to space-separated for AWS CLI
+                SUBNET_IDS_SPACE_SEPARATED=$(echo "${SUBNET_IDS}" | tr ',' ' ')
+                echo "Subnet IDs (space-separated): $SUBNET_IDS_SPACE_SEPARATED"
+
+                # Capture both stdout and stderr for better error reporting
+                VPC_ENDPOINT_OUTPUT=$(aws ec2 create-vpc-endpoint \
+                  --vpc-id ${VPC_ID} \
+                  --vpc-endpoint-type Interface \
+                  --service-name $SERVICE_NAME \
+                  --subnet-ids ${SUBNET_IDS_SPACE_SEPARATED} \
+                  --security-group-ids $SG_ID \
                   --region ${AWS_REGION} \
-                  --output text --query 'VpcEndpoints[0].VpcEndpointId' 2>/dev/null || echo "")
+                  --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=cluster-id,Value=${CLUSTER_ID}},{Key=Name,Value=${CLUSTER_ID}-mongodb-atlas-vpce},{Key=managed-by,Value=argocd}]" \
+                  --output json 2>&1)
 
-                if [ -z "$VPC_ENDPOINT_ID" ] || [ "$VPC_ENDPOINT_ID" = "None" ] || [ "$VPC_ENDPOINT_ID" = "null" ]; then
-                  echo "ERROR: Failed to create VPC endpoint and no existing endpoint found"
+                VPC_ENDPOINT_CREATION_STATUS=$?
+
+                if [ $VPC_ENDPOINT_CREATION_STATUS -eq 0 ]; then
+                  VPC_ENDPOINT_ID=$(echo "$VPC_ENDPOINT_OUTPUT" | jq -r '.VpcEndpoint.VpcEndpointId // empty')
+                  if [ -n "$VPC_ENDPOINT_ID" ] && [ "$VPC_ENDPOINT_ID" != "null" ]; then
+                    echo "VPC endpoint created successfully!"
+                    echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
+                  else
+                    echo "ERROR: VPC endpoint creation returned success but no VPC Endpoint ID found"
+                    echo "AWS Response: $VPC_ENDPOINT_OUTPUT"
+                    exit 1
+                  fi
+                else
+                  echo "ERROR: Failed to create VPC endpoint"
                   echo "VPC ID: ${VPC_ID}"
                   echo "Service Name: $SERVICE_NAME"
                   echo "Subnet IDs: ${SUBNET_IDS}"
@@ -320,12 +341,9 @@ spec:
                   echo "Creation error details:"
                   echo "$VPC_ENDPOINT_OUTPUT"
                   exit 1
-                else
-                  echo "Found existing VPC endpoint!"
-                  echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
                 fi
               fi
-
+              
               # Final validation that VPC_ENDPOINT_ID is valid
               if [ -z "$VPC_ENDPOINT_ID" ] || [ "$VPC_ENDPOINT_ID" = "None" ] || [ "$VPC_ENDPOINT_ID" = "null" ]; then
                 echo "ERROR: VPC Endpoint ID is invalid or empty: '$VPC_ENDPOINT_ID'"
@@ -334,46 +352,24 @@ spec:
               
               echo "Validated VPC Endpoint ID: $VPC_ENDPOINT_ID"
 
-              # Wait for VPC endpoint to be available
-              echo "Waiting for VPC endpoint to be available..."
-              MAX_WAIT_ATTEMPTS=60
-              WAIT_ATTEMPT=0
+              # Verify VPC endpoint was created successfully
+              echo "Verifying VPC endpoint creation..."
+              VPC_STATE=$(aws ec2 describe-vpc-endpoints \
+                --vpc-endpoint-ids $VPC_ENDPOINT_ID \
+                --region ${AWS_REGION} \
+                --query 'VpcEndpoints[0].State' \
+                --output text 2>/dev/null || echo "")
 
-              while [ $WAIT_ATTEMPT -lt $MAX_WAIT_ATTEMPTS ]; do
-                VPC_STATE=$(aws ec2 describe-vpc-endpoints \
-                  --vpc-endpoint-ids $VPC_ENDPOINT_ID \
-                  --region ${AWS_REGION} \
-                  --query 'VpcEndpoints[0].State' \
-                  --output text 2>/dev/null || echo "")
-
-                if [ "$VPC_STATE" = "available" ]; then
-                  echo "VPC endpoint is now available!"
-                  break
-                elif [ "$VPC_STATE" = "failed" ] || [ "$VPC_STATE" = "rejected" ] || [ "$VPC_STATE" = "deleting" ] || [ "$VPC_STATE" = "deleted" ]; then
-                  echo "ERROR: VPC endpoint entered a failed state: $VPC_STATE"
-                  echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
-                  echo "Checking detailed status..."
-                  aws ec2 describe-vpc-endpoints \
-                    --vpc-endpoint-ids $VPC_ENDPOINT_ID \
-                    --region ${AWS_REGION} \
-                    --query 'VpcEndpoints[0]' \
-                    --output json || echo "Failed to retrieve endpoint details"
-                  exit 1
-                elif [ -z "$VPC_STATE" ]; then
-                  echo "ERROR: Failed to retrieve VPC endpoint state"
-                  echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
-                  exit 1
-                fi
-
-                echo "Current VPC endpoint state: $VPC_STATE (attempt $((WAIT_ATTEMPT + 1))/$MAX_WAIT_ATTEMPTS)"
-                sleep 10
-                WAIT_ATTEMPT=$((WAIT_ATTEMPT + 1))
-              done
-
-              if [ $WAIT_ATTEMPT -eq $MAX_WAIT_ATTEMPTS ]; then
-                echo "ERROR: VPC endpoint did not become available within the timeout period"
+              if [ -z "$VPC_STATE" ]; then
+                echo "ERROR: Failed to retrieve VPC endpoint state"
                 echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
-                echo "Final state: $VPC_STATE"
+                exit 1
+              fi
+
+              # Check for immediate failure states
+              if [ "$VPC_STATE" = "failed" ] || [ "$VPC_STATE" = "rejected" ] || [ "$VPC_STATE" = "deleted" ]; then
+                echo "ERROR: VPC endpoint is in failed state: $VPC_STATE"
+                echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
                 echo "Checking detailed status..."
                 aws ec2 describe-vpc-endpoints \
                   --vpc-endpoint-ids $VPC_ENDPOINT_ID \
@@ -382,6 +378,9 @@ spec:
                   --output json || echo "Failed to retrieve endpoint details"
                 exit 1
               fi
+              
+              echo "VPC endpoint created successfully with state: $VPC_STATE"
+              echo "Note: VPC endpoint will become 'available' after private link is established in later steps"
               
               # Get VPC endpoint private IP addresses
               PRIVATE_IPS=$(aws ec2 describe-vpc-endpoints \

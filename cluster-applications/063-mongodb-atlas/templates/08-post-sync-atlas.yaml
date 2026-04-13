@@ -126,51 +126,89 @@ spec:
             - |
               set -e
               
-              echo "Waiting for Atlas connection secret to be created..."
+              echo "Waiting for AtlasDeployment to be ready..."
               
-              # Wait for the connection secret to be created by the operator
+              # Wait for the AtlasDeployment to have connection strings in status
               MAX_RETRIES=60
               RETRY_COUNT=0
               
               while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-                if oc get secret ${CLUSTER_ID}-atlas-conn -n ${NAMESPACE} &>/dev/null; then
-                  echo "Atlas connection secret found!"
+                DEPLOYMENT_STATUS=$(oc get atlasdeployment ${CLUSTER_ID}-atlas-cluster -n ${NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+                
+                if [ "$DEPLOYMENT_STATUS" = "True" ]; then
+                  echo "AtlasDeployment is ready!"
                   break
                 fi
                 
-                echo "Waiting for connection secret... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+                echo "Waiting for AtlasDeployment to be ready... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
                 sleep 10
                 RETRY_COUNT=$((RETRY_COUNT + 1))
               done
               
               if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-                echo "ERROR: Atlas connection secret not found after $MAX_RETRIES attempts"
+                echo "ERROR: AtlasDeployment not ready after $MAX_RETRIES attempts"
                 exit 1
               fi
               
-              echo "Retrieving MongoDB connection details from Kubernetes secret..."
+              echo "Retrieving MongoDB shard hosts from AtlasDeployment status..."
               
-              # Get connection details from the secret
-              CONNECTION_STRING_PRIVATE=$(oc get secret ${CLUSTER_ID}-atlas-conn -n ${NAMESPACE} -o jsonpath='{.data.connectionString\.private}' | base64 -d)
-              MONGO_USERNAME=$(oc get secret ${CLUSTER_ID}-atlas-conn -n ${NAMESPACE} -o jsonpath='{.data.username}' | base64 -d)
-              MONGO_PASSWORD=$(oc get secret ${CLUSTER_ID}-database-user-password -n ${NAMESPACE} -o jsonpath='{.data.password}' | base64 -d)
+              # Get the private endpoint endpoints (shard hosts) from AtlasDeployment status
+              ENDPOINTS_JSON=$(oc get atlasdeployment ${CLUSTER_ID}-atlas-cluster -n ${NAMESPACE} -o jsonpath='{.status.connectionStrings.privateEndpoint[0].endpoints}' 2>/dev/null || echo "")
               
-              # Get CA certificate from Atlas connection secret or download from Atlas
+              if [ -z "$ENDPOINTS_JSON" ] || [ "$ENDPOINTS_JSON" = "null" ]; then
+                echo "ERROR: Could not retrieve private endpoint endpoints from AtlasDeployment status"
+                echo "AtlasDeployment connectionStrings status:"
+                oc get atlasdeployment ${CLUSTER_ID}-atlas-cluster -n ${NAMESPACE} -o jsonpath='{.status.connectionStrings}' | jq '.'
+                exit 1
+              fi
+              
+              echo "Endpoints retrieved successfully"
+              echo "Endpoints JSON: $ENDPOINTS_JSON"
+              
+              # Parse endpoints to extract host:port pairs
+              # The endpoints structure is an array of objects with "endpointId" and "providerName" fields
+              # We need to get the actual shard hostnames from the srvConnectionString or standard connection string
+              
+              # Get the standard connection string which contains the actual shard hosts
+              STANDARD_CONN_STRING=$(oc get atlasdeployment ${CLUSTER_ID}-atlas-cluster -n ${NAMESPACE} -o jsonpath='{.status.connectionStrings.privateEndpoint[0].connectionString}' 2>/dev/null || echo "")
+              
+              if [ -z "$STANDARD_CONN_STRING" ]; then
+                echo "ERROR: Could not retrieve standard connection string from private endpoint"
+                exit 1
+              fi
+              
+              echo "Standard connection string retrieved"
+              
+              # Get username and password from database user secret
+              MONGO_USERNAME=$(oc get secret ${CLUSTER_ID}-database-user-password -n ${NAMESPACE} -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || echo "")
+              MONGO_PASSWORD=$(oc get secret ${CLUSTER_ID}-database-user-password -n ${NAMESPACE} -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "")
+              
+              if [ -z "$MONGO_USERNAME" ] || [ -z "$MONGO_PASSWORD" ]; then
+                echo "ERROR: Could not retrieve database user credentials"
+                exit 1
+              fi
+              
+              # Get CA certificate - download from MongoDB Atlas
               echo "Fetching MongoDB Atlas CA certificate..."
+              CA_CERT=$(curl -s https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem || curl -s https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem)
               
-              # Try to get CA cert from the connection secret first
-              CA_CERT=$(oc get secret ${CLUSTER_ID}-atlas-conn -n ${NAMESPACE} -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d || echo "")
-              
-              # If still empty, fail
               if [ -z "$CA_CERT" ]; then
-                echo "ERROR: Could not fetch CA certificate from secret"
+                echo "ERROR: Could not download CA certificate"
                 exit 1
               fi
               
-              # Parse connection string to extract hosts
-              echo "Parsing MongoDB connection string..."
-              # Extract hosts from private connection string (format: mongodb+srv://host1,host2,host3/...)
-              HOSTS_STRING=$(echo "$CONNECTION_STRING_PRIVATE" | sed -n 's/.*@\([^/]*\).*/\1/p')
+              # Parse standard connection string to extract shard hosts
+              echo "Parsing MongoDB shard hosts from connection string..."
+              # Extract hosts from connection string (format: mongodb://host1:port1,host2:port2,host3:port3/...)
+              HOSTS_STRING=$(echo "$STANDARD_CONN_STRING" | sed -n 's/.*@\([^/]*\).*/\1/p')
+              
+              if [ -z "$HOSTS_STRING" ]; then
+                echo "ERROR: Could not extract hosts from connection string"
+                echo "Connection string: $STANDARD_CONN_STRING"
+                exit 1
+              fi
+              
+              echo "Extracted shard hosts: $HOSTS_STRING"
               
               # Create YAML info structure
               INFO_YAML=$(cat <<'EOFINFO'

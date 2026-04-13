@@ -13,6 +13,17 @@ metadata:
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
+  inputs:
+    - application:
+        excludes:
+          - container: auth-store
+            namespace: mas-{{ .Values.instance_id }}-iot
+          - container: api-authorization
+            namespace: mas-{{ .Values.instance_id }}-iot
+          - container: rest-v2-sync-scheduler
+            namespace: mas-{{ .Values.instance_id }}-monitor
+      name: application-logs
+      type: application
 spec:
   filters:
     - drop:
@@ -56,7 +67,7 @@ spec:
       filterRefs:
         - noise
       inputRefs:
-        - application
+        - application-logs
       outputRefs:
         - cloudwatch-1
     - name: infra-logs
@@ -94,6 +105,17 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
+  inputs:
+    - application:
+        excludes:
+          - container: auth-store
+            namespace: mas-{{ .Values.instance_id }}-iot
+          - container: api-authorization
+            namespace: mas-{{ .Values.instance_id }}-iot
+          - container: rest-v2-sync-scheduler
+            namespace: mas-{{ .Values.instance_id }}-monitor
+      name: application-logs
+      type: application
   serviceAccount:
     name: collector
   filters:
@@ -143,7 +165,7 @@ spec:
       filterRefs:
         - noise
       inputRefs:
-        - application
+        - application-logs
       outputRefs:
         - cloudwatch-1
     - name: infra-logs

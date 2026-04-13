@@ -336,21 +336,52 @@ spec:
 
               # Wait for VPC endpoint to be available
               echo "Waiting for VPC endpoint to be available..."
-              if ! aws ec2 wait vpc-endpoint-available \
-                --vpc-endpoint-ids $VPC_ENDPOINT_ID \
-                --region ${AWS_REGION}; then
-                echo "ERROR: VPC endpoint failed to become available"
+              MAX_WAIT_ATTEMPTS=60
+              WAIT_ATTEMPT=0
+
+              while [ $WAIT_ATTEMPT -lt $MAX_WAIT_ATTEMPTS ]; do
+                VPC_STATE=$(aws ec2 describe-vpc-endpoints \
+                  --vpc-endpoint-ids $VPC_ENDPOINT_ID \
+                  --region ${AWS_REGION} \
+                  --query 'VpcEndpoints[0].State' \
+                  --output text 2>/dev/null || echo "")
+
+                if [ "$VPC_STATE" = "available" ]; then
+                  echo "VPC endpoint is now available!"
+                  break
+                elif [ "$VPC_STATE" = "failed" ] || [ "$VPC_STATE" = "rejected" ] || [ "$VPC_STATE" = "deleting" ] || [ "$VPC_STATE" = "deleted" ]; then
+                  echo "ERROR: VPC endpoint entered a failed state: $VPC_STATE"
+                  echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
+                  echo "Checking detailed status..."
+                  aws ec2 describe-vpc-endpoints \
+                    --vpc-endpoint-ids $VPC_ENDPOINT_ID \
+                    --region ${AWS_REGION} \
+                    --query 'VpcEndpoints[0]' \
+                    --output json || echo "Failed to retrieve endpoint details"
+                  exit 1
+                elif [ -z "$VPC_STATE" ]; then
+                  echo "ERROR: Failed to retrieve VPC endpoint state"
+                  echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
+                  exit 1
+                fi
+
+                echo "Current VPC endpoint state: $VPC_STATE (attempt $((WAIT_ATTEMPT + 1))/$MAX_WAIT_ATTEMPTS)"
+                sleep 10
+                WAIT_ATTEMPT=$((WAIT_ATTEMPT + 1))
+              done
+
+              if [ $WAIT_ATTEMPT -eq $MAX_WAIT_ATTEMPTS ]; then
+                echo "ERROR: VPC endpoint did not become available within the timeout period"
                 echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
-                echo "Checking current status..."
+                echo "Final state: $VPC_STATE"
+                echo "Checking detailed status..."
                 aws ec2 describe-vpc-endpoints \
                   --vpc-endpoint-ids $VPC_ENDPOINT_ID \
                   --region ${AWS_REGION} \
-                  --query 'VpcEndpoints[0].[State,StateMessage]' \
-                  --output text || echo "Failed to retrieve endpoint status"
+                  --query 'VpcEndpoints[0]' \
+                  --output json || echo "Failed to retrieve endpoint details"
                 exit 1
               fi
-
-              echo "VPC endpoint is now available!"
               
               # Get VPC endpoint private IP addresses
               PRIVATE_IPS=$(aws ec2 describe-vpc-endpoints \

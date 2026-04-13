@@ -273,12 +273,16 @@ spec:
               # Create VPC endpoint
               echo "Creating VPC endpoint..."
 
+              # Convert comma-separated subnet IDs to space-separated for AWS CLI
+              SUBNET_IDS_SPACE_SEPARATED=$(echo "${SUBNET_IDS}" | tr ',' ' ')
+              echo "Subnet IDs (space-separated): $SUBNET_IDS_SPACE_SEPARATED"
+
               # Capture both stdout and stderr for better error reporting
               VPC_ENDPOINT_OUTPUT=$(aws ec2 create-vpc-endpoint \
                 --vpc-id ${VPC_ID} \
                 --vpc-endpoint-type Interface \
                 --service-name $SERVICE_NAME \
-                --subnet-ids ${SUBNET_IDS} \
+                --subnet-ids ${SUBNET_IDS_SPACE_SEPARATED} \
                 --security-group-ids $SG_ID \
                 --region ${AWS_REGION} \
                 --output json 2>&1)

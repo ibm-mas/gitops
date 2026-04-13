@@ -88,6 +88,21 @@ spec:
               value: "{{ .Values.cluster.id }}"
             - name: NAMESPACE
               value: "{{ .Values.mongo.namespace }}"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_access_key_id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_secret_access_key
+            - name: AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_default_region
           command:
             - /bin/bash
             - -c
@@ -176,3 +191,46 @@ spec:
                 echo "WARNING: AtlasPrivateEndpoint did not reach AVAILABLE status after $MAX_RETRIES attempts"
                 echo "Current status: $(oc get atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} -o jsonpath='{.status.status}' 2>/dev/null || echo 'unknown')"
               fi
+              
+              # Verify VPC endpoint status after private link is established
+              echo ""
+              echo "Verifying VPC endpoint status after private link establishment..."
+              
+              # Get AWS region from secret
+              AWS_REGION=$(oc get secret ${CLUSTER_ID}-vpc-endpoint-info -n ${NAMESPACE} -o jsonpath='{.data.awsRegion}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+              
+              if [ -z "$AWS_REGION" ]; then
+                # Try to get from aws secret as fallback
+                AWS_REGION=$(oc get secret aws -n ${NAMESPACE} -o jsonpath='{.data.aws_default_region}' 2>/dev/null | base64 -d 2>/dev/null || echo "us-east-1")
+              fi
+              
+              VPC_ENDPOINT_STATE=$(aws ec2 describe-vpc-endpoints \
+                --vpc-endpoint-ids $VPC_ENDPOINT_ID \
+                --region ${AWS_REGION} \
+                --query 'VpcEndpoints[0].State' \
+                --output text 2>/dev/null || echo "")
+              
+              if [ -z "$VPC_ENDPOINT_STATE" ]; then
+                echo "WARNING: Could not retrieve VPC endpoint state"
+              elif [ "$VPC_ENDPOINT_STATE" = "available" ]; then
+                echo "✓ VPC endpoint is now AVAILABLE: $VPC_ENDPOINT_ID"
+              elif [ "$VPC_ENDPOINT_STATE" = "pending" ] || [ "$VPC_ENDPOINT_STATE" = "pendingAcceptance" ]; then
+                echo "✓ VPC endpoint is in transitional state: $VPC_ENDPOINT_STATE"
+                echo "  VPC Endpoint ID: $VPC_ENDPOINT_ID"
+                echo "  This is expected - endpoint will become available shortly"
+              elif [ "$VPC_ENDPOINT_STATE" = "failed" ] || [ "$VPC_ENDPOINT_STATE" = "rejected" ]; then
+                echo "ERROR: VPC endpoint is in failed state: $VPC_ENDPOINT_STATE"
+                echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
+                aws ec2 describe-vpc-endpoints \
+                  --vpc-endpoint-ids $VPC_ENDPOINT_ID \
+                  --region ${AWS_REGION} \
+                  --query 'VpcEndpoints[0]' \
+                  --output json 2>/dev/null || echo "Failed to retrieve endpoint details"
+                exit 1
+              else
+                echo "VPC endpoint state: $VPC_ENDPOINT_STATE"
+                echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
+              fi
+              
+              echo ""
+              echo "Private endpoint interface link completed successfully!"

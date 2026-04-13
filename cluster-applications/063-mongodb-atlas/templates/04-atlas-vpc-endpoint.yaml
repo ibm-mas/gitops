@@ -94,6 +94,8 @@ rules:
       - get
       - list
       - watch
+      - patch
+      - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -210,29 +212,41 @@ spec:
               echo "Subnet IDs: ${SUBNET_IDS}"
               echo "AWS Region: ${AWS_REGION}"
               
-              # Create security group for VPC endpoint
-              echo "Creating security group for VPC endpoint..."
-              SG_ID=$(aws ec2 create-security-group \
-                --group-name ${CLUSTER_ID}-mongodb-atlas-vpce-sg \
-                --description "Security group for MongoDB Atlas VPC Endpoint" \
-                --vpc-id ${VPC_ID} \
+              # Check for existing security group first
+              echo "Checking for existing security group..."
+              SG_ID=$(aws ec2 describe-security-groups \
+                --filters "Name=group-name,Values=${CLUSTER_ID}-mongodb-atlas-vpce-sg" "Name=vpc-id,Values=${VPC_ID}" \
                 --region ${AWS_REGION} \
-                --output text --query 'GroupId' 2>/dev/null || echo "")
+                --output text --query 'SecurityGroups[0].GroupId' 2>/dev/null || echo "")
               
-              if [ -z "$SG_ID" ]; then
-                # Security group might already exist, try to get it
-                SG_ID=$(aws ec2 describe-security-groups \
-                  --filters "Name=group-name,Values=${CLUSTER_ID}-mongodb-atlas-vpce-sg" "Name=vpc-id,Values=${VPC_ID}" \
+              if [ -n "$SG_ID" ] && [ "$SG_ID" != "None" ]; then
+                echo "Found existing security group: $SG_ID"
+              else
+                # Create security group only if it doesn't exist
+                echo "Creating new security group for VPC endpoint..."
+                SG_ID=$(aws ec2 create-security-group \
+                  --group-name ${CLUSTER_ID}-mongodb-atlas-vpce-sg \
+                  --description "Security group for MongoDB Atlas VPC Endpoint" \
+                  --vpc-id ${VPC_ID} \
                   --region ${AWS_REGION} \
-                  --output text --query 'SecurityGroups[0].GroupId' 2>/dev/null || echo "")
+                  --tag-specifications "ResourceType=security-group,Tags=[{Key=cluster-id,Value=${CLUSTER_ID}},{Key=Name,Value=${CLUSTER_ID}-mongodb-atlas-vpce-sg},{Key=managed-by,Value=argocd}]" \
+                  --output text --query 'GroupId' 2>/dev/null || echo "")
+                
+                if [ -z "$SG_ID" ] || [ "$SG_ID" = "None" ]; then
+                  echo "ERROR: Failed to create security group"
+                  exit 1
+                fi
+                
+                echo "Created new security group: $SG_ID"
               fi
               
-              if [ -z "$SG_ID" ]; then
-                echo "ERROR: Failed to create or find security group"
+              # Final validation
+              if [ -z "$SG_ID" ] || [ "$SG_ID" = "None" ]; then
+                echo "ERROR: Security group ID is invalid or empty"
                 exit 1
               fi
               
-              echo "Security group ID: $SG_ID"
+              echo "Using security group ID: $SG_ID"
               
               # Get security groups attached to the subnets
               echo "Retrieving security groups from subnets..."

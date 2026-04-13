@@ -178,31 +178,38 @@ spec:
                 echo "Patching AtlasPrivateEndpoint with VPC Endpoint ID..."
                 echo "VPC Endpoint ID to patch: $VPC_ENDPOINT_ID"
                 
-                # Try to patch with proper JSON format
-                echo "Attempting patch operation (add)..."
-                PATCH_OUTPUT=$(oc patch atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} \
+                # Add the awsConfiguration array with the VPC endpoint ID
+                # Structure: awsConfiguration: [{ id: "vpce-xxxxx" }]
+                echo "Attempting to add awsConfiguration field..."
+                set +e  # Don't exit on error
+                oc patch atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} \
                   --type='json' \
-                  -p="[{\"op\": \"add\", \"path\": \"/spec/awsConfiguration/0/id\", \"value\": [{\"id\": \"${VPC_ENDPOINT_ID}\"}]}]" 2>&1)
+                  -p="[{\"op\": \"add\", \"path\": \"/spec/awsConfiguration\", \"value\": [{\"id\": \"${VPC_ENDPOINT_ID}\"}]}]" 2>&1 | tee /tmp/patch_output.txt
                 
-                PATCH_STATUS=$?
+                PATCH_STATUS=${PIPESTATUS[0]}
+                PATCH_OUTPUT=$(cat /tmp/patch_output.txt 2>/dev/null || echo "")
+                set -e  # Re-enable exit on error
                 echo "Patch command exit status: $PATCH_STATUS"
                 
                 if [ $PATCH_STATUS -ne 0 ]; then
-                  echo "ERROR: Failed to patch AtlasPrivateEndpoint with 'add' operation"
+                  echo "ERROR: Failed to add awsConfiguration field"
                   echo "Patch output: $PATCH_OUTPUT"
                   echo ""
-                  echo "Attempting alternative patch method (replace)..."
+                  echo "Attempting alternative: replace awsConfiguration..."
                   
-                  # Try replace operation instead of add
-                  PATCH_OUTPUT=$(oc patch atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} \
+                  # Try replace operation
+                  set +e
+                  oc patch atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} \
                     --type='json' \
-                    -p="[{\"op\": \"replace\", \"path\": \"/spec/awsConfiguration/0/id\", \"value\": [{\"id\": \"${VPC_ENDPOINT_ID}\"}]}]" 2>&1)
+                    -p="[{\"op\": \"replace\", \"path\": \"/spec/awsConfiguration\", \"value\": [{\"id\": \"${VPC_ENDPOINT_ID}\"}]}]" 2>&1 | tee /tmp/patch_output2.txt
                   
-                  PATCH_STATUS=$?
+                  PATCH_STATUS=${PIPESTATUS[0]}
+                  PATCH_OUTPUT=$(cat /tmp/patch_output2.txt 2>/dev/null || echo "")
+                  set -e
                   echo "Alternative patch command exit status: $PATCH_STATUS"
                   
                   if [ $PATCH_STATUS -ne 0 ]; then
-                    echo "ERROR: Alternative patch method also failed"
+                    echo "ERROR: Both patch methods failed"
                     echo "Patch output: $PATCH_OUTPUT"
                     echo ""
                     echo "Current AtlasPrivateEndpoint spec:"

@@ -4,14 +4,14 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: atlas-operator.{{ .Values.cluster.id }}
+  name: atlas-operator-crds.{{ .Values.cluster.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
   annotations:
-    argocd.argoproj.io/sync-wave: "062"
+    argocd.argoproj.io/sync-wave: "061"
     healthCheckTimeout: "1800"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
@@ -31,33 +31,15 @@ spec:
     namespace: {{ .Values.mongo.namespace }}
   source:
     repoURL: "{{ .Values.mongodb_helm_source.repo_url }}"
-    path: charts/atlas-operator
+    path: charts/atlas-operator-crds
     targetRevision: "{{ .Values.mongodb_helm_source.revision }}"
     plugin:
       name: {{ .Values.avp.name }}
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            replicaCount: 1
-            # Cannot rely on chart dependency in GovCloud since we are 
-            # working from an internal clone of the Helm charts hosted in GitLab
-            # NOTE: this alone is not sufficient to prevent the AVP plugin from attempting (and failing) to run helm dependency update
-            # Instead, the dependency has been removed from the charts in the GovCloud mirror of mongodb/helm-charts
-            mongodb-atlas-operator-crds:
-              enabled: false
-            atlasURI: {{ .Values.mongo.atlasURI }}
-            # Override security context for OpenShift - removed runAsUser to let OpenShift assign it
-            podSecurityContext:
-              runAsNonRoot: true
-              runAsUser: null
-            # All CRs will be created in the same namespace of the operator
-            watchNamespaces:
-              - {{ .Values.mongo.namespace }}
         - name: ARGOCD_APP_NAME
-          value: atlasoperatorapp
-        - name: HELM_ARGS
-          value: >-
-            --namespace {{ .Values.mongo.namespace }}
+          value: atlasoperatorcrds
         {{- if not (empty .Values.avp.secret) }}
         - name: AVP_SECRET
           value: {{ .Values.avp.secret }}

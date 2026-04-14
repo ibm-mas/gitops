@@ -303,7 +303,7 @@ spec:
                 RETRIES=${1:-5}
                 RETRY_DELAY_SECONDS=${2:-30}
 
-                mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --db2-instance-name ${DB2_INSTANCE_NAME} --log-level DEBUG || rc=$?
+                mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
                 if [[ "$rc" == "0" ]]; then
                   echo "... db2 config already matches expected config, returning without calling apply-db2cfg-settings"
                   return 0
@@ -316,7 +316,7 @@ spec:
                   # no useful info in return code of this script
 
                   rc=0
-                  mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --db2-instance-name ${DB2_INSTANCE_NAME} --log-level DEBUG || rc=$?
+                  mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
                   if [[ "$rc" == "0" ]]; then
                     echo "...... success"
                     return 0
@@ -631,8 +631,8 @@ spec:
               fi
 
               # check if config LOGARCHMETH1 is defined
-              config_op=`oc get db2uinstances ${DB2_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o json | jq -r '.spec.environment.databases' | jq ".[] | select(.name==\"${DB2_DBNAME}\")" | jq '.dbConfig.LOGARCHMETH1' | sed 's/DISK://' | tr -d '"'`
-              if [[ -n "${config_op}" && "${config_op}" != "null" ]]; then
+              config_op=`oc get db2uinstances db2wh-${MAS_INSTANCE_ID}-${MAS_APP_ID} -n ${DB2_NAMESPACE} -o json | jq -r '.spec.environment.databases' | jq ".[] | select(.name==\"${DB2_DBNAME}\")" | jq '.dbConfig.LOGARCHMETH1' | sed 's/DISK://'`
+              if [[ "${config_op}" != "null" ]]; then
                 echo ""
                 echo "Creating directory ${config_op} for LOGARCHMETH1 on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"

@@ -88,11 +88,12 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 rules:
-  # Permission to read AtlasDeployment resources
+  # Permission to read Atlas resources
   - apiGroups:
       - atlas.mongodb.com
     resources:
       - atlasdeployments
+      - atlasdatabaseusers
     verbs:
       - get
       - list
@@ -254,12 +255,21 @@ spec:
               
               echo "Standard connection string retrieved"
               
-              # Get username and password from database user secret
-              MONGO_USERNAME=$(oc get secret ${CLUSTER_ID}-database-user-password -n ${NAMESPACE} -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || echo "")
+              # Get username from AtlasDatabaseUser resource
+              MONGO_USERNAME=$(oc get atlasdatabaseuser ${CLUSTER_ID}-database-user -n ${NAMESPACE} -o jsonpath='{.spec.username}' 2>/dev/null || echo "")
+              
+              if [ -z "$MONGO_USERNAME" ]; then
+                echo "ERROR: Could not retrieve database username from AtlasDatabaseUser"
+                exit 1
+              fi
+              
+              echo "Database username retrieved: $MONGO_USERNAME"
+              
+              # Get password from database user secret
               MONGO_PASSWORD=$(oc get secret ${CLUSTER_ID}-database-user-password -n ${NAMESPACE} -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "")
               
-              if [ -z "$MONGO_USERNAME" ] || [ -z "$MONGO_PASSWORD" ]; then
-                echo "ERROR: Could not retrieve database user credentials"
+              if [ -z "$MONGO_PASSWORD" ]; then
+                echo "ERROR: Could not retrieve database password from secret"
                 exit 1
               fi
               

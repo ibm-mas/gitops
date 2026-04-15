@@ -56,7 +56,82 @@ are required here.
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
 {{ $ns := .Values.mongo.namespace }}
+{{- $sa_name := "atlas-post-sync" }}
+{{- $role_name := "atlas-post-sync-role" }}
+{{- $rolebinding_name := "atlas-post-sync-rolebinding" }}
 
+---
+# ServiceAccount for post-sync job
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+# Role with permissions to read AtlasDeployment and manage secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  # Permission to read AtlasDeployment resources
+  - apiGroups:
+      - atlas.mongodb.com
+    resources:
+      - atlasdeployments
+    verbs:
+      - get
+      - list
+      - watch
+  # Permission to manage secrets for storing connection info
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+
+---
+# RoleBinding to bind the role to the service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $rolebinding_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -81,7 +156,7 @@ spec:
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
-      serviceAccountName: atlas-vpc-endpoint-creator
+      serviceAccountName: {{ $sa_name }}
       restartPolicy: Never
       containers:
         - name: create-aws-secret

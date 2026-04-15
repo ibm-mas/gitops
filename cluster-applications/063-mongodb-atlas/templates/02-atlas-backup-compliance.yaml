@@ -10,32 +10,18 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "2"
 spec:
-  authorizedEmail: prajapati.yogeshkumar@ibm.com
-  authorizedUserFirstName: yogesh
-  authorizedUserLastName: prajapati
-  pointInTimeEnabled: true
-  restoreWindowDays: 7
+  authorizedEmail: {{ .Values.mongo.backup_compliance.authorized_email }}
+  authorizedUserFirstName: {{ .Values.mongo.backup_compliance.authorized_user_first_name }}
+  authorizedUserLastName: {{ .Values.mongo.backup_compliance.authorized_user_last_name }}
+  pointInTimeEnabled: {{ .Values.mongo.backup_compliance.point_in_time_enabled }}
+  restoreWindowDays: {{ .Values.mongo.backup_compliance.restore_window_days }}
   onDemandPolicy:
-    retentionUnit: days
-    retentionValue: 3
+    retentionUnit: {{ .Values.mongo.backup_compliance.on_demand_policy.retention_unit }}
+    retentionValue: {{ .Values.mongo.backup_compliance.on_demand_policy.retention_value }}
   scheduledPolicyItems:
-    - frequencyInterval: 6
-      frequencyType: hourly
-      retentionUnit: days
-      retentionValue: 7
-    - frequencyInterval: 1
-      frequencyType: daily
-      retentionUnit: days
-      retentionValue: 7
-    - frequencyInterval: 1
-      frequencyType: weekly
-      retentionUnit: weeks
-      retentionValue: 4
-    - frequencyInterval: 1
-      frequencyType: monthly
-      retentionUnit: months
-      retentionValue: 12
-    - frequencyInterval: 1
-      frequencyType: yearly
-      retentionUnit: years
-      retentionValue: 1
+{{- range .Values.mongo.backup_compliance.scheduled_policy_items }}
+    - frequencyInterval: {{ .frequency_interval }}
+      frequencyType: {{ .frequency_type }}
+      retentionUnit: {{ .retention_unit }}
+      retentionValue: {{ .retention_value }}
+{{- end }}

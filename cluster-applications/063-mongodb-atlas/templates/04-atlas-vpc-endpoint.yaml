@@ -157,6 +157,8 @@ spec:
               value: "{{ .Values.mongo.vpc_id }}"
             - name: SUBNET_IDS
               value: "{{ join "," .Values.mongo.subnet_ids }}"
+            - name: CIDR_RANGES
+              value: "{{ join "," .Values.mongo.cidr_ranges }}"
             - name: NAMESPACE
               value: "{{ .Values.mongo.namespace }}"
             - name: AWS_ACCESS_KEY_ID
@@ -246,54 +248,63 @@ spec:
               
               echo "Using VPC endpoint security group ID: $SG_ID"
               
-              # Create or get worker nodes security group
-              echo "Creating/checking worker nodes security group..."
-              WORKER_SG_NAME="${CLUSTER_ID}-mongodb-worker-sg"
-              WORKER_SG_ID=$(aws ec2 describe-security-groups \
-                --filters "Name=group-name,Values=${WORKER_SG_NAME}" "Name=vpc-id,Values=${VPC_ID}" \
-                --region ${AWS_REGION} \
-                --output text --query 'SecurityGroups[0].GroupId' 2>/dev/null || echo "")
+              # Add ingress rules to VPC endpoint security group based on CIDR ranges
+              echo "Configuring ingress rules for VPC endpoint security group..."
               
-              if [ -n "$WORKER_SG_ID" ] && [ "$WORKER_SG_ID" != "None" ]; then
-                echo "Found existing worker security group: $WORKER_SG_ID"
-              else
-                # Create security group for worker nodes
-                echo "Creating new security group for worker nodes..."
-                WORKER_SG_ID=$(aws ec2 create-security-group \
-                  --group-name ${WORKER_SG_NAME} \
-                  --description "Security group for worker nodes to access MongoDB Atlas" \
-                  --vpc-id ${VPC_ID} \
-                  --region ${AWS_REGION} \
-                  --tag-specifications "ResourceType=security-group,Tags=[{Key=cluster-id,Value=${CLUSTER_ID}},{Key=cluster-name,Value=${CLUSTER_ID}},{Key=Name,Value=${WORKER_SG_NAME}},{Key=managed-by,Value=argocd},{Key=purpose,Value=mongodb-worker-access}]" \
-                  --output text --query 'GroupId' 2>/dev/null || echo "")
-                
-                if [ -z "$WORKER_SG_ID" ] || [ "$WORKER_SG_ID" = "None" ]; then
-                  echo "ERROR: Failed to create worker security group"
-                  exit 1
-                fi
-                
-                echo "Created worker security group: $WORKER_SG_ID"
+              if [ -z "$CIDR_RANGES" ]; then
+                echo "ERROR: CIDR_RANGES environment variable is not set"
+                exit 1
               fi
               
-              # Add egress rule to worker security group to allow all TCP traffic to VPC endpoint security group
-              echo "Adding egress rule to worker security group (all TCP ports)..."
-              aws ec2 authorize-security-group-egress \
-                --group-id $WORKER_SG_ID \
-                --protocol tcp \
-                --port 0-65535 \
-                --destination-group $SG_ID \
-                --region ${AWS_REGION} 2>/dev/null || echo "Egress rule may already exist"
+              # Convert comma-separated CIDR ranges to array
+              IFS=',' read -ra CIDR_ARRAY <<< "$CIDR_RANGES"
               
-              # Add ingress rule to VPC endpoint security group to allow all TCP traffic from worker security group
-              echo "Adding ingress rule to VPC endpoint security group (all TCP ports)..."
-              aws ec2 authorize-security-group-ingress \
-                --group-id $SG_ID \
-                --protocol tcp \
-                --port 0-65535 \
-                --source-group $WORKER_SG_ID \
-                --region ${AWS_REGION} 2>/dev/null || echo "Ingress rule may already exist"
+              echo "Adding ingress rules for ${#CIDR_ARRAY[@]} CIDR range(s)..."
               
-              echo "Security group rules configured successfully"
+              # Get existing ingress rules for the security group
+              EXISTING_RULES=$(aws ec2 describe-security-groups \
+                --group-ids $SG_ID \
+                --region ${AWS_REGION} \
+                --query 'SecurityGroups[0].IpPermissions' \
+                --output json 2>/dev/null || echo "[]")
+              
+              for CIDR in "${CIDR_ARRAY[@]}"; do
+                # Trim whitespace
+                CIDR=$(echo "$CIDR" | xargs)
+                
+                if [ -z "$CIDR" ]; then
+                  echo "WARNING: Skipping empty CIDR range"
+                  continue
+                fi
+                
+                echo "Checking ingress rule for CIDR: $CIDR"
+                
+                # Check if rule already exists for this CIDR
+                RULE_EXISTS=$(echo "$EXISTING_RULES" | jq -r --arg cidr "$CIDR" '
+                  .[] |
+                  select(.IpProtocol == "tcp" and .FromPort == 0 and .ToPort == 65535) |
+                  .IpRanges[] |
+                  select(.CidrIp == $cidr) |
+                  .CidrIp
+                ' 2>/dev/null || echo "")
+                
+                if [ -n "$RULE_EXISTS" ]; then
+                  echo "Ingress rule for CIDR $CIDR already exists, skipping"
+                  continue
+                fi
+                
+                echo "Adding ingress rule for CIDR: $CIDR"
+                
+                # Add ingress rule for all TCP ports from this CIDR range
+                aws ec2 authorize-security-group-ingress \
+                  --group-id $SG_ID \
+                  --protocol tcp \
+                  --port 0-65535 \
+                  --cidr $CIDR \
+                  --region ${AWS_REGION} 2>/dev/null || echo "WARNING: Failed to add ingress rule for $CIDR"
+              done
+              
+              echo "Security group ingress rules configured successfully"
               
               # Check for existing VPC endpoint first (idempotency)
               echo "Checking for existing VPC endpoint..."
@@ -407,91 +418,11 @@ spec:
               echo "VPC endpoint created successfully with state: $VPC_STATE"
               echo "Note: VPC endpoint will become 'available' after private link is established in later steps"
               
-              # Attach worker security group to EC2 instances based on tags
-              echo "Attaching worker security group to cluster worker EC2 instances..."
-              for SUBNET_ID in ${SUBNET_IDS//,/ }; do
-                echo "Processing subnet: $SUBNET_ID"
-                
-                # Get all running EC2 instances in the subnet
-                ALL_INSTANCES=$(aws ec2 describe-instances \
-                  --filters "Name=subnet-id,Values=$SUBNET_ID" "Name=instance-state-name,Values=running" \
-                  --region ${AWS_REGION} \
-                  --query 'Reservations[*].Instances[*].[InstanceId,Tags]' \
-                  --output json 2>/dev/null || echo "[]")
-                
-                if [ "$ALL_INSTANCES" = "[]" ] || [ -z "$ALL_INSTANCES" ]; then
-                  echo "No running instances found in subnet $SUBNET_ID"
-                  continue
-                fi
-                
-                # Filter instances based on tags
-                WORKER_INSTANCES=""
-                while IFS= read -r INSTANCE_DATA; do
-                  INSTANCE_ID=$(echo "$INSTANCE_DATA" | jq -r '.[0]')
-                  TAGS=$(echo "$INSTANCE_DATA" | jq -r '.[1]')
-                  
-                  # Check if cluster-name tag contains cluster ID
-                  CLUSTER_NAME_TAG=$(echo "$TAGS" | jq -r '.[] | select(.Key=="cluster-name") | .Value' 2>/dev/null || echo "")
-                  if [[ "$CLUSTER_NAME_TAG" == *"${CLUSTER_ID}"* ]]; then
-                    WORKER_INSTANCES="$WORKER_INSTANCES $INSTANCE_ID"
-                    echo "Instance $INSTANCE_ID matched by cluster-name tag: $CLUSTER_NAME_TAG"
-                    continue
-                  fi
-                  
-                  # Check if kubernetes.io/cluster/${CLUSTER_ID}-* tag exists with value "owned"
-                  K8S_CLUSTER_TAG=$(echo "$TAGS" | jq -r --arg cluster_id "$CLUSTER_ID" '.[] | select(.Key | startswith("kubernetes.io/cluster/" + $cluster_id)) | select(.Value=="owned") | .Key' 2>/dev/null || echo "")
-                  if [ -n "$K8S_CLUSTER_TAG" ]; then
-                    WORKER_INSTANCES="$WORKER_INSTANCES $INSTANCE_ID"
-                    echo "Instance $INSTANCE_ID matched by kubernetes cluster tag: $K8S_CLUSTER_TAG"
-                  fi
-                done < <(echo "$ALL_INSTANCES" | jq -c '.[][]')
-                
-                WORKER_INSTANCES=$(echo "$WORKER_INSTANCES" | xargs)  # Trim whitespace
-                
-                if [ -z "$WORKER_INSTANCES" ]; then
-                  echo "No worker instances found matching cluster tags in subnet $SUBNET_ID"
-                  continue
-                fi
-                
-                echo "Found worker instances for cluster ${CLUSTER_ID}: $WORKER_INSTANCES"
-                
-                # Attach worker security group to each instance
-                for INSTANCE_ID in $WORKER_INSTANCES; do
-                  echo "Processing instance: $INSTANCE_ID"
-                  
-                  # Get current security groups for this instance
-                  CURRENT_SGS=$(aws ec2 describe-instances \
-                    --instance-ids $INSTANCE_ID \
-                    --region ${AWS_REGION} \
-                    --query 'Reservations[0].Instances[0].SecurityGroups[*].GroupId' \
-                    --output text 2>/dev/null || echo "")
-                  
-                  # Check if worker security group is already attached
-                  if echo "$CURRENT_SGS" | grep -q "$WORKER_SG_ID"; then
-                    echo "Worker security group already attached to instance $INSTANCE_ID"
-                    continue
-                  fi
-                  
-                  # Add worker security group to the list
-                  NEW_SGS="$CURRENT_SGS $WORKER_SG_ID"
-                  NEW_SGS=$(echo "$NEW_SGS" | xargs)  # Trim whitespace
-                  
-                  echo "Attaching security groups to instance $INSTANCE_ID: $NEW_SGS"
-                  aws ec2 modify-instance-attribute \
-                    --instance-id $INSTANCE_ID \
-                    --groups $NEW_SGS \
-                    --region ${AWS_REGION} 2>/dev/null || echo "WARNING: Failed to attach security group to instance $INSTANCE_ID"
-                done
-              done
-              
-              echo "Worker security group attachment complete"
-              
               # Store VPC endpoint ID in a secret for later use
               echo "Storing VPC endpoint and security group information in secret..."
               oc create secret generic ${CLUSTER_ID}-vpc-endpoint-info \
                 --from-literal=vpcEndpointId=$VPC_ENDPOINT_ID \
                 --from-literal=securityGroupId=$SG_ID \
-                --from-literal=workerSecurityGroupId=$WORKER_SG_ID \
                 --from-literal=serviceName=$SERVICE_NAME \
                 -n ${NAMESPACE} \
                 --dry-run=client -o yaml | oc apply -f -
@@ -499,4 +430,3 @@ spec:
               echo "VPC Endpoint creation completed successfully!"
               echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
               echo "VPC Endpoint Security Group ID: $SG_ID"
-              echo "Worker Security Group ID: $WORKER_SG_ID"

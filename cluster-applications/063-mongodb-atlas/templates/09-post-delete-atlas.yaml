@@ -77,11 +77,9 @@ spec:
               if oc get secret ${CLUSTER_ID}-vpc-endpoint-info -n ${NAMESPACE} &>/dev/null; then
                 VPC_ENDPOINT_ID=$(oc get secret ${CLUSTER_ID}-vpc-endpoint-info -n ${NAMESPACE} -o jsonpath='{.data.vpcEndpointId}' | base64 -d)
                 SECURITY_GROUP_ID=$(oc get secret ${CLUSTER_ID}-vpc-endpoint-info -n ${NAMESPACE} -o jsonpath='{.data.securityGroupId}' | base64 -d)
-                WORKER_SECURITY_GROUP_ID=$(oc get secret ${CLUSTER_ID}-vpc-endpoint-info -n ${NAMESPACE} -o jsonpath='{.data.workerSecurityGroupId}' | base64 -d 2>/dev/null || echo "")
                 
                 echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
                 echo "VPC Endpoint Security Group ID: $SECURITY_GROUP_ID"
-                echo "Worker Security Group ID: $WORKER_SECURITY_GROUP_ID"
                 
                 # Delete VPC endpoint
                 if [ -n "$VPC_ENDPOINT_ID" ]; then
@@ -111,90 +109,12 @@ spec:
                 
                 # Delete security group
                 if [ -n "$SECURITY_GROUP_ID" ]; then
-                  echo "Deleting security group..."
-                  
-                  # First, remove all rules from the security group
-                  echo "Removing security group rules..."
-                  
-                  # Remove ingress rules
-                  aws ec2 describe-security-groups \
-                    --group-ids $SECURITY_GROUP_ID \
-                    --region ${AWS_REGION} \
-                    --query 'SecurityGroups[0].IpPermissions' \
-                    --output json > /tmp/ingress-rules.json 2>/dev/null || echo "[]" > /tmp/ingress-rules.json
-                  
-                  if [ -s /tmp/ingress-rules.json ] && [ "$(cat /tmp/ingress-rules.json)" != "[]" ]; then
-                    aws ec2 revoke-security-group-ingress \
-                      --group-id $SECURITY_GROUP_ID \
-                      --ip-permissions file:///tmp/ingress-rules.json \
-                      --region ${AWS_REGION} 2>/dev/null || echo "Ingress rules may already be removed"
-                  fi
-                  
-                  # Remove egress rules
-                  aws ec2 describe-security-groups \
-                    --group-ids $SECURITY_GROUP_ID \
-                    --region ${AWS_REGION} \
-                    --query 'SecurityGroups[0].IpPermissionsEgress' \
-                    --output json > /tmp/egress-rules.json 2>/dev/null || echo "[]" > /tmp/egress-rules.json
-                  
-                  if [ -s /tmp/egress-rules.json ] && [ "$(cat /tmp/egress-rules.json)" != "[]" ]; then
-                    aws ec2 revoke-security-group-egress \
-                      --group-id $SECURITY_GROUP_ID \
-                      --ip-permissions file:///tmp/egress-rules.json \
-                      --region ${AWS_REGION} 2>/dev/null || echo "Egress rules may already be removed"
-                  fi
-                  
-                  # Delete the VPC endpoint security group
-                  sleep 5  # Wait a bit for rules to be fully removed
+                  echo "Deleting VPC endpoint security group..."
                   aws ec2 delete-security-group \
                     --group-id $SECURITY_GROUP_ID \
-                    --region ${AWS_REGION} 2>/dev/null || echo "VPC endpoint security group may already be deleted"
+                    --region ${AWS_REGION} 2>/dev/null || echo "VPC endpoint security group may already be deleted or has dependencies"
                   
-                  echo "VPC endpoint security group deleted successfully"
-                fi
-                
-                # Delete worker security group
-                if [ -n "$WORKER_SECURITY_GROUP_ID" ]; then
-                  echo "Deleting worker security group..."
-                  
-                  # First, remove all rules from the worker security group
-                  echo "Removing worker security group rules..."
-                  
-                  # Remove ingress rules
-                  aws ec2 describe-security-groups \
-                    --group-ids $WORKER_SECURITY_GROUP_ID \
-                    --region ${AWS_REGION} \
-                    --query 'SecurityGroups[0].IpPermissions' \
-                    --output json > /tmp/worker-ingress-rules.json 2>/dev/null || echo "[]" > /tmp/worker-ingress-rules.json
-                  
-                  if [ -s /tmp/worker-ingress-rules.json ] && [ "$(cat /tmp/worker-ingress-rules.json)" != "[]" ]; then
-                    aws ec2 revoke-security-group-ingress \
-                      --group-id $WORKER_SECURITY_GROUP_ID \
-                      --ip-permissions file:///tmp/worker-ingress-rules.json \
-                      --region ${AWS_REGION} 2>/dev/null || echo "Worker ingress rules may already be removed"
-                  fi
-                  
-                  # Remove egress rules
-                  aws ec2 describe-security-groups \
-                    --group-ids $WORKER_SECURITY_GROUP_ID \
-                    --region ${AWS_REGION} \
-                    --query 'SecurityGroups[0].IpPermissionsEgress' \
-                    --output json > /tmp/worker-egress-rules.json 2>/dev/null || echo "[]" > /tmp/worker-egress-rules.json
-                  
-                  if [ -s /tmp/worker-egress-rules.json ] && [ "$(cat /tmp/worker-egress-rules.json)" != "[]" ]; then
-                    aws ec2 revoke-security-group-egress \
-                      --group-id $WORKER_SECURITY_GROUP_ID \
-                      --ip-permissions file:///tmp/worker-egress-rules.json \
-                      --region ${AWS_REGION} 2>/dev/null || echo "Worker egress rules may already be removed"
-                  fi
-                  
-                  # Delete the worker security group
-                  sleep 5  # Wait a bit for rules to be fully removed
-                  aws ec2 delete-security-group \
-                    --group-id $WORKER_SECURITY_GROUP_ID \
-                    --region ${AWS_REGION} 2>/dev/null || echo "Worker security group may already be deleted"
-                  
-                  echo "Worker security group deleted successfully"
+                  echo "VPC endpoint security group deletion completed"
                 fi
                 
                 # Delete the Kubernetes secret
@@ -207,10 +127,6 @@ spec:
               # Note: AWS Secrets Manager secret is NOT deleted to preserve MongoDB connection details
               # Secret name: ${ACCOUNT_ID}/${CLUSTER_ID}/mongo
               echo "AWS Secrets Manager secret preserved (not deleted)"
-              
-              # Delete ConfigMap
-              echo "Deleting MongoDB Atlas info ConfigMap..."
-              oc delete configmap ${CLUSTER_ID}-mongodb-atlas-info -n ${NAMESPACE} --ignore-not-found=true
               
               echo "Cleanup completed successfully!"
               echo "Note: MongoDB Atlas connection secret in AWS Secrets Manager was preserved"

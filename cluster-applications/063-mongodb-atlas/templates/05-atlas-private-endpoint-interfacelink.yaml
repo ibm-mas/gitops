@@ -111,27 +111,7 @@ spec:
               
               echo "Retrieving VPC Endpoint ID from secret..."
               
-              # Wait for the secret to be created
-              MAX_RETRIES=60
-              RETRY_COUNT=0
-              
-              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-                if oc get secret ${CLUSTER_ID}-vpc-endpoint-info -n ${NAMESPACE} &>/dev/null; then
-                  echo "VPC endpoint info secret found!"
-                  break
-                fi
-                
-                echo "Waiting for VPC endpoint info secret... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
-                sleep 10
-                RETRY_COUNT=$((RETRY_COUNT + 1))
-              done
-              
-              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-                echo "ERROR: VPC endpoint info secret not found after $MAX_RETRIES attempts"
-                exit 1
-              fi
-              
-              # Get VPC endpoint ID from the secret
+              # Get VPC endpoint ID from the secret (should exist due to sync-wave ordering)
               VPC_ENDPOINT_ID=$(oc get secret ${CLUSTER_ID}-vpc-endpoint-info -n ${NAMESPACE} -o jsonpath='{.data.vpcEndpointId}' | base64 -d)
               
               if [ -z "$VPC_ENDPOINT_ID" ]; then
@@ -141,27 +121,7 @@ spec:
               
               echo "VPC Endpoint ID: $VPC_ENDPOINT_ID"
 
-              # Wait for AtlasPrivateEndpoint to be created
-              echo "Waiting for AtlasPrivateEndpoint resource..."
-              RETRY_COUNT=0
-
-              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-                if oc get atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} &>/dev/null; then
-                  echo "AtlasPrivateEndpoint found!"
-                  break
-                fi
-
-                echo "Waiting for AtlasPrivateEndpoint... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
-                sleep 5
-                RETRY_COUNT=$((RETRY_COUNT + 1))
-              done
-
-              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-                echo "ERROR: AtlasPrivateEndpoint not found after $MAX_RETRIES attempts"
-                exit 1
-              fi
-
-              # Patch the AtlasPrivateEndpoint with the actual VPC endpoint ID
+              # Patch the AtlasPrivateEndpoint with the actual VPC endpoint ID (should exist due to sync-wave ordering)
               # Check current state of AtlasPrivateEndpoint
               echo "Checking current AtlasPrivateEndpoint configuration..."
               CURRENT_IDS=$(oc get atlasprivateendpoint ${CLUSTER_ID}-private-endpoint -n ${NAMESPACE} -o jsonpath='{.spec.awsConfiguration[0].id}' 2>/dev/null || echo "")
@@ -251,14 +211,6 @@ spec:
               # Verify VPC endpoint status after private link is established
               echo ""
               echo "Verifying VPC endpoint status after private link establishment..."
-              
-              # Get AWS region from secret
-              AWS_REGION=$(oc get secret ${CLUSTER_ID}-vpc-endpoint-info -n ${NAMESPACE} -o jsonpath='{.data.awsRegion}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-              
-              if [ -z "$AWS_REGION" ]; then
-                # Try to get from aws secret as fallback
-                AWS_REGION=$(oc get secret aws -n ${NAMESPACE} -o jsonpath='{.data.aws_default_region}' 2>/dev/null | base64 -d 2>/dev/null || echo "us-east-1")
-              fi
               
               VPC_ENDPOINT_STATE=$(aws ec2 describe-vpc-endpoints \
                 --vpc-endpoint-ids $VPC_ENDPOINT_ID \

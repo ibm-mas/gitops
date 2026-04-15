@@ -70,7 +70,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "8"
     argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 spec:
   backoffLimit: 3
   template:
@@ -297,22 +297,5 @@ spec:
                 echo "AWS Secrets Manager secret creation SKIPPED (update_mongo_secret=false)"
                 echo "To enable secret creation, set mongo.update_mongo_secret=true in your configuration"
               fi
-              
-              # Store the AWS secret name in a ConfigMap for reference
-              cat <<EOF | oc apply -f -
-              apiVersion: v1
-              kind: ConfigMap
-              metadata:
-                name: ${CLUSTER_ID}-mongodb-atlas-info
-                namespace: ${NAMESPACE}
-                labels:
-                  app.kubernetes.io/name: mongodb-atlas
-                  app.kubernetes.io/instance: ${CLUSTER_ID}
-              data:
-                awsSecretName: $SECRET_NAME
-                awsRegion: ${AWS_REGION}
-                clusterId: ${CLUSTER_ID}
-                projectId: ${PROJECT_ID}
-              EOF
               
               echo "Post-sync job completed successfully!"

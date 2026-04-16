@@ -8,14 +8,17 @@ information for each DB2 instance in the cluster.
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
-| `OperatorGroup` | `instana-agent-operator` | `instana-agent` | Always | `cluster_admin_role` |
-| `Subscription` | `instana-agent-operator` | `instana-agent` | Always | `cluster_admin_role` |
+| `OperatorGroup` | `instana-agent` | `instana-agent` | Always | `cluster_admin_role` |
+| `Subscription` | `instana-agent` | `instana-agent` | Always | `cluster_admin_role` |
 | `InstanaAgent` | `instana-agent` | `instana-agent` | Always | `cluster_admin_role` |
 | `PersistentVolumeClaim` | `instana-agent` | `instana-agent` | Always | `cluster_admin_role` |
 | `Secret` | `instana-agent-key` | `instana-agent` | Always | `cluster_admin_role` |
+| `Secret` | `db2-passwords` | `instana-agent` | Always | `cluster_admin_role` |
 | `ClusterRole` | `instana-agent-db2-config-role` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
-| `ClusterRoleBinding` | `instana-agent-db2-config-rolebinding` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `ServiceAccount` | `instana-agent-db2-config-sa` | `instana-agent` | Always | `cluster_admin_role` |
+| `Role` | `instana-agent-db2-config-role` | `instana-agent` | Always | `cluster_admin_role` |
+| `RoleBinding` | `instana-agent-db2-config-role` | `instana-agent` | Always | `cluster_admin_role` |
+| `RoleBinding` | `instana-agent-db2-config-sa-edit` | `instana-agent` | Always | `cluster_admin_role` |
 | `NetworkPolicy` | `instana-agent-db2-config-netpol` | `instana-agent` | Always | `cluster_admin_role` |
 | `CronJob` | `instana-agent-db2-config` | `instana-agent` | Always | `cluster_admin_role` |
 

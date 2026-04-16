@@ -11,6 +11,15 @@ This chart dynamically detects which namespaces exist for a MAS instance and app
 - **ClusterRole**: Provides read-only access to cluster-level resources (nodes, namespaces, storageclasses)
 - **ClusterRoleBinding**: Binds the ClusterRole to the ArgoCD service account
 
+## Resources Created
+
+| Resource Type | Resource Name | Namespace | Condition | Installed By |
+|--------------|---------------|-----------|-----------|--------------|
+| `ClusterRole` | Instance-scoped readonly cluster role | N/A (cluster-scoped) | Always | `cluster_admin_role` |
+| `ClusterRoleBinding` | Instance-scoped readonly cluster role binding | N/A (cluster-scoped) | Always | `cluster_admin_role` |
+| `Role` | Per-namespace generated roles | Existing MAS instance namespaces | When matching namespaces exist | `cluster_admin_role` |
+| `RoleBinding` | Per-namespace generated role bindings | Existing MAS instance namespaces | When matching namespaces exist | `cluster_admin_role` |
+
 ## Dynamic Namespace Detection
 
 The chart uses Helm's `lookup` function to check if namespaces exist before creating RBAC resources. This means:

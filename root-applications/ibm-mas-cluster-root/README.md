@@ -19,9 +19,10 @@ The following table lists all ArgoCD applications and ApplicationSets defined in
 | [`000-image-mirroring.yaml`](templates/000-image-mirroring.yaml) | image-mirroring | ✓ | | |
 | [`000-job-cleaner.yaml`](templates/000-job-cleaner.yaml) | job-cleaner | ✓ | | |
 | [`010-ibm-redhat-cert-manager-app.yaml`](templates/010-ibm-redhat-cert-manager-app.yaml) | redhat-cert-manager | ✓ | | |
-| [`020-ibm-dro-app.yaml`](templates/020-ibm-dro-app.yaml) | dro | ✓ | | |
-| [`021-ibm-dro-cleanup.yaml`](templates/021-ibm-dro-cleanup.yaml) | ibm-dro-cleanup | ✓ | | |
-| [`030-ibm-cis-cert-manager.yaml`](templates/030-ibm-cis-cert-manager.yaml) | ibm-cis-cert-manager | ✓ | | |
+| [`020-ibm-cis-cert-manager.yaml`](templates/020-ibm-cis-cert-manager.yaml) | ibm-cis-cert-manager | ✓ | | |
+| [`030-ibm-dro-app.yaml`](templates/030-ibm-dro-app.yaml) | dro | ✓ | | |
+| [`031-ibm-dro-public.yaml`](templates/031-ibm-dro-public.yaml) | ibm-dro-public | ✓ | | |
+| [`032-ibm-dro-cleanup.yaml`](templates/032-ibm-dro-cleanup.yaml) | ibm-dro-cleanup | ✓ | | |
 | [`040-cis-compliance-app.yaml`](templates/040-cis-compliance-app.yaml) | cis-compliance | ✓ | | |
 | [`041-cis-compliance-cleanup.yaml`](templates/041-cis-compliance-cleanup.yaml) | cis-compliance-cleanup | ✓ | | |
 | [`050-nfd-operator-app.yaml`](templates/050-nfd-operator-app.yaml) | nfd | ✓ | | |

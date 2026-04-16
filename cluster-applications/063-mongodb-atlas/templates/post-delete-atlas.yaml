@@ -4,9 +4,66 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 {{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
 
 {{ $job_name := "postdelete-cleanup-atlas-job" }}
-{{ $sa_name := "atlas-vpc-endpoint-creator" }}
+{{ $sa_name := "postdelete-cleanup-atlas-sa" }}
+{{ $role_name := "postdelete-cleanup-atlas-role" }}
+{{ $rolebinding_name := "postdelete-cleanup-atlas-rolebinding" }}
 {{ $job_label := "postdelete-cleanup-atlas-job" }}
 {{ $ns := .Values.mongo.namespace }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - delete
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $rolebinding_name }}
+  namespace: {{ $ns }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
 
 ---
 apiVersion: batch/v1
@@ -16,6 +73,7 @@ metadata:
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}

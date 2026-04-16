@@ -8,7 +8,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 
 | Template File | Application Name | Cluster Admin Role | Application Admin Role | Both Roles |
 |--------------|------------------|-------------------|----------------------|------------|
-| [`000-cluster-appset.yaml`](templates/000-cluster-appset.yaml) | cluster-appset | | | ✓ |
+| [`000-cluster-appset.yaml`](templates/000-cluster-appset.yaml) | cluster-appset (ApplicationSet) | | | ✓ |
 
 ### Role Conditions
 

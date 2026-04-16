@@ -12,7 +12,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 |--------------|------------------|-------------------|----------------------|------------|
 | [`030-ibm-odh-app.yaml`](templates/030-ibm-odh-app.yaml) | odh | | | ✓ |
 | [`040-ibm-aiservice-app.yaml`](templates/040-ibm-aiservice-app.yaml) | aiservice | | | ✓ |
-| [`070-aiservice-tenant-appset.yaml`](templates/070-aiservice-tenant-appset.yaml) | ai-tenant-appset | | | ✓ |
+| [`070-aiservice-tenant-appset.yaml`](templates/070-aiservice-tenant-appset.yaml) | ai-tenant-appset (ApplicationSet) | | | ✓ |
 
 ### Role Conditions
 

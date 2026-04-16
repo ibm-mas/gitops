@@ -29,7 +29,8 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`500-ibm-mas-masapp-manage-install.yaml`](templates/500-ibm-mas-masapp-manage-install.yaml) | manage | | | ✓ |
 | [`510-550-ibm-mas-masapp-configs.yaml`](templates/510-550-ibm-mas-masapp-configs.yaml) | masapp-config | | ✓ | |
 | [`510-ibm-mas-masapp-assist-install.yaml`](templates/510-ibm-mas-masapp-assist-install.yaml) | assist | | | ✓ |
-| [`510-ibm-mas-masapp-facilities-install.yaml`](templates/510-ibm-mas-masapp-facilities-install.yaml) | facilities | | | ✓ |
+| [`505-ibm-mas-masapp-facilities-install.yaml`](templates/505-ibm-mas-masapp-facilities-install.yaml) | facilities | | | ✓ |
+| [`600-application-admin-rbac-app.yaml`](templates/600-application-admin-rbac-app.yaml) | application-admin-rbac | | ✓ | |
 | [`510-ibm-mas-masapp-iot-install.yaml`](templates/510-ibm-mas-masapp-iot-install.yaml) | iot | | | ✓ |
 | [`510-ibm-mas-masapp-visualinspection-install.yaml`](templates/510-ibm-mas-masapp-visualinspection-install.yaml) | visualinspection | | | ✓ |
 | [`520-ibm-mas-masapp-health-install.yaml`](templates/520-ibm-mas-masapp-health-install.yaml) | health | | | ✓ |

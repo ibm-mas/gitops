@@ -13,9 +13,12 @@ The `dro_cmm_setup` being set to true is used to configure connectivity to CMM w
 | `Subscription` | `ibm-metrics-operator` | `ibm-software-central` | When `cluster_admin_role` is true | `cluster_admin_role` |
 | `Subscription` | `ibm-data-reporter-operator` | `ibm-software-central` | When `cluster_admin_role` is true | `cluster_admin_role` |
 | `MarketplaceConfig` | `marketplaceconfig` | `ibm-software-central` | When `application_admin_role` is true | `application_admin_role` |
+| `ClusterRole` | DRO cluster roles | N/A (cluster-scoped) | When `cluster_admin_role` is true | `cluster_admin_role` |
 | `ClusterRoleBinding` | `metric-state-view-binding` | N/A (cluster-scoped) | When `cluster_admin_role` is true | `cluster_admin_role` |
 | `ClusterRoleBinding` | `reporter-cluster-monitoring-binding` | N/A (cluster-scoped) | When `cluster_admin_role` is true | `cluster_admin_role` |
 | `ClusterRoleBinding` | `manager-cluster-monitoring-binding` | N/A (cluster-scoped) | When `cluster_admin_role` is true | `cluster_admin_role` |
+| `Certificate` | DRO certificate resources | `ibm-software-central` | When `cluster_admin_role` is true | `cluster_admin_role` |
+| `ClusterIssuer` | DRO cluster issuer resources | N/A (cluster-scoped) | When `cluster_admin_role` is true | `cluster_admin_role` |
 | `Secret` | `ibm-data-reporter-operator-api-token` | `ibm-software-central` | When `application_admin_role` is true | `application_admin_role` |
 | `Secret` | `aws` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
 | `ServiceAccount` | `postsync-ibm-dro-update-sm-sa` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |

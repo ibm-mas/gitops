@@ -17,3 +17,4 @@ Establishes resources necessary to support image mirroring via an ImageDigestMir
 | `ServiceAccount` | `ecr-token-updater-sa` | `default` | When `ecr_host` is set | `cluster_admin_role` |
 | `RoleBinding` | `ecr-token-updater-rolebinding` | `default` | When `ecr_host` is set | `cluster_admin_role` |
 | `CronJob` | `ecr-token-updater` | `default` | When `ecr_host` is set | `cluster_admin_role` |
+| `Job` | ECR token updater sync hook jobs | `default` | Hook jobs associated with image mirroring | `cluster_admin_role` |

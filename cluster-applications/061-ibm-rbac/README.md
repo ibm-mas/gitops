@@ -18,5 +18,6 @@ Installs the IBM RBAC roles and role bindings. Groups are managed by the Group S
 | `ClusterRoleBinding` | `sre-automation-admin` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `ClusterRoleBinding` | `sre-editor` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `ClusterRoleBinding` | `sre-reader` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
+| `Group` | OpenShift groups referenced by IBM RBAC bindings | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 
 **Note:** ClusterRoleBindings reference groups that are synchronized by the Group Sync Operator.

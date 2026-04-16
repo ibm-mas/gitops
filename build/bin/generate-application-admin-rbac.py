@@ -479,7 +479,7 @@ roleRef:
 {{- end }}
 {{- end }}
 
-# Made with Bob
+
 '''
     
     return template
@@ -624,4 +624,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# Made with Bob
+

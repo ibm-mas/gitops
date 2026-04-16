@@ -56,7 +56,7 @@ def generate_namespace_overlay(overlay_dir: Path, namespace: str) -> None:
         resources:
           - ../../../base
 
-        # Made with Bob
+        
         """)
     
     (ns_dir / "kustomization.yaml").write_text(kustomization)
@@ -144,7 +144,7 @@ def _create_main_kustomization(
                 path: /subjects/0/namespace
                 value: {sa_namespace}
 
-        # Made with Bob
+        
         """)
     content = header + resources_block + "\n" + footer
     kustomization_file.write_text(content)

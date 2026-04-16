@@ -28,7 +28,11 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
+    {{- if hasPrefix "9.1." (toString .Values.ibm_aiservice_tenant.catalog_channel) }}
     namespace: "{{ .Values.ibm_aiservice_tenant.aiservice_namespace }}"
+    {{- else }}
+    namespace: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}"
+    {{- end }}
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: instance-applications/115-ibm-aiservice-tenant
@@ -38,9 +42,13 @@ spec:
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
+            catalog_source: "{{ .Values.ibm_aiservice_tenant.catalog_source }}"
+            catalog_channel: "{{ .Values.ibm_aiservice_tenant.catalog_channel }}"
+            
             tenant_id: "{{ .Values.ibm_aiservice_tenant.tenant_id }}"
             aiservice_instance_id: "{{ .Values.ibm_aiservice_tenant.aiservice_instance_id }}"
             aiservice_namespace: "{{ .Values.ibm_aiservice_tenant.aiservice_namespace }}"
+            
             account_id: "{{ .Values.account.id }}"
             region_id: "{{ .Values.region.id }}"
             cluster_id: "{{ .Values.cluster.id }}"
@@ -134,4 +142,12 @@ spec:
 {{ .Values.custom_labels | toYaml | indent 8 }}
         {{- end }}
 {{- end }}
+  ignoreDifferences:
+    # Tenant operator updates the secret
+    - group: ""
+      kind: Secret
+      name: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}----sls-secret"
+      namespace: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}"
+      jsonPointers:
+        - /data
 {{- end }}

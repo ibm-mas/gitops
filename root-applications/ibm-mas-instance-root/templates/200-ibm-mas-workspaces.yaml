@@ -3,7 +3,10 @@ When inside the range loop below, make sure you prefix any references to chart v
 For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
 */}}
 
+{{ $app_dest_ns := printf "mas-%s-core" .Values.instance.id }}
+
 {{- range $i, $value := .Values.ibm_mas_workspaces }}
+{{- if $.Values.application_admin_role }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
@@ -28,7 +31,7 @@ spec:
   project: "{{ $.Values.argo.projects.apps }}"
   destination:
     server: {{ $.Values.cluster.url }}
-    namespace: default
+    namespace: {{ $app_dest_ns }}
   source:
     repoURL: "{{ $.Values.source.repo_url }}"
     path: instance-applications/220-ibm-mas-workspace
@@ -42,6 +45,8 @@ spec:
             cli_image_repo: {{ $.Values.cli_image_repo }}
             mas_workspace_id: "{{ $value.mas_workspace_id }}"
             mas_workspace_name: "{{ $value.mas_workspace_name }}"
+            cluster_admin_role: {{ $.Values.cluster_admin_role }}
+            application_admin_role: {{ $.Values.application_admin_role }}
             {{- if $.Values.custom_labels }}
             custom_labels: {{ $.Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
@@ -69,3 +74,5 @@ spec:
       - CreateNamespace=false
       - RespectIgnoreDifferences=true
 {{- end }}
+{{- end }}
+

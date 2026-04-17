@@ -2,7 +2,7 @@ name: Lint and Check Helm Templates
 
 on:
   pull_request:
-    branches: [ "poc", "main", "dev"]
+    branches: [ "main", "dev"]
 
 jobs:
   lint:
@@ -32,6 +32,10 @@ jobs:
           for DIR in $(find $GITHUB_WORKSPACE/root-applications -type d -maxdepth 1 -mindepth 1 ); do
             $GITHUB_WORKSPACE/build/bin/helm-lint.sh -p $DIR || exit 1
           done
+
+      - name: Verify chart README tables
+        run: |
+          python3 $GITHUB_WORKSPACE/build/bin/verify_chart_readme_tables.py || exit 1
 
       - name: Verify Job Definitions
         run: |

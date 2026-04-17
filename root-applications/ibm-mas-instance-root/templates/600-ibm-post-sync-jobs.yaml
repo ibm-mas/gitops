@@ -22,6 +22,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
     instance: '{{ .Values.instance.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "600"
@@ -55,6 +58,8 @@ spec:
             cluster_id: "{{ .Values.cluster.id }}"
             instance_id: "{{ .Values.instance.id }}"
             cli_image_repo: {{ .Values.cli_image_repo }}
+            cluster_admin_role: {{ .Values.cluster_admin_role }}
+            application_admin_role: {{ .Values.application_admin_role }}
 
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
@@ -104,5 +109,7 @@ spec:
     retry:
       limit: 20
     syncOptions:
+      {{- if .Values.cluster_admin_role }}
       - CreateNamespace=true
+      {{- end }}
       - RespectIgnoreDifferences=true

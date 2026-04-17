@@ -10,6 +10,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
     instance: '{{ .Values.instance.id }}'
     masapp: 'monitor'
   annotations:
@@ -37,6 +40,8 @@ spec:
             instance_id: "{{ .Values.instance.id }}"
             cli_image_repo: {{ .Values.cli_image_repo }}
             argo_namespace: "{{ .Values.argo.namespace }}"
+            cluster_admin_role: {{ .Values.cluster_admin_role }}
+            application_admin_role: {{ .Values.application_admin_role }}
             mas_app_api_version: "{{ .Values.ibm_suite_app_monitor_install.mas_app_api_version }}"
             mas_app_kind: "{{ .Values.ibm_suite_app_monitor_install.mas_app_kind }}"
             mas_app_namespace: "{{ .Values.ibm_suite_app_monitor_install.mas_app_namespace }}"
@@ -84,11 +89,18 @@ spec:
     retry:
       limit: 20
     syncOptions:
+      {{- if .Values.cluster_admin_role }}
       - CreateNamespace=true
+      {{- end }}
       - RespectIgnoreDifferences=true
-{{- if .Values.custom_labels }}
+{{- if or .Values.custom_labels .Values.argocluster_instance }}
     managedNamespaceMetadata:
       labels:
+        {{- if .Values.argocluster_instance }}
+        argocd.argoproj.io/managed-by: {{ .Values.argocluster_instance }}
+        {{- end }}
+        {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
+        {{- end }}
 {{- end }}
 {{- end }}

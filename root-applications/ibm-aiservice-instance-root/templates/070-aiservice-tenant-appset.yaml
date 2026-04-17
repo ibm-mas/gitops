@@ -10,6 +10,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     cluster: '{{ .Values.cluster.id }}'
     instance: '{{ .Values.instance.id}}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "070"
 spec:
@@ -44,6 +47,9 @@ spec:
         cluster: '{{ .Values.cluster.id }}'
         instance: '{{ .Values.instance.id }}'
         tenant: '{{ `{{ .tenant.id }}` }}'
+        {{- if .Values.argo.instance }}
+        argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+        {{- end }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
@@ -64,6 +70,10 @@ spec:
             releaseName: instanceappset
             values: "{{ `{{ toYaml . }}` }}"
             parameters:
+              - name: "cluster_admin_role"
+                value: "{{ .Values.cluster_admin_role }}"
+              - name: "application_admin_role"
+                value: "{{ .Values.application_admin_role }}"
               - name: "generator.repo_url"
                 value: "{{ .Values.generator.repo_url }}"
               - name: "generator.revision"
@@ -74,10 +84,14 @@ spec:
                 value: "{{ .Values.source.repo_url }}"
               - name: argo.namespace
                 value: "{{ .Values.argo.namespace }}"
+{{- if .Values.argo.instance }}
+              - name: argo.instance
+                value: "{{ .Values.argo.instance }}"
+{{- end }}
                 {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
               - name: "notifications.slack_channel_id"
                 value: "{{ .Values.notifications.slack_channel_id }}"
-                {{- end }}                                                                                   
+                {{- end }}
               - name: argo.projects.rootapps
                 value: "{{ .Values.argo.projects.rootapps }}"
               - name: argo.projects.apps

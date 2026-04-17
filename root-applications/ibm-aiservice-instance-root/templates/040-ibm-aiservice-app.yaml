@@ -10,6 +10,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
     instance: '{{ .Values.instance.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "040"
@@ -36,6 +39,8 @@ spec:
           value: |
             aiservice_namespace: "{{ .Values.ibm_aiservice.aiservice_namespace }}"
             aiservice_instance_id: "{{ .Values.ibm_aiservice.aiservice_instance_id }}"
+            cluster_admin_role: {{ .Values.cluster_admin_role }}
+            application_admin_role: {{ .Values.application_admin_role }}
 
             aiservice_s3_secret: "{{ .Values.ibm_aiservice.aiservice_s3_secret }}"
 
@@ -111,7 +116,9 @@ spec:
     retry:
       limit: 20
     syncOptions:
+      {{- if .Values.cluster_admin_role }}
       - CreateNamespace=true
+      {{- end }}
 {{- if .Values.custom_labels }}
     managedNamespaceMetadata:
       labels:

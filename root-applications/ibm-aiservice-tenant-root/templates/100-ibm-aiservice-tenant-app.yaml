@@ -10,6 +10,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
     instance: '{{ .Values.instance.id }}'
     tenant: '{{ .Values.tenant.id }}'
   annotations:
@@ -49,7 +52,8 @@ spec:
             account_id: "{{ .Values.account.id }}"
             region_id: "{{ .Values.region.id }}"
             cluster_id: "{{ .Values.cluster.id }}"
-
+            cluster_admin_role: {{ .Values.cluster_admin_role }}
+            application_admin_role: {{ .Values.application_admin_role }}
             # SAAS
             aiservice_saas_apikey: "{{ .Values.ibm_aiservice_tenant.aiservice_saas_apikey }}"
             mas_aiservice_saas: "{{ .Values.ibm_aiservice_tenant.mas_aiservice_saas }}"
@@ -125,12 +129,18 @@ spec:
     retry:
       limit: 20
     syncOptions:
+      {{- if .Values.cluster_admin_role }}
       - CreateNamespace=true
-      - RespectIgnoreDifferences=true
-{{- if .Values.custom_labels }}
+      {{- end }}
+{{- if or .Values.custom_labels .Values.argocluster_instance }}
     managedNamespaceMetadata:
       labels:
+        {{- if .Values.argocluster_instance }}
+        argocd.argoproj.io/managed-by: {{ .Values.argocluster_instance }}
+        {{- end }}
+        {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
+        {{- end }}
 {{- end }}
   ignoreDifferences:
     # Tenant operator updates the secret

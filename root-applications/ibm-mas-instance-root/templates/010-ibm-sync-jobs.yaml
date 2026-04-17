@@ -8,6 +8,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
     instance: '{{ .Values.instance.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "010"
@@ -26,7 +29,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: default
+    namespace: mas-{{ .Values.instance.id }}-syncres
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: instance-applications/010-ibm-sync-jobs
@@ -41,6 +44,8 @@ spec:
             cluster_id: "{{ .Values.cluster.id }}"
             instance_id: "{{ .Values.instance.id }}"
             cli_image_repo: {{ .Values.cli_image_repo }}
+            cluster_admin_role: {{ .Values.cluster_admin_role }}
+            application_admin_role: {{ .Values.application_admin_role }}
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             sm_aws_region: "{{ .Values.region.id }}"
@@ -148,3 +153,13 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - RespectIgnoreDifferences=true
+{{- if or .Values.custom_labels .Values.argocluster_instance }}
+    managedNamespaceMetadata:
+      labels:
+        {{- if .Values.argocluster_instance }}
+        argocd.argoproj.io/managed-by: {{ .Values.argocluster_instance }}
+        {{- end }}
+        {{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+        {{- end }}
+{{- end }}

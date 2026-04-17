@@ -1,4 +1,4 @@
-{{- if not (empty .Values.custom_sa.custom_sa_namespace) }}
+{{- if and (not (empty .Values.custom_sa.custom_sa_namespace)) (.Values.cluster_admin_role) }}
 ---
 # Custom Service Accounts
 apiVersion: argoproj.io/v1alpha1
@@ -10,6 +10,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "060"
     healthCheckTimeout: "1800"

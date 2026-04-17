@@ -4,6 +4,7 @@ For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
 */}}
 
 {{- range $i, $value := .Values.ibm_db2u_databases }}
+{{- if $.Values.application_admin_role }}
 {{- if not (contains "rds" $value.db2_instance_name) }}
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -33,7 +34,7 @@ spec:
   project: "{{ $.Values.argo.projects.apps }}"
   destination:
     server: {{ $.Values.cluster.url }}
-    namespace: default
+    namespace: "{{ $.Values.ibm_db2u.db2_namespace }}"
   source:
     repoURL: "{{ $.Values.source.repo_url }}"
     path: instance-applications/120-ibm-db2u-database
@@ -49,6 +50,8 @@ spec:
             instance_id: "{{ $.Values.instance.id }}"
             sm_aws_access_key_id: "{{ $.Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ $.Values.sm.aws_secret_access_key }}"
+            cluster_admin_role: {{ $.Values.cluster_admin_role }}
+            application_admin_role: {{ $.Values.application_admin_role }}
             
             {{- if $.Values.custom_labels }}
             custom_labels: {{ $.Values.custom_labels | toYaml | nindent 14 }}
@@ -101,5 +104,6 @@ spec:
       kind: Db2uInstance
       jsonPointers:
       - /spec/environment/ssl/secretName
+{{- end }}
 {{- end }}
 {{- end }}

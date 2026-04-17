@@ -9,6 +9,9 @@ metadata:
   labels:
     environment: '{{ .Values.account.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "100"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
@@ -50,6 +53,8 @@ spec:
             {{- end }}
             {{- end }}
             argo_namespace: "{{ .Values.argo.namespace }}"
+            cluster_admin_role: {{ .Values.cluster_admin_role }}
+            application_admin_role: {{ .Values.application_admin_role }}
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             run_sync_hooks: {{.Values.ibm_sls_standalone.run_sync_hooks }}
@@ -91,7 +96,9 @@ spec:
     retry:
       limit: 20
     syncOptions:
+      {{- if .Values.cluster_admin_role }}
       - CreateNamespace=true
+      {{- end }}
       - RespectIgnoreDifferences=true
 {{- if .Values.custom_labels }}
     managedNamespaceMetadata:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unit tests for verify-chart-readme-tables.py
+Unit tests for verify_chart_readme_tables.py
 
 Tests cover:
 - Chart directory discovery

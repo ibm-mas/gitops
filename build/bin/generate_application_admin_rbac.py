@@ -237,9 +237,10 @@ def extract_resources_from_yaml(
                 api_version = api_matches[i] if i < len(api_matches) else ''
                 kinds.append((kind, api_version, file_conditional))
         
-        # Always try regex extraction for RBAC resources from
-        # Role/ClusterRole rules (works even with Helm templates)
-        if 'kind: Role' in content or 'kind: ClusterRole' in content:
+        # Only use regex extraction if YAML parsing didn't extract RBAC resources
+        # This prevents duplicate extraction when YAML parsing succeeds
+        # Regex extraction is needed for templates with Helm syntax that breaks YAML parsing
+        if not rbac_resources and ('kind: Role' in content or 'kind: ClusterRole' in content):
             # Extract rules sections using regex
             # Match: - apiGroups: ... resources: ...
             rules_pattern = (
@@ -407,6 +408,9 @@ def generate_rbac_rules(
                 resource = resource + 'es'
             else:
                 resource = resource + 's'
+        elif resource.endswith('ss'):
+            # Handle words ending in 'ss' (e.g., 'ingress' -> 'ingresses')
+            resource = resource + 'es'
         
         api_groups[group].add(resource)
     

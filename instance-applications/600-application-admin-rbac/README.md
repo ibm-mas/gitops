@@ -77,11 +77,20 @@ service_account:
   namespace: ""
 
 # Namespace patterns (can be customized)
+# These patterns must match the namespaceConditions in generate_application_admin_rbac.py
 namespace_patterns:
   - "db2u-{inst}"
-  - "ibm-software-central"
+  - "mas-{inst}-syncres"
   - "mas-{inst}-core"
   - "mas-{inst}-manage"
+  - "mas-{inst}-assist"
+  - "mas-{inst}-iot"
+  - "mas-{inst}-monitor"
+  - "mas-{inst}-health"
+  - "mas-{inst}-optimizer"
+  - "mas-{inst}-predict"
+  - "mas-{inst}-visualinspection"
+  - "mas-{inst}-facilities"
   - "mas-{inst}-sls"
   - "mas-{inst}-syncres"
   - "mas-{inst}-visualinspection"
@@ -110,7 +119,7 @@ This chart is automatically deployed by the ArgoCD Application at:
 **IMPORTANT**: The RBAC rules in this chart are **auto-generated** from the Python script:
 
 ```bash
-./build/bin/generate-application-admin-rbac.py
+./build/bin/generate_application_admin_rbac.py
 ```
 
 This script:
@@ -126,7 +135,7 @@ When you add new resource types to any Helm chart:
 
 1. Run the generator script:
    ```bash
-   ./build/bin/generate-application-admin-rbac.py
+   ./build/bin/generate_application_admin_rbac.py
    ```
 
 2. The script will automatically update both targets:
@@ -149,7 +158,7 @@ When you add new resource types to any Helm chart:
 
 ## Related Files
 
-- **Generator Script**: `build/bin/generate-application-admin-rbac.py` (generates both targets)
+- **Generator Script**: `build/bin/generate_application_admin_rbac.py` (generates both targets)
 - **Kustomize Base**: `rbac/kustomize/base/application-admin-role.yaml` (generated)
 - **Kustomize Components**: `rbac/kustomize/components/cluster-readonly/` (generated)
 - **Helm Template**: `instance-applications/600-application-admin-rbac/templates/per-namespace-rbac.yaml` (generated)

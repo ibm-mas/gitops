@@ -43,6 +43,58 @@ pre-commit run -a
 
 The same logic invoked by the commit hook logic is run and enforced by the "lint" GitHub Action.
 
+Running Tests
+-------------------------------------------------------------------------------
+
+This repository includes Python tests for build scripts and utilities. Tests are located in `build/bin/tests/` and use pytest.
+
+### Setup Test Environment
+
+```bash
+python -m pip install --upgrade pip
+pip install -r build/bin/tests/requirements.txt
+```
+
+### Run All Tests
+
+```bash
+pytest
+```
+
+### Run Tests with Verbose Output
+
+```bash
+pytest -v
+```
+
+### Run Specific Test File
+
+```bash
+pytest build/bin/tests/test_generate_application_admin_rbac.py
+pytest build/bin/tests/test_generate_rbac_overlays.py
+```
+
+### Run Tests with Coverage Report
+
+```bash
+pytest --cov=build/bin --cov-report=html --cov-report=term
+```
+
+### Run Tests for Specific Module
+
+```bash
+# Test RBAC generation scripts
+pytest build/bin/tests/test_generate_application_admin_rbac.py -v
+
+# Test RBAC overlay generation
+pytest build/bin/tests/test_generate_rbac_overlays.py -v
+
+# Test chart README verification
+pytest build/bin/tests/test_verify_chart_readme_tables.py -v
+```
+
+Tests are automatically run by the "Run Tests" GitHub Action on pull requests.
+
 GitHub Actions
 -------------------------------------------------------------------------------
 This repository uses several automated workflows:
@@ -76,12 +128,40 @@ Synchronizes changes to the internal IBM GitHub Enterprise repository:
 
 RBAC
 -------------------------------------------------------------------------------
-The [rbac](/rbac/) folder contains kustomize scripts to help users apply the RBAC needed for the `application_admin_role` to deploy MAS using ArgoCD. 
+The [rbac](/rbac/) folder contains kustomize scripts to help users apply the RBAC needed for the `application_admin_role` to deploy MAS using ArgoCD.
 If new RBAC is addded to any helm chart then we need to update the roles in the `rbac` folder. We should also ensure that the templates are guarded
 with the approtiate condition of `application_admin_role` or `cluster_admin_role`.
 
 ### Adding New Resource Types or new RBAC
 
-Run the script [build/bin/generate-application-admin-rbac.py](build/bin/generate-application-admin-rbac.py) which will update the rbac files that will be
+Run the script [build/bin/generate_application_admin_rbac.py](build/bin/generate_application_admin_rbac.py) which will update the rbac files that will be
 applied. The difference should just include what has been added, updated or removed.
+
+### Generating RBAC Overlays
+
+The [rbac/generate_rbac_overlays.py](rbac/generate_rbac_overlays.py) script generates Kustomize overlay directories for RBAC across MAS instances. This allows applying RBAC resources to multiple namespaces for different service accounts.
+
+```bash
+# Generate overlays for instances
+./rbac/generate_rbac_overlays.py \
+    --service-account mas-argocd-argocd-application-controller \
+    inst1 inst2 inst3
+```
+
+### Testing RBAC Scripts
+
+Unit tests for RBAC generation scripts are located in `build/bin/tests/`:
+
+- `test_generate_application_admin_rbac.py` - Tests for RBAC rule generation from Helm charts
+- `test_generate_rbac_overlays.py` - Tests for Kustomize overlay generation
+
+Run RBAC-specific tests:
+
+```bash
+# Test RBAC rule generation
+pytest build/bin/tests/test_generate_application_admin_rbac.py -v
+
+# Test RBAC overlay generation
+pytest build/bin/tests/test_generate_rbac_overlays.py -v
+```
 

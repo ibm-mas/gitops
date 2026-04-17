@@ -75,7 +75,7 @@ because the correct service account depends on which ArgoCD instance you are usi
 
 ```bash
 # Generate overlays (replace the SA name with your own) for each mas instance (replace dev2 with your instance names)
-./rbac/generate-rbac-overlays.py \
+./rbac/generate_rbac_overlays.py \
     --service-account mas-argocd-argocd-application-controller \
     dev2
 ```
@@ -100,7 +100,7 @@ kubectl apply -k rbac/kustomize/overlays/mas-argocd-argocd-application-controlle
 
 | Layer | Purpose |
 |-------|---------|
-| **base** | Defines the `Role` and `RoleBinding` resources without a namespace. Kustomize sets the namespace from each overlay. The RoleBinding subject uses placeholder values that **must** be patched, which is what the `generate-rbac-overlays.py` does for you  |
+| **base** | Defines the `Role` and `RoleBinding` resources without a namespace. Kustomize sets the namespace from each overlay. The RoleBinding subject uses placeholder values that **must** be patched, which is what the `generate_rbac_overlays.py` does for you  |
 | **components/cluster-readonly** | A reusable Kustomize Component that adds the `ClusterRoleBinding` for read-only cluster access. Included once per service account overlay. |
 | **overlays/\<sa\>/\<namespace\>** | Sets `namespace:` for the base resources, producing a `Role` and `RoleBinding` scoped to that namespace. |
 | **overlays/\<sa\>** | Composes all namespace overlays and the cluster-readonly component. Patches the service account name/namespace into all bindings. |
@@ -160,7 +160,7 @@ cluster_admin_role: true
 
 ```bash
 # Step 1: Generate overlays
-./rbac/generate-rbac-overlays.py \
+./rbac/generate_rbac_overlays.py \
     --service-account mas-argocd-argocd-application-controller \
     inst1 inst2
 
@@ -181,5 +181,5 @@ kubectl apply -k rbac/kustomize/overlays/mas-argocd-argocd-application-controlle
 ## Related Documentation
 
 - **Automated Approach**: [`instance-applications/600-application-admin-rbac/README.md`](../../instance-applications/600-application-admin-rbac/README.md)
-- **Generator Script**: [`rbac/generate-rbac-overlays.py`](../generate-rbac-overlays.py)
+- **Generator Script**: [`rbac/generate_rbac_overlays.py`](../generate_rbac_overlays.py)
 - **ArgoCD Application**: [`root-applications/ibm-mas-instance-root/templates/600-application-admin-rbac-app.yaml`](../../root-applications/ibm-mas-instance-root/templates/600-application-admin-rbac-app.yaml)

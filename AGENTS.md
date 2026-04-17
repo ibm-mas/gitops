@@ -15,7 +15,7 @@ This file provides guidance to agents when working with code in this repository.
 ./build/bin/set-cli-image-digest.sh --root-dir . --digest 'sha256:...'
 
 # Generate RBAC rules for application_admin_role deployments
-./build/bin/generate-application-admin-rbac.py
+./build/bin/generate_application_admin_rbac.py
 
 # Run pre-commit hooks manually
 pre-commit run        # Changed files only
@@ -27,7 +27,7 @@ pre-commit run -a     # All files
 When adding new Kubernetes resource types to any Helm chart, you **MUST** regenerate RBAC rules:
 
 ```bash
-./build/bin/generate-application-admin-rbac.py
+./build/bin/generate_application_admin_rbac.py
 ```
 
 This script automatically updates:

@@ -1,0 +1,87 @@
+{{- if .Values.mongo }}
+---
+# Password secret for Atlas database user
+# This secret will only be created if it doesn't exist (using ArgoCD's sync options)
+# To reset the password, set mongo.reset_password: true in values
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.instance_id }}-atlas-user-password
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  labels:
+    atlas.mongodb.com/type: credentials
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+{{- if not (.Values.mongo.reset_password | default false) }}
+    # Only create if it doesn't exist - don't update existing secret
+    argocd.argoproj.io/sync-options: CreateOnly=true
+{{- else }}
+    # Reset flag is set - allow updates to regenerate password
+    argocd.argoproj.io/sync-options: Replace=true
+{{- end }}
+type: Opaque
+stringData:
+  password: {{ randAlphaNum 32 | quote }}
+---
+# Atlas Database User for MAS Instance
+apiVersion: atlas.mongodb.com/v1
+kind: AtlasDatabaseUser
+metadata:
+  name: masinst-{{ .Values.instance_id }}-atlas-user
+  namespace: mas-{{ .Values.instance_id }}-syncres
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "00"
+spec:
+  # Reference to external Atlas project
+  externalProjectRef:
+    id: {{ .Values.mongo.project_id }}
+  
+  # Connection secret is required when using externalProjectRef
+  connectionSecret:
+    name: mongodb-atlas-operator-api-key
+    namespace: {{ .Values.mongo.namespace }}
+  
+  # Username: masinst_<instance_id>
+  username: masinst_{{ .Values.instance_id }}
+  
+  # Password reference
+  passwordSecretRef:
+    name: {{ .Values.instance_id }}-atlas-user-password
+  
+  # Database for authentication
+  databaseName: admin
+  
+  # Roles for MAS instance
+  roles:
+    # Root role on admin database
+    - roleName: root
+      databaseName: admin
+    
+    # dbOwner on core database
+    - roleName: dbOwner
+      databaseName: mas_{{ .Values.instance_id }}_core
+    
+    # dbOwner on catalog database
+    - roleName: dbOwner
+      databaseName: mas_{{ .Values.instance_id }}_catalog
+    
+    # dbOwner on adoptionusage database
+    - roleName: dbOwner
+      databaseName: mas_{{ .Values.instance_id }}_adoptionusage
+    
+    # dbOwner on SLS licensing database
+    - roleName: dbOwner
+      databaseName: {{ .Values.instance_id }}_sls_licensing
+
+  # Scopes define which clusters this user can access
+  scopes:
+    - name: {{ .Values.cluster_id }}
+      type: CLUSTER
+{{- end }}

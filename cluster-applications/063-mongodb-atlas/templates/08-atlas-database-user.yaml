@@ -1,3 +1,6 @@
+# Password secret for master Atlas database user
+# This secret will only be created if it doesn't exist (using ArgoCD's sync options)
+# To reset the password, set mongo.reset_master_password: true in values
 apiVersion: v1
 kind: Secret
 metadata:
@@ -9,7 +12,14 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
   annotations:
-    argocd.argoproj.io/sync-wave: "8"
+    argocd.argoproj.io/sync-wave: "81"
+{{- if not (.Values.mongo.reset_master_password | default false) }}
+    # Only create if it doesn't exist - don't update existing secret
+    argocd.argoproj.io/sync-options: CreateOnly=true
+{{- else }}
+    # Reset flag is set - allow updates to regenerate password
+    argocd.argoproj.io/sync-options: Replace=true
+{{- end }}
 type: Opaque
 stringData:
   password: {{ randAlphaNum 32 | quote }}
@@ -24,7 +34,7 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
   annotations:
-    argocd.argoproj.io/sync-wave: "8"
+    argocd.argoproj.io/sync-wave: "82"
 spec:
   # projectRef:
   #   name: {{ .Values.mongo.project_id | lower | replace " " "-" }}

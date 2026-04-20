@@ -10,9 +10,10 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "7"
 spec:
-  projectRef:
-    name: {{ .Values.mongo.project_id | lower | replace " " "-" }}
-  
+  # projectRef:
+  #   name: {{ .Values.mongo.project_id | lower | replace " " "-" }}
+  externalProjectRef:
+    id: {{ .Values.mongo.project_id }}
   deploymentSpec:
     name: {{ .Values.cluster.id }}
     mongoDBMajorVersion: {{ .Values.mongo.major_db_version | quote }}
@@ -31,6 +32,28 @@ spec:
             electableSpecs:
               instanceSize: {{ .Values.mongo.instance_size }}
               nodeCount: {{ .Values.mongo.node_count }}
+{{- if and .Values.mongo.auto_scaling .Values.mongo.auto_scaling.enabled }}
+            autoScaling:
+{{- if .Values.mongo.auto_scaling.compute }}
+{{- if .Values.mongo.auto_scaling.compute.enabled }}
+              compute:
+                enabled: {{ .Values.mongo.auto_scaling.compute.enabled }}
+                scaleDownEnabled: {{ .Values.mongo.auto_scaling.compute.scale_down_enabled | default true }}
+{{- if .Values.mongo.auto_scaling.compute.min_instance_size }}
+                minInstanceSize: {{ .Values.mongo.auto_scaling.compute.min_instance_size }}
+{{- end }}
+{{- if .Values.mongo.auto_scaling.compute.max_instance_size }}
+                maxInstanceSize: {{ .Values.mongo.auto_scaling.compute.max_instance_size }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.mongo.auto_scaling.disk_gb }}
+{{- if .Values.mongo.auto_scaling.disk_gb.enabled }}
+              diskGB:
+                enabled: {{ .Values.mongo.auto_scaling.disk_gb.enabled }}
+{{- end }}
+{{- end }}
+{{- end }}
   
   connectionSecret:
     name: mongodb-atlas-operator-api-key

@@ -106,13 +106,9 @@ spec:
             - name: UPDATE_INSTANCE_MONGO_SECRET
               value: "{{ .Values.mongo.update_instance_mongo_secret }}"
 
-            # Instance user password from AtlasDatabaseUser secret
-            - name: ATLAS_INSTANCE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.instance_id }}-atlas-user-password
-                  key: password
-                  optional: false
+            # Atlas namespace where the password secret is located
+            - name: ATLAS_PASSWORD_SECRET_NAME
+              value: "{{ .Values.instance_id }}-atlas-user-password"
 
             # AWS Secrets Manager credentials
             - name: SM_AWS_REGION
@@ -142,6 +138,17 @@ spec:
               echo "================================================================================"
               echo "Atlas Instance User Secret Management"
               echo "================================================================================"
+
+              # Retrieve password from secret in Atlas namespace
+              echo "Retrieving instance user password from secret in ${ATLAS_NAMESPACE} namespace..."
+              ATLAS_INSTANCE_PASSWORD=$(oc get secret ${ATLAS_PASSWORD_SECRET_NAME} -n ${ATLAS_NAMESPACE} -o jsonpath='{.data.password}' | base64 -d)
+              
+              if [ -z "$ATLAS_INSTANCE_PASSWORD" ]; then
+                echo "ERROR: Could not retrieve password from secret ${ATLAS_PASSWORD_SECRET_NAME} in namespace ${ATLAS_NAMESPACE}"
+                exit 1
+              fi
+              
+              echo "Password retrieved successfully"
 
               ATLAS_INSTANCE_USERNAME="masinst_${MAS_INSTANCE_ID}"
 

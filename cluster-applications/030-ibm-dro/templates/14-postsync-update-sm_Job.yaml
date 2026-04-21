@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v4" }}
+{{- $_job_version := "v5" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -238,6 +238,13 @@ spec:
               fi
               export DRO_URL="https://${DRO_HOST}"
 
+              echo "Fetching ca from ibm-data-reporter-operator-api-token Secret in ${DRO_NAMESPACE}"
+              export DRO_CA_B64ENC=$(cat /etc/mas/creds/ibm-data-reporter-operator-api-token/ca.crt | base64 -w0)
+              if [[ -z "${DRO_CA_B64ENC}" ]]; then
+                echo "Failed to fetch ca"
+                exit 1
+              fi
+
               echo "Fetching token from ibm-data-reporter-operator-api-token Secret in ${DRO_NAMESPACE}"
               export DRO_API_TOKEN=$(cat /etc/mas/creds/ibm-data-reporter-operator-api-token/token)
               if [[ -z "${DRO_API_TOKEN}" ]]; then
@@ -270,8 +277,7 @@ spec:
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
               SECRET_NAME_DRO=${ACCOUNT_ID}/${CLUSTER_ID}/dro
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-dro-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\", \"dro_client_tls_tls_crt_b64\": \"$DRO_CLIENT_TLS_TLS_CRT\", \"dro_client_tls_tls_key_b64\": \"$DRO_CLIENT_TLS_TLS_KEY\" }" "${TAGS}"
-
+              sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\", \"dro_client_tls_tls_crt_b64\": \"$DRO_CLIENT_TLS_TLS_CRT\", \"dro_client_tls_tls_key_b64\": \"$DRO_CLIENT_TLS_TLS_KEY\", \"dro_ca_b64enc\": \"$DRO_CA_B64ENC\" }" "${TAGS}"
 
       restartPolicy: Never
 

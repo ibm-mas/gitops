@@ -134,13 +134,19 @@ spec:
                     local db2_username="${2}"
                     local db2_password="${3}"
                     local jdbc_secret=$(sm_get_secret "${secret_name}")
-                    local url=$(extract_secret_value "${jdbc_secret}" jdbc_connection_url)           
+                    local url=$(extract_secret_value "${jdbc_secret}" jdbc_connection_url)
                     local yaml=$(set_yaml_string_field "${DB2_PLUGIN_REMOTE_TEMPLATE}" host $(echo "${url}" | cut -d'/' -f3 | cut -d':' -f1))
-                    local yaml=$(set_yaml_string_field "${yaml}" user ${db2_username})   
+                    local yaml=$(set_yaml_string_field "${yaml}" user ${db2_username})
                     local yaml=$(set_yaml_string_field "${yaml}" password ${db2_password})
                     local yaml=$(set_yaml_string_field "${yaml}" availabilityZone "${CLUSTER_ID}:db2")
-                    local db_name=$(extract_secret_value "${jdbc_secret}" db2_dbname)              
-                    local yaml=$(set_yaml_array_field "${yaml}" databases "${db_name}")  
+                    local db_name=$(extract_secret_value "${jdbc_secret}" db2_dbname)
+                    # Fallback: extract database name from JDBC URL if not found in secret
+                    if [[ -z "${db_name}" || "${db_name}" == "null" ]]; then
+                      # Format: jdbc:db2://host:port/DBNAME:params or jdbc:db2://host:port/DBNAME;params
+                      db_name=$(echo "${url}" | sed -n 's|.*://[^/]*/\([^:;]*\).*|\1|p')
+                      echo "[WARN] db2_dbname not found in secret, extracted '${db_name}' from URL"
+                    fi
+                    local yaml=$(set_yaml_array_field "${yaml}" databases "${db_name}")
                     echo "${yaml}"
                   }
 

@@ -1,7 +1,7 @@
 # Password secret for master Atlas database user
 # This secret will only be created if it doesn't exist (using ArgoCD's sync options)
 # To reset the password, set mongo.reset_master_password: true in values
-{{- $existing := (lookup "v1" "Secret" .Values.mongo.namespace "{{ .Values.cluster.id }}-database-user-password") }}
+{{- $existing := (lookup "v1" "Secret" .Values.mongo.namespace (printf "%s-database-user-password" .Values.cluster.id)) }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -9,7 +9,6 @@ metadata:
   namespace: {{ .Values.mongo.namespace }}
   labels:
     atlas.mongodb.com/type: credentials
-    current: {{ index $existing.data "password" | b64dec }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
@@ -21,6 +20,10 @@ metadata:
 {{- else }}
     # Reset flag is set - allow updates to regenerate password
     argocd.argoproj.io/sync-options: Replace=true
+{{- end }}
+{{- if $existing }}
+    debug/password-first-char: "{{ index $existing.data "password" | b64dec | trunc 1 }}"
+    debug/password-second-char: "{{ index $existing.data "password" | b64dec | trunc 2 }}"
 {{- end }}
 type: Opaque
 stringData:

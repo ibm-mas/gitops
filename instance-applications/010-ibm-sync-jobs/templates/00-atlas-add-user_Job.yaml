@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v1" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -222,6 +222,17 @@ spec:
 
               echo "Extracted shard hosts: $HOSTS_STRING"
 
+              # Get CA certificate - download from MongoDB Atlas
+              echo "Fetching MongoDB Atlas CA certificate..."
+              CA_CERT=$(curl -s https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem || curl -s https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem)
+              
+              if [ -z "$CA_CERT" ]; then
+                echo "ERROR: Could not download CA certificate"
+                exit 1
+              fi
+              
+              echo "CA certificate retrieved successfully"
+
               # Create YAML info structure with hosts
               INFO_YAML=$(cat <<'EOFINFO'
               config:
@@ -245,12 +256,19 @@ spec:
               )
               done
 
-              # Add remaining config
+              # Add remaining config with fetched CA certificate
               INFO_YAML+=$(cat <<EOFCONFIG
                 configDb: admin
                 authMechanism: DEFAULT
+              certificates:
+                - alias: ca
+                  crt: |
               EOFCONFIG
               )
+              
+              # Append the CA certificate with proper indentation (20 spaces for YAML literal block)
+              INFO_YAML+=$'\n'
+              INFO_YAML+=$(echo "$CA_CERT" | sed 's/^/                    /')
 
               # Escape the YAML for JSON
               ESCAPED_INFO=${INFO_YAML//\"/\\\"}

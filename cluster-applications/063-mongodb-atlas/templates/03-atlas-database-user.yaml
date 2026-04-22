@@ -1,8 +1,5 @@
 # Password secret for master Atlas database user
-# This secret will only be created if it doesn't exist (using ArgoCD's sync options)
 # To reset the password, set mongo.reset_master_password: true in values
-{{- $secretName := printf "%s-database-user-password" .Values.cluster.id }}
-{{- $existing := (lookup "v1" "Secret" .Values.mongo.namespace $secretName) }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -16,31 +13,13 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "31"
 {{- if not (.Values.mongo.reset_master_password) }}
-    # Only create if it doesn't exist - don't update existing secret
     argocd.argoproj.io/sync-options: CreateOnly=true
 {{- else }}
-    # Reset flag is set - allow updates to regenerate password
     argocd.argoproj.io/sync-options: Replace=true
-{{- end }}
-    # Debug info
-    debug/lookup-namespace: "{{ .Values.mongo.namespace }}"
-    debug/lookup-secret-name: "{{ $secretName }}"
-    debug/cluster-id: "{{ .Values.cluster.id }}"
-{{- if $existing }}
-    debug/secret-found: "true"
-    debug/password-length: "{{ index $existing.data "password" | b64dec | len }}"
-    debug/password-first-2-chars: "{{ index $existing.data "password" | b64dec | trunc 2 }}"
-{{- else }}
-    debug/secret-found: "false"
 {{- end }}
 type: Opaque
 stringData:
-  password: |
-  {{- if or (not $existing) .Values.mongo.reset_master_password }}
-    {{ randAlphaNum 32 }}
-  {{- else }}
-    {{ index $existing.data "password" | b64dec }}
-  {{- end }}
+  password: {{ randAlphaNum 32 | quote }}
 ---
 apiVersion: atlas.mongodb.com/v1
 kind: AtlasDatabaseUser

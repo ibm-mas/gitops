@@ -177,6 +177,8 @@ spec:
               value: "{{ .Values.cluster.id }}"
             - name: PROJECT_ID
               value: "{{ .Values.mongo.project_id }}"
+            - name: VPC_ENDPOINT_ID
+              value: "{{ .Values.mongo.vpcEndpointId }}"
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -226,34 +228,61 @@ spec:
                 exit 1
               fi
               
-              echo "Retrieving MongoDB shard hosts from AtlasDeployment status..."
+              echo "Retrieving MongoDB connection string for VPC Endpoint: ${VPC_ENDPOINT_ID}"
               
-              # Get the private endpoint endpoints (shard hosts) from AtlasDeployment status
-              ENDPOINTS_JSON=$(oc get atlasdeployment ${CLUSTER_ID}-atlas-cluster -n ${NAMESPACE} -o jsonpath='{.status.connectionStrings.privateEndpoint[0].endpoints}' 2>/dev/null || echo "")
+              # Get all private endpoints from AtlasDeployment status
+              PRIVATE_ENDPOINTS_JSON=$(oc get atlasdeployment ${CLUSTER_ID}-atlas-cluster -n ${NAMESPACE} -o jsonpath='{.status.connectionStrings.privateEndpoint}' 2>/dev/null || echo "")
               
-              if [ -z "$ENDPOINTS_JSON" ] || [ "$ENDPOINTS_JSON" = "null" ]; then
-                echo "ERROR: Could not retrieve private endpoint endpoints from AtlasDeployment status"
+              if [ -z "$PRIVATE_ENDPOINTS_JSON" ] || [ "$PRIVATE_ENDPOINTS_JSON" = "null" ]; then
+                echo "ERROR: Could not retrieve private endpoints from AtlasDeployment status"
                 echo "AtlasDeployment connectionStrings status:"
                 oc get atlasdeployment ${CLUSTER_ID}-atlas-cluster -n ${NAMESPACE} -o jsonpath='{.status.connectionStrings}' | jq '.'
                 exit 1
               fi
               
-              echo "Endpoints retrieved successfully"
-              echo "Endpoints JSON: $ENDPOINTS_JSON"
+              echo "Private endpoints retrieved successfully"
               
-              # Parse endpoints to extract host:port pairs
-              # The endpoints structure is an array of objects with "endpointId" and "providerName" fields
-              # We need to get the actual shard hostnames from the srvConnectionString or standard connection string
+              # Find the connection string for the matching VPC endpoint ID
+              # The structure is an array of privateEndpoint objects, each with endpoints array containing endpointId
+              STANDARD_CONN_STRING=""
+              ENDPOINT_INDEX=0
               
-              # Get the standard connection string which contains the actual shard hosts
-              STANDARD_CONN_STRING=$(oc get atlasdeployment ${CLUSTER_ID}-atlas-cluster -n ${NAMESPACE} -o jsonpath='{.status.connectionStrings.privateEndpoint[0].connectionString}' 2>/dev/null || echo "")
+              # Get the number of private endpoints
+              NUM_ENDPOINTS=$(echo "$PRIVATE_ENDPOINTS_JSON" | jq '. | length')
+              
+              echo "Found ${NUM_ENDPOINTS} private endpoint(s), searching for VPC endpoint: ${VPC_ENDPOINT_ID}"
+              
+              # Loop through each private endpoint to find the matching VPC endpoint ID
+              while [ $ENDPOINT_INDEX -lt $NUM_ENDPOINTS ]; do
+                # Get the endpoints array for this private endpoint
+                ENDPOINT_IDS=$(oc get atlasdeployment ${CLUSTER_ID}-atlas-cluster -n ${NAMESPACE} -o jsonpath="{.status.connectionStrings.privateEndpoint[${ENDPOINT_INDEX}].endpoints[*].endpointId}" 2>/dev/null || echo "")
+                
+                echo "Checking private endpoint index ${ENDPOINT_INDEX}: ${ENDPOINT_IDS}"
+                
+                # Check if our VPC endpoint ID is in this endpoints array
+                if echo "$ENDPOINT_IDS" | grep -q "${VPC_ENDPOINT_ID}"; then
+                  echo "Found matching VPC endpoint at index ${ENDPOINT_INDEX}"
+                  
+                  # Get the connection string for this private endpoint
+                  STANDARD_CONN_STRING=$(oc get atlasdeployment ${CLUSTER_ID}-atlas-cluster -n ${NAMESPACE} -o jsonpath="{.status.connectionStrings.privateEndpoint[${ENDPOINT_INDEX}].connectionString}" 2>/dev/null || echo "")
+                  
+                  if [ -n "$STANDARD_CONN_STRING" ]; then
+                    echo "Connection string retrieved for VPC endpoint ${VPC_ENDPOINT_ID}"
+                    break
+                  fi
+                fi
+                
+                ENDPOINT_INDEX=$((ENDPOINT_INDEX + 1))
+              done
               
               if [ -z "$STANDARD_CONN_STRING" ]; then
-                echo "ERROR: Could not retrieve standard connection string from private endpoint"
+                echo "ERROR: Could not find connection string for VPC endpoint ID: ${VPC_ENDPOINT_ID}"
+                echo "Available private endpoints:"
+                echo "$PRIVATE_ENDPOINTS_JSON" | jq '.'
                 exit 1
               fi
               
-              echo "Standard connection string retrieved"
+              echo "Using connection string for VPC endpoint ${VPC_ENDPOINT_ID}"
               
               # Get username from AtlasDatabaseUser resource
               MONGO_USERNAME=$(oc get atlasdatabaseuser ${CLUSTER_ID}-database-user -n ${NAMESPACE} -o jsonpath='{.spec.username}' 2>/dev/null || echo "")

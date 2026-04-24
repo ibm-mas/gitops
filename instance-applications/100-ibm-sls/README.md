@@ -22,6 +22,7 @@ Contains a job that runs last (`07-postsync-update-sm_Job.yaml`). This registers
 | `ServiceAccount` | post-sync update secret manager service account | Instance SLS namespace | Always | `application_admin_role` |
 | `Role` | post-sync update secret manager roles | Instance SLS namespace | Always | `application_admin_role` |
 | `RoleBinding` | post-sync update secret manager role binding | Instance SLS namespace | Always | `application_admin_role` |
+| `Job` | post-sync update secret manager job | Instance SLS namespace | When `run_sync_hooks` and `application_admin_role` are enabled | `application_admin_role` |
 
 ## Configuration
 

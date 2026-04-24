@@ -10,6 +10,7 @@ Create a WatsonStudioCfg CR instance and associated credentials secret for use b
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
 | `Secret` | Watson Studio credential secret | MAS core namespace | Always | `application_admin_role` |
+| `WatsonStudioCfg` | Watson Studio configuration CR | MAS core namespace | Always | `application_admin_role` |
 
 ## Configuration
 

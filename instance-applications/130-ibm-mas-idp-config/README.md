@@ -14,6 +14,7 @@ Contains a post-delete hook (`postdelete-delete-cr.yaml`) that will ensure the c
 |--------------|---------------|-----------|-----------|--------------|
 | `Secret` | LDAP credential secret | MAS core namespace | Always | `application_admin_role` |
 | `IDPCfg` | MAS IDP configuration CR | MAS core namespace | Always | `application_admin_role` |
+| `Job` | Post-delete IDP configuration cleanup job | MAS core namespace | When `use_postdelete_hooks` is enabled | `application_admin_role` |
 
 ## Configuration
 

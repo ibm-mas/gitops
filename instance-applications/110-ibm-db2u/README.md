@@ -13,6 +13,7 @@ Deploy and configure db2 operator with configurable version
 | `OperatorGroup` | DB2 operator group | DB2 operator namespace | Always | `application_admin_role` |
 | `Subscription` | DB2 operator subscription | DB2 operator namespace | Always | `application_admin_role` |
 | `Issuer` | DB2 CA issuer resources | DB2 operator namespace | Always | `application_admin_role` |
+| `Certificate` | DB2 CA certificate | DB2 operator namespace | Always | `application_admin_role` |
 
 ## Configuration
 

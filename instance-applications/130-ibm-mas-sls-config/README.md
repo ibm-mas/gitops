@@ -13,6 +13,7 @@ Contains a post-delete hook (`postdelete-delete-cr.yaml`) that will ensure the c
 |--------------|---------------|-----------|-----------|--------------|
 | `Secret` | SLS registration secret | MAS core namespace | Always | `application_admin_role` |
 | `SlsCfg` | MAS SLS configuration CR | MAS core namespace | Always | `application_admin_role` |
+| `Job` | Post-delete SLS configuration cleanup job | MAS core namespace | When `use_postdelete_hooks` is enabled | `application_admin_role` |
 
 ## Configuration
 

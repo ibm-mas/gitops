@@ -12,6 +12,7 @@ Deploys and configures the CP4D Service, SPSS Modeler.
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
 | `Subscription` | SPSS operator subscriptions | CP4D instance namespace | Always | `application_admin_role` |
+| `Spss` | SPSS service CR | CP4D instance namespace | Always | `application_admin_role` |
 
 ## Configuration
 

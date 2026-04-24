@@ -12,6 +12,7 @@ This chart creates the public `Route` used to expose DRO externally when IBM Clo
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
 | `Route` | `ibm-data-reporter-public-route` | Configured DRO namespace | When `dns_provider` is `cis` | `application_admin_role` |
+| `Service` | `ibm-data-reporter-operator-controller-manager-metrics-service` (referenced backend service) | Configured DRO namespace | Must exist for the route target when `dns_provider` is `cis` | `application_admin_role` |
 
 ## Configuration
 

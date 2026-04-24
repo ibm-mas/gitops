@@ -15,6 +15,7 @@ Spark extends jupyter notebooks features inside Watson Studio notebooks which ca
 | `ServiceAccount` | Spark control-plane service account | CP4D instance namespace | When control-plane job is enabled | `application_admin_role` |
 | `ClusterRole` | Spark control-plane cluster roles | N/A (cluster-scoped) | When control-plane job is enabled | `application_admin_role` |
 | `ClusterRoleBinding` | Spark control-plane cluster role binding | N/A (cluster-scoped) | When control-plane job is enabled | `application_admin_role` |
+| `Job` | Spark control-plane job | CP4D instance namespace | When control-plane job is enabled | `application_admin_role` |
 
 ## Configuration
 

@@ -14,6 +14,7 @@ Installs the workspace needed for the `Suite`.
 | `ServiceAccount` | Post-sync workspace label service account | MAS core namespace | When post-sync job is enabled | `application_admin_role` |
 | `Role` | Post-sync workspace label roles | MAS core namespace | When post-sync job is enabled | `application_admin_role` |
 | `RoleBinding` | Post-sync workspace label role binding | MAS core namespace | When post-sync job is enabled | `application_admin_role` |
+| `Job` | Post-sync workspace label job | MAS core namespace | When post-sync job is enabled | `application_admin_role` |
 
 ## Configuration
 

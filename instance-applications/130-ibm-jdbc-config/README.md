@@ -20,6 +20,7 @@ If using incluster-db2, a pre-sync hook (`00-presync-create-db2-user_Job.yaml`) 
 | `RoleBinding` | DB2 user management role bindings | Database namespaces | When DB2 user management hooks run | `application_admin_role` |
 | `NetworkPolicy` | DB2/RDS user management network policies | MAS core namespace | When pre-sync user management jobs run | `application_admin_role` |
 | `Job` | Pre-sync and post-delete JDBC management jobs | MAS core namespace | Always | `application_admin_role` |
+| `JdbcCfg` | MAS JDBC configuration CR | MAS core namespace | Always | `application_admin_role` |
 
 ## Configuration
 

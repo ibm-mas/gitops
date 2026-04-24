@@ -19,6 +19,7 @@ Installs the `ibm-mas` operator and creates an instance of the `Suite`.
 | `Role` | Post-sync and post-delete job roles | MAS core namespace | When associated jobs are enabled | `application_admin_role` |
 | `RoleBinding` | Post-sync and post-delete job role bindings | MAS core namespace | When associated jobs are enabled | `application_admin_role` |
 | `Job` | Post-sync suite configuration jobs | MAS core namespace | When associated jobs are enabled | `application_admin_role` |
+| `ConfigMap` | Suite helper and runtime configuration config maps | MAS core namespace | When associated jobs or certificate management features are enabled | `application_admin_role` |
 
 ## Configuration
 

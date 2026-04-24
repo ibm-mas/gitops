@@ -20,6 +20,7 @@ Deploys and configures CP4D needed for `MAS Assist` and `MAS Predict`. Deploys t
 | `ConfigMap` | CP4D service dependency config maps | CP4D operators namespace | When optional services are enabled | `cluster_admin_role` |
 | `Subscription` | CP4D service subscriptions | CP4D operators namespace | When optional services are enabled | `cluster_admin_role` |
 | `OperandRegistry` | CP4D operand registries | CP4D operators namespace | When WSL or SPSS services are enabled | `cluster_admin_role` |
+| `OperandConfig` | CP4D operand configuration | CP4D operators namespace | When optional services are enabled | `cluster_admin_role` |
 
 ## Configuration
 

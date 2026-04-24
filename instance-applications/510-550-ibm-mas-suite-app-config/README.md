@@ -20,6 +20,7 @@ Certain templates are enabled only for specific MAS applications (`mas_app_id`).
 | `ClusterRole` | Verify job cluster roles | N/A (cluster-scoped) | When cluster-level verification is enabled | `application_admin_role` |
 | `ClusterRoleBinding` | Verify job cluster role bindings | N/A (cluster-scoped) | When cluster-level verification is enabled | `application_admin_role` |
 | `CronJob` | Recurring update/app-role cron jobs | Application namespace | When associated recurring jobs are enabled | `application_admin_role` |
+| `Job` | Post-sync verification and helper jobs | Application namespace | When associated jobs are enabled | `application_admin_role` |
 
 ## Configuration
 

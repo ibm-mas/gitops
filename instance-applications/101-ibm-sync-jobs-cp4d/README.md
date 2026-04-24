@@ -22,6 +22,7 @@ The chart creates version-specific `CatalogSource` resources in the CP4D operato
 | `Role` | `presync-cpd-olm-role-operators-<instance_id>` | CP4D operators namespace | When `cpd_product_version` is set | `cluster_admin_role` |
 | `RoleBinding` | `presync-cpd-olm-rb-operators-<instance_id>` | CP4D operators namespace | When `cpd_product_version` is set | `cluster_admin_role` |
 | `Job` | `presync-cpd-olm-job-*` | `mas-<instance_id>-syncres` | When `cpd_product_version` is set | `cluster_admin_role` |
+| `ConfigMap` | CP4D operator dependency metadata config maps | `mas-<instance_id>-syncres` | When `cpd_product_version` is set | `cluster_admin_role` |
 
 ## Configuration
 

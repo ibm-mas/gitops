@@ -11,6 +11,7 @@ Deploys and configures the CP4D Service, Watson Machine Learning (WML) needed fo
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
 | `Subscription` | WML operator subscription | CP4D instance namespace | Always | `application_admin_role` |
+| `WmlBase` | Watson Machine Learning service CR | CP4D instance namespace | Always | `application_admin_role` |
 
 ## Configuration
 

@@ -8,4 +8,13 @@ For safety, the CronJob is assigned a ServiceAccount that can only list and dele
 The `mas-devops-saas-job-cleaner` command executed by this CronJob is defined in [python-devops](https://github.com/ibm-mas/python-devops/blob/stable/bin/mas-devops-saas-job-cleaner).
 
 
-> In MaS SaaS, Job resources are routinely orphaned (i.e. marked for deletion by ArgoCD) since, when an update is required to an immutable Job field (e.g. its image tag), a new version of the Job resource must be created with a different name. When [auto_delete: false](https://ibm-mas.github.io/gitops/main/accountrootmanifest/#auto_delete) is set, ArgoCD will (by design) not perform this cleanup for us. Over time, Job resources will accumulate and put pressure on the K8S API server.
+> In MAS SaaS, Job resources are routinely orphaned (i.e. marked for deletion by ArgoCD) since, when an update is required to an immutable Job field (e.g. its image tag), a new version of the Job resource must be created with a different name. When [auto_delete: false](https://ibm-mas.github.io/gitops/main/accountrootmanifest/#auto_delete) is set, ArgoCD will (by design) not perform this cleanup for us. Over time, Job resources will accumulate and put pressure on the K8S API server.
+
+## Resources Created
+
+| Resource Type | Resource Name | Namespace | Condition | Installed By |
+|--------------|---------------|-----------|-----------|--------------|
+| `ClusterRole` | `mas-saas-job-cleaner-role` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
+| `ServiceAccount` | `mas-saas-job-cleaner-sa` | `job-cleaner` | Always | `cluster_admin_role` |
+| `ClusterRoleBinding` | `mas-saas-job-cleaner-rolebinding` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
+| `CronJob` | `mas-saas-job-cleaner-cron` | `job-cleaner` | Always | `cluster_admin_role` |

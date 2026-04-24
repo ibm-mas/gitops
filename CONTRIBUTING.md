@@ -8,16 +8,33 @@ Documentation
 Versioned documentation is published automatically here: [https://ibm-mas.github.io/gitops/](https://ibm-mas.github.io/gitops/).
 Documentation source is located in the `docs` folder.
 
+### Documentation Structure
+
+The documentation follows a standardized structure to maintain consistency across all chart documentation:
+
+**Chart Documentation Template:**
+- **Overview** - Purpose and what the chart installs
+- **Configuration Files** (for root applications) - Git generator patterns and merge keys
+- **Helm Parameters** - All configurable parameters with descriptions and defaults
+- **Values Configuration** - Required vs optional values
+- **Resources Created** - Kubernetes resources deployed by the chart
+- **Examples** - Complete working examples
+- **Related Documentation** - Links to related charts and guides
+
+**Documentation Organization:**
+- **Architecture & Details** - Conceptual documentation explaining the "why" and "how" of the GitOps approach
+- **Charts** - Reference documentation providing comprehensive coverage of each Helm chart
+- **Configuration** - Patterns, examples, and guides for configuring deployments
+
+### Local Documentation Preview
+
 To view your local documentation updates before pushing to git, run the following:
 
-```
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install mkdocs
-pip install mkdocs-redirects
-pip install mkdocs-macros-plugin
-pip install mkdocs-drawio-file
+pip install -r docs/requirements.txt
 mkdocs serve
 ```
 

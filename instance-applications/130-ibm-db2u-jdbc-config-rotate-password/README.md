@@ -2,6 +2,9 @@ IBM DB2U JDBC rotate password Configuration
 ===============================================================================
 Rotate DB2 user password
 
+<!--docs-include-start-->
+
+
 ## Resources Created
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |

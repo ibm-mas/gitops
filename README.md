@@ -11,7 +11,7 @@ This repository is organized into several key directories that work together to 
 Contains ArgoCD Application definitions that follow the **App of Apps** pattern. These are deployed to the ArgoCD management cluster and create a hierarchical structure:
 
 - **[`ibm-mas-account-root`](root-applications/ibm-mas-account-root/)** - Top-level Application that generates Cluster Root Applications via ApplicationSet
-  - **[`ibm-mas-cluster-root`](root-applications/ibm-mas-cluster-root/)** - Generates Instance Root Applications via ApplicationSet and manages cluster-level prerequisites
+  - **[`ibm-mas-cluster-root`](root-applications/ibm-mas-cluster-root/)** - Generates MAS Instance Root Applications via ApplicationSet and manages cluster-level prerequisites
     - **[`ibm-mas-instance-root`](root-applications/ibm-mas-instance-root/)** - Generates MAS instance deployments and manages instance-level resources
     - **[`ibm-aiservice-instance-root`](root-applications/ibm-aiservice-instance-root/)** - Generates AI Service instances via ApplicationSet
       - **[`ibm-aiservice-tenant-root`](root-applications/ibm-aiservice-tenant-root/)** - Manages individual AI Service tenant deployments
@@ -57,7 +57,7 @@ See [`rbac/README.md`](rbac/README.md) for detailed information on:
 
 Comprehensive documentation is available at:
 - **[https://ibm-mas.github.io/gitops/](https://ibm-mas.github.io/gitops/)**
-- **[GitOps Demo Repository](https://github.com/ibm-mas/gitops-demo/tree/002)**
+- **[GitOps Demo Repository](https://github.com/ibm-mas/gitops-demo/tree/003)**
 
 ## Development
 

@@ -4,6 +4,30 @@ Installs various ArgoCD Applications for managing instance-level AIService depen
 
 Installs the AIService Tenant Root ArgoCD ApplicationSet ([`070-aiservice-tenant-appset.yaml`](templates/070-aiservice-tenant-appset.yaml)) responsible for generating a set of IBM AIService Tenant Root ArgoCD Applications for managing AIService Tenants of a AIService Instance on the target cluster. See [README](root-applications/ibm-aiservice-tenant-root/README.md) for more details on that application set.
 
+## Table of Contents
+
+- [ArgoCD Applications](#argocd-applications)
+  - [Role Conditions](#role-conditions)
+
+<!--docs-include-start-->
+
+This application is part of the **App of Apps** hierarchy:
+
+```
+ibm-mas-account-root
+└── ibm-mas-cluster-root
+    ├── ibm-mas-instance-root
+    ├── ibm-mas-sls-root
+    └── ibm-aiservice-instance-root (this application)
+        └── ibm-aiservice-tenant-root
+```
+
+For more information about the GitOps architecture and concepts, see:
+- [GitOps Architecture](https://ibm-mas.github.io/gitops/architecture/)
+- [AI Service Instance Root Application](https://ibm-mas.github.io/gitops/charts/root-applications/#ai-service-instance-root-application)
+- [Configuration Repository](https://ibm-mas.github.io/gitops/configrepo/)
+- [Helm Charts](https://ibm-mas.github.io/gitops/helmcharts/)
+
 ## ArgoCD Applications
 
 The following table lists all ArgoCD applications defined in the templates folder and their rendering conditions based on admin roles:

@@ -80,7 +80,6 @@ python build/bin/verify_readme_structure.py --strict
 
 ### README Templates
 
-- **Root Applications:** See [`docs/root-application-readme-template.md`](docs/root-application-readme-template.md)
 - **Cluster/Instance Applications:** Follow standardized sections (Overview, Configuration, Resources Created, Examples)
 
 ### Documentation Guidelines
@@ -90,8 +89,6 @@ python build/bin/verify_readme_structure.py --strict
 3. **Maintain Templates:** Follow standardized README structure for consistency
 4. **Validate Changes:** Run `verify_readme_structure.py` before committing README changes
 5. **Update Navigation:** Add new documentation pages to `mkdocs.yml` navigation
-
-For detailed documentation strategy, see [`docs/documentation-strategy-proposal.md`](docs/documentation-strategy-proposal.md).
 
 ## Critical Job Naming Conventions
 

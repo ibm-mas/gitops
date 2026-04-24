@@ -3,7 +3,10 @@ When inside the range loop below, make sure you prefix any references to chart v
 For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
 */}}
 
+{{ $app_dest_ns := printf "mas-%s-core" .Values.instance.id }}
+
 {{- range $i, $value := .Values.ibm_mas_suite_configs }}
+{{- if $.Values.application_admin_role }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -34,7 +37,7 @@ spec:
   project: "{{ $.Values.argo.projects.apps }}"
   destination:
     server: {{ $.Values.cluster.url }}
-    namespace: default
+    namespace: {{ $app_dest_ns }}
   source:
     repoURL: "{{ $.Values.source.repo_url }}"
     path: instance-applications/130-{{ $value.mas_config_chart }}
@@ -49,6 +52,8 @@ spec:
             cluster_id: "{{ $.Values.cluster.id }}"
             instance_id: "{{ $.Values.instance.id }}"
             cli_image_repo: {{ $.Values.cli_image_repo }}
+            cluster_admin_role: {{ $.Values.cluster_admin_role }}
+            application_admin_role: {{ $.Values.application_admin_role }}
             sm_aws_access_key_id: "{{ $.Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ $.Values.sm.aws_secret_access_key }}"
             {{- if $.Values.custom_labels }}
@@ -82,4 +87,5 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - RespectIgnoreDifferences=true
+{{- end }}
 {{- end }}

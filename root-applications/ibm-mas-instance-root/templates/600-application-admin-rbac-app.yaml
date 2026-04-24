@@ -1,0 +1,132 @@
+{{- if .Values.cluster_admin_role }}
+---
+# Application Admin RBAC Application
+# Installs scoped RBAC for ArgoCD service account when cluster_admin_role=true
+# This prepares the cluster for future application_admin_role operations
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: application-admin-rbac.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: default
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/600-application-admin-rbac
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }}
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            instance_id: "{{ .Values.instance.id }}"
+            argo_namespace: "{{ .Values.argo.namespace }}"
+            
+            # Service account configuration
+            # Defaults to {argo_namespace}-argocd-application-controller
+            service_account:
+              {{- if .Values.application_admin_service_account }}
+              {{- if .Values.application_admin_service_account.name }}
+              name: "{{ .Values.application_admin_service_account.name }}"
+              {{- else }}
+              name: ""
+              {{- end }}
+              {{- if .Values.application_admin_service_account.namespace }}
+              namespace: "{{ .Values.application_admin_service_account.namespace }}"
+              {{- else }}
+              namespace: ""
+              {{- end }}
+              {{- else }}
+              name: ""
+              namespace: ""
+              {{- end }}
+            
+            # Flags indicating which components are deployed
+            # These control which namespace RBAC resources are created
+            {{- if not (empty .Values.ibm_mas_suite) }}
+            ibm_mas_suite_deployed: true
+            {{- end }}
+            {{- if not (empty .Values.ibm_db2u) }}
+            ibm_db2u_deployed: true
+            {{- end }}
+            {{- if not (empty .Values.ibm_suite_app_manage_install) }}
+            ibm_suite_app_manage_deployed: true
+            {{- end }}
+            {{- if not (empty .Values.ibm_suite_app_assist_install) }}
+            ibm_suite_app_assist_deployed: true
+            {{- end }}
+            {{- if not (empty .Values.ibm_suite_app_iot_install) }}
+            ibm_suite_app_iot_deployed: true
+            {{- end }}
+            {{- if not (empty .Values.ibm_suite_app_monitor_install) }}
+            ibm_suite_app_monitor_deployed: true
+            {{- end }}
+            {{- if not (empty .Values.ibm_suite_app_health_install) }}
+            ibm_suite_app_health_deployed: true
+            {{- end }}
+            {{- if not (empty .Values.ibm_suite_app_optimizer_install) }}
+            ibm_suite_app_optimizer_deployed: true
+            {{- end }}
+            {{- if not (empty .Values.ibm_suite_app_predict_install) }}
+            ibm_suite_app_predict_deployed: true
+            {{- end }}
+            {{- if not (empty .Values.ibm_suite_app_visualinspection_install) }}
+            ibm_suite_app_visualinspection_deployed: true
+            {{- end }}
+            {{- if not (empty .Values.ibm_suite_app_facilities_install) }}
+            ibm_suite_app_facilities_deployed: true
+            {{- end }}
+            {{- if and (not (empty .Values.ibm_sls)) (empty .Values.ibm_sls.ibm_customer_number) }}
+            ibm_sls_deployed: true
+            {{- end }}
+            
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+            
+            junitreporter:
+              reporter_name: "application-admin-rbac-{{ .Values.instance.id }}"
+              cluster_id: "{{ .Values.cluster.id }}"
+              instance_id: "{{ .Values.instance.id }}"
+              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
+              devops_build_number: "{{ .Values.devops.build_number }}"
+              gitops_version: "{{ .Values.source.revision }}"
+              cli_image_repo: {{ .Values.cli_image_repo }}
+        - name: ARGOCD_APP_NAME
+          value: application-admin-rbac
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - RespectIgnoreDifferences=true
+{{- end }}
+
+

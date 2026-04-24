@@ -2,6 +2,9 @@ NFD Operator
 ===============================================================================
 Installs the Redhat Node Feature Discovery required for the nvidia gpu operator
 
+<!--docs-include-start-->
+
+
 ## Resources Created
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |

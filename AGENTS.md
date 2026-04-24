@@ -39,13 +39,56 @@ This script automatically updates:
 
 ## Documentation
 
+### Building and Previewing Documentation
+
 ```bash
 # Local documentation preview (requires Python 3.12+)
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install mkdocs mkdocs-redirects mkdocs-macros-plugin mkdocs-drawio-file
+pip install -r docs/requirements.txt
 mkdocs serve
+
+# Build documentation
+mkdocs build
+
+# Deploy documentation (handled by CI/CD)
+mike deploy --push <version>
 ```
+
+### Documentation Structure
+
+The repository uses a **hybrid documentation approach**:
+
+- **GitHub Pages** (`/docs/*.md`) - High-level concepts, architecture, and navigation
+- **Chart READMEs** - Detailed chart-specific documentation (single source of truth)
+- **MkDocs Include Plugin** - Embeds README content into GitHub Pages
+
+### Validating README Files
+
+All README files must follow standardized templates. Validate before committing:
+
+```bash
+# Validate all README files
+python build/bin/verify_readme_structure.py
+
+# Validate specific README files
+python build/bin/verify_readme_structure.py root-applications/*/README.md
+
+# Strict mode (warnings as errors)
+python build/bin/verify_readme_structure.py --strict
+```
+
+### README Templates
+
+- **Cluster/Instance Applications:** Follow standardized sections (Overview, Configuration, Resources Created, Examples)
+
+### Documentation Guidelines
+
+1. **Single Source of Truth:** Chart details live in README files, not duplicated in `/docs`
+2. **Use Include Plugin:** Reference READMEs from GitHub Pages using `include-markdown`
+3. **Maintain Templates:** Follow standardized README structure for consistency
+4. **Validate Changes:** Run `verify_readme_structure.py` before committing README changes
+5. **Update Navigation:** Add new documentation pages to `mkdocs.yml` navigation
 
 ## Critical Job Naming Conventions
 
@@ -86,7 +129,7 @@ The repository follows an **App of Apps** pattern with a hierarchical structure:
    - Generates **Cluster Root Applications** via ApplicationSet
 
 2. **[`ibm-mas-cluster-root`](root-applications/ibm-mas-cluster-root/)** - Cluster-level management
-   - Generates **Instance Root Applications** via ApplicationSet
+   - Generates **MAS Instance Root Applications** via ApplicationSet
    - Manages cluster prerequisites and operators
 
 3. **[`ibm-mas-instance-root`](root-applications/ibm-mas-instance-root/)** - Instance-level management

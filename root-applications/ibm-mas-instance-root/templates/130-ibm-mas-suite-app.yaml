@@ -14,6 +14,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
     instance: '{{ .Values.instance.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "130"
@@ -45,6 +48,8 @@ spec:
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             sm_aws_region: "{{ .Values.region.id }}"
+            cluster_admin_role: {{ .Values.cluster_admin_role }}
+            application_admin_role: {{ .Values.application_admin_role }}
             mas_workspace_id: "{{ .Values.ibm_mas_suite.mas_workspace_id }}"
             mas_domain: "{{ .Values.ibm_mas_suite.mas_domain }}"
             mas_config_dir: "{{ .Values.ibm_mas_suite.mas_config_dir }}"
@@ -163,12 +168,19 @@ spec:
     retry:
       limit: 20
     syncOptions:
+      {{- if .Values.cluster_admin_role }}
       - CreateNamespace=true
+      {{- end }}
       - RespectIgnoreDifferences=true
-{{- if .Values.custom_labels }}
+{{- if or .Values.custom_labels .Values.argocluster_instance }}
     managedNamespaceMetadata:
       labels:
+        {{- if .Values.argocluster_instance }}
+        argocd.argoproj.io/managed-by: {{ .Values.argocluster_instance }}
+        {{- end }}
+        {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
+        {{- end }}
 {{- end }}
   ignoreDifferences:
     - group: 'cert-manager.io'

@@ -1,4 +1,4 @@
-{{- if and (not (empty .Values.cluster_logging_operator)) (eq .Values.cluster_logging_operator.install "true")  }}
+{{- if and (not (empty .Values.cluster_logging_operator)) (eq .Values.cluster_logging_operator.install "true") (.Values.cluster_admin_role) }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -9,6 +9,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "054"
     healthCheckTimeout: "1800"

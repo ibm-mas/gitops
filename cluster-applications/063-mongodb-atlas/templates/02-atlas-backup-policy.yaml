@@ -1,22 +1,22 @@
 {{- if and .Values.mongo.backup_enabled .Values.mongo.backup_copy_region }}
 ---
 # Backup Policy - defines retention and copy settings
-apiVersion: atlas.mongodb.com/v1
-kind: AtlasBackupPolicy
-metadata:
-  name: {{ .Values.cluster_id }}-backup-policy
-  namespace: {{ .Values.mongo.namespace }}
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "21"
-spec:
+# apiVersion: atlas.mongodb.com/v1
+# kind: AtlasBackupPolicy
+# metadata:
+#   name: {{ .Values.cluster_id }}-backup-policy
+#   namespace: {{ .Values.mongo.namespace }}
+# {{- if .Values.custom_labels }}
+#   labels:
+# {{ .Values.custom_labels | toYaml | indent 4 }}
+# {{- end }}
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "21"
+# spec:
   
-  # Backup retention policies
-  items:
-{{ .Values.mongo.backup_policy_items | toYaml | indent 8 }}
+#   # Backup retention policies
+#   items:
+# {{ .Values.mongo.backup_policy_items | toYaml | indent 8 }}
 
 ---
 # Backup Schedule - links policy to deployment
@@ -32,10 +32,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "22"
 spec:
-  
-  # Reference to the backup policy
-  policy:
-    name: {{ .Values.cluster_id }}-backup-policy
+
+  providerBackupEnabled: true
   
   # Copy settings for cross-region backup
   copySettings:

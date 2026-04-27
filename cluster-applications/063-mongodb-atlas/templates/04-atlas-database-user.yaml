@@ -3,7 +3,7 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: {{ .Values.cluster.id }}-database-user-password
+  name: {{ .Values.cluster_id }}-database-user-password
   namespace: {{ .Values.mongo.namespace }}
   labels:
     atlas.mongodb.com/type: credentials
@@ -11,7 +11,7 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
   annotations:
-    argocd.argoproj.io/sync-wave: "31"
+    argocd.argoproj.io/sync-wave: "41"
 {{- if not (.Values.mongo.reset_master_password) }}
     argocd.argoproj.io/sync-options: CreateOnly=true
 {{- else }}
@@ -24,14 +24,14 @@ stringData:
 apiVersion: atlas.mongodb.com/v1
 kind: AtlasDatabaseUser
 metadata:
-  name: {{ .Values.cluster.id }}-database-user
+  name: {{ .Values.cluster_id }}-database-user
   namespace: {{ .Values.mongo.namespace }}
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
   annotations:
-    argocd.argoproj.io/sync-wave: "32"
+    argocd.argoproj.io/sync-wave: "42"
 spec:
   externalProjectRef:
     id: {{ .Values.mongo.project_id }}
@@ -40,10 +40,10 @@ spec:
   connectionSecret:
     name: mongodb-atlas-operator-api-key
   
-  username: {{ .Values.cluster.id }}-docdbadmin
+  username: {{ .Values.cluster_id }}-docdbadmin
   
   passwordSecretRef:
-    name: {{ .Values.cluster.id }}-database-user-password
+    name: {{ .Values.cluster_id }}-database-user-password
   
   databaseName: admin
   
@@ -52,6 +52,6 @@ spec:
       databaseName: admin
 
   scopes:
-    - name: "{{ .Values.cluster.id }}-cluster"
+    - name: "{{ .Values.cluster_id }}-cluster"
       type: "CLUSTER"
 

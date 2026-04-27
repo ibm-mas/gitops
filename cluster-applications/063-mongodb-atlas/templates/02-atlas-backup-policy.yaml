@@ -1,0 +1,70 @@
+{{- if and .Values.mongo.backup_enabled .Values.mongo.backup_copy_region }}
+---
+# Backup Policy - defines retention and copy settings
+apiVersion: atlas.mongodb.com/v1
+kind: AtlasBackupPolicy
+metadata:
+  name: {{ .Values.cluster.id }}-backup-policy
+  namespace: {{ .Values.mongo.namespace }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "21"
+spec:
+  externalProjectRef:
+    id: {{ .Values.mongo.project_id }}
+  
+  connectionSecret:
+    name: mongodb-atlas-operator-api-key
+  
+  # Backup retention policies
+  policies:
+    - id: {{ .Values.cluster.id }}-policy
+      policyItems:
+{{ .Values.mongo.backup_policy_items | toYaml | indent 8 }}
+  
+  # Copy settings for cross-region backup
+  copySettings:
+    - cloudProvider: AWS
+      regionName: {{ .Values.mongo.backup_copy_region | upper | replace "-" "_" }}
+      shouldCopyOplogs: true
+      frequencies:
+        - daily
+        - weekly
+        - monthly
+
+---
+# Backup Schedule - links policy to deployment
+apiVersion: atlas.mongodb.com/v1
+kind: AtlasBackupSchedule
+metadata:
+  name: {{ .Values.cluster.id }}-backup-schedule
+  namespace: {{ .Values.mongo.namespace }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "22"
+spec:
+  externalProjectRef:
+    id: {{ .Values.mongo.project_id }}
+  
+  connectionSecret:
+    name: mongodb-atlas-operator-api-key
+  
+  # Reference to the backup policy
+  policy:
+    name: {{ .Values.cluster.id }}-backup-policy
+  
+  # Auto export settings (optional)
+  autoExportEnabled: false
+  
+  # Reference export policy if needed
+  # export:
+  #   exportBucketId: ""
+  #   frequencyType: monthly
+{{- end }}
+

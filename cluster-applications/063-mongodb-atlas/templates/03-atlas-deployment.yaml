@@ -1,19 +1,19 @@
 apiVersion: atlas.mongodb.com/v1
 kind: AtlasDeployment
 metadata:
-  name: {{ .Values.cluster.id }}-atlas-cluster
+  name: {{ .Values.cluster_id }}-atlas-cluster
   namespace: {{ .Values.mongo.namespace }}
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   externalProjectRef:
     id: {{ .Values.mongo.project_id }}
   deploymentSpec:
-    name: {{ .Values.cluster.id }}-cluster
+    name: {{ .Values.cluster_id }}-cluster
     mongoDBMajorVersion: {{ .Values.mongo.major_db_version | quote }}
     clusterType: REPLICASET
     backupEnabled: {{ .Values.mongo.backup_enabled }}
@@ -25,7 +25,7 @@ spec:
         
         regionConfigs:
           - providerName: AWS
-            regionName: {{ .Values.aws_region | upper | replace "-" "_" }}
+            regionName: "{{ .Values.aws_region | upper | replace "-" "_" }}"
             priority: 7
             electableSpecs:
               instanceSize: {{ .Values.mongo.instance_size }}
@@ -51,6 +51,12 @@ spec:
                 enabled: {{ .Values.mongo.auto_scaling.disk_gb.enabled }}
 {{- end }}
 {{- end }}
+{{- end }}
+  
+{{- if and .Values.mongo.backup_enabled .Values.mongo.backup_copy_region }}
+  # Reference to backup schedule
+  backupRef:
+    name: {{ .Values.cluster_id }}-backup-schedule
 {{- end }}
   
   connectionSecret:

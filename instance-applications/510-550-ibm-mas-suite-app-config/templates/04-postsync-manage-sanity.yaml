@@ -1,5 +1,6 @@
 {{- if and (eq .Values.mas_app_id "manage") (.Values.run_sanity_test) }}
 
+{{- if .Values.application_admin_role }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
@@ -11,16 +12,16 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 # The control over if these tests run or not is controlled by the `run_sanity_test` boolean in the values
 
 {{ $ns               :=  .Values.mas_app_namespace }}
+{{ $core_ns          :=  printf "mas-%s-core" .Values.instance_id }}
 {{ $np_name          :=  "postsync-sanity-manage-np" }}
 {{ $role_name        :=  "postsync-sanity-manage-role" }}
-{{ $crole_name       :=  printf "postsync-sanity-manage-crole-%s" .Values.instance_id }}
+{{ $core_role_name   :=  "postsync-sanity-manage-core-role" }}
 {{ $sa_name          :=  printf "postsync-sanity-manage-sa-%s" .Values.instance_id }}
 {{ $rb_name          :=  "postsync-sanity-manage-rb" }}
-{{ $crb_name         :=  printf "postsync-sanity-manage-crb-%s" .Values.instance_id }}
+{{ $core_rb_name     :=  "postsync-sanity-manage-core-rb" }}
 {{ $tests_cm_name    :=  "postsync-sanity-tests-manage-cm" }}
 {{ $record_cm_name   :=  "postsync-sanity-tests-manage-record-cm" }}
 {{ $job_name         :=  "postsync-sanity-manage-job" }}
-
 
 
 ---
@@ -65,7 +66,6 @@ metadata:
 {{- end }}
 
 
-
 ---
 # -------------------------------------
 kind: Role
@@ -100,6 +100,14 @@ rules:
       - ""
     resources:
       - configmaps
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - "route.openshift.io"
+    resources:
+      - routes
+
 ---
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -126,11 +134,12 @@ roleRef:
 
 ---
 # -------------------------------------
-# Manage Verification tests need to be able to get jdbc and superuser credentials from Core
-kind: ClusterRole
+# Manage Verification tests need to be able to get secrets and suites from the Core namespace
+kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ $crole_name }}
+  name: {{ $core_role_name }}
+  namespace: {{ $core_ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "600"
     argocd.argoproj.io/hook: PostSync
@@ -144,25 +153,23 @@ rules:
       - get
       - list
     apiGroups:
-      - "apps.mas.ibm.com"
-      - "route.openshift.io"
-      - "config.mas.ibm.com"
-      - "core.mas.ibm.com"
       - ""
     resources:
-      - manageworkspace
-      - manageapp
-      - manageworkspaces
-      - manageapps
       - secrets
-      - routes
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - "core.mas.ibm.com"
+    resources:
       - suites
 
 ---
-kind: ClusterRoleBinding
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ $crb_name }}
+  name: {{ $core_rb_name }}
+  namespace: {{ $core_ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "601"
     argocd.argoproj.io/hook: PostSync
@@ -177,8 +184,8 @@ subjects:
     namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ $crole_name }}
+  kind: Role
+  name: {{ $core_role_name }}
 # -------------------------------------
 
 ---
@@ -1453,4 +1460,5 @@ spec:
             optional: false
   backoffLimit: 10
 
+{{- end }}
 {{- end }}

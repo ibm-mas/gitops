@@ -18,7 +18,7 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 {{ $record_cm_name   :=  "postsync-verify-tests-visualinspection-record-cm" }}
 {{ $job_name         :=  "postsync-verify-mvi-job" }}
 
-
+{{- if .Values.application_admin_role }}
 
 ---
 # Permit outbound communication by the Job pod
@@ -135,7 +135,9 @@ roleRef:
 # -------------------------------------
 
 
+{{- end }}
 
+{{- if .Values.cluster_admin_role }}
 
 ---
 # -------------------------------------
@@ -185,6 +187,9 @@ roleRef:
   name: {{ $crole_name }}
 # -------------------------------------
 
+{{- end }}
+
+{{- if .Values.application_admin_role }}
 
 ---
 kind: ConfigMap
@@ -230,6 +235,9 @@ data:
     mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
     if mas_workspace_id is None:
       raise Exception(f"Required MAS_WORKSPACE_ID environment variable is not set")
+
+    # Check if cluster admin role is enabled (needed for GPU node access)
+    cluster_admin_role = os.getenv("CLUSTER_ADMIN_ROLE", "false").lower() == "true"
 
     mvi_namespace = f"mas-{mas_instance_id}-visualinspection"
     mvi_route_name = f"{mas_instance_id}-{mas_workspace_id}"
@@ -391,6 +399,7 @@ data:
     def test_expected_reconciled_version(mvi_workspace_reconciled_version, mvi_app_reconciled_version):
       assert mvi_app_reconciled_version == mvi_workspace_reconciled_version, f"Expected MVI Workspace Reconciled version: {mvi_workspace_reconciled_version} to match MVI Operator version: {mvi_app_reconciled_version}"
 
+    @pytest.mark.skipif(not cluster_admin_role, reason="Cluster admin role not enabled, skipping GPU node test")
     def test_at_least_one_ready_gpu_node(gpu_nodes):
       # We may have installed MVI on a cluster with no GPU nodes (e.g. an internal test system)
       # In that case, skip this test so we don't block the pipeline unnecessarily
@@ -404,8 +413,8 @@ data:
               return
       assert False, f"No GPU nodes with condition Ready=True found in the cluster."
 
+    @pytest.mark.skipif(not cluster_admin_role, reason="Cluster admin role not enabled, skipping GPU node test")
     def test_at_least_one_gpu_visible_to_mvi(gpu_nodes, mvi_host, mvi_apikey, mvi_host_ca_filepath):
-
       # We may have installed MVI on a cluster with no GPU nodes (e.g. an internal test system)
       # In that case, skip this test so we don't block the pipeline unnecessarily
       if len(gpu_nodes.items) == 0:
@@ -509,6 +518,8 @@ spec:
               value: "{{ .Values.mas_workspace_id }}"
             - name: TEST_RECORD_CM
               value: "{{ $record_cm_name }}"
+            - name: CLUSTER_ADMIN_ROLE
+              value: "{{ .Values.cluster_admin_role }}"
           volumeMounts:
             - name: tests
               mountPath: /tmp/tests
@@ -557,4 +568,5 @@ spec:
             optional: false
   backoffLimit: 4
 
+{{- end }}
 {{- end }}

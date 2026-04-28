@@ -1,4 +1,5 @@
-{{- if or (not (empty .Values.ibm_wml)) (not (empty .Values.ibm_wsl)) (not (empty .Values.ibm_spss)) }}
+{{- if or (not (empty .Values.ibm_wml)) (not (empty .Values.ibm_wsl)) (not (empty .Values.ibm_spss))  }}
+{{- if (.Values.cluster_admin_role) }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -9,6 +10,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
     instance: '{{ .Values.instance.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "121"
@@ -44,6 +48,8 @@ spec:
             cluster_id: "{{ .Values.cluster.id }}"
             instance_id: "{{ .Values.instance.id }}"
             cli_image_repo: {{ .Values.cli_image_repo }}
+            cluster_admin_role: {{ .Values.cluster_admin_role }}
+            application_admin_role: {{ .Values.application_admin_role }}
             cpd_product_version: "{{ .Values.ibm_cp4d.cpd_product_version }}"
             cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
             cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
@@ -99,4 +105,5 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - RespectIgnoreDifferences=true
+{{- end }}
 {{- end }}

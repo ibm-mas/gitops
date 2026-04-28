@@ -11,12 +11,12 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
   annotations:
-    argocd.argoproj.io/sync-wave: "21"
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   
   # Backup retention policies
   items:
-{{ .Values.mongo.backup_policy_items | toYaml | indent 8 }}
+{{ .Values.mongo.cross_region_copy_backup.backup_policy_items | toYaml | indent 8 }}
 
 ---
 # Backup Schedule - links policy to deployment
@@ -30,8 +30,10 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
   annotations:
-    argocd.argoproj.io/sync-wave: "22"
+    argocd.argoproj.io/sync-wave: "2"
 spec:
+  # Restore window in days (required by backup compliance policy)
+  restoreWindowDays: {{ .Values.mongo.cross_region_copy_backup.restoreWindowDays }}
   
   # Backup retention policies
   policy:
@@ -40,10 +42,10 @@ spec:
   # Copy settings for cross-region backup
   copySettings:
     - cloudProvider: AWS
-      regionName: {{ .Values.mongo.backup_copy_region | upper | replace "-" "_" }}
+      regionName: {{ .Values.mongo.cross_region_copy_backup.region | upper | replace "-" "_" }}
       shouldCopyOplogs: true
       frequencies:
-{{- range .Values.mongo.backup_copy_frequencies }}
+{{- range .Values.mongo.cross_region_copy_backup.backup_copy_frequencies }}
         - {{ . | upper }}
 {{- end }}
   

@@ -118,8 +118,13 @@ storage_class_definitions:
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
+| `ServiceAccount` | `presync-cleanup-operatorgroup` | `openshift-cluster-csi-drivers` | PreSync Hook | `cluster_admin_role` |
+| `Role` | `presync-cleanup-operatorgroup` | `openshift-cluster-csi-drivers` | PreSync Hook | `cluster_admin_role` |
+| `RoleBinding` | `presync-cleanup-operatorgroup` | `openshift-cluster-csi-drivers` | PreSync Hook | `cluster_admin_role` |
+| `NetworkPolicy` | `presync-cleanup-operatorgroup` | `openshift-cluster-csi-drivers` | PreSync Hook | `cluster_admin_role` |
+| `Job` | `presync-cleanup-operatorgroup` | `openshift-cluster-csi-drivers` | PreSync Hook | `cluster_admin_role` |
+| `OperatorGroup` | `openshift-cluster-csi-drivers` | `openshift-cluster-csi-drivers` | Always | `cluster_admin_role` |
 | `Secret` | `aws-efs-cloud-credentials` | `openshift-cluster-csi-drivers` | Always | `cluster_admin_role` |
-| `OperatorGroup` | `openshift-cluster-csi-drivers-operator-group` | `openshift-cluster-csi-drivers` | Always | `cluster_admin_role` |
 | `Subscription` | `aws-efs-csi-driver-operator` | `openshift-cluster-csi-drivers` | Always | `cluster_admin_role` |
 | `ClusterCSIDriver` | `efs.csi.aws.com` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
-| `StorageClass` | EFS storage classes | N/A (cluster-scoped) | Always | `cluster_admin_role` |
+| `StorageClass` | Custom EFS storage classes | N/A (cluster-scoped) | When `storage_class_definitions` provided | `cluster_admin_role` |

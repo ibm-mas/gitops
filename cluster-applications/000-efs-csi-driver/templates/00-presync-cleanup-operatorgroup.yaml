@@ -1,0 +1,186 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: presync-cleanup-operatorgroup
+  namespace: "{{ .Values.efs_csi_driver.subscription_source_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: presync-cleanup-operatorgroup
+  namespace: "{{ .Values.efs_csi_driver.subscription_source_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - apiGroups:
+      - operators.coreos.com
+    resources:
+      - operatorgroups
+    verbs:
+      - get
+      - list
+      - delete
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: presync-cleanup-operatorgroup
+  namespace: "{{ .Values.efs_csi_driver.subscription_source_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: presync-cleanup-operatorgroup
+    namespace: "{{ .Values.efs_csi_driver.subscription_source_namespace }}"
+roleRef:
+  kind: Role
+  name: presync-cleanup-operatorgroup
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: presync-cleanup-operatorgroup
+  namespace: "{{ .Values.efs_csi_driver.subscription_source_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: presync-cleanup-operatorgroup
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: presync-cleanup-operatorgroup
+  namespace: "{{ .Values.efs_csi_driver.subscription_source_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "010"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: presync-cleanup-operatorgroup
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: presync-cleanup-operatorgroup
+      restartPolicy: OnFailure
+      containers:
+        - name: cleanup
+          image: registry.redhat.io/openshift4/ose-cli:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: TARGET_NAMESPACE
+              value: "{{ .Values.efs_csi_driver.subscription_source_namespace }}"
+            - name: DESIRED_OPERATORGROUP_NAME
+              value: "openshift-cluster-csi-drivers"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              
+              echo "================================================================================"
+              echo "EFS CSI Driver OperatorGroup Cleanup PreSync Hook"
+              echo "================================================================================"
+              echo "Target Namespace: ${TARGET_NAMESPACE}"
+              echo "Desired OperatorGroup Name: ${DESIRED_OPERATORGROUP_NAME}"
+              echo ""
+              
+              # Get list of all OperatorGroups in the namespace
+              echo "Checking for existing OperatorGroups in namespace ${TARGET_NAMESPACE}..."
+              EXISTING_OGS=$(oc get operatorgroup -n ${TARGET_NAMESPACE} -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+              
+              if [[ -z "$EXISTING_OGS" ]]; then
+                echo "No existing OperatorGroups found in namespace ${TARGET_NAMESPACE}"
+                echo "Nothing to clean up. Exiting successfully."
+                exit 0
+              fi
+              
+              echo "Found OperatorGroups: ${EXISTING_OGS}"
+              echo ""
+              
+              # Check each OperatorGroup
+              for OG_NAME in ${EXISTING_OGS}; do
+                echo "--------------------------------------------------------------------------------"
+                echo "Checking OperatorGroup: ${OG_NAME}"
+                
+                if [[ "${OG_NAME}" == "${DESIRED_OPERATORGROUP_NAME}" ]]; then
+                  echo "  ✓ OperatorGroup name matches desired name: ${DESIRED_OPERATORGROUP_NAME}"
+                  echo "  → Keeping this OperatorGroup (no action needed)"
+                else
+                  echo "  ✗ OperatorGroup name does NOT match desired name"
+                  echo "  → Current name: ${OG_NAME}"
+                  echo "  → Desired name: ${DESIRED_OPERATORGROUP_NAME}"
+                  echo ""
+                  echo "  Deleting OperatorGroup: ${OG_NAME}"
+                  
+                  if oc delete operatorgroup ${OG_NAME} -n ${TARGET_NAMESPACE} --timeout=60s; then
+                    echo "  ✓ Successfully deleted OperatorGroup: ${OG_NAME}"
+                  else
+                    echo "  ✗ Failed to delete OperatorGroup: ${OG_NAME}"
+                    echo "  This may cause issues with the sync. Manual intervention may be required."
+                    exit 1
+                  fi
+                fi
+                echo ""
+              done
+              
+              echo "================================================================================"
+              echo "Cleanup completed successfully"
+              echo "================================================================================"
+              echo "ArgoCD will now proceed to create/update the OperatorGroup with name:"
+              echo "  ${DESIRED_OPERATORGROUP_NAME}"
+              echo ""
+              
+              exit 0
+      backoffLimit: 3
+
+# Made with Bob

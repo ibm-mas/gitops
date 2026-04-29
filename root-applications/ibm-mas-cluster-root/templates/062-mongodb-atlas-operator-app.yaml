@@ -33,44 +33,27 @@ spec:
     repoURL: "{{ .Values.mongodb_helm_source.repo_url }}"
     path: charts/atlas-operator
     targetRevision: "{{ .Values.mongodb_helm_source.revision }}"
-    plugin:
-      name: {{ .Values.avp.name }}
-      env:
-        - name: {{ .Values.avp.values_varname }}
-          value: |
-            replicaCount: 1
+    helm:
+      skipCrds: true
+      values: |
+        replicaCount: 1
 
-            # Cannot rely on chart dependency in GovCloud since we are 
-            # working from an internal clone of the Helm charts hosted in GitLab
-            # NOTE: this alone is not sufficient to prevent the AVP plugin from attempting (and failing) to run helm dependency update
-            # Instead, the dependency has been removed from the charts in the GovCloud mirror of mongodb/helm-charts
-            mongodb-atlas-operator-crds:
-              enabled: false
+        # Cannot rely on chart dependency in GovCloud since we are 
+        # working from an internal clone of the Helm charts hosted in GitLab
+        # CRDs are installed separately in wave 061
+        mongodb-atlas-operator-crds:
+          enabled: false
 
-            atlasURI: {{ .Values.mongo.atlasURI }}
+        atlasURI: {{ .Values.mongo.atlasURI }}
 
-            # Override security context for OpenShift - removed runAsUser to let OpenShift assign it
-            podSecurityContext:
-              runAsNonRoot: true
-              runAsUser: null
+        # Override security context for OpenShift - removed runAsUser to let OpenShift assign it
+        podSecurityContext:
+          runAsNonRoot: true
+          runAsUser: null
 
-            # All CRs will be created in the same namespace of the operator
-            watchNamespaces:
-              - {{ .Values.mongo.namespace }}
-
-
-        - name: ARGOCD_APP_NAME
-          value: atlasoperatorapp
-        - name: HELM_ARGS
-          value: >-
-            --namespace {{ .Values.mongo.namespace }}
-            --skip-crds
-        - name: HELM_SKIP_DEPENDENCY_UPDATE
-          value: "true"
-        {{- if not (empty .Values.avp.secret) }}
-        - name: AVP_SECRET
-          value: {{ .Values.avp.secret }}
-        {{- end }}
+        # All CRs will be created in the same namespace of the operator
+        watchNamespaces:
+          - {{ .Values.mongo.namespace }}
   syncPolicy:
     automated:
       {{- if .Values.auto_delete }}

@@ -41,12 +41,14 @@ spec:
   
   # Copy settings for cross-region backup
   copySettings:
+{{- range .Values.mongo.cross_region_copy_backup.regions }}
     - cloudProvider: AWS
-      regionName: {{ .Values.mongo.cross_region_copy_backup.region | upper | replace "-" "_" }}
-      shouldCopyOplogs: true
+      regionName: {{ .region | upper | replace "-" "_" }}
+      shouldCopyOplogs: {{ .shouldCopyOplogs | default true }}
       frequencies:
-{{- range .Values.mongo.cross_region_copy_backup.backup_copy_frequencies }}
+{{- range .frequencies }}
         - {{ . | upper }}
+{{- end }}
 {{- end }}
   
   # Auto export settings (optional)

@@ -14,12 +14,18 @@ mongo:
   backup_enabled: "true"
   pit_enabled: "true"
   cross_region_copy_backup:
-    region: "" # e.g., "US_EAST_1"
-    backup_copy_frequencies:  # Mandatory when backup_copy_region is set: Which backup types to copy (affects cost)
-      - MONTHLY  # Cost-effective: Only monthly backups copied
-      # - WEEKLY  # Add for more frequent backups (increases cost)
-      # - DAILY   # Add for maximum redundancy (highest cost)
-    backup_policy_items:  # Mandatory when backup_copy_region is set: Custom backup retention policies
+    regions:  # Array of regions to copy backups to
+      - region: "US_EAST_1"  # e.g., "US_EAST_1", "US_WEST_2", "EU_WEST_1"
+        shouldCopyOplogs: true  # Whether to copy oplogs (required for point-in-time restore)
+        frequencies:  # Which backup types to copy (affects cost)
+          - MONTHLY  # Cost-effective: Only monthly backups copied
+          # - WEEKLY  # Add for more frequent backups (increases cost)
+          # - DAILY   # Add for maximum redundancy (highest cost)
+      # - region: "US_WEST_2"  # Add additional regions as needed
+      #   shouldCopyOplogs: true
+      #   frequencies:
+      #     - MONTHLY
+    backup_policy_items:  # Custom backup retention policies
       - frequencyType: hourly
         frequencyInterval: 6
         retentionUnit: days

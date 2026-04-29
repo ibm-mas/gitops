@@ -347,7 +347,14 @@ spec:
                 # Create/update the secret in AWS Secrets Manager
                 TAGS="[{\"Key\": \"source\", \"Value\": \"atlas-add-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
                 
-                sm_update_secret $SECRET_NAME_MONGO "{\"info\":\"$ESCAPED_INFO\", \"username\":\"$ATLAS_INSTANCE_USERNAME\", \"password\":\"$ATLAS_INSTANCE_PASSWORD\"}" "${TAGS}" || exit $?
+                # Write JSON to temporary file to avoid "Argument list too long" error
+                SECRET_JSON_FILE=$(mktemp)
+                cat > "$SECRET_JSON_FILE" <<SECRETEOF
+{"info":"$ESCAPED_INFO", "username":"$ATLAS_INSTANCE_USERNAME", "password":"$ATLAS_INSTANCE_PASSWORD"}
+SECRETEOF
+                
+                sm_update_secret $SECRET_NAME_MONGO "file://$SECRET_JSON_FILE" "${TAGS}" || exit $?
+                rm -f "$SECRET_JSON_FILE"
 
                 echo "AWS Secrets Manager secret updated successfully!"
               else

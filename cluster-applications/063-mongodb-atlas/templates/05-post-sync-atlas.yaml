@@ -302,14 +302,25 @@ spec:
                 exit 1
               fi
               
-              # Get CA certificate - download from MongoDB Atlas
+              # Get CA certificate - download MongoDB Atlas CA certificate (much smaller than RDS bundle)
               echo "Fetching MongoDB Atlas CA certificate..."
-              CA_CERT=$(curl -s https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem || curl -s https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem)
+              CA_CERT=$(curl -s https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem)
               
               if [ -z "$CA_CERT" ]; then
-                echo "ERROR: Could not download CA certificate"
+                echo "ERROR: Could not download CA certificate from primary source, trying fallback..."
+                CA_CERT=$(curl -s https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem)
+              fi
+              
+              if [ -z "$CA_CERT" ]; then
+                echo "ERROR: Could not download CA certificate from any source"
                 exit 1
               fi
+              
+              # Extract only the ISRG Root X1 certificate (used by MongoDB Atlas)
+              # This reduces the certificate size from ~100KB to ~2KB
+              CA_CERT=$(echo "$CA_CERT" | awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/ {print; if (/-----END CERTIFICATE-----/) exit}')
+              
+              echo "CA certificate retrieved and filtered successfully"
               
               # Parse standard connection string to extract shard hosts
               echo "Parsing MongoDB shard hosts from connection string..."
@@ -388,12 +399,16 @@ spec:
                 echo ""
                 echo "Creating/updating AWS Secrets Manager secret..."
                 
+                # Write JSON to temporary file to avoid "Argument list too long" error
+                SECRET_JSON_FILE=$(mktemp)
+                echo "$SECRET_JSON" > "$SECRET_JSON_FILE"
+                
                 # Check if secret exists
                 if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${AWS_REGION} &>/dev/null; then
                   echo "Updating existing AWS Secrets Manager secret..."
                   aws secretsmanager update-secret \
                     --secret-id "$SECRET_NAME" \
-                    --secret-string "$SECRET_JSON" \
+                    --secret-string "file://$SECRET_JSON_FILE" \
                     --region ${AWS_REGION}
                   echo "AWS Secrets Manager secret updated successfully!"
                 else
@@ -401,11 +416,14 @@ spec:
                   aws secretsmanager create-secret \
                     --name "$SECRET_NAME" \
                     --description "MongoDB Atlas connection details for ${ACCOUNT_ID}/${CLUSTER_ID}" \
-                    --secret-string "$SECRET_JSON" \
+                    --secret-string "file://$SECRET_JSON_FILE" \
                     --region ${AWS_REGION} \
                     --tags ${TAGS}
                   echo "AWS Secrets Manager secret created successfully!"
                 fi
+                
+                # Cleanup temporary file
+                rm -f "$SECRET_JSON_FILE"
               else
                 echo ""
                 echo "AWS Secrets Manager secret creation SKIPPED (update_mongo_secret=false)"

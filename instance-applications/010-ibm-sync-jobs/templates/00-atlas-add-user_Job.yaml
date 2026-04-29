@@ -322,18 +322,15 @@ spec:
               SECRETS_KEY_SEPERATOR="/"
               SECRET_NAME_MONGO="${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}mongo"
 
-              # Prepare secret JSON
-              SECRET_JSON="{\"info\": \"$ESCAPED_INFO\", \"username\": \"$ATLAS_INSTANCE_USERNAME\", \"password\": \"$ATLAS_INSTANCE_PASSWORD\"}"
-
               echo
               echo "================================================================================"
               echo "Atlas Instance MongoDB Connection Secret Details"
               echo "================================================================================"
               echo "Secret Name: $SECRET_NAME_MONGO"
               echo "Region: ${SM_AWS_REGION}"
-              echo ""
-              echo "Secret JSON Content:"
-              echo "$SECRET_JSON" | jq '.' || echo "$SECRET_JSON"
+              echo "    - ATLAS_INSTANCE_USERNAME ................... ${ATLAS_INSTANCE_USERNAME}"
+              echo "    - ATLAS_INSTANCE_PASSWORD ................... ${ATLAS_INSTANCE_PASSWORD:0:2}<snip>"
+              echo "    - ESCAPED_INFO ................... ${ESCAPED_INFO:0:100}<snip>"
               echo "================================================================================"
 
               # Conditionally create/update AWS Secrets Manager secret
@@ -350,7 +347,7 @@ spec:
                 # Create/update the secret in AWS Secrets Manager
                 TAGS="[{\"Key\": \"source\", \"Value\": \"atlas-add-user\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
                 
-                sm_update_secret "${SECRET_NAME_MONGO}" "${SECRET_JSON}" "${TAGS}" || exit $?
+                sm_update_secret $SECRET_NAME_MONGO "{\"info\":\"$ESCAPED_INFO\", \"username\":\"$ATLAS_INSTANCE_USERNAME\", \"password\":\"$ATLAS_INSTANCE_PASSWORD\"}" "${TAGS}" || exit $?
 
                 echo "AWS Secrets Manager secret updated successfully!"
               else

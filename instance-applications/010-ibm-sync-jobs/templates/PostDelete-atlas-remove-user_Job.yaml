@@ -1,0 +1,122 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.mongo }}
+
+---
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+
+
+# ServiceAccount for PostDelete job (created as part of the hook)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: atlas-remove-user-sa
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/hook: "PostDelete"
+    argocd.argoproj.io/hook-delete-policy: "HookSucceeded,HookFailed"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+
+# Deletes the acc/cluster/instance/mongo secret from AWS Secrets Manager
+# Note: AtlasDatabaseUser CR deletion handles user removal from MongoDB Atlas
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: atlas-remove-user
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/hook: "PostDelete"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: "sync-job"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: atlas-process-user
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          env:
+
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+
+            # AWS Secrets Manager credentials
+            - name: SM_AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_default_region
+            - name: SM_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_access_key_id
+            - name: SM_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws
+                  key: aws_secret_access_key
+
+            - name: MAS_WIPE_MONGO_DATA
+              value: "{{ .Values.mas_wipe_mongo_data }}"
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              echo
+              echo "================================================================================"
+              echo "Atlas Instance AWS Secrets Manager Cleanup"
+              echo "================================================================================"
+              echo "NOTE: AtlasDatabaseUser CR deletion handles user removal from MongoDB Atlas"
+              echo "This job only cleans up the AWS Secrets Manager secret"
+              echo "================================================================================"
+
+              SECRETS_KEY_SEPERATOR="/"
+              SECRET_NAME_MONGO=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}mongo
+
+              echo "Params:"
+              echo "    - ACCOUNT_ID                 ................... ${ACCOUNT_ID}"
+              echo "    - CLUSTER_ID                 ................... ${CLUSTER_ID}"
+              echo "    - MAS_INSTANCE_ID            ................... ${MAS_INSTANCE_ID}"
+              echo "    - SECRET_NAME_MONGO          ................... ${SECRET_NAME_MONGO}"
+              echo "    - SM_AWS_REGION              ................... ${SM_AWS_REGION}"
+              echo "    - SM_AWS_ACCESS_KEY_ID       ................... ${SM_AWS_ACCESS_KEY_ID:0:2}<snip>"
+              echo "    - SM_AWS_SECRET_ACCESS_KEY   ................... ${SM_AWS_SECRET_ACCESS_KEY:0:2}<snip>"
+              echo
+
+              source /mascli/functions/gitops_utils
+              sm_login
+              sm_delete_secret "${SECRET_NAME_MONGO}" || exit $?
+
+              echo "AWS Secrets Manager secret deleted successfully!"
+
+      restartPolicy: Never
+      serviceAccountName: atlas-remove-user-sa
+  backoffLimit: 4
+{{- end }}
+{{- end }}

@@ -2,6 +2,12 @@ IBM DB2U Database
 ===============================================================================
 Create a Db2RDS database for a MAS app.
 
+This chart performs the following operations in order:
+1. **PreSync**: Creates the database on the RDS instance using `rdsadmin.create_database()`
+2. **PostSync**: Creates bufferpools and tablespaces within the database
+3. **PostSync**: Configures database parameters (if specified)
+4. **PostSync**: Sets up backup CronJobs (if enabled)
+
 <!--docs-include-start-->
 
 
@@ -9,6 +15,8 @@ Create a Db2RDS database for a MAS app.
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
+| `Secret` | RDS pre-sync database creation secret | Application namespace | PreSync hook | `application_admin_role` |
+| `Job` | RDS pre-sync database creation job | Application namespace | PreSync hook | `application_admin_role` |
 | `ConfigMap` | RDS setup and backup script config maps | Application namespace | Always | `application_admin_role` |
 | `Secret` | RDS post-sync generated secret | Application namespace | When post-sync setup runs | `application_admin_role` |
 | `Job` | RDS post-sync setup job | Application namespace | Always | `application_admin_role` |

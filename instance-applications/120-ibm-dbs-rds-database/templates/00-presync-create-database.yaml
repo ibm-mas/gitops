@@ -56,6 +56,23 @@ data:
   password: {{ .Values.password | b64enc }}
 
 ---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: dbs-rds-aws-creds
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -283,8 +300,102 @@ spec:
               python ${CREATE_DB_SCRIPT} || exit $?
               
               echo ""
+              echo "================================================================================"
+              echo "Updating AWS Secrets Manager"
+              echo "================================================================================"
+              
+              source /mascli/functions/gitops_utils
+              
+              # Set AWS credentials for Secrets Manager
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              export SM_AWS_REGION=${REGION_ID}
+              
+              # Login to Secrets Manager
+              sm_login
+              
+              # Define the secret path for config
+              SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${MAS_APP_ID}/config"
+              
+              echo "Secret Path: ${SECRET_PATH}"
+              echo "Checking if secret exists and needs update..."
+              
+              # Get existing secret (if it exists)
+              EXISTING_SECRET=$(sm_get_secret_value "${SECRET_PATH}" 2>/dev/null || echo "{}")
+              
+              echo "Existing secret retrieved"
+              
+              # Check if db2_name exists and is not empty in the secret
+              DB2_NAME_EXISTS=$(echo "${EXISTING_SECRET}" | jq -r '.db2_name // empty')
+              
+              # Check if jdbc_connection_url exists and contains the database name
+              JDBC_URL_EXISTS=$(echo "${EXISTING_SECRET}" | jq -r '.jdbc_connection_url // empty')
+              JDBC_URL_HAS_DBNAME="false"
+              
+              if [ -n "${JDBC_URL_EXISTS}" ]; then
+                # Check if JDBC URL contains the database name (look for /DBNAME: pattern)
+                if echo "${JDBC_URL_EXISTS}" | grep -q "/${DB_NAME}:"; then
+                  JDBC_URL_HAS_DBNAME="true"
+                  echo "✅ JDBC URL already contains database name: ${DB_NAME}"
+                else
+                  echo "⚠️  JDBC URL exists but does not contain database name: ${DB_NAME}"
+                  echo "   Current URL: ${JDBC_URL_EXISTS}"
+                fi
+              else
+                echo "ℹ️  JDBC URL does not exist in secret"
+              fi
+              
+              # Determine if update is needed
+              UPDATE_NEEDED="false"
+              
+              if [ -z "${DB2_NAME_EXISTS}" ]; then
+                echo "ℹ️  db2_name is empty or does not exist in secret - update needed"
+                UPDATE_NEEDED="true"
+              else
+                echo "✅ db2_name already exists in secret: ${DB2_NAME_EXISTS}"
+              fi
+              
+              if [ "${JDBC_URL_HAS_DBNAME}" = "false" ]; then
+                echo "ℹ️  JDBC URL needs update (missing or doesn't contain db_name)"
+                UPDATE_NEEDED="true"
+              fi
+              
+              if [ "${UPDATE_NEEDED}" = "true" ]; then
+                echo ""
+                echo "Updating secret with database configuration..."
+                
+                # Merge existing secret with new values using jq
+                # Update db2_name and jdbc_connection_url while preserving all other fields
+                SECRET_JSON=$(echo "${EXISTING_SECRET}" | jq \
+                  --arg db2_name "${DB_NAME}" \
+                  --arg jdbc_url "${JDBC_CONNECTION_URL}" \
+                  '.db2_name = $db2_name | .jdbc_connection_url = $jdbc_url')
+                
+                echo "Merged secret (preserving existing fields):"
+                echo "${SECRET_JSON}" | jq '.'
+                
+                # Update the secret with tags
+                TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-database\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}]"
+                
+                echo "Updating AWS Secrets Manager secret..."
+                sm_update_secret "${SECRET_PATH}" "${SECRET_JSON}" "${TAGS}" || exit $?
+                
+                echo "✅ Database configuration uploaded to AWS Secrets Manager successfully"
+              else
+                echo "✅ Secret already contains correct db2_name and jdbc_connection_url - no update needed"
+              fi
+              
+              echo ""
               echo "Database creation job completed successfully"
           env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account.id | quote }}
+            - name: REGION_ID
+              value: {{ .Values.region.id | quote }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster.id | quote }}
+            - name: MAS_INSTANCE_ID
+              value: {{ .Values.instance.id | quote }}
             - name: MAS_APP_ID
               value: {{ .Values.mas_application_id | quote }}
             - name: JDBC_CONNECTION_URL
@@ -300,6 +411,8 @@ spec:
           volumeMounts:
             - name: dbs-rds-create-db-secret
               mountPath: /etc/mas/dbs-rds-creds/
+            - name: aws
+              mountPath: /etc/mas/creds/aws
       restartPolicy: Never
       volumes:
         - name: dbs-rds-create-db-secret
@@ -307,6 +420,9 @@ spec:
             secretName: dbs-rds-create-db-secret
             defaultMode: 420
             optional: false
+        - name: aws
+          secret:
+            secretName: dbs-rds-aws-creds
+            defaultMode: 420
+            optional: false
 {{- end }}
-
-# Made with Bob

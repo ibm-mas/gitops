@@ -196,6 +196,8 @@ spec:
                   key: aws_default_region
             - name: NAMESPACE
               value: "{{ .Values.mongo.namespace }}"
+            - name: MONGODB_PROVIDER
+              value: "{{ .Values.mongo.mongodb_provider }}"
             - name: UPDATE_MONGO_SECRET
               value: "{{ .Values.mongo.update_mongo_secret }}"
           command:
@@ -395,7 +397,8 @@ spec:
               echo "=========================================="
               
               # Conditionally create/update AWS Secrets Manager secret
-              if [ "${UPDATE_MONGO_SECRET}" = "true" ]; then
+              # Only update if update_mongo_secret=true AND mongodb_provider=yaml
+              if [ "${UPDATE_MONGO_SECRET}" = "true" ] && [ "${MONGODB_PROVIDER}" = "yaml" ]; then
                 echo ""
                 echo "Creating/updating AWS Secrets Manager secret..."
                 
@@ -426,8 +429,14 @@ spec:
                 rm -f "$SECRET_JSON_FILE"
               else
                 echo ""
-                echo "AWS Secrets Manager secret creation SKIPPED (update_mongo_secret=false)"
-                echo "To enable secret creation, set mongo.update_mongo_secret=true in your configuration"
+                echo "AWS Secrets Manager secret creation SKIPPED"
+                if [ "${UPDATE_MONGO_SECRET}" != "true" ]; then
+                  echo "Reason: update_mongo_secret=${UPDATE_MONGO_SECRET} (must be 'true')"
+                fi
+                if [ "${MONGODB_PROVIDER}" != "yaml" ]; then
+                  echo "Reason: mongodb_provider=${MONGODB_PROVIDER} (must be 'yaml')"
+                fi
+                echo "To enable secret creation, set mongo.update_mongo_secret=true AND mongo.mongodb_provider=yaml in your configuration"
               fi
               
               echo "Post-sync job completed successfully!"

@@ -103,6 +103,8 @@ spec:
               value: "{{ .Values.mongo.namespace }}"
             - name: VPC_ENDPOINT_ID
               value: "{{ .Values.mongo.vpcEndpointId }}"
+            - name: MONGODB_PROVIDER
+              value: "{{ .Values.mongo.mongodb_provider }}"
             - name: UPDATE_INSTANCE_MONGO_SECRET
               value: "{{ .Values.mongo.update_instance_mongo_secret }}"
 
@@ -343,7 +345,8 @@ spec:
               echo "================================================================================"
 
               # Conditionally create/update AWS Secrets Manager secret
-              if [ "${UPDATE_INSTANCE_MONGO_SECRET}" = "true" ]; then
+              # Only update if update_instance_mongo_secret=true AND mongodb_provider=yaml
+              if [ "${UPDATE_INSTANCE_MONGO_SECRET}" = "true" ] && [ "${MONGODB_PROVIDER}" = "yaml" ]; then
                 echo ""
                 echo "================================================================================"
                 echo "Updating Instance Mongo Secret in AWS Secrets Manager"
@@ -366,8 +369,14 @@ spec:
                 echo "AWS Secrets Manager secret updated successfully!"
               else
                 echo ""
-                echo "AWS Secrets Manager secret update SKIPPED (update_instance_mongo_secret=false)"
-                echo "To enable secret creation/update, set mongo.update_instance_mongo_secret=true in your configuration"
+                echo "AWS Secrets Manager secret update SKIPPED"
+                if [ "${UPDATE_INSTANCE_MONGO_SECRET}" != "true" ]; then
+                  echo "Reason: update_instance_mongo_secret=${UPDATE_INSTANCE_MONGO_SECRET} (must be 'true')"
+                fi
+                if [ "${MONGODB_PROVIDER}" != "yaml" ]; then
+                  echo "Reason: mongodb_provider=${MONGODB_PROVIDER} (must be 'yaml')"
+                fi
+                echo "To enable secret creation/update, set mongo.update_instance_mongo_secret=true AND mongo.mongodb_provider=yaml in your configuration"
               fi
 
               echo

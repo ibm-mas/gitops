@@ -1,0 +1,58 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ .Values.mas_config_name }}-wait-workspace"
+  namespace: "mas-{{ .Values.instance_id }}-core"
+  annotations:
+    argocd.argoproj.io/sync-wave: "210"
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: aicfg-presync
+    spec:
+      containers:
+        - name: wait-workspace
+          image: "quay.io/openshift/origin-cli:4.15"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Waiting for workspace to be ready..."
+              
+              # Wait for workspace CR to exist
+              timeout=600
+              elapsed=0
+              while [ $elapsed -lt $timeout ]; do
+                if oc get workspace -n mas-{{ .Values.instance_id }}-core 2>/dev/null | grep -q .; then
+                  echo "Workspace CR found"
+                  break
+                fi
+                echo "Waiting for workspace CR... ($elapsed/$timeout seconds)"
+                sleep 10
+                elapsed=$((elapsed + 10))
+              done
+              
+              if [ $elapsed -ge $timeout ]; then
+                echo "ERROR: Timeout waiting for workspace CR"
+                exit 1
+              fi
+              
+              # Wait for workspace to be ready
+              echo "Waiting for workspace to be ready..."
+              oc wait --for=condition=Ready workspace --all -n mas-{{ .Values.instance_id }}-core --timeout=600s
+              
+              echo "Workspace is ready. Proceeding with AiCfg deployment."
+      restartPolicy: Never
+      serviceAccountName: openshift-gitops-argocd-application-controller
+  backoffLimit: 3
+
+# Made with Bob

@@ -104,16 +104,36 @@ spec:
           command: [ "/bin/sh", "-c" ]
           args:
             - |
-              set -e
-              echo "Downloading RDS SSL certificate..."
-              mkdir -p /etc/mas/rds-ssl
-              curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
+            set -e
+            
+            echo "Downloading RDS SSL certificate..."
+            mkdir -p /etc/mas/rds-ssl
+            curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
+            echo "✅ Certificate downloaded to /etc/mas/rds-ssl/global-bundle.pem"
+            
+            # If DB_NAME is empty, fetch it from Secrets Manager
+            if [ -z "${DB_NAME}" ] || [ "${DB_NAME}" = "null" ]; then
+              echo "DB_NAME is empty, fetching from Secrets Manager..."
+              source /mascli/functions/gitops_utils
               
-              echo "✅ Certificate downloaded to /etc/mas/rds-ssl/global-bundle.pem"
-
-              pip install ibm_db && \
-              export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem && \
-              python /etc/mas/dbs-rds-init-script/dbs-rds-init.py
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/dbs-rds-creds/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/dbs-rds-creds/aws_secret_access_key)
+              export SM_AWS_REGION=${REGION_ID}
+              
+              sm_login
+              
+              SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${MAS_APP_ID}/config"
+              echo "Fetching database name from: ${SECRET_PATH}"
+              
+              export DB_NAME=$(sm_get_secret_value "${SECRET_PATH}" | jq -r '.db2_name // "MAXIMO"')
+              echo "✅ Database name from secret: ${DB_NAME}"
+            else
+              echo "Using provided DB_NAME: ${DB_NAME}"
+            fi
+            
+            pip install ibm_db && \
+            export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem && \
+            python /etc/mas/dbs-rds-init-script/dbs-rds-init.py
           env:
             - name: MAS_APP_ID
               value: {{ .Values.mas_application_id | quote }}
@@ -127,6 +147,14 @@ spec:
               value: {{ .Values.port | quote }}
             - name: DB_NAME
               value: {{ .Values.dbname | quote }}
+            - name: ACCOUNT_ID
+              value: {{ .Values.account.id | quote }}
+            - name: REGION_ID
+              value: {{ .Values.region.id | quote }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster.id | quote }}
+            - name: MAS_INSTANCE_ID
+              value: {{ .Values.instance.id | quote }}
             - name: SSL_CERT_PATH
               value: "/etc/mas/rds-ssl/global-bundle.pem"
             {{- if .Values.db2_database_db_config }}

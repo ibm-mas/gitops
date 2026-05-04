@@ -1,0 +1,446 @@
+{{- if and .Values.application_admin_role (not .Values.dbname) }}
+{{- /*
+  Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "dbs-rds-presync-create-db" }}
+
+{{- /*
+  Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+  Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+
+{{- /*
+  A dict of values that influence the behaviour of the job in some way.
+  Any changes to values in this dict will trigger a rerun of the job.
+  Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+  Increment this value whenever you make a change to an immutable field of the Job resource.
+  E.g. passing in a new environment variable.
+  Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- /*
+  10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
+  This is to ensure ArgoCD will create a new job resource instead of attempting (and failing) to update an
+  immutable field of any existing Job resource.
+*/}}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
+
+{{- /*
+  Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+*/}}
+{{- $_job_cleanup_group := cat $_job_name_prefix .Values.db2_instance_name | sha1sum }}
+
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: dbs-rds-create-db-secret
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  username: {{ .Values.user | b64enc }}
+  password: {{ .Values.password | b64enc }}
+
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: dbs-rds-aws-creds
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  backoffLimit: 4
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: create-database
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          command: [ "/bin/sh", "-c" ]
+          args:
+            - |
+              set -e
+              
+              echo ""
+              echo "================================================================================"
+              echo "RDS Database Creation Job"
+              echo "================================================================================"
+              echo "Database Name: ${DB_NAME}"
+              echo "RDS Host: ${DB_HOST}"
+              echo "RDS Port: ${DB_PORT}"
+              echo "RDS Admin DB: ${RDS_ADMIN_DB}"
+              echo "MAS Application ID: ${MAS_APP_ID}"
+              
+              echo ""
+              echo "Downloading RDS SSL certificate..."
+              echo "--------------------------------------------------------------------------------"
+              mkdir -p /tmp/rds-ssl
+              curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /tmp/rds-ssl/global-bundle.pem
+              echo "✅ Certificate downloaded"
+              
+              echo ""
+              echo "Installing required Python packages..."
+              echo "--------------------------------------------------------------------------------"
+              pip install ibm_db
+              
+              # Path to the generated Python script
+              CREATE_DB_SCRIPT="/tmp/create_database.py"
+              
+              echo ""
+              echo "Creating ${CREATE_DB_SCRIPT}"
+              echo "--------------------------------------------------------------------------------"
+              
+              # Generate Python script to create database
+              cat > ${CREATE_DB_SCRIPT} << 'EOFPYTHON'
+              """
+              RDS DB2 Database Creation Script
+              
+              This script creates a new database on an existing RDS DB2 instance using
+              the rdsadmin.create_database() stored procedure.
+              """
+              import ibm_db
+              import os
+              import sys
+              import re
+              import time
+              
+              # Get environment variables
+              db_host = os.getenv('DB_HOST')
+              db_port = os.getenv('DB_PORT')
+              rds_admin_db = os.getenv('RDS_ADMIN_DB', 'rdsadmin')
+              db_name = os.getenv('DB_NAME')
+              jdbc_connection_url = os.getenv('JDBC_CONNECTION_URL', '')
+              ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
+              mas_app_id = os.getenv('MAS_APP_ID', '')
+              
+              # Read credentials from mounted secret
+              with open('/etc/mas/dbs-rds-creds/username', 'r') as f:
+                  username = f.read().strip()
+              
+              with open('/etc/mas/dbs-rds-creds/password', 'r') as f:
+                  password = f.read().strip()
+              
+              # Extract SSL version from JDBC URL if provided
+              ssl_version = 'TLSv1.2'  # Default value
+              if jdbc_connection_url:
+                  ssl_version_match = re.search(r'sslVersion=([^;]+)', jdbc_connection_url, re.IGNORECASE)
+                  if ssl_version_match:
+                      ssl_version = ssl_version_match.group(1)
+                      print(f"✅ Extracted SSL Version from JDBC URL: {ssl_version}")
+                  else:
+                      print(f"ℹ️  SSL Version not found in JDBC URL, using default: {ssl_version}")
+              else:
+                  print(f"ℹ️  No JDBC URL provided, using default SSL Version: {ssl_version}")
+              
+              # Build connection string for admin database
+              conn_str = (
+                  f"DATABASE={rds_admin_db};"
+                  f"HOSTNAME={db_host};"
+                  f"PORT={db_port};"
+                  f"PROTOCOL=TCPIP;"
+                  f"UID={username};"
+                  f"PWD={password};"
+                  f"SECURITY=SSL;"
+                  f"SSLVersion={ssl_version};"
+                  f"SSLServerCertificate={ssl_cert_path};"
+              )
+              
+              print(f"\n{'='*80}")
+              print(f"Database Creation Configuration")
+              print(f"{'='*80}")
+              print(f"RDS Host: {db_host}")
+              print(f"RDS Port: {db_port}")
+              print(f"Admin Database: {rds_admin_db}")
+              print(f"Target Database: {db_name}")
+              print(f"Username: {username}")
+              print(f"MAS Application: {mas_app_id}")
+              print(f"SSL Version: {ssl_version}")
+              
+              def database_exists(conn, dbname):
+                  """Check if database already exists"""
+                  try:
+                      # Query syscat.databases to check if database exists
+                      sql = f"SELECT COUNT(*) FROM syscat.databases WHERE dbname = '{dbname.upper()}'"
+                      stmt = ibm_db.exec_immediate(conn, sql)
+                      result = ibm_db.fetch_tuple(stmt)
+                      if result and result[0] > 0:
+                          return True
+                      return False
+                  except Exception as e:
+                      print(f"⚠️  Error checking database existence: {str(e)}")
+                      return False
+              
+              try:
+                  print(f"\n{'='*80}")
+                  print(f"Connecting to RDS Admin Database")
+                  print(f"{'='*80}")
+                  
+                  # Connect to admin database
+                  conn = ibm_db.connect(conn_str, "", "")
+                  print(f"✅ Successfully connected to {rds_admin_db} database as {username}")
+                  
+                  # Check if database already exists
+                  print(f"\n{'='*80}")
+                  print(f"Checking if database '{db_name}' exists")
+                  print(f"{'='*80}")
+                  
+                  if database_exists(conn, db_name):
+                      print(f"ℹ️  Database '{db_name}' already exists - skipping creation")
+                      ibm_db.close(conn)
+                      sys.exit(0)
+                  
+                  print(f"✅ Database '{db_name}' does not exist - proceeding with creation")
+                  
+                  # Create database using RDS admin procedure
+                  print(f"\n{'='*80}")
+                  print(f"Creating database '{db_name}'")
+                  print(f"{'='*80}")
+                  
+                  # Call rdsadmin.create_database stored procedure
+                  # Parameters: database_name, codeset, territory, collate, pagesize
+                  create_db_sql = f"CALL rdsadmin.create_database('{db_name}', 'UTF-8', 'US', 'SYSTEM', 32768)"
+                  
+                  print(f"Executing: {create_db_sql}")
+                  ibm_db.exec_immediate(conn, create_db_sql)
+                  print(f"✅ Database creation command executed successfully")
+                  
+                  # Wait for database to be created (RDS creates databases asynchronously)
+                  print(f"\n⏳ Waiting for database '{db_name}' to be created...")
+                  max_retries = 24  # 24 retries = up to 2 minutes
+                  retry_delay = 5   # 5 seconds between retries
+                  
+                  for attempt in range(max_retries):
+                      time.sleep(retry_delay)
+                      
+                      if database_exists(conn, db_name):
+                          print(f"✅ Database '{db_name}' created successfully (verified after {(attempt + 1) * retry_delay} seconds)")
+                          ibm_db.close(conn)
+                          
+                          print(f"\n{'='*80}")
+                          print(f"Database Creation Completed Successfully")
+                          print(f"{'='*80}")
+                          print(f"Database Name: {db_name}")
+                          print(f"RDS Instance: {db_host}:{db_port}")
+                          print(f"Application: {mas_app_id}")
+                          
+                          sys.exit(0)
+                      else:
+                          print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Database not yet visible, waiting...")
+                  
+                  # If we get here, database still doesn't exist after all retries
+                  error_msg = f"Database '{db_name}' not found after {max_retries * retry_delay} seconds. Creation may have failed."
+                  print(f"❌ {error_msg}")
+                  ibm_db.close(conn)
+                  sys.exit(1)
+              
+              except Exception as e:
+                  error_msg = str(e)
+                  print(f"\n❌ Error during database creation: {error_msg}")
+                  
+                  # Check if error is because database already exists
+                  if "already exists" in error_msg.lower() or "duplicate" in error_msg.lower():
+                      print(f"ℹ️  Database '{db_name}' already exists (detected during creation)")
+                      sys.exit(0)
+                  else:
+                      sys.exit(1)
+              EOFPYTHON
+              # IMPORTANT: Do not make any changes to the "EOFPYTHON" line above (including its indentation)
+              
+              echo ""
+              echo "Executing ${CREATE_DB_SCRIPT}"
+              echo "--------------------------------------------------------------------------------"
+              python ${CREATE_DB_SCRIPT} || exit $?
+              
+              echo ""
+              echo "================================================================================"
+              echo "Updating AWS Secrets Manager"
+              echo "================================================================================"
+              
+              source /mascli/functions/gitops_utils
+              
+              # Set AWS credentials for Secrets Manager
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              export SM_AWS_REGION=${REGION_ID}
+              
+              # Login to Secrets Manager
+              sm_login
+              
+              # Define the secret path for config
+              SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${MAS_APP_ID}/config"
+              
+              echo "Secret Path: ${SECRET_PATH}"
+              echo "Checking if secret exists and needs update..."
+              
+              # Get existing secret (if it exists)
+              EXISTING_SECRET=$(sm_get_secret_value "${SECRET_PATH}" 2>/dev/null || echo "{}")
+              
+              echo "Existing secret retrieved"
+              
+              # Check if db2_name exists and is not empty in the secret
+              DB2_NAME_EXISTS=$(echo "${EXISTING_SECRET}" | jq -r '.db2_name // empty')
+              
+              # Check if jdbc_connection_url exists and contains the database name
+              JDBC_URL_EXISTS=$(echo "${EXISTING_SECRET}" | jq -r '.jdbc_connection_url // empty')
+              JDBC_URL_HAS_DBNAME="false"
+              
+              if [ -n "${JDBC_URL_EXISTS}" ]; then
+                # Check if JDBC URL contains the database name (look for /DBNAME: pattern)
+                if echo "${JDBC_URL_EXISTS}" | grep -q "/${DB_NAME}:"; then
+                  JDBC_URL_HAS_DBNAME="true"
+                  echo "✅ JDBC URL already contains database name: ${DB_NAME}"
+                else
+                  echo "⚠️  JDBC URL exists but does not contain database name: ${DB_NAME}"
+                  echo "   Current URL: ${JDBC_URL_EXISTS}"
+                fi
+              else
+                echo "ℹ️  JDBC URL does not exist in secret"
+              fi
+              
+              # Determine if update is needed
+              UPDATE_NEEDED="false"
+              
+              if [ -z "${DB2_NAME_EXISTS}" ]; then
+                echo "ℹ️  db2_name is empty or does not exist in secret - update needed"
+                UPDATE_NEEDED="true"
+              else
+                echo "✅ db2_name already exists in secret: ${DB2_NAME_EXISTS}"
+              fi
+              
+              if [ "${JDBC_URL_HAS_DBNAME}" = "false" ]; then
+                echo "ℹ️  JDBC URL needs update (missing or doesn't contain db_name)"
+                UPDATE_NEEDED="true"
+              fi
+              
+              if [ "${UPDATE_NEEDED}" = "true" ]; then
+                echo ""
+                echo "Updating secret with database configuration..."
+                
+                # Construct JDBC URL with database name
+                # Format: jdbc:db2://host:port/DBNAME:parameters
+                # Current format: jdbc:db2://host:port/:parameters (missing DBNAME)
+                
+                # Extract the base URL and parameters
+                if echo "${JDBC_CONNECTION_URL}" | grep -q "jdbc:db2://"; then
+                  # Remove the database name placeholder (empty between port/ and :)
+                  BASE_URL=$(echo "${JDBC_CONNECTION_URL}" | sed 's|://\([^/]*\)/:|://\1/|')
+                  # Insert the database name
+                  NEW_JDBC_URL=$(echo "${BASE_URL}" | sed "s|://\([^/]*\)/|://\1/${DB_NAME}:|")
+                  echo "Original JDBC URL: ${JDBC_CONNECTION_URL}"
+                  echo "Updated JDBC URL:  ${NEW_JDBC_URL}"
+                else
+                  # Fallback: construct from scratch
+                  NEW_JDBC_URL="jdbc:db2://${DB_HOST}:${DB_PORT}/${DB_NAME}:sslConnection=true;sslVersion=TLSv1.2"
+                  echo "Constructed new JDBC URL: ${NEW_JDBC_URL}"
+                fi
+                
+                # Merge existing secret with new values using jq
+                # Update db2_name and jdbc_connection_url while preserving all other fields
+                SECRET_JSON=$(echo "${EXISTING_SECRET}" | jq \
+                  --arg db2_name "${DB_NAME}" \
+                  --arg jdbc_url "${NEW_JDBC_URL}" \
+                  '.db2_name = $db2_name | .jdbc_connection_url = $jdbc_url')
+                
+                echo "Merged secret (preserving existing fields):"
+                echo "${SECRET_JSON}" | jq '.'
+                
+                # Update the secret with tags
+                TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-database\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${MAS_INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}]"
+                
+                echo "Updating AWS Secrets Manager secret..."
+                sm_update_secret "${SECRET_PATH}" "${SECRET_JSON}" "${TAGS}" || exit $?
+                
+                echo "✅ Database configuration uploaded to AWS Secrets Manager successfully"
+              else
+                echo "✅ Secret already contains correct db2_name and jdbc_connection_url - no update needed"
+              fi
+              
+              echo ""
+              echo "Database creation job completed successfully"
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account.id | quote }}
+            - name: REGION_ID
+              value: {{ .Values.region.id | quote }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster.id | quote }}
+            - name: MAS_INSTANCE_ID
+              value: {{ .Values.instance.id | quote }}
+            - name: MAS_APP_ID
+              value: {{ .Values.mas_application_id | quote }}
+            - name: JDBC_CONNECTION_URL
+              value: {{ .Values.jdbc_connection_url | quote }}
+            - name: DB_HOST
+              value: {{ .Values.host | quote }}
+            - name: RDS_ADMIN_DB
+              value: {{ .Values.rds_admin_db_name | quote }}
+            - name: DB_PORT
+              value: {{ .Values.port | quote }}
+            - name: DB_NAME
+              value: "MAXIMO"
+          volumeMounts:
+            - name: dbs-rds-create-db-secret
+              mountPath: /etc/mas/dbs-rds-creds/
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+      restartPolicy: Never
+      volumes:
+        - name: dbs-rds-create-db-secret
+          secret:
+            secretName: dbs-rds-create-db-secret
+            defaultMode: 420
+            optional: false
+        - name: aws
+          secret:
+            secretName: dbs-rds-aws-creds
+            defaultMode: 420
+            optional: false
+{{- end }}

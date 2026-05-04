@@ -2,6 +2,30 @@ IBM DB2U Database
 ===============================================================================
 Create a Db2RDS database for a MAS app.
 
+This chart performs the following operations in order:
+1. **PreSync**: Creates the database on the RDS instance using `rdsadmin.create_database()`
+2. **PostSync**: Creates bufferpools and tablespaces within the database
+3. **PostSync**: Configures database parameters (if specified)
+4. **PostSync**: Sets up backup CronJobs (if enabled)
+
+## Conditional Database Creation
+
+The PreSync database creation job (`00-presync-create-database.yaml`) only executes when **both** conditions are met:
+1. `application_admin_role` is enabled (default behavior)
+2. `dbname` value is **empty** or **not set**
+
+**Default Database Name**: When `dbname` is empty, the job creates a database named **"MAXIMO"** by default.
+
+**Use Cases**:
+- **Empty RDS Instance**: When RDS is provisioned without a database, `dbname` will be empty
+  - ✅ Job **RUNS** → Creates database named "MAXIMO"
+  - Updates Secrets Manager with database name and JDBC URL
+- **Existing Database**: When RDS is provisioned with a database (e.g., BLUDB), `dbname` will be set
+  - ❌ Job **SKIPS** → Uses existing database
+
+This ensures the job only runs when a new database needs to be created, avoiding conflicts with existing databases.
+
+
 <!--docs-include-start-->
 
 
@@ -9,6 +33,8 @@ Create a Db2RDS database for a MAS app.
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
+| `Secret` | RDS pre-sync database creation secret | Application namespace | PreSync hook | `application_admin_role` |
+| `Job` | RDS pre-sync database creation job | Application namespace | PreSync hook | `application_admin_role` |
 | `ConfigMap` | RDS setup and backup script config maps | Application namespace | Always | `application_admin_role` |
 | `Secret` | RDS post-sync generated secret | Application namespace | When post-sync setup runs | `application_admin_role` |
 | `Job` | RDS post-sync setup job | Application namespace | Always | `application_admin_role` |

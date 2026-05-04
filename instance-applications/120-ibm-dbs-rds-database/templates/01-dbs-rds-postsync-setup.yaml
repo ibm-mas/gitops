@@ -25,7 +25,7 @@
   E.g. passing in a new environment variable.
   Included in $_job_hash (see below).
   */}}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v1" }}
 
 {{- /*
   10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -104,32 +104,36 @@ spec:
           command: [ "/bin/sh", "-c" ]
           args:
             - |
-              set -e
-              echo "Downloading RDS SSL certificate..."
-              mkdir -p /etc/mas/rds-ssl
-              curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
+            set -e
+            
+            echo "Downloading RDS SSL certificate..."
+            mkdir -p /etc/mas/rds-ssl
+            curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
+            echo "✅ Certificate downloaded to /etc/mas/rds-ssl/global-bundle.pem"
+            
+            # If DB_NAME is empty, fetch it from Secrets Manager
+            if [ -z "${DB_NAME}" ] || [ "${DB_NAME}" = "null" ]; then
+              echo "DB_NAME is empty, fetching from Secrets Manager..."
+              source /mascli/functions/gitops_utils
               
-              echo "✅ Certificate downloaded to /etc/mas/rds-ssl/global-bundle.pem"
-
-              echo "Installing libxcrypt-compat for ibm_db compatibility..."
-              # Try different package managers (yum, dnf, apt-get)
-              if command -v yum &> /dev/null; then
-                yum install -y libxcrypt-compat
-              elif command -v dnf &> /dev/null; then
-                dnf install -y libxcrypt-compat
-              elif command -v apt-get &> /dev/null; then
-                apt-get update && apt-get install -y libcrypt1
-              else
-                echo "No package manager found, attempting to create symlink..."
-                ln -sf /usr/lib64/libcrypt.so.2 /usr/lib64/libcrypt.so.1 || \
-                ln -sf /usr/lib/x86_64-linux-gnu/libcrypt.so.2 /usr/lib/x86_64-linux-gnu/libcrypt.so.1 || \
-                echo "Could not create symlink, proceeding anyway..."
-              fi
-              echo "Compatibility library setup complete"
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/dbs-rds-creds/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/dbs-rds-creds/aws_secret_access_key)
+              export SM_AWS_REGION=${REGION_ID}
               
-              pip install ibm_db && \
-              export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem && \
-              python /etc/mas/dbs-rds-init-script/dbs-rds-init.py
+              sm_login
+              
+              SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${MAS_APP_ID}/config"
+              echo "Fetching database name from: ${SECRET_PATH}"
+              
+              export DB_NAME=$(sm_get_secret_value "${SECRET_PATH}" | jq -r '.db2_name // "MAXIMO"')
+              echo "✅ Database name from secret: ${DB_NAME}"
+            else
+              echo "Using provided DB_NAME: ${DB_NAME}"
+            fi
+            
+            pip install ibm_db && \
+            export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem && \
+            python /etc/mas/dbs-rds-init-script/dbs-rds-init.py
           env:
             - name: MAS_APP_ID
               value: {{ .Values.mas_application_id | quote }}
@@ -143,6 +147,14 @@ spec:
               value: {{ .Values.port | quote }}
             - name: DB_NAME
               value: {{ .Values.dbname | quote }}
+            - name: ACCOUNT_ID
+              value: {{ .Values.account.id | quote }}
+            - name: REGION_ID
+              value: {{ .Values.region.id | quote }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster.id | quote }}
+            - name: MAS_INSTANCE_ID
+              value: {{ .Values.instance.id | quote }}
             - name: SSL_CERT_PATH
               value: "/etc/mas/rds-ssl/global-bundle.pem"
             {{- if .Values.db2_database_db_config }}

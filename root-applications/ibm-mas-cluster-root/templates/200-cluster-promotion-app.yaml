@@ -1,4 +1,4 @@
-{{- if not (empty .Values.promotion) }}
+{{- if and (not (empty .Values.promotion)) (.Values.cluster_admin_role) }}
 ---
 # Cluster Promotion
 apiVersion: argoproj.io/v1alpha1
@@ -10,6 +10,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "200"
     healthCheckTimeout: "1800"

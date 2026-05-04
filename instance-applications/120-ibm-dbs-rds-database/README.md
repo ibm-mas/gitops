@@ -8,6 +8,24 @@ This chart performs the following operations in order:
 3. **PostSync**: Configures database parameters (if specified)
 4. **PostSync**: Sets up backup CronJobs (if enabled)
 
+## Conditional Database Creation
+
+The PreSync database creation job (`00-presync-create-database.yaml`) only executes when **both** conditions are met:
+1. `application_admin_role` is enabled (default behavior)
+2. `dbname` value is **empty** or **not set**
+
+**Default Database Name**: When `dbname` is empty, the job creates a database named **"MAXIMO"** by default.
+
+**Use Cases**:
+- **Empty RDS Instance**: When RDS is provisioned without a database, `dbname` will be empty
+  - ✅ Job **RUNS** → Creates database named "MAXIMO"
+  - Updates Secrets Manager with database name and JDBC URL
+- **Existing Database**: When RDS is provisioned with a database (e.g., BLUDB), `dbname` will be set
+  - ❌ Job **SKIPS** → Uses existing database
+
+This ensures the job only runs when a new database needs to be created, avoiding conflicts with existing databases.
+
+
 <!--docs-include-start-->
 
 

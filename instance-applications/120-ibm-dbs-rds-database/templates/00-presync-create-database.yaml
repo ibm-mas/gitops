@@ -364,11 +364,29 @@ spec:
                 echo ""
                 echo "Updating secret with database configuration..."
                 
+                # Construct JDBC URL with database name
+                # Format: jdbc:db2://host:port/DBNAME:parameters
+                # Current format: jdbc:db2://host:port/:parameters (missing DBNAME)
+                
+                # Extract the base URL and parameters
+                if echo "${JDBC_CONNECTION_URL}" | grep -q "jdbc:db2://"; then
+                  # Remove the database name placeholder (empty between port/ and :)
+                  BASE_URL=$(echo "${JDBC_CONNECTION_URL}" | sed 's|://\([^/]*\)/:|://\1/|')
+                  # Insert the database name
+                  NEW_JDBC_URL=$(echo "${BASE_URL}" | sed "s|://\([^/]*\)/|://\1/${DB_NAME}:|")
+                  echo "Original JDBC URL: ${JDBC_CONNECTION_URL}"
+                  echo "Updated JDBC URL:  ${NEW_JDBC_URL}"
+                else
+                  # Fallback: construct from scratch
+                  NEW_JDBC_URL="jdbc:db2://${DB_HOST}:${DB_PORT}/${DB_NAME}:sslConnection=true;sslVersion=TLSv1.2"
+                  echo "Constructed new JDBC URL: ${NEW_JDBC_URL}"
+                fi
+                
                 # Merge existing secret with new values using jq
                 # Update db2_name and jdbc_connection_url while preserving all other fields
                 SECRET_JSON=$(echo "${EXISTING_SECRET}" | jq \
                   --arg db2_name "${DB_NAME}" \
-                  --arg jdbc_url "${JDBC_CONNECTION_URL}" \
+                  --arg jdbc_url "${NEW_JDBC_URL}" \
                   '.db2_name = $db2_name | .jdbc_connection_url = $jdbc_url')
                 
                 echo "Merged secret (preserving existing fields):"

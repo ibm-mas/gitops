@@ -28,29 +28,26 @@ spec:
               set -e
               echo "Waiting for workspace to be ready..."
               
-              # Wait for workspace CR to exist
-              timeout=600
-              elapsed=0
-              while [ $elapsed -lt $timeout ]; do
+              # Wait for workspace CR to exist (no timeout)
+              while true; do
                 if oc get workspace -n mas-{{ .Values.instance_id }}-core 2>/dev/null | grep -q .; then
                   echo "Workspace CR found"
                   break
                 fi
-                echo "Waiting for workspace CR... ($elapsed/$timeout seconds)"
+                echo "Waiting for workspace CR..."
                 sleep 10
-                elapsed=$((elapsed + 10))
               done
               
-              if [ $elapsed -ge $timeout ]; then
-                echo "ERROR: Timeout waiting for workspace CR"
-                exit 1
-              fi
-              
-              # Wait for workspace to be ready
+              # Wait for workspace to be ready (no timeout)
               echo "Waiting for workspace to be ready..."
-              oc wait --for=condition=Ready workspace --all -n mas-{{ .Values.instance_id }}-core --timeout=600s
-              
-              echo "Workspace is ready. Proceeding with AiCfg deployment."
+              while true; do
+                if oc get workspace -n mas-{{ .Values.instance_id }}-core -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; then
+                  echo "Workspace is ready. Proceeding with AiCfg deployment."
+                  break
+                fi
+                echo "Workspace not ready yet, waiting..."
+                sleep 10
+              done
       restartPolicy: Never
       serviceAccountName: openshift-gitops-argocd-application-controller
   backoffLimit: 3

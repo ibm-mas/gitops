@@ -269,23 +269,33 @@ spec:
 
               echo "Extracted shard hosts: $HOSTS_STRING"
 
-              # Get CA certificate - download MongoDB Atlas CA certificate
-              # MongoDB Atlas uses Let's Encrypt, which chains to ISRG Root X1
-              echo "Fetching MongoDB Atlas CA certificate (ISRG Root X1)..."
-              CA_CERT=$(curl -s https://letsencrypt.org/certs/isrgrootx1.pem)
+              # Get CA certificate chain - MongoDB Atlas uses Let's Encrypt
+              # Need both ISRG Root X1 (root) and R10 (intermediate) for complete chain
+              echo "Fetching MongoDB Atlas CA certificate chain..."
               
-              if [ -z "$CA_CERT" ]; then
-                echo "ERROR: Could not download ISRG Root X1 certificate from Let's Encrypt, trying fallback..."
-                # Fallback: Try to get from a different source
-                CA_CERT=$(curl -s https://ssl-tools.net/certificates/dac9024f54d8f6df94935fb1732638ca6ad77c13.pem)
-              fi
-              
-              if [ -z "$CA_CERT" ]; then
-                echo "ERROR: Could not download CA certificate from any source"
+              # Download ISRG Root X1 (root certificate)
+              ISRG_ROOT=$(curl -s https://letsencrypt.org/certs/isrgrootx1.pem)
+              if [ -z "$ISRG_ROOT" ]; then
+                echo "ERROR: Could not download ISRG Root X1 certificate"
                 exit 1
               fi
               
-              echo "CA certificate retrieved successfully"
+              # Download R10 intermediate certificate (current Let's Encrypt intermediate)
+              R10_INTERMEDIATE=$(curl -s https://letsencrypt.org/certs/2024/r10.pem)
+              if [ -z "$R10_INTERMEDIATE" ]; then
+                echo "WARNING: Could not download R10 intermediate, trying R11..."
+                R10_INTERMEDIATE=$(curl -s https://letsencrypt.org/certs/2024/r11.pem)
+              fi
+              
+              # Combine certificates (intermediate first, then root)
+              if [ -n "$R10_INTERMEDIATE" ]; then
+                CA_CERT="${R10_INTERMEDIATE}"$'\n'"${ISRG_ROOT}"
+                echo "CA certificate chain retrieved successfully (R10/R11 + ISRG Root X1)"
+              else
+                # Fallback to just root certificate
+                CA_CERT="${ISRG_ROOT}"
+                echo "WARNING: Using only ISRG Root X1 certificate (intermediate not available)"
+              fi
 
               # Create YAML info structure with hosts
               INFO_YAML=$(cat <<'EOFINFO'

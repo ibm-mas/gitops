@@ -269,33 +269,17 @@ spec:
 
               echo "Extracted shard hosts: $HOSTS_STRING"
 
-              # Get CA certificate chain - MongoDB Atlas uses Let's Encrypt
-              # Need both ISRG Root X1 (root) and R10 (intermediate) for complete chain
-              echo "Fetching MongoDB Atlas CA certificate chain..."
+              # Get CA certificate - download MongoDB Atlas CA certificate
+              # MongoDB Atlas uses GTS Root R1 from Google Trust Services
+              echo "Fetching MongoDB Atlas CA certificate (GTS Root R1)..."
+              CA_CERT=$(curl -s https://pki.goog/repo/certs/gtsr1.pem)
               
-              # Download ISRG Root X1 (root certificate)
-              ISRG_ROOT=$(curl -s https://letsencrypt.org/certs/isrgrootx1.pem)
-              if [ -z "$ISRG_ROOT" ]; then
-                echo "ERROR: Could not download ISRG Root X1 certificate"
+              if [ -z "$CA_CERT" ]; then
+                echo "ERROR: Could not download GTS Root R1 certificate from Google PKI"
                 exit 1
               fi
               
-              # Download R10 intermediate certificate (current Let's Encrypt intermediate)
-              R10_INTERMEDIATE=$(curl -s https://letsencrypt.org/certs/2024/r10.pem)
-              if [ -z "$R10_INTERMEDIATE" ]; then
-                echo "WARNING: Could not download R10 intermediate, trying R11..."
-                R10_INTERMEDIATE=$(curl -s https://letsencrypt.org/certs/2024/r11.pem)
-              fi
-              
-              # Combine certificates (intermediate first, then root)
-              if [ -n "$R10_INTERMEDIATE" ]; then
-                CA_CERT="${R10_INTERMEDIATE}"$'\n'"${ISRG_ROOT}"
-                echo "CA certificate chain retrieved successfully (R10/R11 + ISRG Root X1)"
-              else
-                # Fallback to just root certificate
-                CA_CERT="${ISRG_ROOT}"
-                echo "WARNING: Using only ISRG Root X1 certificate (intermediate not available)"
-              fi
+              echo "CA certificate retrieved successfully"
 
               # Create YAML info structure with hosts
               INFO_YAML=$(cat <<'EOFINFO'

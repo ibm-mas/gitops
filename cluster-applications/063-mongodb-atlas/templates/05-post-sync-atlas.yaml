@@ -304,25 +304,17 @@ spec:
                 exit 1
               fi
               
-              # Get CA certificate - download MongoDB Atlas CA certificate (much smaller than RDS bundle)
-              echo "Fetching MongoDB Atlas CA certificate..."
-              CA_CERT=$(curl -s https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem)
+              # Get CA certificate - download MongoDB Atlas CA certificate
+              # MongoDB Atlas uses GTS Root R1 from Google Trust Services
+              echo "Fetching MongoDB Atlas CA certificate (GTS Root R1)..."
+              CA_CERT=$(curl -s https://pki.goog/repo/certs/gtsr1.pem)
               
               if [ -z "$CA_CERT" ]; then
-                echo "ERROR: Could not download CA certificate from primary source, trying fallback..."
-                CA_CERT=$(curl -s https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem)
-              fi
-              
-              if [ -z "$CA_CERT" ]; then
-                echo "ERROR: Could not download CA certificate from any source"
+                echo "ERROR: Could not download GTS Root R1 certificate from Google PKI"
                 exit 1
               fi
               
-              # Extract only the ISRG Root X1 certificate (used by MongoDB Atlas)
-              # This reduces the certificate size from ~100KB to ~2KB
-              CA_CERT=$(echo "$CA_CERT" | awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/ {print; if (/-----END CERTIFICATE-----/) exit}')
-              
-              echo "CA certificate retrieved and filtered successfully"
+              echo "CA certificate retrieved successfully"
               
               # Parse standard connection string to extract shard hosts
               echo "Parsing MongoDB shard hosts from connection string..."

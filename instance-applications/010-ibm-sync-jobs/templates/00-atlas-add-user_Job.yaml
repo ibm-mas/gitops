@@ -269,13 +269,15 @@ spec:
 
               echo "Extracted shard hosts: $HOSTS_STRING"
 
-              # Get CA certificate - download MongoDB Atlas CA certificate (much smaller than RDS bundle)
-              echo "Fetching MongoDB Atlas CA certificate..."
-              CA_CERT=$(curl -s https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem)
+              # Get CA certificate - download MongoDB Atlas CA certificate
+              # MongoDB Atlas uses Let's Encrypt, which chains to ISRG Root X1
+              echo "Fetching MongoDB Atlas CA certificate (ISRG Root X1)..."
+              CA_CERT=$(curl -s https://letsencrypt.org/certs/isrgrootx1.pem)
               
               if [ -z "$CA_CERT" ]; then
-                echo "ERROR: Could not download CA certificate from primary source, trying fallback..."
-                CA_CERT=$(curl -s https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem)
+                echo "ERROR: Could not download ISRG Root X1 certificate from Let's Encrypt, trying fallback..."
+                # Fallback: Try to get from a different source
+                CA_CERT=$(curl -s https://ssl-tools.net/certificates/dac9024f54d8f6df94935fb1732638ca6ad77c13.pem)
               fi
               
               if [ -z "$CA_CERT" ]; then
@@ -283,11 +285,7 @@ spec:
                 exit 1
               fi
               
-              # Extract only the ISRG Root X1 certificate (used by MongoDB Atlas)
-              # This reduces the certificate size from ~100KB to ~2KB
-              CA_CERT=$(echo "$CA_CERT" | awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/ {print; if (/-----END CERTIFICATE-----/) exit}')
-              
-              echo "CA certificate retrieved and filtered successfully"
+              echo "CA certificate retrieved successfully"
 
               # Create YAML info structure with hosts
               INFO_YAML=$(cat <<'EOFINFO'

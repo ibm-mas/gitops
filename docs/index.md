@@ -29,6 +29,10 @@ Explore the documentation to understand the architecture and deployment patterns
 - **[The Config Repository](configrepo.md)** - Configure your MAS deployments
 - **[Deployment Orchestration](orchestration.md)** - How ArgoCD manages the deployment flow
 
+## Demo Repository
+
+- **[gitops-demo](https://github.com/ibm-mas/gitops-demo/)** - demo repository contains a step-by-step guide to using gitops
+
 ## Quick Links
 
 - **[Helm Charts Index](charts-index.md)** - Browse all available charts

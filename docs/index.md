@@ -31,8 +31,7 @@ Explore the documentation to understand the architecture and deployment patterns
 
 ## Demo Repository
 
-This demo repository contains a step-by-step guide to using gitops:
-- **[gitops-demo](https://github.com/ibm-mas/gitops-demo/)**
+- **[gitops-demo](https://github.com/ibm-mas/gitops-demo/)** - demo repository contains a step-by-step guide to using gitops
 
 ## Quick Links
 

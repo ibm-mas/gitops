@@ -149,34 +149,48 @@ spec:
               export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem
               
               # -----------------------------
-              # Run Python logic
+              # Run Python logic (sets DB_CREATED flag)
               # -----------------------------
-              python3 /etc/mas/scripts/db2_create_database.py
+              python3 /etc/mas/scripts/db2_create_database.py > /tmp/db_output.log 2>&1
+              cat /tmp/db_output.log
               
-              # -----------------------------
-              # Update Secrets Manager with database name
-              # -----------------------------
-              echo "Updating Secrets Manager..."
-              
-              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-              export SM_AWS_REGION=${SM_AWS_SECRET_REGION}
-              
-              SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/jdbc/{{ .Values.db2_rds_instance_name }}/config"
-              
-              sm_login
-              
-              EXISTING_SECRET=$(sm_get_secret_value "${SECRET_PATH}" 2>/dev/null || echo "{}")
-              
-              NEW_SECRET=$(echo "${EXISTING_SECRET}" | jq --arg db "${DB_NAME}" '. + {db2_name: $db}')
-              
-              if [ -n "${JDBC_CONNECTION_URL}" ]; then
-                NEW_URL=$(printf '%s\n' "${JDBC_CONNECTION_URL}" | sed -E "s|(jdbc:db2://[^/]+/)([^:]*)(:.*)?$|\\1${DB_NAME}\\3|")
-                NEW_SECRET=$(echo "${NEW_SECRET}" | jq --arg url "${NEW_URL}" '. + {jdbc_connection_url: $url}')
+              # Check if database was created (look for create_complete event)
+              if grep -q '"event":"create_complete"' /tmp/db_output.log; then
+                DB_WAS_CREATED=true
+                echo "✓ Database was created in this run"
+              else
+                DB_WAS_CREATED=false
+                echo "ℹ️  Database already existed"
               fi
               
-              sm_update_secret "${SECRET_PATH}" "${NEW_SECRET}"
-              echo "✓ Secrets Manager updated"
+              # -----------------------------
+              # Update Secrets Manager (only if database was created)
+              # -----------------------------
+              if [ "$DB_WAS_CREATED" = "true" ]; then
+                echo "Updating Secrets Manager..."
+                
+                export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+                export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+                export SM_AWS_REGION=${SM_AWS_SECRET_REGION}
+                
+                SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/jdbc/{{ .Values.db2_rds_instance_name }}/config"
+                
+                sm_login
+                
+                EXISTING_SECRET=$(sm_get_secret_value "${SECRET_PATH}" 2>/dev/null || echo "{}")
+                
+                NEW_SECRET=$(echo "${EXISTING_SECRET}" | jq --arg db "${DB_NAME}" '. + {db2_name: $db}')
+                
+                if [ -n "${JDBC_CONNECTION_URL}" ]; then
+                  NEW_URL=$(printf '%s\n' "${JDBC_CONNECTION_URL}" | sed -E "s|(jdbc:db2://[^/]+/)([^:]*)(:.*)?$|\\1${DB_NAME}\\3|")
+                  NEW_SECRET=$(echo "${NEW_SECRET}" | jq --arg url "${NEW_URL}" '. + {jdbc_connection_url: $url}')
+                fi
+                
+                sm_update_secret "${SECRET_PATH}" "${NEW_SECRET}"
+                echo "✓ Secrets Manager updated"
+              else
+                echo "ℹ️  Skipping Secrets Manager update (database already existed)"
+              fi
               
               echo "==== COMPLETED ===="
           env:

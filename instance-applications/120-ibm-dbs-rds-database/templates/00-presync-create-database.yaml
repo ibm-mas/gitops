@@ -47,7 +47,7 @@ metadata:
   name: {{ $_job_name }}
   annotations:
     argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -221,14 +221,14 @@ spec:
               mountPath: /etc/mas/creds/aws
             - name: create-db-script
               mountPath: /etc/mas/scripts/
-      volumes:
-        - name: dbs-rds-create-db-secret
-          secret:
-            secretName: {{ .Values.db2_rds_instance_name }}-create-db-secret
-        - name: aws
-          secret:
-            secretName: {{ .Values.db2_rds_instance_name }}-aws-creds
-        - name: create-db-script
-          configMap:
-            name: {{ .Values.db2_rds_instance_name }}-create-db-script
-            defaultMode: 0755
+volumes:
+- name: dbs-rds-create-db-secret
+  secret:
+    secretName: {{ .Values.db2_rds_instance_name }}-create-db-secret
+- name: aws
+  secret:
+    secretName: {{ .Values.db2_rds_instance_name }}-aws-creds
+- name: create-db-script
+  configMap:
+    name: {{ .Values.db2_rds_instance_name }}-create-db-script
+    defaultMode: 0755

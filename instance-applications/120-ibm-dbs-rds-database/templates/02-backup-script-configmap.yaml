@@ -1,0 +1,132 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "{{ .Values.scriptConfigMapName }}-backup"
+  annotations:
+    argocd.argoproj.io/sync-wave: "137"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  rds-db2-backup.py: |
+    #!/usr/bin/env python3
+    """
+    RDS DB2 Backup Script
+    """
+    import ibm_db as db2
+    import os
+    import sys
+    import time
+    from datetime import datetime
+    backup_type = os.getenv("BACKUP_TYPE", "ONLINE")
+    database_name = os.getenv("DB_NAME")
+    s3_bucket_name = os.getenv("S3_BUCKET_NAME")
+    s3_prefix = os.getenv("S3_PREFIX", "db2-backups")
+    compression = os.getenv("COMPRESSION", "INCLUDE")
+    util_impact_priority = int(os.getenv("UTIL_IMPACT_PRIORITY", "50"))
+    num_files = int(os.getenv("NUM_FILES", "4"))
+    parallelism = int(os.getenv("PARALLELISM", "4"))
+    num_buffers = int(os.getenv("NUM_BUFFERS", "8"))
+    
+    ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
+    jdbc_connection_url = os.environ.get("JDBC_CONNECTION_URL", "")
+    
+    with open("/etc/mas/dbs-rds-creds/username", 'r') as f:
+        username = f.read().strip()
+    
+    with open("/etc/mas/dbs-rds-creds/password", 'r') as f:
+        password = f.read().strip()
+    
+    ssl_version = 'TLSv1.2'
+    if jdbc_connection_url:
+        import re
+        ssl_version_match = re.search(r'sslVersion=([^;]+)', jdbc_connection_url, re.IGNORECASE)
+        if ssl_version_match:
+            ssl_version = ssl_version_match.group(1)
+    
+    conn_rds_admin_str = (
+        f"DATABASE={os.environ['RDS_ADMIN_DB']};"
+        f"HOSTNAME={os.environ['DB_HOST']};"
+        f"PORT={os.environ['DB_PORT']};"
+        f"PROTOCOL=TCPIP;"
+        f"UID={username};"
+        f"PWD={password};"
+        f"SECURITY=SSL;"
+        f"SSLVersion={ssl_version};"
+        f"SSLServerCertificate={ssl_cert_path};"
+    )
+    
+    
+    if not database_name:
+        print("❌ ERROR: DB_NAME environment variable is required")
+        sys.exit(1)
+    
+    if not s3_bucket_name:
+        print("❌ ERROR: S3_BUCKET_NAME environment variable is required")
+        sys.exit(1)
+    
+    try:
+        admin_conn = db2.connect(conn_rds_admin_str, "", "")
+        
+        timestamp = datetime.now().strftime("%y%m%d%H%M")
+        backup_type_short = "f" if backup_type.upper() in ["FULL", "ONLINE", "OFFLINE"] else "i"
+        s3_backup_folder = f"{backup_type_short}{timestamp}/"
+        
+        if s3_prefix:
+            s3_display_path = f"{s3_prefix.rstrip('/')}/{s3_backup_folder}"
+        else:
+            s3_display_path = s3_backup_folder
+        
+        print(f"Step 1: Initiating {backup_type} backup...")
+        try:
+            print(f"   Executing: ibm_db.callproc(rdsadmin.backup_database, ('NONE', '{database_name}', '{s3_bucket_name}', '{s3_backup_folder}', '{backup_type}', '{compression}', {util_impact_priority}, {num_files}, {parallelism}, {num_buffers}))")
+            result = db2.callproc(
+                admin_conn,
+                "rdsadmin.backup_database",
+                (
+                    'NONE',
+                    database_name,
+                    s3_bucket_name,
+                    s3_backup_folder,
+                    backup_type,
+                    compression,
+                    util_impact_priority,
+                    num_files,
+                    parallelism,
+                    num_buffers
+                )
+            )
+            
+            print(f"   ✅ Backup task initiated successfully")
+            print(f"   ℹ️  Backup procedure called: rdsadmin.backup_database")
+            print(f"   ℹ️  Backup is running asynchronously in the background\n")
+            
+        except Exception as proc_error:
+            print(f"   ❌ Failed to call stored procedure: {str(proc_error)}")
+            raise
+        
+        print(f"\nStep 2: Backup Status Monitoring")
+        print(f"   ℹ️  To check backup status:")
+        print(f"      1. S3 bucket: s3://{s3_bucket_name}/{s3_display_path}")
+        print(f"      2. DB2 history: SELECT * FROM SYSIBMADM.DB_HISTORY WHERE OPERATION='B'")
+        print(f"   ⏳ Waiting 60 seconds...")
+        time.sleep(60)
+        print(f"   ✅ Complete")
+        
+        print(f"\nStep 3: Backup Summary")
+        print(f"   S3 Location: s3://{s3_bucket_name}/{s3_display_path}")
+        
+        print(f"\nStep 4: Closing connection...")
+        db2.close(admin_conn)
+        print(f"   ✅ Closed")
+        
+    except Exception as e:
+        print(f"\n{'='*80}")
+        print(f"❌ ERROR: Backup failed")
+        print(f"{'='*80}")
+        print(f"Error details: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

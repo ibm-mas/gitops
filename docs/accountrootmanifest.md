@@ -44,13 +44,13 @@ spec:
             secret: <avp-secret>
             values_varname: <val-values-varname>
 
+          cluster_admin_role: <false|true>
+          
+          application_admin_role: <false|true>
+
           auto_delete: <false|true>
 
           disable_docdb_instance_user_management: <false|true>
-
-
-
-            
     
   syncPolicy:
     automated:
@@ -93,6 +93,33 @@ The name of the k8s secret containing the credentials for accessing the vault th
 #### `<avp-values_varname>`
 The name of the environment variable used to pass values inline to AVP. Defaults to `HELM_VALUES`.
 
+#### `cluster_admin_role`
+Defaults to `true`.
+
+Controls whether cluster-admin level resources are deployed. When set to `true`, the GitOps deployment will create cluster-scoped resources including:  
+- Operators and their subscriptions  
+- Custom Resource Definitions (CRDs)  
+- ClusterRoles and ClusterRoleBindings  
+- Other cluster-level prerequisites  
+
+When set to `false`, only application-level resources will be deployed. This is useful when cluster prerequisites are managed separately (e.g., using the [pre-install repository](https://github.com/ibm-mas/pre-install)) or when deploying with limited privileges.
+
+!!! note
+    When `cluster_admin_role=false`, you must ensure all required cluster-level resources (operators, CRDs, etc.) are already installed on the target cluster before deploying MAS instances.
+
+#### `application_admin_role`
+Defaults to `true`.
+
+Controls whether application-admin level resources are deployed. When set to `true`, the GitOps deployment will create namespace-scoped resources including:
+- MAS Suite and application instances  
+- Databases and data services  
+- Workspaces and configurations  
+- Application-specific resources  
+
+When set to `false`, only cluster-level resources will be deployed (if `cluster_admin_role=true`).
+
+!!! note
+    The combination of `cluster_admin_role=false` and `application_admin_role=true` enables deployment with limited privileges. See the [RBAC Configuration](rbac-configuration.md) documentation for details on setting up the required namespace-scoped RBAC permissions.
 
 #### `auto_delete`
 Defaults to `false`. 

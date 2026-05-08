@@ -96,7 +96,7 @@ spec:
               # Normalize INSTANCE_ID:
               # - uppercase
               # - remove non-alphanumeric
-              INST_CLEAN=$(echo "${INSTANCE_ID}" \
+              INST_CLEAN=$(echo "${INSTANCE_ID:-}" \
               | tr '[:lower:]' '[:upper:]' \
               | tr -cd 'A-Z0-9')
               
@@ -104,7 +104,7 @@ spec:
               # - remove vowels
               # - uppercase
               # - remove non-alphanumeric
-              APP_CLEAN=$(echo "${MAS_APP_ID}" \
+              APP_CLEAN=$(echo "${MAS_APP_ID:-}" \
               | tr -d 'aeiouAEIOU' \
               | tr '[:lower:]' '[:upper:]' \
               | tr -cd 'A-Z0-9')
@@ -130,7 +130,7 @@ spec:
               
               export DB_NAME
               
-              echo "Using DB_NAME=${DB_NAME} (from INSTANCE_ID=${INSTANCE_ID:-}, MAS_APP_ID=${MAS_APP_ID:-})"
+              echo "Using DB_NAME=${DB_NAME}"
               
               # -----------------------------
               # Skip database creation if DB_NAME was provided
@@ -182,9 +182,9 @@ spec:
               
                 export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
                 export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-                export SM_AWS_REGION=${SM_AWS_SECRET_REGION}
+                export SM_AWS_REGION=${SM_AWS_SECRET_REGION:-}
               
-                SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/jdbc/{{ .Values.db2_rds_instance_name }}/config"
+                SECRET_PATH="${ACCOUNT_ID:-}/${CLUSTER_ID:-}/${INSTANCE_ID:-}/jdbc/{{ .Values.db2_rds_instance_name }}/config"
               
                 sm_login
               
@@ -192,8 +192,8 @@ spec:
               
                 NEW_SECRET=$(echo "${EXISTING_SECRET}" | jq --arg db "${DB_NAME}" '. + {db2_name: $db}')
               
-                if [ -n "${JDBC_CONNECTION_URL}" ]; then
-                  NEW_URL=$(printf '%s\n' "${JDBC_CONNECTION_URL}" | sed -E "s|(jdbc:db2://[^/]+/)([^:]*)(:.*)?$|\\1${DB_NAME}\\3|")
+                if [ -n "${JDBC_CONNECTION_URL:-}" ]; then
+                  NEW_URL=$(printf '%s\n' "${JDBC_CONNECTION_URL:-}" | sed -E "s|(jdbc:db2://[^/]+/)([^:]*)(:.*)?$|\\1${DB_NAME}\\3|")
                   NEW_SECRET=$(echo "${NEW_SECRET}" | jq --arg url "${NEW_URL}" '. + {jdbc_connection_url: $url}')
                 fi
               

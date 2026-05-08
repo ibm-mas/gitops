@@ -111,6 +111,9 @@ data:
 
         if exists:
             log({"event":"db_exists","db":db_name})
+            db2.close(conn)
+            log({"event":"complete","db":db_name,"action":"none"})
+            sys.exit(0)  # Exit code 0: database already exists
         else:
             log({"event":"create_start","db":db_name})
 
@@ -120,18 +123,21 @@ data:
                 # handle race condition (another job created it)
                 if "already exists" in str(e):
                     log({"event":"race_condition_detected","db":db_name})
+                    db2.close(conn)
+                    log({"event":"complete","db":db_name,"action":"none"})
+                    sys.exit(0)  # Exit code 0: database exists (race condition)
                 else:
                     log({"event":"create_failed","error":str(e)})
-                    sys.exit(1)
+                    sys.exit(1)  # Exit code 1: error
 
             if not wait_for_db(db_name, timeout, interval, db_host, db_port, username, password, ssl_cert_path, ssl_version):
                 log({"event":"timeout","db":db_name})
-                sys.exit(1)
+                sys.exit(1)  # Exit code 1: timeout
 
             log({"event":"create_complete","db":db_name})
-
-        db2.close(conn)
-        log({"event":"complete","db":db_name})
+            db2.close(conn)
+            log({"event":"complete","db":db_name,"action":"created"})
+            sys.exit(10)  # Exit code 10: database was created
 
     if __name__ == "__main__":
         main()

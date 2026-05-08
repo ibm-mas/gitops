@@ -94,6 +94,16 @@ spec:
               echo ""
               
               # -----------------------------
+              # Early exit if DB_NAME is provided
+              # -----------------------------
+              if [ -n "${DB_NAME:-}" ]; then
+                echo "ℹ️  DB_NAME was provided: ${DB_NAME}"
+                echo "ℹ️  Assuming database already exists - skipping all operations"
+                echo "==== COMPLETED (SKIPPED) ===="
+                exit 0
+              fi
+              
+              # -----------------------------
               # Deterministic DB name (8 chars)
               # Format: <5_INSTANCE><3_APP>
               # Example:
@@ -134,24 +144,10 @@ spec:
               DB_NAME="D${DB_NAME:1}"
               ;;
               esac
-                DB_NAME_WAS_PROVIDED=false
-              else
-                DB_NAME_WAS_PROVIDED=true
+              
               fi
               
               export DB_NAME
-              
-              echo "Using DB_NAME=${DB_NAME} (from INSTANCE_ID=${INSTANCE_ID:-}, MAS_APP_ID=${MAS_APP_ID:-})"
-              
-              # -----------------------------
-              # Skip database creation if DB_NAME was provided
-              # -----------------------------
-              if [ "$DB_NAME_WAS_PROVIDED" = "true" ]; then
-                echo "ℹ️  DB_NAME was provided - assuming database already exists"
-                echo "ℹ️  Skipping database creation and Secrets Manager update"
-                echo "==== COMPLETED (SKIPPED) ===="
-                exit 0
-              fi
               
               # -----------------------------
               # Runtime dependencies

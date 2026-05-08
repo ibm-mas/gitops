@@ -226,7 +226,10 @@ spec:
                   NEW_SECRET=$(echo "${NEW_SECRET}" | jq --arg url "${NEW_URL}" '. + {jdbc_connection_url: $url}')
                 fi
                 
-                sm_update_secret "${SECRET_PATH}" "${NEW_SECRET}"
+                # Tags for Secrets Manager
+                TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-database\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}, {\"Key\": \"db_name\", \"Value\": \"${DB_NAME}\"}]"
+                
+                sm_update_secret "${SECRET_PATH}" "${NEW_SECRET}" "${TAGS}"
                 echo "✓ Secrets Manager updated with db2_name: ${DB_NAME}"
               else
                 echo "ℹ️  Secrets Manager already has correct db2_name: ${EXISTING_DB_NAME}"

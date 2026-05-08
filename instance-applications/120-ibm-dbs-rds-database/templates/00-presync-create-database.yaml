@@ -169,65 +169,78 @@ spec:
               # -----------------------------
               # Run Python logic (sets DB_CREATED flag)
               # -----------------------------
-              echo "Running database creation script..."
               set -o pipefail
-              python3 -u /etc/mas/scripts/db2_create_database.py 2>&1 | tee /tmp/db_output.log
-              DB_EXIT_CODE=$?
-              set +o pipefail
-              echo "Script execution completed with exit code: $DB_EXIT_CODE"
               
-              # Check exit code to determine if database was created
-              # Exit codes: 0 = already exists, 10 = created, 1 = error
-              if [ $DB_EXIT_CODE -eq 10 ]; then
-                DB_WAS_CREATED=true
-                echo "✓ Database was created in this run"
-              elif [ $DB_EXIT_CODE -eq 0 ]; then
-                DB_WAS_CREATED=false
-                echo "ℹ️  Database already existed"
-              else
-                echo "❌ Database creation script failed with exit code: $DB_EXIT_CODE"
-                exit 1
+              echo "Running database creation script..."
+              python3 -u /etc/mas/scripts/db2_create_database.py 2>&1 | tee /tmp/db_output.log
+              RC=${PIPESTATUS[0]}
+              
+              echo "Script execution completed with rc=${RC}"
+              
+              case "${RC}" in
+                10)
+                  DB_WAS_CREATED=true
+                  echo "✓ Database was created"
+                  ;;
+                0)
+                  DB_WAS_CREATED=false
+                  echo "ℹ️  Database already existed"
+                  ;;
+                *)
+                  echo "✗ Database creation failed"
+                  exit 1
+                  ;;
+              esac
+              
+              # -----------------------------
+              # Update Secrets Manager
+              # -----------------------------
+              # Update if:
+              # 1. Database was just created, OR
+              # 2. Database exists but Secrets Manager is missing db2_name
+              
+              echo "Checking if Secrets Manager needs updating..."
+              
+              # Validate required AWS Secrets Manager variables
+              : "${SM_AWS_SECRET_REGION:?SM_AWS_SECRET_REGION is required for Secrets Manager access}"
+              : "${ACCOUNT_ID:?ACCOUNT_ID is required for Secrets Manager path}"
+              : "${CLUSTER_ID:?CLUSTER_ID is required for Secrets Manager path}"
+              : "${INSTANCE_ID:?INSTANCE_ID is required for Secrets Manager path}"
+              
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              export SM_AWS_REGION=${SM_AWS_SECRET_REGION}
+              
+              SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/jdbc/{{ .Values.db2_rds_instance_name }}/config"
+              
+              sm_login
+              
+              EXISTING_SECRET=$(sm_get_secret_value "${SECRET_PATH}" 2>/dev/null || echo "{}")
+              
+              # Validate JSON before processing
+              if ! echo "${EXISTING_SECRET}" | jq empty >/dev/null 2>&1; then
+                echo "⚠️  Invalid JSON from Secrets Manager, using empty object"
+                EXISTING_SECRET="{}"
               fi
               
-              # -----------------------------
-              # Update Secrets Manager (only if database was created)
-              # -----------------------------
-              if [ "$DB_WAS_CREATED" = "true" ]; then
+              # Check if db2_name is already set correctly
+              EXISTING_DB_NAME=$(echo "${EXISTING_SECRET}" | jq -r '.db2_name // empty')
+              
+              if [ "$DB_WAS_CREATED" = "true" ] || [ -z "${EXISTING_DB_NAME}" ] || [ "${EXISTING_DB_NAME}" != "${DB_NAME}" ]; then
                 echo "Updating Secrets Manager..."
-              
-                # Validate required AWS Secrets Manager variables
-                : "${SM_AWS_SECRET_REGION:?SM_AWS_SECRET_REGION is required for Secrets Manager access}"
-                : "${ACCOUNT_ID:?ACCOUNT_ID is required for Secrets Manager path}"
-                : "${CLUSTER_ID:?CLUSTER_ID is required for Secrets Manager path}"
-                : "${INSTANCE_ID:?INSTANCE_ID is required for Secrets Manager path}"
-              
-                export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-                export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-                export SM_AWS_REGION=${SM_AWS_SECRET_REGION}
-              
-                SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/jdbc/{{ .Values.db2_rds_instance_name }}/config"
-              
-                sm_login
-              
-                EXISTING_SECRET=$(sm_get_secret_value "${SECRET_PATH}" 2>/dev/null || echo "{}")
-              
-                # Validate JSON before processing
-                if ! echo "${EXISTING_SECRET}" | jq empty >/dev/null 2>&1; then
-                  echo "⚠️  Invalid JSON from Secrets Manager, using empty object"
-                  EXISTING_SECRET="{}"
-                fi
-              
+                echo "  Reason: DB_WAS_CREATED=${DB_WAS_CREATED}, EXISTING_DB_NAME='${EXISTING_DB_NAME}', DB_NAME='${DB_NAME}'"
+                
                 NEW_SECRET=$(echo "${EXISTING_SECRET}" | jq --arg db "${DB_NAME}" '. + {db2_name: $db}')
-              
+                
                 if [ -n "${JDBC_CONNECTION_URL:-}" ]; then
                   NEW_URL=$(printf '%s\n' "${JDBC_CONNECTION_URL:-}" | sed -E "s|(jdbc:db2://[^/]+/)([^:]*)(:.*)?$|\\1${DB_NAME}\\3|")
                   NEW_SECRET=$(echo "${NEW_SECRET}" | jq --arg url "${NEW_URL}" '. + {jdbc_connection_url: $url}')
                 fi
-              
+                
                 sm_update_secret "${SECRET_PATH}" "${NEW_SECRET}"
-                echo "✓ Secrets Manager updated"
+                echo "✓ Secrets Manager updated with db2_name: ${DB_NAME}"
               else
-                echo "ℹ️  Skipping Secrets Manager update (database already existed)"
+                echo "ℹ️  Secrets Manager already has correct db2_name: ${EXISTING_DB_NAME}"
               fi
               
               echo "==== COMPLETED ===="

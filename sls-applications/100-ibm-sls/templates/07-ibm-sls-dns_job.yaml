@@ -4,10 +4,10 @@
 {{- $_job_name_prefix := "ibm-sls-dns" }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v5" }}
+{{- $_job_version := "v6" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
-{{- if not (empty .Values.dns_provider) }}
+{{- if and (not (empty .Values.dns_provider)) (not (empty .Values.cis_service_name)) (not (empty .Values.cis_crn)) }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -16,14 +16,13 @@ metadata:
   namespace: mas-{{ .Values.ibm_customer_number }}-{{ .Values.subscription_id }}-sls
   annotations:
     argocd.argoproj.io/sync-wave: "113"
-    argocd.argoproj.io/sync-options: Force=true
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 spec:
   template:
     metadata:
       labels:
-        app: "postsync-ibm-sls-update-sm-job"
+        app: "postsync-ibm-sls-dns-job"
     spec:
       restartPolicy: Never
       containers:
@@ -69,8 +68,8 @@ spec:
 
               echo $SM_AWS_REGION
 
-
               source /mascli/functions/gitops_utils
+
               sm_login
 
               echo "Fetching IBM API key from AWS Secrets Manager"
@@ -100,19 +99,16 @@ spec:
               exit 1
               fi
 
-              echo "Setting IBM CLI home to writable location..."
+              echo "Setting IBM CLI home to writable location.."
               export IBMCLOUD_HOME=/tmp/bluemix
               mkdir -p $IBMCLOUD_HOME
 
-              echo "Logging into IBM Cloud..."
-              ibmcloud login --apikey ${IBM_APIKEY} -r us-east
-
-              #echo "Targeting resource group..."
-              #ibmcloud target -g Default
-            
               # 1. Disable the interactive update check to prevent the [y/N] prompt
               ibmcloud config --check-version=false
 
+              echo "Logging into IBM Cloud..."
+              ibmcloud login --apikey ${IBM_APIKEY} -r us-east
+           
               # 2. Install the Cloud Internet Services (CIS) plug-in
               # The -f flag forces installation without a confirmation prompt
               echo "Installing CIS plugin..."
@@ -141,18 +137,26 @@ spec:
               fi
 
               echo "Creating DNS record..."
-               ibmcloud cis dns-record-create "$DOMAIN_ID" \
+              CREATE_OUTPUT=$(ibmcloud cis dns-record-create "$DOMAIN_ID" \
                --type CNAME \
-               --name "SLS.mas-${ICN}-${SUBSCRIPTION_ID}-SLS" \
+               --name "sls.mas-${ICN}-${SUBSCRIPTION_ID}-sls" \
                --content "${OCP_INGRESS}" \
-               --proxied false
+               --proxied false 2>&1 || true)
 
-              echo "DNS record created successfully!"
+              if echo "${CREATE_OUTPUT}" | grep -qi "already exists\|duplicate"; then
+                echo "DNS record already exists."
+                exit 0
+              elif echo "${CREATE_OUTPUT}" | grep -qi "OK\|Created\|success"; then
+                echo "DNS record created successfully!"
+              else
+                echo "ERROR: DNS record creation failed"
+                echo "${CREATE_OUTPUT}"
+                exit 1
+              fi
 
       volumes:
           - name: aws
             secret:
               secretName: aws       # make sure this Secret exists in the same namespace
               defaultMode: 420
-{{- end }}
-
+{{- end }}         

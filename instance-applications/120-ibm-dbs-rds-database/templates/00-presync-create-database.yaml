@@ -94,60 +94,54 @@ spec:
               echo ""
               
               # -----------------------------
-              # Early exit if DB_NAME is provided
+              # Determine DB_NAME and creation strategy
               # -----------------------------
               if [ -n "${DB_NAME:-}" ]; then
-                echo "ℹ️  DB_NAME was provided: ${DB_NAME}"
-                echo "ℹ️  Assuming database already exists - skipping all operations"
-                echo "==== COMPLETED (SKIPPED) ===="
-                exit 0
-              fi
-              
-              # -----------------------------
-              # Deterministic DB name (8 chars)
-              # Format: <5_INSTANCE><3_APP>
-              # Example:
-              #   instance_id=inst04
-              #   app_id=manage
-              #   -> INST0MNG
-              # -----------------------------
-              
-              if [ -z "${DB_NAME:-}" ]; then
-              
-              # Normalize INSTANCE_ID:
-              # - uppercase
-              # - remove non-alphanumeric
-              INST_CLEAN=$(echo "${INSTANCE_ID:-}" \
-              | tr '[:lower:]' '[:upper:]' \
-              | tr -cd 'A-Z0-9')
-              
-              # Normalize MAS_APP_ID:
-              # - remove vowels
-              # - uppercase
-              # - remove non-alphanumeric
-              APP_CLEAN=$(echo "${MAS_APP_ID:-}" \
-              | tr -d 'aeiouAEIOU' \
-              | tr '[:lower:]' '[:upper:]' \
-              | tr -cd 'A-Z0-9')
-              
-              # Build fixed-width parts
-              INST_PART=$(printf "%-5s" "${INST_CLEAN}" | tr ' ' 'X' | cut -c1-5)
-              APP_PART=$(printf "%-3s" "${APP_CLEAN}" | tr ' ' 'X' | cut -c1-3)
-              
-              DB_NAME="${INST_PART}${APP_PART}"
-              
-              # Ensure DB name starts with a letter (DB2-safe)
-              case "${DB_NAME}" in
-              [A-Z]*)
-              ;;
-              *)
-              DB_NAME="D${DB_NAME:1}"
-              ;;
-              esac
-              
+                echo "ℹ️  Using provided DB_NAME: ${DB_NAME}"
+                SKIP_DB_CREATE=true
+              else
+                echo "ℹ️  No DB_NAME provided, generating deterministic DB name"
+                SKIP_DB_CREATE=false
+                
+                # Normalize INSTANCE_ID:
+                # - uppercase
+                # - remove non-alphanumeric
+                INST_CLEAN=$(echo "${INSTANCE_ID:-}" \
+                | tr '[:lower:]' '[:upper:]' \
+                | tr -cd 'A-Z0-9')
+                
+                # Normalize MAS_APP_ID:
+                # - remove vowels
+                # - uppercase
+                # - remove non-alphanumeric
+                APP_CLEAN=$(echo "${MAS_APP_ID:-}" \
+                | tr -d 'aeiouAEIOU' \
+                | tr '[:lower:]' '[:upper:]' \
+                | tr -cd 'A-Z0-9')
+                
+                # Safety: if app name becomes empty after vowel removal, use default
+                if [ -z "${APP_CLEAN}" ]; then
+                  APP_CLEAN="APP"
+                fi
+                
+                # Build fixed-width parts
+                INST_PART=$(printf "%-5s" "${INST_CLEAN}" | tr ' ' 'X' | cut -c1-5)
+                APP_PART=$(printf "%-3s" "${APP_CLEAN}" | tr ' ' 'X' | cut -c1-3)
+                
+                DB_NAME="${INST_PART}${APP_PART}"
+                
+                # Ensure DB name starts with a letter (DB2-safe)
+                case "${DB_NAME}" in
+                [A-Z]*)
+                ;;
+                *)
+                DB_NAME="D${DB_NAME:1}"
+                ;;
+                esac
               fi
               
               export DB_NAME
+              export SKIP_DB_CREATE
               
               # -----------------------------
               # Runtime dependencies
@@ -157,7 +151,7 @@ spec:
               echo "✅ System libraries installed"
               
               echo "Installing Python packages..."
-              pip install --no-cache-dir ibm_db boto3
+              pip install --no-cache-dir ibm_db
               echo "✅ Python packages installed"
               
               mkdir -p /etc/mas/rds-ssl
@@ -167,57 +161,52 @@ spec:
               export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem
               
               # -----------------------------
-              # Run Python logic (sets DB_CREATED flag)
+              # Database Creation Section
               # -----------------------------
-              set -o pipefail
-              
-              echo "Running database creation script..."
-              python3 -u /etc/mas/scripts/db2_create_database.py 2>&1 | tee /tmp/db_output.log
-              RC=${PIPESTATUS[0]}
-              
-              echo "Script execution completed with rc=${RC}"
-              
-              case "${RC}" in
-                10)
-                  DB_WAS_CREATED=true
-                  echo "✓ Database was created"
-                  ;;
-                0)
-                  DB_WAS_CREATED=false
-                  echo "ℹ️  Database already existed"
-                  ;;
-                *)
-                  echo "✗ Database creation failed"
-                  exit 1
-                  ;;
-              esac
+              if [ "${SKIP_DB_CREATE}" = "true" ]; then
+                echo "ℹ️  Skipping database creation (external DB assumed)"
+                DB_WAS_CREATED=false
+              else
+                set -o pipefail
+                
+                echo "Running database creation script..."
+                python3 -u /etc/mas/scripts/db2_create_database.py 2>&1 | tee /tmp/db_output.log
+                RC=${PIPESTATUS[0]}
+                
+                echo "Script execution completed with rc=${RC}"
+                
+                case "${RC}" in
+                  10)
+                    DB_WAS_CREATED=true
+                    echo "✓ Database was created"
+                    ;;
+                  0)
+                    DB_WAS_CREATED=false
+                    echo "ℹ️  Database already existed"
+                    ;;
+                  *)
+                    echo "✗ Database creation failed"
+                    exit 1
+                    ;;
+                esac
+              fi
               
               # -----------------------------
-              # Update Secrets Manager
+              # Update Secrets Manager (using sm_* functions like create user Job)
               # -----------------------------
-              # Update if:
-              # 1. Database was just created, OR
-              # 2. Database exists but Secrets Manager is missing db2_name
-              
               echo "Checking if Secrets Manager needs updating..."
-              
-              # Validate required AWS Secrets Manager variables
-              : "${SM_AWS_SECRET_REGION:?SM_AWS_SECRET_REGION is required for Secrets Manager access}"
-              : "${ACCOUNT_ID:?ACCOUNT_ID is required for Secrets Manager path}"
-              : "${CLUSTER_ID:?CLUSTER_ID is required for Secrets Manager path}"
-              : "${INSTANCE_ID:?INSTANCE_ID is required for Secrets Manager path}"
               
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               export SM_AWS_REGION=${SM_AWS_SECRET_REGION}
               
-              SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/jdbc/{{ .Values.db2_rds_instance_name }}/config"
-              
               sm_login
+              
+              SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/jdbc/{{ .Values.db2_rds_instance_name }}/config"
               
               EXISTING_SECRET=$(sm_get_secret_value "${SECRET_PATH}" 2>/dev/null || echo "{}")
               
-              # Validate JSON before processing
+              # Validate JSON
               if ! echo "${EXISTING_SECRET}" | jq empty >/dev/null 2>&1; then
                 echo "⚠️  Invalid JSON from Secrets Manager, using empty object"
                 EXISTING_SECRET="{}"
@@ -264,6 +253,8 @@ spec:
             - name: MAS_APP_ID
               value: {{ .Values.mas_application_id | default "" | quote }}
             - name: SM_AWS_SECRET_REGION
+              value: {{ .Values.sm_aws_secret_region | default "us-east-1" | quote }}
+            - name: AWS_DEFAULT_REGION
               value: {{ .Values.sm_aws_secret_region | default "us-east-1" | quote }}
           volumeMounts:
             - name: dbs-rds-create-db-secret

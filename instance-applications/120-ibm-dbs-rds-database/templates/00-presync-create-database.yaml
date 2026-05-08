@@ -94,14 +94,10 @@ spec:
               echo ""
               
               # -----------------------------
-              # Determine DB_NAME and creation strategy
+              # Determine DB_NAME (if not provided, generate it)
               # -----------------------------
-              if [ -n "${DB_NAME:-}" ]; then
-                echo "ℹ️  Using provided DB_NAME: ${DB_NAME}"
-                SKIP_DB_CREATE=true
-              else
+              if [ -z "${DB_NAME:-}" ]; then
                 echo "ℹ️  No DB_NAME provided, generating deterministic DB name"
-                SKIP_DB_CREATE=false
                 
                 # Normalize INSTANCE_ID:
                 # - uppercase
@@ -138,10 +134,11 @@ spec:
                 DB_NAME="D${DB_NAME:1}"
                 ;;
                 esac
+              else
+                echo "ℹ️  Using provided DB_NAME: ${DB_NAME}"
               fi
               
               export DB_NAME
-              export SKIP_DB_CREATE
               
               # -----------------------------
               # Runtime dependencies
@@ -161,35 +158,31 @@ spec:
               export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem
               
               # -----------------------------
-              # Database Creation Section
+              # Database Existence Check & Creation
               # -----------------------------
-              if [ "${SKIP_DB_CREATE}" = "true" ]; then
-                echo "ℹ️  Skipping database creation (external DB assumed)"
-                DB_WAS_CREATED=false
-              else
-                set -o pipefail
-                
-                echo "Running database creation script..."
-                python3 -u /etc/mas/scripts/db2_create_database.py 2>&1 | tee /tmp/db_output.log
-                RC=${PIPESTATUS[0]}
-                
-                echo "Script execution completed with rc=${RC}"
-                
-                case "${RC}" in
-                  10)
-                    DB_WAS_CREATED=true
-                    echo "✓ Database was created"
-                    ;;
-                  0)
-                    DB_WAS_CREATED=false
-                    echo "ℹ️  Database already existed"
-                    ;;
-                  *)
-                    echo "✗ Database creation failed"
-                    exit 1
-                    ;;
-                esac
-              fi
+              echo "Checking if database '${DB_NAME}' exists..."
+              
+              echo "Running database creation script..."
+              python3 -u /etc/mas/scripts/db2_create_database.py 2>&1 | tee /tmp/db_output.log
+              RC=${PIPESTATUS[0]}
+              
+              echo "Script execution completed with rc=${RC}"
+              
+              case "${RC}" in
+                10)
+                  DB_WAS_CREATED=true
+                  echo "✅ Database '${DB_NAME}' was created"
+                  ;;
+                0)
+                  DB_WAS_CREATED=false
+                  echo "ℹ️  Database '${DB_NAME}' already exists"
+                  ;;
+                *)
+                  echo "❌ Database operation failed with exit code ${RC}"
+                  cat /tmp/db_output.log
+                  exit 1
+                  ;;
+              esac
               
               # -----------------------------
               # Update Secrets Manager (using sm_* functions like create user Job)

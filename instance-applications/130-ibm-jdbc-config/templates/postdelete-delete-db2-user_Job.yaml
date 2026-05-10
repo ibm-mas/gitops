@@ -1,15 +1,97 @@
 {{- if and ( eq .Values.jdbc_type "incluster-db2" ) ( .Values.use_postdelete_hooks ) }}
 
+{{- if .Values.application_admin_role }}
+
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
 {{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
 
-{{ $ns := printf "mas-%s-syncres" .Values.instance_id }}
+{{ $ns := printf "mas-%s-core" .Values.instance_id }}
 {{ $prefix := printf "post-jdbc-usr-%s" .Values.mas_config_name }}
 {{ $secret := printf "%s-creds" $prefix }}
+{{ $sa := printf "%s-sa" $prefix }}
+{{ $role := printf "%s-role" $prefix }}
+{{ $rb := printf "%s-rb" $prefix }}
 {{ $np := printf "%s-np" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+
+
+---
+# Role in DB2 namespace for accessing DB2 resources
+# This allows the service account from mas-core namespace to access resources in db2 namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $role }}
+  namespace: {{ .Values.db2_namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - list
+    - get
+- apiGroups:
+    - ""
+  resources:
+    - pods/exec
+  verbs:
+    - create
+- apiGroups:
+    - db2u.databases.ibm.com
+  resources:
+    - db2uengines
+    - db2uinstances
+  verbs:
+    - get
+    - list
+
+---
+# RoleBinding in DB2 namespace to bind the service account from mas-core namespace
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb }}
+  namespace: {{ .Values.db2_namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role }}
 
 ---
 apiVersion: batch/v1
@@ -28,7 +110,7 @@ spec:
   template:
     metadata:
       labels:
-        app: sync-job
+        app: {{ $job }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
@@ -124,28 +206,36 @@ spec:
 
               echo ""
               echo "================================================================================"
-              echo "Checking DB2 CRD db2uclusters.db2u.databases.ibm.com is ready (retries every ~10 seconds for ~5 minutes)"
+              echo "Checking DB2 CRD (db2uinstances) is available (retries every ~10 seconds for ~5 minutes)"
               echo "================================================================================"
 
-              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True STARTS  
+              # Wait for DB2 CRD to be available by checking if we can query the resource
+              # This approach uses namespace-scoped permissions instead of cluster-scoped CRD access
               wait_period=0
-              while true; do
-                export DB2_CRD_NAMES_ACCEPTED_STATUS=$(oc get crd db2uclusters.db2u.databases.ibm.com -o=jsonpath="{.status.conditions[?(@.type=='NamesAccepted')].status}")
-                echo "DB2_CRD_NAMES_ACCEPTED_STATUS .... ${DB2_CRD_NAMES_ACCEPTED_STATUS}"
-                if [[ "$DB2_CRD_NAMES_ACCEPTED_STATUS" == "True" ]]; then
-                  break
-                fi
-
+              
+              echo "Waiting for DB2 CRD (db2uinstances) to be available..."
+              
+              while true
+              do
                 wait_period=$(($wait_period+10))
                 if [ $wait_period -gt 300 ];then
-                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready with in 300 sec, exiting"
+                  echo "DB2 CRD db2uinstances is not ready within 300 seconds, exiting"
                   exit 1
-                else
-                  echo "CRD db2uclusters.db2u.databases.ibm.com is not ready, trying again in 10 seconds"
-                  sleep 10
                 fi
-              done  
-              # wait till CRD db2uclusters.db2u.databases.ibm.com NamesAccepted=True DONE
+                
+                sleep 10
+                
+                # Try to query db2uinstances - if CRD exists, this will succeed (even if no instances exist)
+                # If CRD doesn't exist, we'll get an error about unknown resource type
+                if oc get db2uinstances -n ${DB2_NAMESPACE} --no-headers 2>/dev/null; then
+                  echo "DB2 CRD db2uinstances.db2u.databases.ibm.com is available"
+                  break
+                fi
+                
+                echo "DB2 CRD not yet available, waiting... (${wait_period}s elapsed)"
+              done
+              
+              echo "DB2 CRD is ready"
 
 
               echo ""
@@ -200,7 +290,8 @@ spec:
 
       restartPolicy: Never
 
-      serviceAccountName: aws-db2-user-job
+      serviceAccountName: {{ $sa }}
   backoffLimit: 4
 
+{{- end }}
 {{- end }}

@@ -205,32 +205,17 @@ spec:
                   echo "RDS_PORT ............................ ${RDS_PORT}"
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
+                  # -----------------------------
+                  # Check if ibm_db is already available in CLI image
+                  # -----------------------------
                   echo ""
-                  echo "Installing required Python packages..."
+                  echo "Checking for ibm_db in MAS CLI image..."
                   echo "--------------------------------------------------------------------------------"
-                  pip install ibm_db
-
-                  echo ""
-                  echo "Setting up library paths for ibm_db..."
-                  echo "--------------------------------------------------------------------------------"
-                  # The ibm_db wheel includes clidriver with all necessary libraries
-                  # Find where ibm_db was installed (without importing it, which would fail without LD_LIBRARY_PATH)
-                  SITE_PACKAGES=$(python3 -c "import site; print(site.getsitepackages()[0])")
-                  CLIDRIVER_PATH="${SITE_PACKAGES}/ibm_db/clidriver"
-                  
-                  if [ -d "${CLIDRIVER_PATH}/lib" ]; then
-                    echo "Found clidriver at: ${CLIDRIVER_PATH}"
-                    export LD_LIBRARY_PATH="${CLIDRIVER_PATH}/lib:${LD_LIBRARY_PATH:-}"
-                    echo "✅ LD_LIBRARY_PATH set to: ${LD_LIBRARY_PATH}"
-                    
-                    # Verify the library is accessible
-                    if ls "${CLIDRIVER_PATH}/lib/libcrypt.so.1" >/dev/null 2>&1; then
-                      echo "✅ libcrypt.so.1 found in clidriver"
-                    else
-                      echo "⚠️  libcrypt.so.1 not found in clidriver, may use system library"
-                    fi
+                  if python3 -c "import ibm_db" 2>/dev/null; then
+                    echo "✅ ibm_db already available in CLI image (no installation needed)"
                   else
-                    echo "⚠️  clidriver not found at expected location: ${CLIDRIVER_PATH}"
+                    echo "⚠️  ibm_db not found in CLI image, installing..."
+                    pip install ibm_db
                   fi
 
                   echo ""

@@ -149,81 +149,10 @@ spec:
             export SM_AWS_REGION=${REGION_ID}
             
             # -----------------------------
-            # Runtime dependencies - Install libxcrypt-compat
+            # Verify pre-installed dependencies
             # -----------------------------
-            echo "Installing libxcrypt-compat..."
-            
-            LIB_DIR="/tmp/lib"
-            mkdir -p "${LIB_DIR}"
-            
-            install_libxcrypt() {
-              # Try package managers first
-              if command -v yum >/dev/null 2>&1; then
-                yum install -y libxcrypt-compat && return 0
-              fi
-            
-              if command -v dnf >/dev/null 2>&1; then
-                dnf install -y libxcrypt-compat && return 0
-              fi
-            
-              return 1
-            }
-            
-            if install_libxcrypt; then
-              echo "✅ libxcrypt-compat installed via package manager"
-            
-            else
-              echo "⚠️ Cannot install via package manager"
-              echo "Downloading RPM and extracting manually..."
-            
-              WORKDIR="$(mktemp -d)"
-              cd "${WORKDIR}" || exit 1
-            
-              RPM_URL="https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm"
-            
-              echo "Downloading RPM..."
-              curl -fSL -o libxcrypt-compat.rpm "${RPM_URL}" || {
-                echo "❌ Failed to download RPM"
-                exit 1
-              }
-            
-              # Verify required tools exist
-              command -v rpm2cpio >/dev/null 2>&1 || {
-                echo "❌ rpm2cpio not available"
-                exit 1
-              }
-            
-              command -v cpio >/dev/null 2>&1 || {
-                echo "❌ cpio not available"
-                exit 1
-              }
-            
-              echo "Extracting RPM..."
-              rpm2cpio libxcrypt-compat.rpm | cpio -idmv >/dev/null 2>&1 || {
-                echo "❌ Failed to extract RPM"
-                exit 1
-              }
-            
-              echo "Copying libraries..."
-              find . -name "libcrypt.so.1*" -exec cp -v {} "${LIB_DIR}/" \; || {
-                echo "❌ Failed to copy libcrypt.so.1"
-                exit 1
-              }
-            
-              export LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH}"
-            
-              echo "✅ libcrypt.so.1 installed in ${LIB_DIR}"
-              ls -la "${LIB_DIR}"
-            fi
-            
-            echo "Installing Python packages..."
-            pip install --no-cache-dir ibm_db
-            
-            echo "Verifying ibm_db import..."
-            python3 -c "
-            import ibm_db
-            print('✅ ibm_db import successful')
-            "
+            echo "Verifying ibm_db package..."
+            python3 -c "import ibm_db; print('✅ ibm_db version:', ibm_db.__version__)"
             
             echo ""
             echo "Downloading RDS SSL certificate..."

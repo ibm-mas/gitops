@@ -151,9 +151,18 @@ spec:
             # -----------------------------
             # Runtime dependencies
             # -----------------------------
-            echo "Installing required system libraries..."
-            microdnf install -y libxcrypt-compat python3-pip || yum install -y libxcrypt-compat python3-pip || dnf install -y libxcrypt-compat python3-pip || true
-            echo "✅ System libraries installed"
+            echo "Checking for required system libraries..."
+            if ldconfig -p | grep -q libcrypt.so.1; then
+              echo "✅ libcrypt.so.1 already present, skipping installation"
+            else
+              echo "⚠️  libcrypt.so.1 not found, attempting installation..."
+              microdnf install -y libxcrypt-compat python3-pip || yum install -y libxcrypt-compat python3-pip || dnf install -y libxcrypt-compat python3-pip || true
+              if ldconfig -p | grep -q libcrypt.so.1; then
+                echo "✅ libcrypt.so.1 successfully installed"
+              else
+                echo "⚠️  libcrypt.so.1 installation failed, but continuing (may already be available)"
+              fi
+            fi
             
             echo ""
             echo "Installing required Python packages..."

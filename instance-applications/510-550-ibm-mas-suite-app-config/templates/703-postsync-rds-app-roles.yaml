@@ -206,6 +206,14 @@ spec:
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
                   echo ""
+                  echo "Installing required system dependencies..."
+                  echo "--------------------------------------------------------------------------------"
+                  # Install libxcrypt-compat for libcrypt.so.1 (required by ibm_db)
+                  # Try microdnf first (works without root), then fallback to others
+                  microdnf install -y libxcrypt-compat || dnf install -y libxcrypt-compat || yum install -y libxcrypt-compat || true
+                  echo "✅ System dependencies installation attempted"
+
+                  echo ""
                   echo "Installing required Python packages..."
                   echo "--------------------------------------------------------------------------------"
                   pip install ibm_db
@@ -260,7 +268,7 @@ spec:
                       f"PWD={rds_master_password};"
                       f"SECURITY=SSL;"
                       f"SSLVersion={ssl_version};"
-                      f"SSLServerCertificate={ssl_cert_path};"
+                      f"SSLServerCertificate={ssl_cert_path}"
                   )
                   
                   # Build connection string for target database (for grants)
@@ -273,7 +281,7 @@ spec:
                       f"PWD={rds_master_password};"
                       f"SECURITY=SSL;"
                       f"SSLVersion={ssl_version};"
-                      f"SSLServerCertificate={ssl_cert_path};"
+                      f"SSLServerCertificate={ssl_cert_path}"
                   )
                   
                   print(f"Connecting to RDS DB2 - Admin DB: {rds_admin_dbname}, Target DB: {rds_dbname}")

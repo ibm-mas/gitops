@@ -133,7 +133,7 @@ spec:
             
             echo ""
             echo "================================================================================"
-            echo "Settings"
+            echo "Settings (2026-05-11-v3-debug)"
             echo "================================================================================"
             echo "ACCOUNT_ID .......................... ${ACCOUNT_ID}"
             echo "REGION_ID ........................... ${REGION_ID}"
@@ -151,13 +151,33 @@ spec:
             # -----------------------------
             # Runtime dependencies (same as create-database Job)
             # -----------------------------
-            echo "Installing required system libraries..."
-            microdnf install -y libxcrypt-compat python3-pip || yum install -y libxcrypt-compat python3-pip || dnf install -y libxcrypt-compat python3-pip || true
-            echo "✅ System libraries installed"
+            echo "Checking for libcrypt.so.1..."
+            if [ -f /usr/lib64/libcrypt.so.1 ]; then
+              echo "✅ libcrypt.so.1 found at /usr/lib64/libcrypt.so.1"
+            elif [ -f /lib64/libcrypt.so.1 ]; then
+              echo "✅ libcrypt.so.1 found at /lib64/libcrypt.so.1"
+            else
+              echo "⚠️  libcrypt.so.1 not found, attempting to install libxcrypt-compat..."
+              microdnf install -y libxcrypt-compat python3-pip || yum install -y libxcrypt-compat python3-pip || dnf install -y libxcrypt-compat python3-pip || {
+                echo "❌ Failed to install libxcrypt-compat - checking for alternative locations..."
+                find /usr -name "libcrypt.so*" 2>/dev/null || echo "No libcrypt libraries found"
+                echo "Attempting to continue anyway..."
+              }
+            fi
             
             echo "Installing Python packages..."
             pip install --no-cache-dir ibm_db
             echo "✅ Python packages installed"
+            
+            echo "Verifying ibm_db can be imported..."
+            python3 -c "import ibm_db; print('✅ ibm_db import successful')" || {
+              echo "❌ ibm_db import failed - checking library dependencies..."
+              python3 -c "import ibm_db" 2>&1 | head -20
+              echo "Searching for libcrypt libraries..."
+              find /usr -name "libcrypt.so*" 2>/dev/null
+              find /lib -name "libcrypt.so*" 2>/dev/null
+              exit 1
+            }
             
             echo ""
             echo "Downloading RDS SSL certificate..."

@@ -89,8 +89,6 @@ spec:
     {{ .Values.custom_labels | toYaml | indent 8 }}
     {{- end }}
     spec:
-      securityContext:
-        runAsUser: 0
       containers:
       - name: run
         image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
@@ -133,7 +131,7 @@ spec:
             
             source /mascli/functions/gitops_utils
             
-            echo "V1 started create user"
+            echo ""
             echo "================================================================================"
             echo "Settings"
             echo "================================================================================"
@@ -153,23 +151,25 @@ spec:
             # -----------------------------
             # Runtime dependencies
             # -----------------------------
-            echo "Checking for required system libraries..."
-            if ldconfig -p | grep -q libcrypt.so.1; then
-              echo "✅ libcrypt.so.1 already present, skipping installation"
-            else
-              echo "⚠️  libcrypt.so.1 not found, attempting installation..."
-              microdnf install -y libxcrypt-compat python3-pip || yum install -y libxcrypt-compat python3-pip || dnf install -y libxcrypt-compat python3-pip || true
-              if ldconfig -p | grep -q libcrypt.so.1; then
-                echo "✅ libcrypt.so.1 successfully installed"
-              else
-                echo "⚠️  libcrypt.so.1 installation failed, but continuing (may already be available)"
-              fi
-            fi
-            
-            echo ""
             echo "Installing required Python packages..."
             echo "--------------------------------------------------------------------------------"
             pip install ibm_db
+            
+            echo ""
+            echo "Setting up library paths for ibm_db..."
+            echo "--------------------------------------------------------------------------------"
+            # The ibm_db wheel includes clidriver with all necessary libraries
+            # Find where ibm_db was installed
+            IBM_DB_PATH=$(python3 -c "import ibm_db, os; print(os.path.dirname(ibm_db.__file__))")
+            CLIDRIVER_PATH="${IBM_DB_PATH}/clidriver"
+            
+            if [ -d "${CLIDRIVER_PATH}/lib" ]; then
+              echo "Found clidriver at: ${CLIDRIVER_PATH}"
+              export LD_LIBRARY_PATH="${CLIDRIVER_PATH}/lib:${LD_LIBRARY_PATH:-}"
+              echo "✅ LD_LIBRARY_PATH set to: ${LD_LIBRARY_PATH}"
+            else
+              echo "⚠️  clidriver not found at expected location, using system libraries"
+            fi
             
             echo ""
             echo "Downloading RDS SSL certificate..."

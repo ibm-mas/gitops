@@ -206,17 +206,25 @@ spec:
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
                   echo ""
-                  echo "Installing required system dependencies..."
-                  echo "--------------------------------------------------------------------------------"
-                  # Install libxcrypt-compat for libcrypt.so.1 (required by ibm_db)
-                  # Try microdnf first (works without root), then fallback to others
-                  microdnf install -y libxcrypt-compat || dnf install -y libxcrypt-compat || yum install -y libxcrypt-compat || true
-                  echo "✅ System dependencies installation attempted"
-
-                  echo ""
                   echo "Installing required Python packages..."
                   echo "--------------------------------------------------------------------------------"
                   pip install ibm_db
+
+                  echo ""
+                  echo "Setting up library paths for ibm_db..."
+                  echo "--------------------------------------------------------------------------------"
+                  # The ibm_db wheel includes clidriver with all necessary libraries
+                  # Find where ibm_db was installed
+                  IBM_DB_PATH=$(python3 -c "import ibm_db, os; print(os.path.dirname(ibm_db.__file__))")
+                  CLIDRIVER_PATH="${IBM_DB_PATH}/clidriver"
+                  
+                  if [ -d "${CLIDRIVER_PATH}/lib" ]; then
+                    echo "Found clidriver at: ${CLIDRIVER_PATH}"
+                    export LD_LIBRARY_PATH="${CLIDRIVER_PATH}/lib:${LD_LIBRARY_PATH:-}"
+                    echo "✅ LD_LIBRARY_PATH set to: ${LD_LIBRARY_PATH}"
+                  else
+                    echo "⚠️  clidriver not found at expected location, using system libraries"
+                  fi
 
                   echo ""
                   echo "Downloading RDS SSL certificate..."

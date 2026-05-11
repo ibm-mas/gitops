@@ -206,34 +206,83 @@ spec:
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
                   # -----------------------------
-                  # Runtime dependencies - Create symlink for libcrypt.so.1
+                  # Runtime dependencies - Install libxcrypt-compat
                   # -----------------------------
                   echo ""
-                  echo "Checking for libcrypt.so.1..."
+                  echo "Installing libxcrypt-compat..."
                   echo "--------------------------------------------------------------------------------"
-                  if [ -f /usr/lib64/libcrypt.so.1 ]; then
-                    echo "✅ libcrypt.so.1 found at /usr/lib64/libcrypt.so.1"
-                  elif [ -f /lib64/libcrypt.so.1 ]; then
-                    echo "✅ libcrypt.so.1 found at /lib64/libcrypt.so.1"
+                  
+                  LIB_DIR="/tmp/lib"
+                  mkdir -p "${LIB_DIR}"
+                  
+                  install_libxcrypt() {
+                    # Try package managers first
+                    if command -v yum >/dev/null 2>&1; then
+                      yum install -y libxcrypt-compat && return 0
+                    fi
+                  
+                    if command -v dnf >/dev/null 2>&1; then
+                      dnf install -y libxcrypt-compat && return 0
+                    fi
+                  
+                    return 1
+                  }
+                  
+                  if install_libxcrypt; then
+                    echo "✅ libxcrypt-compat installed via package manager"
+                  
                   else
-                    echo "⚠️  libcrypt.so.1 not found, but libcrypt.so.2 exists"
-                    echo "Creating symlink: libcrypt.so.1 -> libcrypt.so.2"
-                    
-                    # Create symlink in a writable location and add to LD_LIBRARY_PATH
-                    mkdir -p /tmp/lib
-                    ln -s /usr/lib64/libcrypt.so.2 /tmp/lib/libcrypt.so.1
-                    export LD_LIBRARY_PATH=/tmp/lib:${LD_LIBRARY_PATH}
-                    
-                    echo "✅ Symlink created at /tmp/lib/libcrypt.so.1"
-                    ls -la /tmp/lib/
+                    echo "⚠️ Cannot install via package manager"
+                    echo "Downloading RPM and extracting manually..."
+                  
+                    WORKDIR="$(mktemp -d)"
+                    cd "${WORKDIR}" || exit 1
+                  
+                    RPM_URL="https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/Packages/libxcrypt-compat-4.4.18-3.el9.x86_64.rpm"
+                  
+                    echo "Downloading RPM..."
+                    curl -fSL -o libxcrypt-compat.rpm "${RPM_URL}" || {
+                      echo "❌ Failed to download RPM"
+                      exit 1
+                    }
+                  
+                    # Verify required tools exist
+                    command -v rpm2cpio >/dev/null 2>&1 || {
+                      echo "❌ rpm2cpio not available"
+                      exit 1
+                    }
+                  
+                    command -v cpio >/dev/null 2>&1 || {
+                      echo "❌ cpio not available"
+                      exit 1
+                    }
+                  
+                    echo "Extracting RPM..."
+                    rpm2cpio libxcrypt-compat.rpm | cpio -idmv >/dev/null 2>&1 || {
+                      echo "❌ Failed to extract RPM"
+                      exit 1
+                    }
+                  
+                    echo "Copying libraries..."
+                    find . -name "libcrypt.so.1*" -exec cp -v {} "${LIB_DIR}/" \; || {
+                      echo "❌ Failed to copy libcrypt.so.1"
+                      exit 1
+                    }
+                  
+                    export LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH}"
+                  
+                    echo "✅ libcrypt.so.1 installed in ${LIB_DIR}"
+                    ls -la "${LIB_DIR}"
                   fi
                   
                   echo "Installing Python packages..."
                   pip install --no-cache-dir ibm_db
-                  echo "✅ Python packages installed"
                   
-                  echo "Verifying ibm_db can be imported..."
-                  python3 -c "import ibm_db; print('✅ ibm_db import successful')"
+                  echo "Verifying ibm_db import..."
+                  python3 -c "
+                  import ibm_db
+                  print('✅ ibm_db import successful')
+                  "
 
                   echo ""
                   echo "Downloading RDS SSL certificate..."

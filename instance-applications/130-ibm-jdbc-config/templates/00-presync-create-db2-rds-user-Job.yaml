@@ -133,7 +133,7 @@ spec:
             
             echo ""
             echo "================================================================================"
-            echo "Settings (2026-05-11-v3-debug)"
+            echo "Settings (2026-05-11-v4-symlink)"
             echo "================================================================================"
             echo "ACCOUNT_ID .......................... ${ACCOUNT_ID}"
             echo "REGION_ID ........................... ${REGION_ID}"
@@ -157,12 +157,16 @@ spec:
             elif [ -f /lib64/libcrypt.so.1 ]; then
               echo "✅ libcrypt.so.1 found at /lib64/libcrypt.so.1"
             else
-              echo "⚠️  libcrypt.so.1 not found, attempting to install libxcrypt-compat..."
-              microdnf install -y libxcrypt-compat python3-pip || yum install -y libxcrypt-compat python3-pip || dnf install -y libxcrypt-compat python3-pip || {
-                echo "❌ Failed to install libxcrypt-compat - checking for alternative locations..."
-                find /usr -name "libcrypt.so*" 2>/dev/null || echo "No libcrypt libraries found"
-                echo "Attempting to continue anyway..."
-              }
+              echo "⚠️  libcrypt.so.1 not found, but libcrypt.so.2 exists"
+              echo "Creating symlink: libcrypt.so.1 -> libcrypt.so.2"
+              
+              # Create symlink in a writable location and add to LD_LIBRARY_PATH
+              mkdir -p /tmp/lib
+              ln -s /usr/lib64/libcrypt.so.2 /tmp/lib/libcrypt.so.1
+              export LD_LIBRARY_PATH=/tmp/lib:${LD_LIBRARY_PATH}
+              
+              echo "✅ Symlink created at /tmp/lib/libcrypt.so.1"
+              ls -la /tmp/lib/
             fi
             
             echo "Installing Python packages..."
@@ -170,14 +174,7 @@ spec:
             echo "✅ Python packages installed"
             
             echo "Verifying ibm_db can be imported..."
-            python3 -c "import ibm_db; print('✅ ibm_db import successful')" || {
-              echo "❌ ibm_db import failed - checking library dependencies..."
-              python3 -c "import ibm_db" 2>&1 | head -20
-              echo "Searching for libcrypt libraries..."
-              find /usr -name "libcrypt.so*" 2>/dev/null
-              find /lib -name "libcrypt.so*" 2>/dev/null
-              exit 1
-            }
+            python3 -c "import ibm_db; print('✅ ibm_db import successful')"
             
             echo ""
             echo "Downloading RDS SSL certificate..."

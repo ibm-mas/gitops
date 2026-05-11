@@ -149,16 +149,15 @@ spec:
             export SM_AWS_REGION=${REGION_ID}
             
             # -----------------------------
-            # Check if ibm_db is already available in CLI image
+            # Runtime dependencies (same as create-database Job)
             # -----------------------------
-            echo "Checking for ibm_db in MAS CLI image..."
-            echo "--------------------------------------------------------------------------------"
-            if python3 -c "import ibm_db" 2>/dev/null; then
-              echo "✅ ibm_db already available in CLI image (no installation needed)"
-            else
-              echo "⚠️  ibm_db not found in CLI image, installing..."
-              pip install ibm_db
-            fi
+            echo "Installing required system libraries..."
+            microdnf install -y libxcrypt-compat python3-pip || yum install -y libxcrypt-compat python3-pip || dnf install -y libxcrypt-compat python3-pip || true
+            echo "✅ System libraries installed"
+            
+            echo "Installing Python packages..."
+            pip install --no-cache-dir ibm_db
+            echo "✅ Python packages installed"
             
             echo ""
             echo "Downloading RDS SSL certificate..."

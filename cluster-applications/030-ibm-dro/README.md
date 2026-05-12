@@ -4,6 +4,9 @@ Deploy and configure DRO (Data Reporter Operator).
 
 <!--docs-include-start-->
 
+## Overview
+
+This chart deploys and configures the IBM Data Reporter Operator (DRO) and IBM Metrics Operator (IMO) on an OpenShift cluster. DRO provides metering and usage reporting capabilities for IBM software products.
 
 The `dro_cmm_setup` being set to true is used to configure connectivity to CMM which is an internal IBM tool, and is not required outside of IBM.
 
@@ -166,6 +169,7 @@ ibm_dro:
 | `Certificate` | DRO certificate resources | `ibm-software-central` | When `cluster_admin_role` is true | `cluster_admin_role` |
 | `ClusterIssuer` | DRO cluster issuer resources | N/A (cluster-scoped) | When `cluster_admin_role` is true | `cluster_admin_role` |
 | `Secret` | `ibm-data-reporter-operator-api-token` | `ibm-software-central` | When `application_admin_role` is true | `application_admin_role` |
+| `NetworkPolicy` | `ibm-dro-dns-netpol` | `ibm-software-central` | When `dns_provider` is "cis" and `cis_crn` and `dro_public_domain` are set | `application_admin_role` |
 | `Secret` | `aws` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
 | `ServiceAccount` | `postsync-ibm-dro-update-sm-sa` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
 | `Role` | `postsync-ibm-dro-update-sm-r` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
@@ -176,3 +180,12 @@ ibm_dro:
 | `Secret` | `auth-body-data-secret` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
 | `ConfigMap` | `kazaam-configmap` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
 | `DataReporterConfig` | `datareporterconfig` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
+
+
+## Examples
+
+See the [Usage Examples](#usage-examples) section under Configuration for detailed examples of different DRO deployment scenarios including:
+- Basic DRO installation
+- Configuration with public domain and TLS
+- Manual install plan approval
+- IBM internal CMM integration

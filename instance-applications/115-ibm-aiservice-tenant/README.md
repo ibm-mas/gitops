@@ -229,4 +229,3 @@ oc logs -n <tenant-namespace> -l control-plane=ibm-aiservice --tail=100
 - [AI Service Instance Root Application](../../root-applications/ibm-aiservice-instance-root/README.md)
 - [Instance Base Values Reference](../../docs/reference/instance-base-values.md)
 - [Configuration Repository](../../docs/configrepo.md)
-- [Tenant Scheduling Implementation](../../AISERVICE_TENANT_SCHEDULING_IMPLEMENTATION.md)

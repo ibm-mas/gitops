@@ -94,17 +94,6 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  inputs:
-    - application:
-        excludes:
-          - container: auth-store
-            namespace: mas-*-iot
-          - container: api-authorization
-            namespace: mas-*-iot
-          - container: rest-v2-sync-scheduler
-            namespace: mas-*-monitor
-      name: application-logs
-      type: application
   serviceAccount:
     name: collector
   filters:
@@ -120,19 +109,6 @@ spec:
           - level: Metadata
       name: sos-policy
       type: kubeAPIAudit
-    - prune:
-        notIn:
-          - .message
-          - .log_type
-          - .log_source
-          - .kubernetes.namespace_name
-          - .kubernetes.pod_name
-          - .kubernetes.container_name
-          - .kubernetes.labels.app
-          - .kubernetes.labels.mas_ibm_com_instanceId
-          - .kubernetes.container_image
-      name: prune-fields
-      type: prune
   outputs:
     - name: cloudwatch-1
       type: cloudwatch
@@ -166,9 +142,8 @@ spec:
     - name: app-logs
       filterRefs:
         - noise
-        - prune-fields
       inputRefs:
-        - application-logs
+        - application
       outputRefs:
         - cloudwatch-1
     - name: infra-logs

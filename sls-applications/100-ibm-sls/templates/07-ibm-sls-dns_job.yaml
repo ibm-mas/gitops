@@ -7,6 +7,25 @@
 {{- $_job_version := "v7" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+---
+# NetworkPolicy to allow egress traffic for AWS Secrets Manager and IBM Cloud API
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: ibm-sls-dns-netpol
+  namespace: mas-{{ .Values.ibm_customer_number }}-{{ .Values.subscription_id }}-sls
+  annotations:
+    argocd.argoproj.io/sync-wave: "112"
+spec:
+  podSelector:
+    matchLabels:
+      app: "postsync-ibm-sls-dns-job"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
 {{- if and (not (empty .Values.dns_provider)) (not (empty .Values.cis_service_name)) (not (empty .Values.cis_crn)) }}
 ---
 apiVersion: batch/v1

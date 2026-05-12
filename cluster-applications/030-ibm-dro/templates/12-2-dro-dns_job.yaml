@@ -24,6 +24,29 @@ type: Opaque
 {{- $_job_config_values := omit .Values "junitreporter" }}
 {{- $_job_version := "v1" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+---
+# NetworkPolicy to allow egress traffic for AWS Secrets Manager and IBM Cloud API
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: ibm-dro-dns-netpol
+  namespace: {{ .Values.dro_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "137"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: "postsync-ibm-dro-dns-job"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
 ---
 apiVersion: batch/v1
@@ -89,10 +112,7 @@ spec:
               echo "Fetching IBM API key from AWS Secrets Manager"
               SECRET_NAME_CIS="${ACCOUNT_ID}/${CLUSTER_ID}/cis"
 
-              SECRET_JSON=$(aws secretsmanager get-secret-value \
-                --secret-id ${SECRET_NAME_CIS} \
-                --query SecretString \
-                --output text)
+              SECRET_JSON=$(sm_get_secret "${SECRET_NAME_CIS}")
 
               echo "Fetching OCP ingress from AWS Secrets Manager"
               export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"

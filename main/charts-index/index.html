@@ -4955,6 +4955,13 @@ oc logs -n &lt;tenant-namespace&gt; -l control-plane=ibm-aiservice --tail=100
 <td><code>application_admin_role</code></td>
 </tr>
 <tr>
+<td><code>Service</code></td>
+<td>Private NLB service</td>
+<td>DB2 application namespace</td>
+<td>When <code>private_nlb.enabled</code> is true</td>
+<td><code>application_admin_role</code></td>
+</tr>
+<tr>
 <td><code>Secret</code></td>
 <td>Post-sync DB2 generated secret</td>
 <td>DB2 application namespace</td>
@@ -5076,6 +5083,14 @@ allow_list: string (optional)
 # Production Database Access (optional)
 production_database_access:
   type: string
+
+
+# Private NLB for customer TGW connectivity (optional)
+private_nlb:
+  enabled: boolean         # default: false
+  subnet_ids: list(string) # required when enabled: true
+  allowed_cidrs: list(string) # required when enabled: true
+  port: number             # default: 50001
 </code></pre>
 <p><strong>Note</strong>: Values marked with "(secret reference)" should use the format <code>&lt;path:secrets/path:key&gt;</code> to reference secrets stored in the Secrets Vault.</p>
 <h5 id="base-instance-values_10">Base Instance Values<a class="headerlink" href="#base-instance-values_10" title="Permanent link">¤</a></h5>
@@ -5100,7 +5115,64 @@ sm:                             # Secrets Manager configuration
   aws_access_key_id: string (secret reference)
   aws_secret_access_key: string (secret reference)
 </code></pre>
-<p>For complete documentation of all base instance values including optional fields like <code>custom_labels</code>, <code>argocluster_instance</code>, <code>application_admin_service_account</code>, <code>mas_wipe_mongo_data</code>, <code>allow_list</code>, <code>additional_vpn</code>, <code>application_configuration</code>, <code>use_postdelete_hooks</code>, <code>additional_resources</code>, <code>extensions</code>, <code>enhanced_dr</code>, and <code>cli_image_repo</code>, see the <a href="../reference/instance-base-values/">Instance Base Values Reference</a>.</p>
+<p>For complete documentation of all base instance values including optional fields like <code>custom_labels</code>, <code>argocluster_instance</code>, <code>application_admin_service_account</code>, <code>mas_wipe_mongo_data</code>, <code>allow_list</code>, <code>additional_vpn</code>, <code>application_configuration</code>, <code>use_postdelete_hooks</code>, <code>additional_resources</code>, <code>extensions</code>, <code>enhanced_dr</code>, and <code>cli_image_repo</code>, see the <a href="../reference/instance-base-values/">Instance Base Values Reference</a></p>
+<h5 id="private-nlb-for-customer-tgw-connectivity">Private NLB for Customer TGW Connectivity<a class="headerlink" href="#private-nlb-for-customer-tgw-connectivity" title="Permanent link">¤</a></h5>
+<p>When <code>private_nlb.enabled: true</code>, this chart creates a Kubernetes <code>Service</code> of
+<code>type: LoadBalancer</code> that causes ROSA to provision an internal AWS NLB in the
+specified subnets. This is the recommended approach for exposing Db2 to a customer
+network via the TGW and hub-firewall path (A.4 Option 2).</p>
+<p>ROSA automatically manages the required EC2 worker node security group rules.
+No manual security group changes are needed.</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+<th>Required when enabled</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>private_nlb.enabled</code></td>
+<td>Toggle NLB creation on/off</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>private_nlb.subnet_ids</code></td>
+<td>Private-connectivity-edge subnet IDs, one per AZ</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>private_nlb.allowed_cidrs</code></td>
+<td>Customer CIDRs for <code>loadBalancerSourceRanges</code></td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>private_nlb.port</code></td>
+<td>NLB listener port, defaults to 50001</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<h6 id="example-enabling-for-a-customer-connected-instance">Example — enabling for a customer-connected instance<a class="headerlink" href="#example-enabling-for-a-customer-connected-instance" title="Permanent link">¤</a></h6>
+<pre><code class="language-yaml">private_nlb:
+  enabled: true
+  subnet_ids:
+    - subnet-0e40955c9b8865e7a   # us-gov-east-1a
+    - subnet-0e53a1f9071b8d9ba   # us-gov-east-1b
+    - subnet-04eba2a3f36ec0e7c   # us-gov-east-1c
+  allowed_cidrs:
+    - 10.200.20.0/24             # customer network CIDR
+  port: 50001
+</code></pre>
+<p>Each Db2 instance (facilities, manage) gets its own NLB because the ArgoCD
+application is deployed separately per instance with its own <code>db2_instance_name</code>.
+Both can use port 50001 without conflict since they are separate AWS NLB resources.</p>
+<p>The NLB is created independently for each instance (e.g. facilities, manage) using the instance-specific selector.</p>
+<h6 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">¤</a></h6>
+<p>If <code>private_nlb.enabled: true</code> and either <code>subnet_ids</code> or <code>allowed_cidrs</code> is
+empty, Helm will fail immediately with a clear error message before rendering
+any resources. This prevents a broken or unrestricted NLB from being deployed..</p>
 <hr>
 <h3 id="ibm-dbs-rds-database">IBM DBS RDS Database<a class="headerlink" href="#ibm-dbs-rds-database" title="Permanent link">¤</a></h3>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/120-ibm-dbs-rds-database">120-ibm-dbs-rds-database</a></p>

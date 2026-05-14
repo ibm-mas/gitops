@@ -4,9 +4,28 @@
 {{- $_job_name_prefix := "ibm-sls-dns" }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v6" }}
+{{- $_job_version := "v7" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+---
+# NetworkPolicy to allow egress traffic for AWS Secrets Manager and IBM Cloud API
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: ibm-sls-dns-netpol
+  namespace: mas-{{ .Values.ibm_customer_number }}-{{ .Values.subscription_id }}-sls
+  annotations:
+    argocd.argoproj.io/sync-wave: "112"
+spec:
+  podSelector:
+    matchLabels:
+      app: "postsync-ibm-sls-dns-job"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
 {{- if and (not (empty .Values.dns_provider)) (not (empty .Values.cis_service_name)) (not (empty .Values.cis_crn)) }}
 ---
 apiVersion: batch/v1
@@ -60,7 +79,7 @@ spec:
 
               set -e
 
-              echo "Reading AWS credentials..." 
+              echo "Reading AWS credentials..."
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
@@ -76,10 +95,8 @@ spec:
 
               SECRET_NAME_CIS="${ACCOUNT_ID}/${CLUSTER_ID}/cis"
 
-              SECRET_JSON=$(aws secretsmanager get-secret-value \
-                --secret-id ${SECRET_NAME_CIS} \
-                --query SecretString \
-                --output text)
+              SECRET_JSON=$(sm_get_secret "${SECRET_NAME_CIS}")
+              echo ${SECRET_JSON}
 
               echo "Fetching OCP_INGRESS from AWS Secrets Manager"
 

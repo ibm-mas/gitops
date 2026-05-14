@@ -11,14 +11,14 @@
 #   Variables to be set
 #   SLACKURL = The channel were notifications are send
 #   BACKUP_SCRIPT =  The backup script that Run_Backup.sh calls
-#   DAYOFFULL = Defines the day of the week that the full backup will on on (must match the same format as the output from `date`)
+#   DAYOFFULL = Defines the day of the week that the full backup will on on (must match the same format as the output from $(date))
 #   NUMOFBKUPTOKEEP = This defines the number of days to keep a backup image on local disk
 #
 #   Variables determined by the environment
-#   BKPTYPE = Is determined from the `date` command and the DAYOFFULL value
+#   BKPTYPE = Is determined from the $(date) command and the DAYOFFULL value
 #   DB2INSTANCE = Pulled from the environment
 #   HOSTNAME
-#   DBNAME = Pulled from the `db2 list db directory`
+#   DBNAME = Pulled from the $(db2 list db directory)
 #   
 #   Backup command issued
 #   ./DB2_Backup.sh ${DB2INSTANCE} ${DBNAME} ${NUMOFBKUPTOKEEP} ${BKPTYPE} 2>>.BackupLOG.stderr > .BackupLOG.out
@@ -26,14 +26,16 @@
 # -- Revision of script to include new ICD URL
 #########################################################
 
-# -- Source the Props File
-. /mnt/backup/bin/.PROPS
-
 # -- Standard Parameters
-DBINSTANCE=`whoami`
-HOSTNAME=`hostname`
-DATETIME=`date +%Y-%m-%d_%H%M%S`;
-DOW=`date |  awk '{print $1}'`
+HOSTNAME=$(hostname)
+IP=$(/sbin/ifconfig | grep "inet" | grep broadcast | awk '{print $2}')
+DATETIME=$(date +'%Y%m%d_%H%M%S');
+DBINSTANCE=$(whoami);
+NAMESPACE=$(hostname -A | awk -F '.' '{print $3}')
+INSTANCE_HOME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${DBINSTANCE}" | awk -F ',' '{print $5}'| sed 's/\/sqllib//' )
+CUSTNAME=$(hostname | sed 's/c-db2wh-//; s/c-db2u-//; s/c-//; s/-db2u-0//; s/db2u/-/; ' | tr '[:lower:]' '[:upper:]' )
+SCRIPT_DIR=${INSTANCE_HOME}/bin
+ICD_LOG=${SCRIPT_DIR}/.Maillive.log
 
 # -- Verify and source db2profile 
 
@@ -44,41 +46,54 @@ else
    . ${HOME}/sqllib/db2profile
 fi
 
+# -- Source the Props File
+. /mnt/backup/bin/.PROPS
+
 # -- Debug Mode 
 # set -x;       # Uncomment to debug this shell script
 # set -n;       # Uncomment to check your syntax, without execution.
 
 # -- Backup Parameters
-INSTANCE_HOME=`/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${DBINSTANCE}" | awk -F ',' '{print $5}'| cut -d/ -f 1,2,3,4,5`
-SCRIPT_DIR=${INSTANCE_HOME}/bin
 BACKUP_SCRIPT="${SCRIPT_DIR}/DB2_Backup.sh"
-CUSTNAME=`hostname | sed 's/c-db2wh-//; s/c-//; s/-db2u-0//; s/db2u/-/; s/-manage//;' | tr '[:lower:]' '[:upper:]'`
-BUCKET_ALIAS=`db2 list storage access | grep ${CONTAINER} -B4 | grep ALIAS | awk -F '=' '{print $2}'`
+BUCKET_ALIAS=$(db2 list storage access | grep ${CONTAINER} -B4 | grep ALIAS | awk -F '=' '{print $2}' )
+DOW=$(date | awk '{print $1}')
 HSTYPE="Backup"
-ICD_LOG=${SCRIPT_DIR}/.Maillive.log
 
 # -- Valid only for MAS-CP4D customers 
 if (( ${CUSTNAME} )) ; then 
-   CUSTNAME=`echo ${CONTAINER} | awk -F '-backup-' '{print $2}'  | awk -F '-pr-' '{print $1}' | tr '[:lower:]' '[:upper:]'`
+   CUSTNAME=$( echo ${CONTAINER} | awk -F '-backup-' '{print $2}'  | awk -F '-pr-' '{print $1}' | tr '[:lower:]' '[:upper:]' )
 fi 
 
 # -- Database Environment 
 if [[ ${BUCKET_ALIAS} == "IBMCOS" ]]; then 
-	DBENV="MAS MS"
+   DBENV="MASMS"
 else
-	DBENV="MAS SaaS"
+   DBENV="MASSaaS"
 fi
+
+# -- For mapping Hostname with Servicedesk
+
+NS=$( echo ${NAMESPACE} | sed 's/mas-//; s/-core//; s/-manage//; s/-facilities// ; s/-db2u//;' );
+if [[ "$NAMESPACE" =~ "manage" ]] ; then 
+   HSHOSTS="main.manage.${NS}.suite"
+elif [[ "$NAMESPACE" =~ "core" ]]; then
+   HSHOSTS="main.home.${NS}.suite"
+elif [[ "$NAMESPACE" =~ "monitor" ]]; then
+   HSHOSTS="main.monitor.${NS}.suite"
+elif [[ "$NAMESPACE" =~ "facilities" ]]; then
+   HSHOSTS="main.facilities.${NS}.suite"
+fi
+
 
 # -- Create ICD Incident , If Backup fails 
 
 CREATE_ICD() {
-	HTYPE=`echo ${HSTYPE} | tr '[:lower:]' '[:upper:]'`
-	DES="$1"
-#	echo "############################" >> ${ICD_LOG}
-	LONGDES=`cat ${ICD_LOG} | sed 's/"//g' | sed "s/'//g"`
-	LONGDES=`echo "<pre> ${LONGDES} </pre>"`
+   HTYPE=$(echo ${HSTYPE} | tr '[:lower:]' '[:upper:]')
+   DES="$1"
+   LONGDES=$(cat ${ICD_LOG} | sed 's/"//g' | sed "s/'//g")
+   LONGDES=$(echo "<pre>${LONGDES}</pre>")
 
-   # -- Verify the ICD URL Status 
+   # -- Verify the ICD Status 
    if curl -k -s --connect-timeout 3 ${ICD_URL_SAAS} >/dev/null; then
       CURL_REQ="--request POST --url ${ICD_URL_SAAS} "
       AUTH_REQ="apikey: ${ICD_API_KEY}"
@@ -100,7 +115,7 @@ CREATE_ICD() {
          "siteid":"001",
          "classstructureid":"1341",
          "classificationid":"IN-DBPERF",
-         "hshost":"${HOSTNAME}",
+         "hshost":"${HSHOSTS}",
          "hstype":"${HTYPE}"
       }'
 !
@@ -117,7 +132,7 @@ fi
 
 # -- Loop through the available databases in the instance 
 
-DBS=`db2 list db directory | grep -B5 "Indirect" | grep "Database name" |  awk '{ print $4 }'`
+DBS=$(db2 list db directory | grep -B5 "Indirect" | grep "Database name" |  awk '{ print $4 }')
 for DBNAME in ${DBS}
 do
    cd ${SCRIPT_DIR}
@@ -136,15 +151,18 @@ do
       CREATE_ICD "${DES}"
    fi   
 
-   # -- Execute Online Reorgs for qualified tables and indexes after every Full Backup
-   if [[ ${DOW} = ${DAYOFFULL} ]] ; then
-      /bin/bash ${SCRIPT_DIR}/reorgTablesIndexesInplace.sh -db ${DBNAME} -s MAXIMO -tb_stats -ix_stats -window 120 -tr > ${HOME}/maintenance/logs/reorgTablesIndexesInplace_${DATETIME}.log 2>&1
-   fi
+      # -- Execute Online Reorgs for qualified tables and indexes after every Full Backup
+      if [[ ${DOW} = ${DAYOFFULL} ]] ; then
+         /bin/bash ${SCRIPT_DIR}/reorgTablesIndexesInplace.sh -db ${DBNAME} -s MAXIMO -tb_stats -ix_stats -tr -window 180 >${INSTANCE_HOME}/maintenance/logs/reorgTablesIndexesInplace_${DATETIME}.log 2>&1
+      fi
 
 done
 
 # -- Exeucte Runstats and Rebind for all tables on weekly after full backup 
 /bin/bash ${SCRIPT_DIR}/runstats_rebind.sh >${SCRIPT_DIR}/.runstats_rebind.out 2>&1
 #/bin/bash ${SCRIPT_DIR}/grant_check.sh bludb >${SCRIPT_DIR}/.grant_check.out 2>&1
+
+# -- Extract the audit logs and transfer to Bucket 
+/bin/bash ${SCRIPT_DIR}/auditExtractUpload.sh >${INSTANCE_HOME}/maintenance/logs/auditExtractUpload_${DATETIME}.log & disown
 
 # -- END OF SCRIPT

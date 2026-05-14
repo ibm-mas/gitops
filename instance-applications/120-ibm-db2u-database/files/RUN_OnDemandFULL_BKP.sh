@@ -11,28 +11,29 @@
 #   Variables to be set
 #   SLACKURL = The channel were notifications are send
 #   BACKUP_SCRIPT =  The backup script that RUN_OnDemandFULL_BKP.sh calls
-#   DAYOFFULL = Defines the day of the week that the full backup will on on (must match the same format as the output from `date`)
+#   DAYOFFULL = Defines the day of the week that the full backup will on on (must match the same format as the output from $(date))
 #   NUMOFBKUPTOKEEP = This defines the number of days to keep a backup image on local disk
 #
 #   Variables determined by the environment
-#   BACKUPTYPE = Is determined from the `date` command and the DAYOFFULL value
+#   BACKUPTYPE = Is determined from the $(date) command and the DAYOFFULL value
 #   DB2INSTANCE = Pulled from the environment
 #   HOSTNAME
-#   DBNAME = Pulled from the `db2 list db directory`
+#   DBNAME = Pulled from the $(db2 list db directory)
 #   
 #   Backup command issued
 #   ./DB2_Backup.sh ${DB2INSTANCE} ${DBNAME} ${NUMOFBKUPTOKEEP} ${BACKUPTYPE} 2>>.BackupLOG.stderr > .BackupLOG.out
 #########################################################
 
-# -- Source the PROPS File 
-. /mnt/backup/bin/.PROPS
-
 # -- Standard Parameters 
-DBINSTANCE=`whoami`
-HOSTNAME=`hostname`
-INSTANCE_HOME=`/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${DBINSTANCE}" | awk -F ',' '{print $5}'| cut -d/ -f 1,2,3,4,5`
+HOSTNAME=$(hostname)
+NAMESPACE=$(hostname -A | awk -F '.' '{print $3}')
+DBINSTANCE=$(whoami);
+DATETIME=$(date +'%F_%T');
+INSTANCE_HOME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${DBINSTANCE}" | awk -F ',' '{print $5}'| sed 's/\/sqllib//' )
+HOSTIP=$(/sbin/ifconfig | grep "inet" | grep broadcast | awk '{print $2}')
+CUSTNAME=$(hostname | sed 's/c-db2wh-//; s/c-db2u-//; s/c-//; s/-db2u-0//; s/db2u/-/; ' | tr '[:lower:]' '[:upper:]' )
 SCRIPT_DIR=${INSTANCE_HOME}/bin
-DATETIME=`date +%Y-%m-%d_%H%M%S`;
+ICD_LOG=${SCRIPT_DIR}/.Maillive.log
 
 # -- Verify and source db2profile 
 
@@ -42,6 +43,8 @@ if [[ ! -f "${INSTANCE_HOME}/sqllib/db2profile" ]]; then
 else
    . ${INSTANCE_HOME}/sqllib/db2profile
 fi
+# -- Source the PROPS File 
+. /mnt/backup/bin/.PROPS
 
 # -- Debug Mode 
 # set -x;       # Uncomment to debug this shell script
@@ -50,33 +53,43 @@ fi
 # -- Backup parameters 
 BACKUPTYPE=full
 BACKUP_SCRIPT="${SCRIPT_DIR}/DB2_Backup.sh"
-CUSTNAME=`hostname | sed 's/c-db2wh-//; s/c-//; s/-db2u-0//; s/db2u/-/; s/-manage//;' | tr '[:lower:]' '[:upper:]'`
-BUCKET_ALIAS=`db2 list storage access | grep ${CONTAINER} -B4 | grep ALIAS | awk -F '=' '{print $2}'`
+BUCKET_ALIAS=$(db2 list storage access | grep ${CONTAINER} -B4 | grep ALIAS | awk -F '=' '{print $2}')
 HSTYPE="Backup"
-ICD_LOG=${SCRIPT_DIR}/.Maillive.log
 
 # -- Valid only for MAS-CP4D customers 
 if (( ${CUSTNAME} )) ; then 
-   CUSTNAME=`echo ${CONTAINER} | awk -F '-backup-' '{print $2}'  | awk -F '-pr-' '{print $1}' | tr '[:lower:]' '[:upper:]'`
+   CUSTNAME=$(echo ${CONTAINER} | awk -F '-backup-' '{print $2}'  | awk -F '-pr-' '{print $1}' | tr '[:lower:]' '[:upper:]')
 fi 
 
 # -- Database Environment 
 if [[ ${BUCKET_ALIAS} == "IBMCOS" ]]; then 
-	DBENV="MAS MS"
+	DBENV="MASMS"
 else
-	DBENV="MAS SaaS"
+	DBENV="MASSaaS"
+fi
+
+# -- For mapping Hostname with Servicedesk
+
+NS=$( echo ${NAMESPACE} | sed 's/mas-//; s/-core//; s/-manage//; s/-facilities//; s/-db2u//;' );
+if [[ "$NAMESPACE" =~ "manage" ]] ; then 
+	HSHOSTS="main.manage.${NS}.suite"
+elif [[ "$NAMESPACE" =~ "core" ]]; then
+   HSHOSTS="main.home.${NS}.suite"
+elif [[ "$NAMESPACE" =~ "monitor" ]]; then
+   HSHOSTS="main.monitor.${NS}.suite"
+elif [[ "$NAMESPACE" =~ "facilities" ]]; then
+   HSHOSTS="main.facilities.${NS}.suite"
 fi
 
 # -- Create ICD Incident , If Backup fails 
 
 CREATE_ICD() {
-	HTYPE=`echo ${HSTYPE} | tr '[:lower:]' '[:upper:]'`
+	HTYPE=$(echo ${HSTYPE} | tr '[:lower:]' '[:upper:]')
 	DES="$1"
-#	echo "############################" >> ${ICD_LOG}
-	LONGDES=`cat ${ICD_LOG} | sed 's/"//g' | sed "s/'//g"`
-	LONGDES=`echo "<pre> ${LONGDES} </pre>"`
+	LONGDES=$(cat ${ICD_LOG} | sed 's/"//g' | sed "s/'//g")
+	LONGDES=$(echo "<pre>${LONGDES} </pre>")
 
-   # -- Verify the ICD URL Status 
+   # -- Verify the ICD Status 
    if curl -k -s --connect-timeout 3 ${ICD_URL_SAAS} >/dev/null; then
       CURL_REQ="--request POST --url ${ICD_URL_SAAS} "
       AUTH_REQ="apikey: ${ICD_API_KEY}"
@@ -98,7 +111,7 @@ CREATE_ICD() {
          "siteid":"001",
          "classstructureid":"1341",
          "classificationid":"IN-DBPERF",
-         "hshost":"${HOSTNAME}",
+         "hshost":"${HSHOSTS}",
          "hstype":"${HTYPE}"
       }'
 !
@@ -108,7 +121,7 @@ CREATE_ICD() {
 
 # -- Loop through the available databases in the instance 
 
-DBS=`db2 list db directory | grep -B5 "Indirect" | grep "Database name" |  awk '{ print $4 }'`
+DBS=$(db2 list db directory | grep -B5 "Indirect" | grep "Database name" |  awk '{ print $4 }')
 for DBNAME in ${DBS}
 do
    cd ${SCRIPT_DIR}

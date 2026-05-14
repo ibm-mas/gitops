@@ -234,11 +234,21 @@
     <cds-select id="breadcrumbs-toc" inline="" placeholder="..." oninput="changeAnchor(this.value)">
     
     
+      <cds-select-item value="#overview">Overview</cds-select-item>
+    
       <cds-select-item value="#resources-created">Resources Created</cds-select-item>
     
       <cds-select-item value="#configuration">Configuration</cds-select-item>
     
       <cds-select-item value="#base-instance-values">Base Instance Values</cds-select-item>
+    
+      <cds-select-item value="#examples">Examples</cds-select-item>
+    
+      <cds-select-item value="#prerequisites">Prerequisites</cds-select-item>
+    
+      <cds-select-item value="#troubleshooting">Troubleshooting</cds-select-item>
+    
+      <cds-select-item value="#related-documentation">Related Documentation</cds-select-item>
     
     </cds-select>
   </cds-breadcrumb-item>
@@ -250,6 +260,8 @@
             
             <h1 id="ibm-ai-service">IBM AI Service<a class="headerlink" href="#ibm-ai-service" title="Permanent link">¤</a></h1>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/113-ibm-aiservice">113-ibm-aiservice</a></p>
+<h3 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">¤</a></h3>
+<p>This chart deploys Maximo AI Service application. It installs the AI Service operator and creates an AI Service instance with all necessary configurations including S3 storage, DRO integration, JDBC connectivity, and WatsonX integration.</p>
 <h3 id="resources-created">Resources Created<a class="headerlink" href="#resources-created" title="Permanent link">¤</a></h3>
 <table>
 <thead>
@@ -264,7 +276,7 @@
 <tbody>
 <tr>
 <td><code>Secret</code></td>
-<td>AI Service S3/DRO/JDBC/knowledge-model secrets</td>
+<td>AI Service S3/DRO/JDBC secrets</td>
 <td>AI Service namespace</td>
 <td>Always</td>
 <td><code>application_admin_role</code></td>
@@ -406,6 +418,97 @@ sm:                             # Secrets Manager configuration
   aws_secret_access_key: string (secret reference)
 </code></pre>
 <p>For complete documentation of all base instance values including optional fields like <code>custom_labels</code>, <code>argocluster_instance</code>, <code>application_admin_service_account</code>, <code>mas_wipe_mongo_data</code>, <code>allow_list</code>, <code>additional_vpn</code>, <code>application_configuration</code>, <code>use_postdelete_hooks</code>, <code>additional_resources</code>, <code>extensions</code>, <code>enhanced_dr</code>, and <code>cli_image_repo</code>, see the <a href="../../reference/instance-base-values/">Instance Base Values Reference</a>.</p>
+<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">¤</a></h3>
+<h4 id="basic-ai-service-configuration">Basic AI Service Configuration<a class="headerlink" href="#basic-ai-service-configuration" title="Permanent link">¤</a></h4>
+<pre><code class="language-yaml"># ibm-aiservice.yaml
+merge-key: "production/us-west-2/aiservice-inst-1"
+ibm_aiservice:
+  aiservice_instance_id: "aiservice-inst-1"
+  aiservice_namespace: "aiservice-inst-1-aiservice"
+  ibm_entitlement_key: "&lt;path:secret#entitlement_key&gt;"
+
+  # Operator Configuration
+  aiservice_channel: "9.2.x"
+  mas_catalog_source: "ibm-operator-catalog"
+  mas_icr_cp: "cp.icr.io/cp"
+  mas_icr_cpopen: "icr.io/cpopen"
+
+  # DRO Configuration
+  dro_url: "dro_url"
+  dro_api_token: "&lt;path:secret#dro_api_token&gt;"
+  dro_ca_b64enc: "&lt;path:secret#dro_ca&gt;"
+  aiservice_dro_token_secret: "dro-token"
+  aiservice_dro_cacert_secret: "dro-ca-cert"
+
+  # S3 Configuration
+  aiservice_s3_endpoint_url: "https://s3.us-west-2.amazonaws.com"
+  aiservice_s3_bucket_prefix: "aiservice-inst-1"
+  aiservice_s3_templates_bucket: "templates"
+  aiservice_s3_tenants_bucket: "tenants"
+  aiservice_s3_secret: "aiservice-inst-1-s3cfg"
+
+  aiservice_s3_ssl: "true"
+  aiservice_s3_accesskey: "&lt;path:secret#s3_accesskey&gt;"
+  aiservice_s3_secretkey: "&lt;path:secret#s3_secretkey&gt;"
+  aiservice_s3_host: "&lt;path:secret#s3_host&gt;"
+  aiservice_s3_port: ""
+  aiservice_s3_region: "&lt;path:secret#s3_region&gt;"
+
+  # JDBC Configuration
+  jdbccfg_username: "&lt;path:secret#jdbc_username&gt;"
+  jdbccfg_password: "&lt;path:secret#jdbc_password&gt;"
+  jdbccfg_url: "&lt;path:secret#jdbc_url&gt;"
+  jdbccfg_sslenabled: "true"
+  jdbccfg_ca_b64enc: "&lt;path:secret#jdbc_ca&gt;"
+  aiservice_jdbc_secret: "aiservice-inst-1-jdbc"
+  use_aws_db2: "true"
+
+  # MAS Entitlement
+  entitlement_key: "&lt;path:secret#entitlement_key&gt;"
+
+
+  # Environment
+  environment_type: "production"
+  aiservice_domain: "aiservice.ibm.com"
+  in_saas_env: true
+  aiservice_storage_class: "gp3-csi"
+  aiservice_operator_log_level: "0"
+</code></pre>
+<h3 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">¤</a></h3>
+<ul>
+<li>IBM Operator Catalog installed</li>
+<li>Cert Manager operator installed</li>
+<li>Sufficient cluster resources for AI workloads</li>
+<li>S3-compatible object storage</li>
+<li>Database (Db2 or compatible) for JDBC connectivity</li>
+</ul>
+<h3 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¤</a></h3>
+<h4 id="ai-service-operator-not-installing">AI Service Operator Not Installing<a class="headerlink" href="#ai-service-operator-not-installing" title="Permanent link">¤</a></h4>
+<p>Check the subscription status:</p>
+<pre><code class="language-bash">oc get subscription ibm-aiservice -n &lt;aiservice-namespace&gt;
+oc describe subscription ibm-aiservice -n &lt;aiservice-namespace&gt;
+</code></pre>
+<p>Check operator logs:</p>
+<pre><code class="language-bash">oc logs -n &lt;aiservice-namespace&gt; -l control-plane=ibm-aiservice --tail=100
+</code></pre>
+<h4 id="s3-connection-issues">S3 Connection Issues<a class="headerlink" href="#s3-connection-issues" title="Permanent link">¤</a></h4>
+<p>Verify S3 credentials and connectivity:</p>
+<pre><code class="language-bash">oc get secret &lt;aiservice-s3-secret&gt; -n &lt;aiservice-namespace&gt; -o yaml
+oc logs -n &lt;aiservice-namespace&gt; -l app=km-controller --tail=100
+oc logs -n &lt;aiservice-namespace&gt; -l app=km-store --tail=100
+</code></pre>
+<h4 id="dro-integration-failures">DRO Integration Failures<a class="headerlink" href="#dro-integration-failures" title="Permanent link">¤</a></h4>
+<p>Check DRO token and certificate:</p>
+<pre><code class="language-bash">oc get secret dro-token -n &lt;aiservice-namespace&gt;
+oc get secret dro-certificates -n &lt;aiservice-namespace&gt;
+</code></pre>
+<h3 id="related-documentation">Related Documentation<a class="headerlink" href="#related-documentation" title="Permanent link">¤</a></h3>
+<ul>
+<li><a href="../../root-applications/ibm-aiservice-instance-root/README.md">AI Service Instance Root Application</a></li>
+<li><a href="../../instance-applications/115-ibm-aiservice-tenant/README.md">AI Service Tenant Chart</a></li>
+<li><a href="../../reference/instance-base-values/">Instance Base Values Reference</a></li>
+<li><a href="../../configrepo/">Configuration Repository</a></li>
+</ul>
             
           </div>
 
@@ -426,6 +529,11 @@ sm:                             # Secrets Manager configuration
         <div class="md-toc__title">On this page</div>
         <ul class="md-toc__list">
               <li class="md-toc__item">
+                <a href="#overview" class="md-toc__link" data-md-level="1">
+                  Overview
+                </a>
+              </li>
+              <li class="md-toc__item">
                 <a href="#resources-created" class="md-toc__link" data-md-level="1">
                   Resources Created
                 </a>
@@ -438,6 +546,50 @@ sm:                             # Secrets Manager configuration
               <li class="md-toc__item">
                 <a href="#base-instance-values" class="md-toc__link" data-md-level="1">
                   Base Instance Values
+                </a>
+              </li>
+              <li class="md-toc__item">
+                <a href="#examples" class="md-toc__link" data-md-level="1">
+                  Examples
+                </a>
+                  <ul class="md-toc__list">
+                      <li class="md-toc__item">
+                        <a href="#basic-ai-service-configuration" class="md-toc__link" data-md-level="2">
+                          Basic AI Service Configuration
+                        </a>
+                      </li>
+                  </ul>
+              </li>
+              <li class="md-toc__item">
+                <a href="#prerequisites" class="md-toc__link" data-md-level="1">
+                  Prerequisites
+                </a>
+              </li>
+              <li class="md-toc__item">
+                <a href="#troubleshooting" class="md-toc__link" data-md-level="1">
+                  Troubleshooting
+                </a>
+                  <ul class="md-toc__list">
+                      <li class="md-toc__item">
+                        <a href="#ai-service-operator-not-installing" class="md-toc__link" data-md-level="2">
+                          AI Service Operator Not Installing
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#s3-connection-issues" class="md-toc__link" data-md-level="2">
+                          S3 Connection Issues
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#dro-integration-failures" class="md-toc__link" data-md-level="2">
+                          DRO Integration Failures
+                        </a>
+                      </li>
+                  </ul>
+              </li>
+              <li class="md-toc__item">
+                <a href="#related-documentation" class="md-toc__link" data-md-level="1">
+                  Related Documentation
                 </a>
               </li>
         </ul>

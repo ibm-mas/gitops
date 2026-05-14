@@ -4341,6 +4341,8 @@ sm:                             # Secrets Manager configuration
 <hr>
 <h3 id="ibm-ai-service">IBM AI Service<a class="headerlink" href="#ibm-ai-service" title="Permanent link">¤</a></h3>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/113-ibm-aiservice">113-ibm-aiservice</a></p>
+<h5 id="overview_1">Overview<a class="headerlink" href="#overview_1" title="Permanent link">¤</a></h5>
+<p>This chart deploys Maximo AI Service application. It installs the AI Service operator and creates an AI Service instance with all necessary configurations including S3 storage, DRO integration, JDBC connectivity, and WatsonX integration.</p>
 <h5 id="resources-created_28">Resources Created<a class="headerlink" href="#resources-created_28" title="Permanent link">¤</a></h5>
 <table>
 <thead>
@@ -4355,7 +4357,7 @@ sm:                             # Secrets Manager configuration
 <tbody>
 <tr>
 <td><code>Secret</code></td>
-<td>AI Service S3/DRO/JDBC/knowledge-model secrets</td>
+<td>AI Service S3/DRO/JDBC secrets</td>
 <td>AI Service namespace</td>
 <td>Always</td>
 <td><code>application_admin_role</code></td>
@@ -4497,9 +4499,102 @@ sm:                             # Secrets Manager configuration
   aws_secret_access_key: string (secret reference)
 </code></pre>
 <p>For complete documentation of all base instance values including optional fields like <code>custom_labels</code>, <code>argocluster_instance</code>, <code>application_admin_service_account</code>, <code>mas_wipe_mongo_data</code>, <code>allow_list</code>, <code>additional_vpn</code>, <code>application_configuration</code>, <code>use_postdelete_hooks</code>, <code>additional_resources</code>, <code>extensions</code>, <code>enhanced_dr</code>, and <code>cli_image_repo</code>, see the <a href="../reference/instance-base-values/">Instance Base Values Reference</a>.</p>
+<h5 id="examples_1">Examples<a class="headerlink" href="#examples_1" title="Permanent link">¤</a></h5>
+<h6 id="basic-ai-service-configuration">Basic AI Service Configuration<a class="headerlink" href="#basic-ai-service-configuration" title="Permanent link">¤</a></h6>
+<pre><code class="language-yaml"># ibm-aiservice.yaml
+merge-key: "production/us-west-2/aiservice-inst-1"
+ibm_aiservice:
+  aiservice_instance_id: "aiservice-inst-1"
+  aiservice_namespace: "aiservice-inst-1-aiservice"
+  ibm_entitlement_key: "&lt;path:secret#entitlement_key&gt;"
+
+  # Operator Configuration
+  aiservice_channel: "9.2.x"
+  mas_catalog_source: "ibm-operator-catalog"
+  mas_icr_cp: "cp.icr.io/cp"
+  mas_icr_cpopen: "icr.io/cpopen"
+
+  # DRO Configuration
+  dro_url: "dro_url"
+  dro_api_token: "&lt;path:secret#dro_api_token&gt;"
+  dro_ca_b64enc: "&lt;path:secret#dro_ca&gt;"
+  aiservice_dro_token_secret: "dro-token"
+  aiservice_dro_cacert_secret: "dro-ca-cert"
+
+  # S3 Configuration
+  aiservice_s3_endpoint_url: "https://s3.us-west-2.amazonaws.com"
+  aiservice_s3_bucket_prefix: "aiservice-inst-1"
+  aiservice_s3_templates_bucket: "templates"
+  aiservice_s3_tenants_bucket: "tenants"
+  aiservice_s3_secret: "aiservice-inst-1-s3cfg"
+
+  aiservice_s3_ssl: "true"
+  aiservice_s3_accesskey: "&lt;path:secret#s3_accesskey&gt;"
+  aiservice_s3_secretkey: "&lt;path:secret#s3_secretkey&gt;"
+  aiservice_s3_host: "&lt;path:secret#s3_host&gt;"
+  aiservice_s3_port: ""
+  aiservice_s3_region: "&lt;path:secret#s3_region&gt;"
+
+  # JDBC Configuration
+  jdbccfg_username: "&lt;path:secret#jdbc_username&gt;"
+  jdbccfg_password: "&lt;path:secret#jdbc_password&gt;"
+  jdbccfg_url: "&lt;path:secret#jdbc_url&gt;"
+  jdbccfg_sslenabled: "true"
+  jdbccfg_ca_b64enc: "&lt;path:secret#jdbc_ca&gt;"
+  aiservice_jdbc_secret: "aiservice-inst-1-jdbc"
+  use_aws_db2: "true"
+
+  # MAS Entitlement
+  entitlement_key: "&lt;path:secret#entitlement_key&gt;"
+
+
+  # Environment
+  environment_type: "production"
+  aiservice_domain: "aiservice.ibm.com"
+  in_saas_env: true
+  aiservice_storage_class: "gp3-csi"
+  aiservice_operator_log_level: "0"
+</code></pre>
+<h5 id="prerequisites_7">Prerequisites<a class="headerlink" href="#prerequisites_7" title="Permanent link">¤</a></h5>
+<ul>
+<li>IBM Operator Catalog installed</li>
+<li>Cert Manager operator installed</li>
+<li>Sufficient cluster resources for AI workloads</li>
+<li>S3-compatible object storage</li>
+<li>Database (Db2 or compatible) for JDBC connectivity</li>
+</ul>
+<h5 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¤</a></h5>
+<h6 id="ai-service-operator-not-installing">AI Service Operator Not Installing<a class="headerlink" href="#ai-service-operator-not-installing" title="Permanent link">¤</a></h6>
+<p>Check the subscription status:</p>
+<pre><code class="language-bash">oc get subscription ibm-aiservice -n &lt;aiservice-namespace&gt;
+oc describe subscription ibm-aiservice -n &lt;aiservice-namespace&gt;
+</code></pre>
+<p>Check operator logs:</p>
+<pre><code class="language-bash">oc logs -n &lt;aiservice-namespace&gt; -l control-plane=ibm-aiservice --tail=100
+</code></pre>
+<h6 id="s3-connection-issues">S3 Connection Issues<a class="headerlink" href="#s3-connection-issues" title="Permanent link">¤</a></h6>
+<p>Verify S3 credentials and connectivity:</p>
+<pre><code class="language-bash">oc get secret &lt;aiservice-s3-secret&gt; -n &lt;aiservice-namespace&gt; -o yaml
+oc logs -n &lt;aiservice-namespace&gt; -l app=km-controller --tail=100
+oc logs -n &lt;aiservice-namespace&gt; -l app=km-store --tail=100
+</code></pre>
+<h6 id="dro-integration-failures">DRO Integration Failures<a class="headerlink" href="#dro-integration-failures" title="Permanent link">¤</a></h6>
+<p>Check DRO token and certificate:</p>
+<pre><code class="language-bash">oc get secret dro-token -n &lt;aiservice-namespace&gt;
+oc get secret dro-certificates -n &lt;aiservice-namespace&gt;
+</code></pre>
+<h5 id="related-documentation">Related Documentation<a class="headerlink" href="#related-documentation" title="Permanent link">¤</a></h5>
+<ul>
+<li><a href="../root-applications/ibm-aiservice-instance-root/README.md">AI Service Instance Root Application</a></li>
+<li><a href="../instance-applications/115-ibm-aiservice-tenant/README.md">AI Service Tenant Chart</a></li>
+<li><a href="../reference/instance-base-values/">Instance Base Values Reference</a></li>
+<li><a href="../configrepo/">Configuration Repository</a></li>
+</ul>
 <hr>
 <h3 id="ibm-ai-service-tenant">IBM AI Service Tenant<a class="headerlink" href="#ibm-ai-service-tenant" title="Permanent link">¤</a></h3>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/115-ibm-aiservice-tenant">115-ibm-aiservice-tenant</a></p>
+<h5 id="overview_2">Overview<a class="headerlink" href="#overview_2" title="Permanent link">¤</a></h5>
+<p>This chart provisions a tenant for Maximo AI Service. It installs the AI Service tenant operator and creates a tenant custom resource with all necessary configurations including SLS licensing, DRO integration, WatsonX connectivity, and optional tenant-specific scheduling configurations.</p>
 <h5 id="resources-created_29">Resources Created<a class="headerlink" href="#resources-created_29" title="Permanent link">¤</a></h5>
 <table>
 <thead>
@@ -4662,6 +4757,109 @@ sm:                             # Secrets Manager configuration
   aws_secret_access_key: string (secret reference)
 </code></pre>
 <p>For complete documentation of all base instance values including optional fields like <code>custom_labels</code>, <code>argocluster_instance</code>, <code>application_admin_service_account</code>, <code>mas_wipe_mongo_data</code>, <code>allow_list</code>, <code>additional_vpn</code>, <code>application_configuration</code>, <code>use_postdelete_hooks</code>, <code>additional_resources</code>, <code>extensions</code>, <code>enhanced_dr</code>, and <code>cli_image_repo</code>, see the <a href="../reference/instance-base-values/">Instance Base Values Reference</a>.</p>
+<h5 id="examples_2">Examples<a class="headerlink" href="#examples_2" title="Permanent link">¤</a></h5>
+<h6 id="basic-tenant-configuration">Basic Tenant Configuration<a class="headerlink" href="#basic-tenant-configuration" title="Permanent link">¤</a></h6>
+<pre><code class="language-yaml"># aiservice-tenant-params.yaml
+merge-key: "production/us-west-2/aiservice-inst-1/tenants/tenant-01"
+ibm_aiservice_tenant:
+  tenant_id: "tenant-01"
+  aiservice_namespace: "aiservice-inst-1-aiservice"
+  aiservice_instance_id: "aiservice-inst-1"
+  tenantNamespace: "aiservice-tenant-01"
+  catalog_channel: "9.2.x"
+  catalog_source: "ibm-operator-catalog"
+
+  mas_icr_cp: "cp.icr.io/cp"
+  mas_icr_cpopen: "icr.io/cpopen"
+
+  # DRO Configuration
+  dro_url: "&lt;path:secret#dro_url&gt;"
+  dro_ca_b64enc: "&lt;path:secret#dro_ca&gt;"
+  dro_api_token: "&lt;path:secret#dro_token&gt;"
+
+  # SLS Configuration
+  slscfg_ca_b64enc: "&lt;path:secret#sls_slscfg_ca_b64encca&gt;"
+  slscfg_url: "&lt;path:secret#sls_url&gt;"
+  slscfg_registration_key: "&lt;path:secret#slscfg_registration_key&gt;"
+  aiservice_sls_subscription_id: "001"
+
+  # RSL Configuration
+  rsl_url: "rsl_url"
+  rsl_org_id: "&lt;path:secret#rsl_org_id&gt;"
+  rsl_token: "&lt;path:secret#rsl_token&gt;"
+  rsl_ca_crt: "&lt;path:secret#rsl_ca&gt;"
+
+  # S3 Configuration for Manage Job
+  aiservice_s3_accesskey: "&lt;path:secret#s3_accesskey&gt;"
+  aiservice_s3_secretkey: "&lt;path:secret#s3_secretkey&gt;"
+  aiservice_s3_region: "&lt;path:secret#s3_region&gt;"
+
+  # WatsonX Configuration
+  aiservice_watsonxai_url: "https://us-south.ml.cloud.ibm.com"
+  aiservice_watsonxai_project_id: "&lt;path:secret#wx_project_id&gt;"
+  aiservice_watsonxai_apikey: "&lt;path:secret#wx_apikey&gt;"
+  aiservice_watsonxai_on_prem: "false"
+
+  # Tenant Entitlement
+  tenant_entitlement_type: "standard"
+  tenant_entitlement_start_date: "2025-01-01"
+  tenant_entitlement_end_date: "2026-12-31"
+
+  aiservice_operator_log_level: "2"
+</code></pre>
+<h6 id="tenant-with-custom-scheduling-92x">Tenant with Custom Scheduling (9.2.x+)<a class="headerlink" href="#tenant-with-custom-scheduling-92x" title="Permanent link">¤</a></h6>
+<pre><code class="language-yaml">ibm_aiservice_tenant:
+  # Specify all parameters as per above example
+
+  # Tenant Scheduling Configuration
+  tenant_scheduling_config:
+    pipeline:
+      nodeSelector:
+        aiservice: pipeline
+      tolerations:
+        - effect: NoSchedule
+          key: aiservice
+          operator: Equal
+          value: pipeline
+    predictor:
+      nodeSelector:
+        aiservice: inference
+      tolerations:
+        - effect: NoSchedule
+          key: aiservice
+          operator: Equal
+          value: inference
+</code></pre>
+<h5 id="prerequisites_8">Prerequisites<a class="headerlink" href="#prerequisites_8" title="Permanent link">¤</a></h5>
+<ul>
+<li>AI Service instance deployed and running</li>
+<li>IBM Operator Catalog installed</li>
+<li>Suite License Service (SLS) or RSL configured</li>
+<li>DRO (Dynamic Resource Orchestrator) configured</li>
+<li>WatsonX instance accessible</li>
+<li>Sufficient cluster resources for tenant workloads</li>
+</ul>
+<h5 id="troubleshooting_1">Troubleshooting<a class="headerlink" href="#troubleshooting_1" title="Permanent link">¤</a></h5>
+<h6 id="tenant-operator-not-installing">Tenant Operator Not Installing<a class="headerlink" href="#tenant-operator-not-installing" title="Permanent link">¤</a></h6>
+<p>Check the subscription and operator group:</p>
+<pre><code class="language-bash">oc get subscription ibm-aiservice-tenant -n &lt;tenant-namespace&gt;
+oc get operatorgroup -n &lt;tenant-namespace&gt;
+oc describe subscription ibm-aiservice-tenant -n &lt;tenant-namespace&gt;
+</code></pre>
+<h6 id="tenant-cr-not-reconciling">Tenant CR Not Reconciling<a class="headerlink" href="#tenant-cr-not-reconciling" title="Permanent link">¤</a></h6>
+<p>Check the tenant custom resource status:</p>
+<pre><code class="language-bash">oc get aiservicetenant -n &lt;tenant-namespace&gt;
+oc describe aiservicetenant &lt;tenant-id&gt; -n &lt;tenant-namespace&gt;
+oc logs -n &lt;tenant-namespace&gt; -l control-plane=ibm-aiservice --tail=100
+</code></pre>
+<h5 id="related-documentation_1">Related Documentation<a class="headerlink" href="#related-documentation_1" title="Permanent link">¤</a></h5>
+<ul>
+<li><a href="../root-applications/ibm-aiservice-tenant-root/README.md">AI Service Tenant Root Application</a></li>
+<li><a href="../instance-applications/113-ibm-aiservice/README.md">AI Service Chart</a></li>
+<li><a href="../root-applications/ibm-aiservice-instance-root/README.md">AI Service Instance Root Application</a></li>
+<li><a href="../reference/instance-base-values/">Instance Base Values Reference</a></li>
+<li><a href="../configrepo/">Configuration Repository</a></li>
+</ul>
 <hr>
 <h3 id="ibm-db2u-database">IBM Db2u Database<a class="headerlink" href="#ibm-db2u-database" title="Permanent link">¤</a></h3>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/120-ibm-db2u-database">120-ibm-db2u-database</a></p>

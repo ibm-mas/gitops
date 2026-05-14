@@ -3,7 +3,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:100bcfef43b0ab0e266c1a316637e23640d2c57509d643bcf4d7f256c0b6ba4a" }}
 
 {{ $app_ns          := .Values.mas_app_namespace }}
 {{ $np_name            := "postsync-app-rds-roles-np" }}
@@ -205,10 +205,13 @@ spec:
                   echo "RDS_PORT ............................ ${RDS_PORT}"
                   echo "OPERATIONAL_MODE .................... ${OPERATIONAL_MODE}"
 
+                  # -----------------------------
+                  # Verify pre-installed dependencies
+                  # -----------------------------
                   echo ""
-                  echo "Installing required Python packages..."
+                  echo "Verifying ibm_db package..."
                   echo "--------------------------------------------------------------------------------"
-                  pip install ibm_db
+                  python3 -c "import ibm_db; print('✅ ibm_db version:', ibm_db.__version__)"
 
                   echo ""
                   echo "Downloading RDS SSL certificate..."
@@ -260,7 +263,7 @@ spec:
                       f"PWD={rds_master_password};"
                       f"SECURITY=SSL;"
                       f"SSLVersion={ssl_version};"
-                      f"SSLServerCertificate={ssl_cert_path};"
+                      f"SSLServerCertificate={ssl_cert_path}"
                   )
                   
                   # Build connection string for target database (for grants)
@@ -273,7 +276,7 @@ spec:
                       f"PWD={rds_master_password};"
                       f"SECURITY=SSL;"
                       f"SSLVersion={ssl_version};"
-                      f"SSLServerCertificate={ssl_cert_path};"
+                      f"SSLServerCertificate={ssl_cert_path}"
                   )
                   
                   print(f"Connecting to RDS DB2 - Admin DB: {rds_admin_dbname}, Target DB: {rds_dbname}")

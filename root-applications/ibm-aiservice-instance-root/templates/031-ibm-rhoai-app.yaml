@@ -10,6 +10,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
     instance: '{{ .Values.instance.id }}'
   annotations:
     argocd.argoproj.io/sync-wave: "031"
@@ -35,6 +38,8 @@ spec:
         - name: {{ .Values.avp.values_varname }}
           value: |
             openshift_namespace: "{{ .Values.ibm_rhoai.openshift_namespace }}"
+            cluster_admin_role: {{ .Values.cluster_admin_role }}
+            application_admin_role: {{ .Values.application_admin_role }}
             rhoai_pipeline_name: "{{ .Values.ibm_rhoai.rhoai_pipeline_name }}"
             rhoai_pipeline_namespace: "{{ .Values.ibm_rhoai.rhoai_pipeline_namespace }}"
             rhoai_pipeline_operatorName: "{{ .Values.ibm_rhoai.rhoai_pipeline_operatorName }}"
@@ -99,10 +104,17 @@ spec:
     retry:
       limit: 20
     syncOptions:
+      {{- if .Values.cluster_admin_role }}
       - CreateNamespace=true
-{{- if .Values.custom_labels }}
+      {{- end }}
+{{- if or .Values.custom_labels .Values.argocluster_instance }}
     managedNamespaceMetadata:
       labels:
+        {{- if .Values.argocluster_instance }}
+        argocd.argoproj.io/managed-by: {{ .Values.argocluster_instance }}
+        {{- end }}
+        {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
+        {{- end }}
 {{- end }}
 {{- end }}

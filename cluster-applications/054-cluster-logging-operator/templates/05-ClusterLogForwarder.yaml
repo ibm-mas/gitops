@@ -90,7 +90,7 @@ spec:
 {{- end }}
 
 
-{{- if semverCompare ">=6.0.0" $channel_version }}
+{{- if ge $channel_version "6.0" }}
 ---
 apiVersion: observability.openshift.io/v1
 kind: ClusterLogForwarder
@@ -131,19 +131,6 @@ spec:
           - level: Metadata
       name: sos-policy
       type: kubeAPIAudit
-    - prune:
-        notIn:
-          - .message
-          - .log_type
-          - .log_source
-          - .kubernetes.namespace_name
-          - .kubernetes.pod_name
-          - .kubernetes.container_name
-          - .kubernetes.labels.app
-          - .kubernetes.labels.mas_ibm_com_instanceId
-          - .kubernetes.container_image
-      type: prune
-      name: prune-fields
   outputs:
     - name: cloudwatch-1
       type: cloudwatch
@@ -177,14 +164,11 @@ spec:
     - name: app-logs
       filterRefs:
         - noise
-        - prune-fields
       inputRefs:
         - application-logs
       outputRefs:
         - cloudwatch-1
     - name: infra-logs
-      filterRefs:
-        - prune-fields
       inputRefs:
         - infrastructure
       outputRefs:
@@ -192,7 +176,6 @@ spec:
     - name: audit-logs
       filterRefs:
         - sos-policy
-        - prune-fields
       inputRefs:
         - audit
       outputRefs:

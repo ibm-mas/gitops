@@ -105,6 +105,7 @@ spec:
           args:
             - |
               set -e
+              
               echo "Downloading RDS SSL certificate..."
               mkdir -p /etc/mas/rds-ssl
               curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
@@ -113,6 +114,29 @@ spec:
 
               echo "Verifying ibm_db package..."
               python3 -c "import ibm_db; print('✅ ibm_db version:', ibm_db.__version__)"
+
+              # Source common functions
+              source /etc/mas/db-common-functions/db_common_functions.sh
+              
+              # If DB_NAME is empty, generate it using shared function
+              if [ -z "${DB_NAME:-}" ]; then
+                echo "⚠️  DB_NAME is empty, generating deterministic database name..."
+                
+                # Generate database name using shared function
+                DB_NAME=$(generate_db_name "${INSTANCE_ID}" "${MAS_APP_ID}")
+                
+                echo "✅ Generated DB_NAME: ${DB_NAME}"
+                export DB_NAME
+              else
+                echo "ℹ️  Using provided DB_NAME: ${DB_NAME}"
+              fi
+
+              # Wait for database to be available (created by pre-sync job)
+              if ! wait_for_database "${DB_NAME}" 600 10; then
+                echo "❌ Database '${DB_NAME}' is not available after waiting"
+                echo "   The pre-sync job may have failed to create the database."
+                exit 1
+              fi
 
               export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem && \
               python /etc/mas/dbs-rds-init-script/dbs-rds-init.py
@@ -128,9 +152,11 @@ spec:
             - name: DB_PORT
               value: {{ .Values.port | quote }}
             - name: DB_NAME
-              value: {{ .Values.dbname | quote }}
+              value: {{ .Values.dbname | default "" | quote }}
             - name: SSL_CERT_PATH
               value: "/etc/mas/rds-ssl/global-bundle.pem"
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id | quote }}
             {{- if .Values.db2_database_db_config }}
             - name: DB2_DATABASE_CONFIG
               value: {{ .Values.db2_database_db_config | toJson | quote }}
@@ -140,6 +166,8 @@ spec:
               mountPath: /etc/mas/dbs-rds-creds/
             - name: dbs-rds-init-script
               mountPath: /etc/mas/dbs-rds-init-script/
+            - name: db-common-functions
+              mountPath: /etc/mas/db-common-functions/
       restartPolicy: Never
       volumes:
         - name: dbs-rds-init-script
@@ -150,4 +178,8 @@ spec:
             secretName: dbs-rds-secret-store
             defaultMode: 420
             optional: false
+        - name: db-common-functions
+          configMap:
+            name: {{ .Values.db2_rds_instance_name }}-db-common-functions
+            defaultMode: 0755
 {{- end }}

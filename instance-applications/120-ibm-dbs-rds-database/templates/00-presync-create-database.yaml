@@ -100,41 +100,13 @@ spec:
               if [ -z "${DB_NAME:-}" ]; then
                 echo "ℹ️  No DB_NAME provided, generating deterministic DB name"
                 
-                # Normalize INSTANCE_ID:
-                # - uppercase
-                # - remove non-alphanumeric
-                INST_CLEAN=$(echo "${INSTANCE_ID:-}" \
-                | tr '[:lower:]' '[:upper:]' \
-                | tr -cd 'A-Z0-9')
+                # Source common functions
+                source /etc/mas/db-common-functions/db_common_functions.sh
                 
-                # Normalize MAS_APP_ID:
-                # - remove vowels
-                # - uppercase
-                # - remove non-alphanumeric
-                APP_CLEAN=$(echo "${MAS_APP_ID:-}" \
-                | tr -d 'aeiouAEIOU' \
-                | tr '[:lower:]' '[:upper:]' \
-                | tr -cd 'A-Z0-9')
+                # Generate database name using shared function
+                DB_NAME=$(generate_db_name "${INSTANCE_ID}" "${MAS_APP_ID}")
                 
-                # Safety: if app name becomes empty after vowel removal, use default
-                if [ -z "${APP_CLEAN}" ]; then
-                  APP_CLEAN="APP"
-                fi
-                
-                # Build fixed-width parts
-                INST_PART=$(printf "%-5s" "${INST_CLEAN}" | tr ' ' 'X' | cut -c1-5)
-                APP_PART=$(printf "%-3s" "${APP_CLEAN}" | tr ' ' 'X' | cut -c1-3)
-                
-                DB_NAME="${INST_PART}${APP_PART}"
-                
-                # Ensure DB name starts with a letter (DB2-safe)
-                case "${DB_NAME}" in
-                [A-Z]*)
-                ;;
-                *)
-                DB_NAME="D${DB_NAME:1}"
-                ;;
-                esac
+                echo "✅ Generated DB_NAME: ${DB_NAME}"
               else
                 echo "ℹ️  Using provided DB_NAME: ${DB_NAME}"
               fi
@@ -255,16 +227,22 @@ spec:
               mountPath: /etc/mas/creds/aws
             - name: create-db-script
               mountPath: /etc/mas/scripts/
-      volumes:
-        - name: dbs-rds-create-db-secret
-          secret:
-            secretName: {{ .Values.db2_rds_instance_name }}-create-db-secret
-        - name: aws
-          secret:
-            secretName: {{ .Values.db2_rds_instance_name }}-aws-creds
-        - name: create-db-script
-          configMap:
-            name: {{ .Values.db2_rds_instance_name }}-create-db-script
-            defaultMode: 0755
+            - name: db-common-functions
+              mountPath: /etc/mas/db-common-functions/
+    volumes:
+      - name: dbs-rds-create-db-secret
+        secret:
+          secretName: {{ .Values.db2_rds_instance_name }}-create-db-secret
+      - name: aws
+        secret:
+          secretName: {{ .Values.db2_rds_instance_name }}-aws-creds
+      - name: create-db-script
+        configMap:
+          name: {{ .Values.db2_rds_instance_name }}-create-db-script
+          defaultMode: 0755
+      - name: db-common-functions
+        configMap:
+          name: {{ .Values.db2_rds_instance_name }}-db-common-functions
+          defaultMode: 0755
 
 {{- end }}

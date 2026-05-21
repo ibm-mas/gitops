@@ -1,0 +1,150 @@
+{{- if .Values.application_admin_role }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.db2_rds_instance_name }}-db-common-functions
+  annotations:
+    argocd.argoproj.io/sync-wave: "134"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  db_common_functions.sh: |
+    #!/bin/bash
+    # Common functions for DB2 RDS database operations
+    # Used by both pre-sync (create database) and post-sync (setup) jobs
+    
+    # Generate deterministic DB2 database name
+    generate_db_name() {
+      local instance_id="$1"
+      local mas_app_id="$2"
+      
+      # Normalize INSTANCE_ID:
+      # - uppercase
+      # - remove non-alphanumeric
+      local inst_clean=$(echo "${instance_id:-}" \
+        | tr '[:lower:]' '[:upper:]' \
+        | tr -cd 'A-Z0-9')
+      
+      # Normalize MAS_APP_ID:
+      # - remove vowels
+      # - uppercase
+      # - remove non-alphanumeric
+      local app_clean=$(echo "${mas_app_id:-}" \
+        | tr -d 'aeiouAEIOU' \
+        | tr '[:lower:]' '[:upper:]' \
+        | tr -cd 'A-Z0-9')
+      
+      # Safety: if app name becomes empty after vowel removal, use default
+      if [ -z "${app_clean}" ]; then
+        app_clean="APP"
+      fi
+      
+      # Build fixed-width parts
+      local inst_part=$(printf "%-5s" "${inst_clean}" | tr ' ' 'X' | cut -c1-5)
+      local app_part=$(printf "%-3s" "${app_clean}" | tr ' ' 'X' | cut -c1-3)
+      
+      local db_name="${inst_part}${app_part}"
+      
+      # Ensure DB name starts with a letter (DB2-safe)
+      case "${db_name}" in
+        [A-Z]*)
+          ;;
+        *)
+          db_name="D${db_name:1}"
+          ;;
+      esac
+      
+      echo "${db_name}"
+    }
+    
+    # Wait for database to be available (with polling)
+    # Uses the Python script from the pre-sync job
+    wait_for_database() {
+      local db_name="$1"
+      local timeout="${2:-600}"  # Default 10 minutes
+      local interval="${3:-10}"  # Default 10 seconds
+      
+      echo "⏳ Waiting for database '${db_name}' to be available..."
+      
+      # Set environment variables for Python script
+      export DB_NAME="${db_name}"
+      export DB_CREATE_TIMEOUT_SECONDS="${timeout}"
+      export DB_POLL_INTERVAL_SECONDS="${interval}"
+      
+      # Run the database existence check using Python
+      python3 -c "
+    import ibm_db as db2
+    import os, sys, re, time, json
+    
+    def log(msg):
+        print(json.dumps(msg))
+    
+    def database_exists(db_name, db_host, db_port, username, password, ssl_cert_path, ssl_version):
+        try:
+            conn_str = (
+                f'DATABASE={db_name};'
+                f'HOSTNAME={db_host};'
+                f'PORT={db_port};'
+                f'PROTOCOL=TCPIP;'
+                f'UID={username};'
+                f'PWD={password};'
+                f'Security=SSL;'
+                f'SSLServerCertificate={ssl_cert_path};'
+                f'SSLVersion={ssl_version};'
+            )
+            conn = db2.connect(conn_str, '', '')
+            db2.close(conn)
+            return True
+        except Exception as e:
+            msg = str(e)
+            if any(code in msg for code in ['SQL1013N','SQLSTATE=42705','SQL30061N','SQLSTATE=08004','CLI0199E']):
+                return False
+            raise RuntimeError(f'Error checking database existence: {msg}')
+    
+    # Read credentials
+    username = open('/etc/mas/dbs-rds-creds/username').read().strip()
+    password = open('/etc/mas/dbs-rds-creds/password').read().strip()
+    
+    # Get environment variables
+    db_name = os.getenv('DB_NAME')
+    db_host = os.getenv('DB_HOST')
+    db_port = os.getenv('DB_PORT', '50000')
+    jdbc_url = os.getenv('JDBC_CONNECTION_URL', '')
+    ssl_cert_path = os.getenv('SSL_CERT_PATH', '/etc/mas/rds-ssl/global-bundle.pem')
+    timeout = int(os.getenv('DB_CREATE_TIMEOUT_SECONDS', '600'))
+    interval = int(os.getenv('DB_POLL_INTERVAL_SECONDS', '10'))
+    
+    # Extract SSL version
+    ssl_version = 'TLSv1.2'
+    if jdbc_url:
+        m = re.search(r'sslVersion=([^;]+)', jdbc_url, re.IGNORECASE)
+        if m:
+            ssl_version = m.group(1)
+    
+    # Wait for database
+    retries = max(1, timeout // interval)
+    for i in range(retries):
+        time.sleep(interval)
+        try:
+            if database_exists(db_name, db_host, db_port, username, password, ssl_cert_path, ssl_version):
+                log({'event':'db_available','db':db_name,'elapsed_seconds':(i+1)*interval})
+                sys.exit(0)
+        except RuntimeError as e:
+            msg = str(e)
+            if any(x in msg for x in ['SQLSTATE=57019','SQL1035N','SQL30081N']):
+                log({'event':'retry','attempt':i+1})
+                continue
+            log({'event':'error','msg':msg})
+            sys.exit(1)
+    
+    log({'event':'timeout','db':db_name,'timeout_seconds':timeout})
+    sys.exit(1)
+    "
+      
+      return $?
+    }
+{{- end }}
+

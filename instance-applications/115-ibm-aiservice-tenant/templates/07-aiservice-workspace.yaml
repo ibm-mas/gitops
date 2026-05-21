@@ -33,10 +33,10 @@ spec:
       url: "{{ .Values.slscfg_url }}"
       secretName: "{{ .Values.tenantNamespace }}----sls-secret"
       ca: "{{ .Values.slscfg_ca_b64enc }}"
+    {{- if not (empty .Values.rsl_ca_crt) }}
     rsl:
-      url: "{{ .Values.rsl_url }}"
-      orgId: "{{ .Values.rsl_org_id }}"
-      secretName: "{{ .Values.tenantNamespace }}----rsl-secret"
+      ca: "{{ .Values.rsl_ca_crt }}"
+    {{- end }}
     watsonxai:
       url: "{{ .Values.aiservice_watsonxai_url }}"
       secretName: "{{ .Values.tenantNamespace }}----wx-secret"
@@ -49,7 +49,7 @@ spec:
           type: "{{ .Values.tenant_entitlement_type }}"
           startDate: "{{ .Values.tenant_entitlement_start_date }}"
           endDate: "{{ .Values.tenant_entitlement_end_date }}"
-{{- if hasPrefix "9.2." (toString .Values.catalog_channel) }}
+{{- if not (hasPrefix "9.1." (toString .Values.catalog_channel)) }}
 {{- if not (empty .Values.tenant_scheduling_config) }}
     scheduling:
 {{ .Values.tenant_scheduling_config | toYaml | indent 6 }}

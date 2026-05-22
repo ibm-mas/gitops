@@ -1,5 +1,3 @@
-{{- if hasPrefix "9.2." (toString .Values.catalog_channel) }}
-
 {{- $_job_name_prefix := "postsync-tenant-migration" }}
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
@@ -141,30 +139,79 @@ spec:
               value: "{{ .Values.aiservice_namespace }}"
             - name: TENANT_ID
               value: "{{ .Values.tenantNamespace }}"
+            - name: CATALOG_CHANNEL
+              value: "{{ .Values.catalog_channel }}"
           command:
             - /bin/sh
             - -c
             - |
               set -e
 
-              readonly API_KEY_SECRET="${TENANT_ID}----apikey-secret"
-              echo "[INFO] Updating owner reference in secret ${API_KEY_SECRET} in namespace ${TENANT_ID}"
-              readonly CR_UID=$(oc get aiservicetenant "${TENANT_ID}" -n "${TENANT_ID}" -o jsonpath='{.metadata.uid}')
-              oc get secret "${API_KEY_SECRET}" -n "${TENANT_ID}" -o json > /tmp/apikey-secret.json
-              jq --arg name "${TENANT_ID}" --arg cr_uid "${CR_UID}" \
-                '.metadata.ownerReferences = [{"apiVersion": "aiservice.ibm.com/v1", "kind": "AIServiceTenant", "name": $name, "uid": $cr_uid}]' \
-                /tmp/apikey-secret.json > /tmp/apikey-secret_patched.json
-              oc apply -f /tmp/apikey-secret_patched.json
+              function copy_resource() {
+                local resource_type="${1}"
+                local resource_name="${2}"
+                local new_resource_name="${3:-${resource_name}}"
+                if oc get ${resource_type} ${resource_name} -n ${TENANT_ID} -o json > /tmp/${resource_name}.json; then
+                  echo "[INFO] Copying ${resource_type} ${resource_name} from namespace ${TENANT_ID} to namespace ${AISERVICE_NAMESPACE}"
+                  # Clean metadata fields to avoid resourceVersion conflicts. Delete the owner refs to prevent garbage collection.
+                  jq 'del(.metadata.ownerReferences, .metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.selfLink, .metadata.managedFields)' /tmp/${resource_name}.json \
+                    | sed "s/\"namespace\": \"${TENANT_ID}\"/\"namespace\": \"${AISERVICE_NAMESPACE}\"/" > /tmp/${resource_name}_clean.json
+                  # These resources are not defined in Git so exclude them from ArgoCD's reconcilliation.
+                  jq '.metadata.annotations = (.metadata.annotations // {}) + {"argocd.argoproj.io/sync-options": "IgnoreExtraneous,Prune=false"}' /tmp/${resource_name}_clean.json > /tmp/${resource_name}_annotated.json
+                  # Change the name to avoid possibly conflicting with the secret synced by ArgoCD
+                  jq --arg name "${new_resource_name}" --arg namespace "${AISERVICE_NAMESPACE}" '.metadata.name = $name | .metadata.namespace = $namespace' /tmp/${resource_name}_annotated.json > /tmp/${resource_name}_renamed.json
+                  oc apply -f /tmp/${resource_name}_renamed.json
+                else
+                 echo "[WARNING] ${resource_type} ${resource_name} not found in ${TENANT_ID} => cannot copy resource to Aiservice namespace"
+                fi
+              }
 
-              echo "[INFO] Deleting secret ${API_KEY_SECRET} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
-              oc delete secret "${API_KEY_SECRET}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+              if [[ $CATALOG_CHANNEL == 9.2.* ]]; then
+                echo "Catalog Channel 9.2"
+                readonly API_KEY_SECRET="${TENANT_ID}----apikey-secret"
+                echo "[INFO] Updating owner reference in secret ${API_KEY_SECRET} in namespace ${TENANT_ID}"
+                readonly CR_UID=$(oc get aiservicetenant "${TENANT_ID}" -n "${TENANT_ID}" -o jsonpath='{.metadata.uid}')
+                oc get secret "${API_KEY_SECRET}" -n "${TENANT_ID}" -o json > /tmp/apikey-secret.json
+                jq --arg name "${TENANT_ID}" --arg cr_uid "${CR_UID}" \
+                  '.metadata.ownerReferences = [{"apiVersion": "aiservice.ibm.com/v1", "kind": "AIServiceTenant", "name": $name, "uid": $cr_uid}]' \
+                  /tmp/apikey-secret.json > /tmp/apikey-secret_patched.json
+                oc apply -f /tmp/apikey-secret_patched.json
 
-              echo "[INFO] Deleting AIServiceTenant ${TENANT_ID} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
-              if oc get aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" > /dev/null 2>&1; then
-                # Must patch CR to remove finalizer otherwise we cannot delete it
-                oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
-                  -n "${AISERVICE_NAMESPACE}"
-                oc delete aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+                echo "[INFO] Deleting secret ${API_KEY_SECRET} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
+                oc delete secret "${API_KEY_SECRET}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+
+                echo "[INFO] Deleting AIServiceTenant ${TENANT_ID} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
+                if oc get aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" > /dev/null 2>&1; then
+                  # Must patch CR to remove finalizer otherwise we cannot delete it
+                  oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
+                    -n "${AISERVICE_NAMESPACE}"
+                  oc delete aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+                fi
+              elif [[ $CATALOG_CHANNEL == 9.1.* ]]; then
+                echo "Catalog Channel 9.1"
+                readonly API_KEY_SECRET="${TENANT_ID}----apikey-secret"
+                # Copying the secret into AIService namespace
+                copy_resource secret "${API_KEY_SECRET_NAME}"
+                echo "[INFO] Updating owner reference in secret ${API_KEY_SECRET} in namespace ${AISERVICE_NAMESPACE}"
+                readonly CR_UID=$(oc get aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" -o jsonpath='{.metadata.uid}')
+                oc get secret "${API_KEY_SECRET}" -n "${AISERVICE_NAMESPACE}" -o json > /tmp/apikey-secret.json
+                jq --arg name "${AISERVICE_NAMESPACE}" --arg cr_uid "${CR_UID}" \
+                  '.metadata.ownerReferences = [{"apiVersion": "aiservice.ibm.com/v1", "kind": "AIServiceTenant", "name": $name, "uid": $cr_uid}]' \
+                  /tmp/apikey-secret.json > /tmp/apikey-secret_patched.json
+                oc apply -f /tmp/apikey-secret_patched.json
+
+                echo "[INFO] Deleting secret ${API_KEY_SECRET} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
+                oc delete secret "${API_KEY_SECRET}" -n "${TENANT_ID}" --ignore-not-found
+
+                echo "[INFO] Deleting AIServiceTenant ${TENANT_ID} in namespace ${TENANT_ID} (if it exists)"
+                if oc get aiservicetenant "${TENANT_ID}" -n "${TENANT_ID}" > /dev/null 2>&1; then
+                  # Must patch CR to remove finalizer otherwise we cannot delete it
+                  oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
+                    -n "${TENANT_ID}"
+                  oc delete aiservicetenant "${TENANT_ID}" -n "${TENANT_ID}" --ignore-not-found
+                fi
+              else 
+                echo "Catalog Channel not 9.1 or 9.2"
               fi
 
               exit 0

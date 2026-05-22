@@ -131,14 +131,12 @@ spec:
           - level: Metadata
       name: sos-policy
       type: kubeAPIAudit
-    - vectorRemap:
-        source: |
-          .kubernetes.labels = {
-            "app": .kubernetes.labels.app,
-            "app_kubernetes_io_instance": .kubernetes.labels.app_kubernetes_io_instance
-          }
-      name: keep-only-required-labels
-      type: vectorRemap
+    - openshiftLabels:
+        include:
+          - app
+          - mas_ibm_com_instanceId
+      name: keep-required-labels
+      type: openshiftLabels
     - prune:
         notIn:
           - .message
@@ -147,7 +145,6 @@ spec:
           - .kubernetes.namespace_name
           - .kubernetes.pod_name
           - .kubernetes.container_name
-          - .kubernetes.labels
           - .kubernetes.container_image
       type: prune
       name: prune-fields

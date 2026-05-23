@@ -221,6 +221,8 @@ spec:
               value: '{{ .Values.sls_domain }}'
             - name: TENANT
               value: '{{ .Values.tenant.id }}'
+            - name: TENANT_NAMESPACE
+              value: '{{ .Values.tenantNamespace }}'
 
             # Hard-coded for now:
             - name: AVP_TYPE
@@ -272,9 +274,40 @@ spec:
 
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
               ## Why is the secreet name here sls and not license as it is in gitops_license function
-              SECRET_NAME_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/${TENANT}/sls
-              TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
-              sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\":\"$SLS_URL\" }" "${TAGS}"
+              SECRET_NAME_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/sls
+              # TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
+              # sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\":\"$SLS_URL\" }" "${TAGS}"
+              
+              # Fetch the instance-level SLS secret and create tenant-level copy
+              echo ""
+              echo "Fetching instance-level SLS secret from AWS Secrets Manager"
+              RAW_SLS_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME_SLS" --output json 2>/dev/null | jq -r .SecretString)
+              
+              if [[ -n "$RAW_SLS_SECRET" && "$RAW_SLS_SECRET" != "null" ]]; then
+                echo "Successfully fetched instance-level SLS secret"
+                
+                # Extract tenant ID from TENANT variable (format could be like "apmdevops")
+                # For tenant-level path, we need the actual tenant ID
+                # Assuming TENANT_NAMESPACE format: mas-{icn}-{subscription}-{aiservice}-{tenant_id}
+                if [[ -n "${TENANT_NAMESPACE:-}" ]]; then
+                  TENANT_ID=$(echo ${TENANT_NAMESPACE} | awk -F'-' '{print $NF}')
+                  
+                  # Create tenant-level secret path
+                  SECRET_NAME_TENANT_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/${TENANT}/sls
+                  echo "Creating tenant-level SLS secret at: ${SECRET_NAME_TENANT_SLS}"
+                  
+                  TENANT_TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}, {\"Key\": \"tenant_id\", \"Value\": \"${TENANT_ID}\"}]"
+                  
+                  # Use sm_update_secret to create/update tenant-level secret with same content
+                  sm_update_secret $SECRET_NAME_TENANT_SLS "$RAW_SLS_SECRET" "${TENANT_TAGS}"
+                  
+                  echo "Successfully created/updated tenant-level SLS secret"
+                else
+                  echo "TENANT_NAMESPACE not set, skipping tenant-level secret creation"
+                fi
+              else
+                echo "Failed to fetch instance-level SLS secret, skipping tenant-level secret creation"
+              fi
     
               # 1. Define the namespace using the environment variables passed to the container
               namespace="mas-${ICN}-${SUBSCRIPTION_ID}-sls"

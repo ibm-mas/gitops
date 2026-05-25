@@ -1,5 +1,3 @@
-{{- if hasPrefix "9.2." (toString .Values.catalog_channel) }}
-
 {{- $_job_name_prefix := "tenant-migration" }}
 {{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
@@ -33,7 +31,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list", "delete"]
+    verbs: ["get", "create", "update", "patch", "delete"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -129,6 +127,10 @@ spec:
           image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
           env:
+            - name: CATALOG_CHANNEL
+              value: "{{ .Values.catalog_channel }}"
+            - name: AISERVICE_NAMESPACE
+              value: "{{ .Values.aiservice_namespace }}"
             - name: TENANT_NAMESPACE
               value: "{{ .Values.tenantNamespace }}"
             # Secrets in the tenant namespace whose data will be replaced with data from corresponding secret in the AI Service namespace.
@@ -146,20 +148,26 @@ spec:
               function patch_secret() {
                 local source="${1}"
                 local target="${2}"
-                if oc get secret ${source} -n ${TENANT_NAMESPACE} -o json > /tmp/${source}_patch.json; then
+                local namespace="${3}"
+                if oc get secret ${source} -n ${namespace} -o json > /tmp/${source}_patch.json; then
                   echo "[INFO] Replacing data in secret ${target} with data from ${source}"
-                  oc get secret ${target} -n ${TENANT_NAMESPACE} -o json > /tmp/${target}_patch.json
+                  oc get secret ${target} -n ${namespace} -o json > /tmp/${target}_patch.json
                   jq -s '.[1].data = .[0].data | .[1]' /tmp/${source}_patch.json /tmp/${target}_patch.json > /tmp/${target}_patched.json
                   oc apply -f /tmp/${target}_patched.json
                   echo "[INFO] Deleting secret ${source}"
-                  oc delete secret "${source}" -n "${TENANT_NAMESPACE}"
+                  oc delete secret "${source}" -n "${namespace}"
                 else
-                 echo "[WARNING] Secret ${source} not found in ${TENANT_NAMESPACE} => cannot patch secret ${target}"
+                 echo "[WARNING] Secret ${source} not found in ${namespace} => cannot patch secret ${target}"
                 fi
               }
-                       
-              patch_secret "${SLS_SECRET_NAME}-copy" "${SLS_SECRET_NAME}"
+
+              echo "[INFO] Catalog channel = ${CATALOG_CHANNEL}"
+              if [[ "${CATALOG_CHANNEL}" == 9.2.* ]]; then           
+                patch_secret "${SLS_SECRET_NAME}-copy" "${SLS_SECRET_NAME}" "${TENANT_NAMESPACE}"
+              elif [[ "${CATALOG_CHANNEL}" == 9.1.* ]]; then
+                patch_secret "${SLS_SECRET_NAME}-copy" "${SLS_SECRET_NAME}" "${AISERVICE_NAMESPACE}"
+              else
+                echo "[INFO] Catalog channel is not 9.1.x or 9.2.x => no migration required."
+              fi
               
               exit 0
-
-{{- end }}

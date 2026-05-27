@@ -1,4 +1,6 @@
+{{- /* TEMPORARY: Condition removed for testing
 {{- if eq .Values.ibm_aiservice_tenant.is_gitops_fvt_env "true" }}
+*/}}
 
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
@@ -286,24 +288,20 @@ spec:
               if [[ -n "$RAW_SLS_SECRET" && "$RAW_SLS_SECRET" != "null" ]]; then
                 echo "Successfully fetched instance-level SLS secret"
                 
-                # Extract tenant ID from TENANT variable (format could be like "apmdevops")
-                # For tenant-level path, we need the actual tenant ID
-                # Assuming TENANT_NAMESPACE format: mas-{icn}-{subscription}-{aiservice}-{tenant_id}
-                if [[ -n "${TENANT_NAMESPACE:-}" ]]; then
-                  TENANT_ID=$(echo ${TENANT_NAMESPACE} | awk -F'-' '{print $NF}')
-                  
+                # Create tenant-level secret using TENANT variable (contains tenant ID)
+                if [[ -n "${TENANT:-}" ]]; then
                   # Create tenant-level secret path
                   SECRET_NAME_TENANT_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/${TENANT}/sls
                   echo "Creating tenant-level SLS secret at: ${SECRET_NAME_TENANT_SLS}"
                   
-                  TENANT_TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}, {\"Key\": \"tenant_id\", \"Value\": \"${TENANT_ID}\"}]"
+                  TENANT_TAGS="[{\"Key\": \"source\", \"Value\": \"presync-copy-sls-to-tenant-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}, {\"Key\": \"tenant_id\", \"Value\": \"${TENANT}\"}]"
                   
                   # Use sm_update_secret to create/update tenant-level secret with same content
                   sm_update_secret $SECRET_NAME_TENANT_SLS "$RAW_SLS_SECRET" "${TENANT_TAGS}"
                   
                   echo "Successfully created/updated tenant-level SLS secret"
                 else
-                  echo "TENANT_NAMESPACE not set, skipping tenant-level secret creation"
+                  echo "TENANT variable not set, skipping tenant-level secret creation"
                 fi
               else
                 echo "Failed to fetch instance-level SLS secret, skipping tenant-level secret creation"
@@ -345,4 +343,6 @@ spec:
             optional: false
 
   backoffLimit: 4
+{{- /* TEMPORARY: End condition commented out for testing
 {{- end }}
+*/}}

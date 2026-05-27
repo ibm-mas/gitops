@@ -92,6 +92,8 @@ rules:
       - manageapp
       - manageworkspaces
       - manageapps
+      - managedeployment
+      - managedeployments
   - verbs:
       - get
       - list
@@ -100,6 +102,13 @@ rules:
       - ""
     resources:
       - configmaps
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - ""
+    resources:
+      - secrets
   - verbs:
       - get
       - list
@@ -163,6 +172,13 @@ rules:
       - "core.mas.ibm.com"
     resources:
       - suites
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - "route.openshift.io"
+    resources:
+      - routes
 
 ---
 kind: RoleBinding
@@ -188,8 +204,6 @@ roleRef:
   name: {{ $core_role_name }}
 # -------------------------------------
 
-{{- if .Values.cluster_admin_role }}
-
 ---
 # -------------------------------------
 # Manage Sanity tests need cluster-level permissions to discover API groups
@@ -207,11 +221,14 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 rules:
+  # Minimal permissions for Kubernetes client API discovery
   - verbs:
       - get
     nonResourceURLs:
       - /apis
       - /apis/*
+      - /api
+      - /api/*
 
 ---
 kind: ClusterRoleBinding
@@ -235,8 +252,6 @@ roleRef:
   kind: ClusterRole
   name: {{ printf "%s-%s" $core_role_name .Values.instance_id }}
 # -------------------------------------
-
-{{- end }}
 
 ---
 kind: ConfigMap

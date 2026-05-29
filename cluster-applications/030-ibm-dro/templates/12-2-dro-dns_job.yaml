@@ -156,19 +156,19 @@ spec:
                 echo "ERROR: Could not find Domain ID for name: ${DRO_PUBLIC_DOMAIN}"
                 exit 1
               fi
+              RECORD_NAME="dro.${CLUSTER_ID}"
 
-              Name="dro.${CLUSTER_ID}"
-
-              echo "Name: ${Name}"
+              echo "RECORD_NAME: ${RECORD_NAME}"
               echo "DRO_PUBLIC_DOMAIN: ${DRO_PUBLIC_DOMAIN}"
-              echo "Value: ${OCP_INGRESS}"
+              echo "OCP_INGRESS: ${OCP_INGRESS}"
 
-              FULL_Name="${Name}.${DRO_PUBLIC_DOMAIN}"
+              FULL_RECORD_NAME="${RECORD_NAME}.${DRO_PUBLIC_DOMAIN}"
 
+              echo ""
               echo "Checking if DNS record already exists..."
 
               EXISTING_RECORD=$(ibmcloud cis dns-records "${DOMAIN_ID}" \
-                --name "${FULL_Name}" \
+                --name "${FULL_RECORD_NAME}" \
                 --output json)
 
               RECORD_COUNT=$(echo "${EXISTING_RECORD}" | jq 'length')
@@ -180,21 +180,25 @@ spec:
                 EXISTING_NAME=$(echo "${EXISTING_RECORD}" | jq -r '.[0].name')
 
                 echo "DNS record found!"
+                echo "  Record ID: ${RECORD_ID}"
                 echo "  Record Name: ${EXISTING_NAME}"
-                echo "  Existing Value: ${EXISTING_CONTENT}"
+                echo "  Existing content: ${EXISTING_CONTENT}"
+                echo "  New content: ${OCP_INGRESS}"
 
                 if [[ "${EXISTING_CONTENT}" != "${OCP_INGRESS}" ]]; then
 
+                  echo ""
                   echo "Content has changed. Updating DNS record..."
 
                   UPDATE_OUTPUT=$(ibmcloud cis dns-record-update "${DOMAIN_ID}" "${RECORD_ID}" \
                     --type CNAME \
-                    --name "${Name}" \
+                    --name "${RECORD_NAME}" \
                     --content "${OCP_INGRESS}" \
-                    --proxied true 2>&1)
+                    --proxied false 2>&1)
 
                   UPDATE_RC=$?
 
+                  echo "Update output:"
                   echo "${UPDATE_OUTPUT}"
 
                   if [[ ${UPDATE_RC} -eq 0 ]]; then
@@ -214,9 +218,9 @@ spec:
 
                 CREATE_OUTPUT=$(ibmcloud cis dns-record-create "${DOMAIN_ID}" \
                   --type CNAME \
-                  --name "${Name}" \
+                  --name "${RECORD_NAME}" \
                   --content "${OCP_INGRESS}" \
-                  --proxied true 2>&1)
+                  --proxied false 2>&1)
 
                 CREATE_RC=$?
 

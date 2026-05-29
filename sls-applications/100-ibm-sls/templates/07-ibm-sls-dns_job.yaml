@@ -135,14 +135,6 @@ spec:
               echo "Setting CIS instance..."
               ibmcloud cis instance-set ${CIS_CRN}
 
-              # echo "Exporting DOMAIN_NAME..."
-              # export DOMAIN_NAME=$(echo "$CIS_SERVICE_NAME" | sed 's/^CIS - //') 
-
-              # echo "Domain Name: $DOMAIN_NAME"
-
-              # echo "Listing all available CIS domains:"
-              # ibmcloud cis domains --output json
-
               echo "Fetching DOMAIN_ID..."
               DOMAIN_ID=$(ibmcloud cis domains --output json | jq -r ".[] | select(.name==\"$CIS_DOMAIN\") | .id")
 
@@ -152,44 +144,40 @@ spec:
               echo "ERROR: Could not find Domain ID for name: $CIS_DOMAIN"
               exit 1
               fi
-              RECORD_NAME="sls.mas-${ICN}-${SUBSCRIPTION_ID}-sls"
+              Name="sls.mas-${ICN}-${SUBSCRIPTION_ID}-sls"
 
-              echo "RECORD_NAME: ${RECORD_NAME}"
+              echo "Name: ${Name}"
               echo "CIS_DOMAIN: ${CIS_DOMAIN}"
-              echo "OCP_INGRESS: ${OCP_INGRESS}"
+              echo "Value: ${OCP_INGRESS}"
 
-              FULL_RECORD_NAME="${RECORD_NAME}.${CIS_DOMAIN}"
+              FULL_Name="${Name}.${CIS_DOMAIN}"
 
-              echo ""
               echo "Checking if DNS record already exists..."
 
               EXISTING_RECORD=$(ibmcloud cis dns-records "${DOMAIN_ID}" \
-                --name "${FULL_RECORD_NAME}" \
+                --name "${FULL_Name}" \
                 --output json)
 
               RECORD_COUNT=$(echo "${EXISTING_RECORD}" | jq 'length')
 
               if [[ "${RECORD_COUNT}" -gt 0 ]]; then
 
-                RECORD_ID=$(echo "${EXISTING_RECORD}" | jq -r '.[0].id')
                 EXISTING_CONTENT=$(echo "${EXISTING_RECORD}" | jq -r '.[0].content')
                 EXISTING_NAME=$(echo "${EXISTING_RECORD}" | jq -r '.[0].name')
 
                 echo "DNS record found!"
-                echo "  Record ID: ${RECORD_ID}"
+                RECORD_ID=$(echo "${EXISTING_RECORD}" | jq -r '.[0].id')
                 echo "  Record Name: ${EXISTING_NAME}"
-                echo "  Existing content: ${EXISTING_CONTENT}"
-                echo "  New content: ${OCP_INGRESS}"
+                echo "  Value: ${EXISTING_CONTENT}"
 
-                if [[ "${EXISTING_CONTENT}" != "${OCP_INGRESS}" ]]; then
+                if [[ "${EXISTING_CONTENT}" != "${Value}" ]]; then
 
-                  echo ""
-                  echo "Content has changed. Updating DNS record..."
+                  echo "Value has changed. Updating DNS record..."
 
                   UPDATE_OUTPUT=$(ibmcloud cis dns-record-update "${DOMAIN_ID}" "${RECORD_ID}" \
                     --type CNAME \
-                    --name "${RECORD_NAME}" \
-                    --content "${OCP_INGRESS}" \
+                    --name "${Name}" \
+                    --content "${Value}" \
                     --proxied false 2>&1)
 
                   UPDATE_RC=$?
@@ -205,7 +193,7 @@ spec:
                   fi
 
                 else
-                  echo "DNS record content is already correct. No update needed."
+                  echo "DNS record value is already correct. No update needed."
                 fi
 
               else
@@ -214,7 +202,7 @@ spec:
 
                 CREATE_OUTPUT=$(ibmcloud cis dns-record-create "${DOMAIN_ID}" \
                   --type CNAME \
-                  --name "${RECORD_NAME}" \
+                  --name "${Name}" \
                   --content "${OCP_INGRESS}" \
                   --proxied false 2>&1)
 

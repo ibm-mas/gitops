@@ -144,6 +144,7 @@ spec:
               echo "ERROR: Could not find Domain ID for name: $CIS_DOMAIN"
               exit 1
               fi
+
               Name="sls.mas-${ICN}-${SUBSCRIPTION_ID}-sls"
 
               echo "Name: ${Name}"
@@ -168,7 +169,7 @@ spec:
                 echo "DNS record found!"
                 RECORD_ID=$(echo "${EXISTING_RECORD}" | jq -r '.[0].id')
                 echo "  Record Name: ${EXISTING_NAME}"
-                echo "  Value: ${EXISTING_CONTENT}"
+                echo "  Existing Value: ${EXISTING_CONTENT}"
 
                 if [[ "${EXISTING_CONTENT}" != "${Value}" ]]; then
 
@@ -182,7 +183,6 @@ spec:
 
                   UPDATE_RC=$?
 
-                  echo "Update output:"
                   echo "${UPDATE_OUTPUT}"
 
                   if [[ ${UPDATE_RC} -eq 0 ]]; then
@@ -203,7 +203,7 @@ spec:
                 CREATE_OUTPUT=$(ibmcloud cis dns-record-create "${DOMAIN_ID}" \
                   --type CNAME \
                   --name "${Name}" \
-                  --content "${OCP_INGRESS}" \
+                  --content "${Value}" \
                   --proxied false 2>&1)
 
                 CREATE_RC=$?

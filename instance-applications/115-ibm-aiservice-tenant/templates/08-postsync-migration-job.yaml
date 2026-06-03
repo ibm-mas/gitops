@@ -147,25 +147,6 @@ spec:
             - |
               set -e
 
-              function copy_resource() {
-                local resource_type="${1}"
-                local resource_name="${2}"
-                local new_resource_name="${3:-${resource_name}}"
-                if oc get ${resource_type} ${resource_name} -n ${TENANT_ID} -o json > /tmp/${resource_name}.json; then
-                  echo "[INFO] Copying ${resource_type} ${resource_name} from namespace ${TENANT_ID} to namespace ${AISERVICE_NAMESPACE}"
-                  # Clean metadata fields to avoid resourceVersion conflicts. Delete the owner refs to prevent garbage collection.
-                  jq 'del(.metadata.ownerReferences, .metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.selfLink, .metadata.managedFields)' /tmp/${resource_name}.json \
-                    | sed "s/\"namespace\": \"${TENANT_ID}\"/\"namespace\": \"${AISERVICE_NAMESPACE}\"/" > /tmp/${resource_name}_clean.json
-                  # These resources are not defined in Git so exclude them from ArgoCD's reconcilliation.
-                  jq '.metadata.annotations = (.metadata.annotations // {}) + {"argocd.argoproj.io/sync-options": "IgnoreExtraneous,Prune=false"}' /tmp/${resource_name}_clean.json > /tmp/${resource_name}_annotated.json
-                  # Change the name to avoid possibly conflicting with the secret synced by ArgoCD
-                  jq --arg name "${new_resource_name}" --arg namespace "${AISERVICE_NAMESPACE}" '.metadata.name = $name | .metadata.namespace = $namespace' /tmp/${resource_name}_annotated.json > /tmp/${resource_name}_renamed.json
-                  oc apply -f /tmp/${resource_name}_renamed.json
-                else
-                 echo "[WARNING] ${resource_type} ${resource_name} not found in ${TENANT_ID} => cannot copy resource to Aiservice namespace"
-                fi
-              }
-
               if [[ $CATALOG_CHANNEL == 9.2.* ]]; then
                 echo "Catalog Channel 9.2"
                 readonly API_KEY_SECRET="${TENANT_ID}----apikey-secret"
@@ -191,7 +172,6 @@ spec:
                 echo "Catalog Channel 9.1"
                 readonly API_KEY_SECRET="${TENANT_ID}----apikey-secret"
                 # Copying the secret into AIService namespace
-                copy_resource secret "${API_KEY_SECRET}"
                 echo "[INFO] Updating owner reference in secret ${API_KEY_SECRET} in namespace ${AISERVICE_NAMESPACE}"
                 readonly CR_UID=$(oc get aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" -o jsonpath='{.metadata.uid}')
                 oc get secret "${API_KEY_SECRET}" -n "${AISERVICE_NAMESPACE}" -o json > /tmp/apikey-secret.json

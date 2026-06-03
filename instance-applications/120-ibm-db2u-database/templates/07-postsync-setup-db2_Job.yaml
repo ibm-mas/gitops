@@ -304,10 +304,15 @@ spec:
                 RETRIES=${1:-5}
                 RETRY_DELAY_SECONDS=${2:-30}
 
-                mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
-                if [[ "$rc" == "0" ]]; then
-                  echo "... db2 config already matches expected config, returning without calling apply-db2cfg-settings"
-                  return 0
+                # Skip validation for AI Service (MAS_APP_ID is empty or "aiservice")
+                if [[ -n "${MAS_APP_ID}" && "${MAS_APP_ID}" != "aiservice" ]]; then
+                  mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "... db2 config already matches expected config, returning without calling apply-db2cfg-settings"
+                    return 0
+                  fi
+                else
+                  echo "... skipping db2 config validation for AI Service (MAS_APP_ID is empty or aiservice)"
                 fi
 
                 for (( c=1; c<="${RETRIES}"; c++ )); do
@@ -316,10 +321,16 @@ spec:
                   oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
                   # no useful info in return code of this script
 
-                  rc=0
-                  mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
-                  if [[ "$rc" == "0" ]]; then
-                    echo "...... success"
+                  # Skip validation for AI Service
+                  if [[ -n "${MAS_APP_ID}" && "${MAS_APP_ID}" != "aiservice" ]]; then
+                    rc=0
+                    mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
+                    if [[ "$rc" == "0" ]]; then
+                      echo "...... success"
+                      return 0
+                    fi
+                  else
+                    echo "...... skipping validation for AI Service, assuming success"
                     return 0
                   fi
 

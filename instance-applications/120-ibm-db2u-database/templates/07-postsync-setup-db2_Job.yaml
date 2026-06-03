@@ -632,8 +632,15 @@ spec:
               fi
 
               # check if config LOGARCHMETH1 is defined
-              config_op=`oc get db2uinstances db2wh-${MAS_INSTANCE_ID}-${MAS_APP_ID} -n ${DB2_NAMESPACE} -o json | jq -r '.spec.environment.databases' | jq ".[] | select(.name==\"${DB2_DBNAME}\")" | jq '.dbConfig.LOGARCHMETH1' | sed 's/DISK://'`
-              if [[ "${config_op}" != "null" ]]; then
+              # For AI Service (empty MAS_APP_ID), use DB2_INSTANCE_NAME directly
+              if [[ -z "${MAS_APP_ID}" || "${MAS_APP_ID}" == "aiservice" ]]; then
+                DB2U_INSTANCE_NAME="${DB2_INSTANCE_NAME}"
+              else
+                DB2U_INSTANCE_NAME="db2wh-${MAS_INSTANCE_ID}-${MAS_APP_ID}"
+              fi
+              
+              config_op=`oc get db2uinstances ${DB2U_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o json | jq -r '.spec.environment.databases' | jq ".[] | select(.name==\"${DB2_DBNAME}\")" | jq '.dbConfig.LOGARCHMETH1' | sed 's/DISK://'`
+              if [[ "${config_op}" != "null" && -n "${config_op}" ]]; then
                 echo ""
                 echo "Creating directory ${config_op} for LOGARCHMETH1 on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"

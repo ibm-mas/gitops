@@ -67,6 +67,8 @@ are required here.
 */}}
 {{- $_job_cleanup_group := cat $_job_name_prefix .Values.db2_instance_name | sha1sum }}
 
+{{- if and .Values.sm_aws_access_key_id .Values.sm_aws_secret_access_key }}
+{{- if and .Values.sm_aws_access_key_id .Values.sm_aws_secret_access_key }}
 ---
 kind: Secret
 apiVersion: v1
@@ -87,9 +89,11 @@ data:
   db2_backup_bucket_secret_key: {{ .Values.db2_backup_bucket_secret_key | b64enc }}
 {{- if .Values.db2_backup_icd_auth_key }}
   icd_auth_key: {{ .Values.db2_backup_icd_auth_key | b64enc }}
-{{- end }}  
+{{- end }}
 {{- end }}
 type: Opaque
+{{- end }}
+{{- end }}
 
 ---
 # Service account that is authorized to read k8s secrets (needed by the job)

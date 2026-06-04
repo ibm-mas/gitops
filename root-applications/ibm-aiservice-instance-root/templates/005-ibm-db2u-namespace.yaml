@@ -1,0 +1,22 @@
+{{- if not (empty .Values.ibm_db2u) }}
+---
+# Explicitly create DB2 namespace for AI Service to ensure it exists before PreSync hooks
+# This is AI Service-specific and does not affect MAS
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{ .Values.ibm_db2u.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "005"
+{{- if or .Values.custom_labels .Values.argocluster_instance }}
+  labels:
+    {{- if .Values.argocluster_instance }}
+    argocd.argoproj.io/managed-by: {{ .Values.argocluster_instance }}
+    {{- end }}
+    {{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}
+
+# Made with Bob

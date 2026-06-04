@@ -147,6 +147,25 @@ spec:
           - level: Metadata
       name: sos-policy
       type: kubeAPIAudit
+    - prune:
+        notIn:
+          - .kubernetes.namespace_name
+          - .kubernetes.pod_name
+          - .kubernetes.labels.app
+          - .kubernetes.labels.app_kubernetes_io_instance
+          - .kubernetes.labels.app_kubernetes_io_managed-by
+          - .kubernetes.labels.app_kubernetes_io_name
+          - .kubernetes.labels.consumer-auth-apis
+          - .kubernetes.labels.mas_ibm_com_consumer-core-coreidp
+          - .kubernetes.labels.mas_ibm_com_consumer-core-licensing-mediator
+          - .kubernetes.labels.mas_ibm_com_consumer-core-milestoneapi
+          - .kubernetes.labels.mas_ibm_com_consumer-core-mobileapi
+          - .kubernetes.labels.mas_ibm_com_consumer-core-scimsync
+          - .kubernetes.labels.mas_ibm_com_consumer-core-sendmailapi
+          - .kubernetes.labels.mas_ibm_com_instanceId
+          - .kubernetes.labels.pod-template-hash
+      type: prune
+      name: prune-fields
   outputs:
     - name: cloudwatch-1
       type: cloudwatch
@@ -181,6 +200,7 @@ spec:
       filterRefs:
         - detect-multiline-errors
         - noise
+        - prune-fields
       inputRefs:
         - application-logs
       outputRefs:
@@ -188,6 +208,7 @@ spec:
     - name: infra-logs
       filterRefs:
         - detect-multiline-errors
+        - prune-fields
       inputRefs:
         - infrastructure
       outputRefs:
@@ -195,6 +216,7 @@ spec:
     - name: audit-logs
       filterRefs:
         - sos-policy
+        - prune-fields
       inputRefs:
         - audit
       outputRefs:

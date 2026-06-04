@@ -1,4 +1,4 @@
-{{- if not (empty .Values.ibm_db2u) }}
+{{- if not (empty .Values.ibm_db2u_databases) }}
 ---
 # IBM DB2U Application for AI Service
 apiVersion: argoproj.io/v1alpha1
@@ -33,31 +33,26 @@ spec:
     path: instance-applications/120-ibm-db2u-database
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
-      name: {{ .Values.avp.name }} 
+      name: {{ .Values.avp.name }}
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
-            argo_namespace: "{{ .Values.argo.namespace }}"
-            db2_namespace: "{{ .Values.ibm_db2u.db2_namespace }}"
-            cli_image_repo: {{ .Values.cli_image_repo }}
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            instance_id: "{{ .Values.instance.id }}"
+            sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
+            sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             cluster_admin_role: {{ .Values.cluster_admin_role }}
             application_admin_role: {{ .Values.application_admin_role }}
-            ibm_entitlement_key: "{{ .Values.ibm_db2u.ibm_entitlement_key }}"
-            db2_channel: "{{ .Values.ibm_db2u.db2_channel }}"
-            db2_install_plan: "{{ .Values.ibm_db2u.db2_install_plan }}"
             
             {{- if .Values.custom_labels }}
-            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 12 }}
             {{- end }}
             
-            junitreporter:
-              reporter_name: "ibm-db2u-{{ .Values.instance.id }}"
-              cluster_id: "{{ .Values.cluster.id }}"
-              instance_id: "{{ .Values.instance.id }}"
-              devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
-              devops_build_number: "{{ .Values.devops.build_number }}"
-              gitops_version: "{{ .Values.source.revision }}"
-              cli_image_repo: {{ .Values.cli_image_repo }}
+            {{- if .Values.ibm_db2u_databases }}
+            {{ index .Values.ibm_db2u_databases 0 | toYaml | nindent 12 }}
+            {{- end }}
             
         - name: ARGOCD_APP_NAME
           value: db2uapp

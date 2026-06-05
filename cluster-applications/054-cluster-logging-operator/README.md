@@ -41,10 +41,10 @@ cluster_logging_operator:
   # List of container/namespace pairs to filter out noisy logs
   # Instana-agent logs are excluded by default
   # Example:
-  # additionalExcludeContainers:
+  # additional_exclude_containers:
   #   - container: example-container
   #     namespace: example-namespace
-  additionalExcludeContainers: []
+  additional_exclude_containers: []
 
   # Setup log forwarding configuration (optional)
   # When true, configures additional log forwarding resources

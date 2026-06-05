@@ -28,8 +28,17 @@ spec:
           - container: instana-agent
             namespace: instana-agent
 {{- if .Values.additional_exclude_containers }}
-{{- if kindIs "slice" .Values.additional_exclude_containers }}
-{{- range .Values.additional_exclude_containers }}
+{{- $excludes := .Values.additional_exclude_containers }}
+{{- if kindIs "string" $excludes }}
+{{- if contains "map[" $excludes }}
+{{- $cleaned := $excludes | replace "[map[" "[{" | replace "]" "}" | replace " map[" ",{" | replace ":" "\":" | replace "container" "\"container\"" | replace "namespace" "\"namespace\"" }}
+{{- range $cleaned | fromJson }}
+          - container: {{ .container }}
+            namespace: {{ .namespace }}
+{{- end }}
+{{- end }}
+{{- else if kindIs "slice" $excludes }}
+{{- range $excludes }}
           - container: {{ .container }}
             namespace: {{ .namespace }}
 {{- end }}
@@ -131,8 +140,17 @@ spec:
           - container: instana-agent
             namespace: instana-agent
 {{- if .Values.additional_exclude_containers }}
-{{- if kindIs "slice" .Values.additional_exclude_containers }}
-{{- range .Values.additional_exclude_containers }}
+{{- $excludes := .Values.additional_exclude_containers }}
+{{- if kindIs "string" $excludes }}
+{{- if contains "map[" $excludes }}
+{{- $cleaned := $excludes | replace "[map[" "[{" | replace "]" "}" | replace " map[" ",{" | replace ":" "\":" | replace "container" "\"container\"" | replace "namespace" "\"namespace\"" }}
+{{- range $cleaned | fromJson }}
+          - container: {{ .container }}
+            namespace: {{ .namespace }}
+{{- end }}
+{{- end }}
+{{- else if kindIs "slice" $excludes }}
+{{- range $excludes }}
           - container: {{ .container }}
             namespace: {{ .namespace }}
 {{- end }}

@@ -5,6 +5,17 @@ For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
 
 {{ $app_dest_ns := printf "mas-%s-core" .Values.instance.id }}
 
+{{- /* Helper variables to check if app versions are >= 9.2 */ -}}
+{{- $iot_is_v92_or_higher := false -}}
+{{- if and .Values.ibm_suite_app_iot_install .Values.ibm_suite_app_iot_install.mas_app_channel -}}
+  {{- $iot_is_v92_or_higher = regexMatch "^9\\.(2|[3-9]|[1-9][0-9])\\..*" .Values.ibm_suite_app_iot_install.mas_app_channel -}}
+{{- end -}}
+
+{{- $monitor_is_v92_or_higher := false -}}
+{{- if and .Values.ibm_suite_app_monitor_install .Values.ibm_suite_app_monitor_install.mas_app_channel -}}
+  {{- $monitor_is_v92_or_higher = regexMatch "^9\\.(2|[3-9]|[1-9][0-9])\\..*" .Values.ibm_suite_app_monitor_install.mas_app_channel -}}
+{{- end -}}
+
 {{- range $i, $value := .Values.ibm_mas_masapp_configs }}
 {{- if $.Values.application_admin_role }}
 ---
@@ -19,7 +30,7 @@ metadata:
     {{- else if eq $value.mas_app_id "facilities" }}
     argocd.argoproj.io/sync-wave: "510"
     {{- else if eq $value.mas_app_id "iot" }}
-    {{- if and $.Values.ibm_suite_app_iot_install (regexMatch "^9\\.(2|[3-9]|[1-9][0-9])\\..*" $.Values.ibm_suite_app_iot_install.mas_app_channel) }}
+    {{- if $iot_is_v92_or_higher }}
     argocd.argoproj.io/sync-wave: "530"
     {{- else }}
     argocd.argoproj.io/sync-wave: "515"
@@ -31,7 +42,7 @@ metadata:
     {{- else if eq $value.mas_app_id "health" }}
     argocd.argoproj.io/sync-wave: "530"
     {{- else if eq $value.mas_app_id "monitor" }}
-    {{- if and $.Values.ibm_suite_app_monitor_install (regexMatch "^9\\.(2|[3-9]|[1-9][0-9])\\..*" $.Values.ibm_suite_app_monitor_install.mas_app_channel) }}
+    {{- if $monitor_is_v92_or_higher }}
     argocd.argoproj.io/sync-wave: "515"
     {{- else }}
     argocd.argoproj.io/sync-wave: "530"

@@ -59,10 +59,26 @@ are required here.
 */}}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
+{{- /*
+Extract ICN and subscription_id from the SLS secret path
+Example: "<path:arn:aws:secretsmanager:us-west-2:435377327995:secret:aws-dev/87654321/bedd3ceac223/sls#ca_b64>"
+We need to extract: 87654321 and bedd3ceac223
+*/}}
+{{- $slsSecretPath := .Values.slscfg_ca_b64enc }}
+{{- $pathParts := regexFindAll "[^/]+" $slsSecretPath -1 }}
+{{- $ibm_customer_number := "" }}
+{{- $subscription_id := "" }}
+{{- if gt (len $pathParts) 3 }}
+  {{- $ibm_customer_number = index $pathParts 2 }}
+  {{- $subscription_id = index $pathParts 3 }}
+{{- end }}
 
+{{- /* Extract domain from cluster URL */}}
+{{- $clusterUrl := .Values.cluster.url }}
+{{- $domain := regexReplaceAll "https://api\\.[^.]+\\.(.+):\\d+" $clusterUrl "${1}" }}
 
-{{ $ns := printf "mas-%s-%s-sls" .Values.ibm_customer_number .Values.subscription_id }}
-{{ $instance := printf "%s-%s" .Values.ibm_customer_number .Values.subscription_id }}
+{{ $ns := printf "mas-%s-%s-sls" $ibm_customer_number $subscription_id }}
+{{ $instance := printf "%s-%s" $ibm_customer_number $subscription_id }}
 
 {{ $aws_secret := "aws"}}
 {{ $np_name :=    "postsync-ibm-sls-update-sm-np" }}
@@ -216,11 +232,11 @@ spec:
             - name: REGION_ID
               value: {{ .Values.region_id }}
             - name: ICN
-              value: '{{ .Values.ibm_customer_number }}'
+              value: '{{ $ibm_customer_number }}'
             - name: SUBSCRIPTION_ID
-              value: '{{ .Values.subscription_id }}'
+              value: '{{ $subscription_id }}'
             - name: DOMAIN
-              value: '{{ .Values.sls_domain }}'
+              value: '{{ $domain }}'
             - name: TENANT
               value: '{{ .Values.tenant.id }}'
             - name: TENANT_NAMESPACE

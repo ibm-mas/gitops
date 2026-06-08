@@ -1,96 +1,5 @@
-{{- if .Values.application_admin_role }}
-{{- if not (empty .Values.mas_workspace_id) }}
-{{- if .Values.mas_is_active }}
-{{- if and (hasKey .Values "mas_appws_spec") (hasKey .Values.mas_appws_spec "settings") (hasKey .Values.mas_appws_spec.settings "deployment") (hasKey .Values.mas_appws_spec.settings.deployment "serverBundles") (not (empty .Values.mas_appws_spec.settings.deployment.serverBundles)) }}
-
-{{- /* Check if there is only 1 serverBundle with bundleType "foundation" - if so, skip this job */ -}}
-{{- /* If there are multiple bundles (regardless of type), create the initial user */ -}}
-{{- $bundleCount := len .Values.mas_appws_spec.settings.deployment.serverBundles -}}
-{{- $hasFoundationBundle := false -}}
-{{- range .Values.mas_appws_spec.settings.deployment.serverBundles -}}
-  {{- if eq (.bundleType | default "") "foundation" -}}
-    {{- $hasFoundationBundle = true -}}
-  {{- end -}}
-{{- end -}}
-
-{{- $shouldCreateUser := or (gt $bundleCount 1) (not $hasFoundationBundle) -}}
-
-{{- if $shouldCreateUser }}
-
-{{- /*
-Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
-*/}}
-{{- $_job_name_prefix := "ibm-create-initial-users" }}
-
-{{- /*
-Use the build/bin/set-cli-image-tag.sh script to update this value across all charts.
-Included in $_job_hash (see below).
-13.22.1-amd64 - includes mas-devops-create-initial-users script from https://github.com/ibm-mas/python-devops/pull/66
-*/}}
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
-
-{{- /*
-A dict of values that influence the behaviour of the job in some way.
-Any changes to values in this dict will trigger a rerun of the job.
-Since jobs must be idemopotent, it's generally safe to pass in values here that are not
-strictly necessary (i.e. including some values that don't actually influence job behaviour).
-We may want to refine this further though for jobs that can take a long time to complete.
-Included in $_job_hash (see below).
-*/}}
-{{- $_job_config_values := omit .Values "junitreporter" }}
-
-{{- /*
-Increment this value whenever you make a change to an immutable field of the Job resource.
-E.g. passing in a new environment variable.
-Included in $_job_hash (see below).
-*/}}
-{{- $_job_version := "v5" }}
-
-{{- /*
-10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
-This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
-immutable field of any existing Job resource.
-*/}}
-{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
-
-{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
-
-{{- /*
-Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
-
-When the auto_delete flag is not set on the root application, a CronJob in the cluster uses this label 
-to identify old Job resources that should be pruned on behalf of ArgoCD.
-
-Any Job resources in the same namespace that have the mas.ibm.com/job-cleanup-group with this value
-will be considered to belong to the same cleanup group. All but the most recent (i.e. with the latest "creation_timestamp")
-Jobs will be automatically deleted.
-
-$_job_cleanup_group can usually just be based on $_job_name_prefix. There are some special cases
-where multiple Jobs are created in our templates using a Helm loop. In those cases, additional descriminators
-must be added to $_job_cleanup_group.
-
-By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators are required here.
-
-*/}}
-{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
-
-
-
-{{ $ns :=               printf "mas-%s-postsyncjobs" .Values.instance_id }}
-{{ $ns_core :=          printf "mas-%s-core"  .Values.instance_id }}
-{{ $ns_manage :=        printf "mas-%s-manage"  .Values.instance_id }}
-{{ $aws_secret :=       "aws"}}
-{{ $np_name :=          printf "%s-np" $_job_name_prefix }}
-{{ $role_core_name :=   printf "%s-r-core"  $_job_name_prefix }}
-{{ $role_manage_name := printf "%s-r-manage"  $_job_name_prefix }}
-{{ $sa_name :=          printf "%s-sa" $_job_name_prefix }}
-{{ $rb_core_name :=     printf "%s-rb-core" $_job_name_prefix }}
-{{ $rb_manage_name :=   printf "%s-rb-manage" $_job_name_prefix }}
-{{ $job_label :=        printf "%s-l"  $_job_name_prefix }}
-
-
-
-
+{{- $aws_secret := "aws" }}
+{{- $ns := .Values.dro_namespace }}
 ---
 kind: Secret
 apiVersion: v1
@@ -98,28 +7,33 @@ metadata:
   name: {{ $aws_secret }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "000"
+    argocd.argoproj.io/sync-wave: "138"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
-stringData:
-  aws_access_key_id: {{ .Values.sm_aws_access_key_id }}
-  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key }}
-  aws_default_region: {{ .Values.sm_aws_region }}
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | default "" | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | default "" | b64enc }}
 type: Opaque
-
-
 ---
-# Permit outbound communication by the Job pods
-# (Needed to communicate with the K8S HTTP API, AWS SM and internal services)
+{{- if and (eq .Values.dns_provider "cis") (not (empty .Values.cis_crn)) (not (empty .Values.dro_public_domain)) }}
+{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_job_name_prefix := "ibm-dro-dns" }}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v2" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+---
+# NetworkPolicy to allow egress traffic for AWS Secrets Manager and IBM Cloud API
+# (Needed to communicate with the K8S HTTP API and AWS SM)
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
-  name: {{ $np_name }}
-  namespace: {{ $ns }}
+  name: ibm-dro-dns-netpol
+  namespace: {{ .Values.dro_namespace }}
   annotations:
-    argocd.argoproj.io/sync-wave: "000"
+    argocd.argoproj.io/sync-wave: "137"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -127,134 +41,21 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: {{ $job_label }}
+      app: "postsync-ibm-dro-dns-job"
   egress:
     - {}
   policyTypes:
     - Egress
 
-
----
-# needs to read the following secrets
-#   mas-{i}-core
-#     {i}-credentials-superuser in 
-#     {i}-admindashboard-cert-internal
-#     {i}-coreapi-cert-internal
-#   mas-{i}-manage
-#     {i}-internal-manage-tls
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: {{ $sa_name }}
-  namespace: {{ $ns }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "000"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-
-
-
----
-
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $role_core_name }}
-  namespace: {{ $ns_core }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "000"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-  - verbs:
-      - get
-    apiGroups:
-      - ""
-    resources:
-      - secrets
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ $rb_core_name }}
-  namespace: {{ $ns_core }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "001"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: {{ $sa_name }}
-    namespace: {{ $ns }}
-roleRef:
-  kind: Role
-  name: {{ $role_core_name }}
-  apiGroup: rbac.authorization.k8s.io
-
-
-{{- /*
-mas-devops-create-initial-users-for-saas script run by the Job requires access to the xxx-internal-manage-tls
-secret in the manage namespace so it can create an API Key for the MAXADMIN user
-Since these roles must be created in the manage namespace, we only attempt to create them if Manage is actually installed.
-*/}}
-{{- if .Values.manage_is_installed }}
----
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: {{ $role_manage_name }}
-  namespace: {{ $ns_manage }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "000"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-  - verbs:
-      - get
-    apiGroups:
-      - ""
-    resources:
-      - secrets
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ $rb_manage_name }}
-  namespace: {{ $ns_manage }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "001"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: {{ $sa_name }}
-    namespace: {{ $ns }}
-roleRef:
-  kind: Role
-  name: {{ $role_manage_name }}
-  apiGroup: rbac.authorization.k8s.io
-{{- end }}
-
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ $_job_name }}
-  namespace: {{ $ns }}
+  namespace: {{ .Values.dro_namespace }}
   annotations:
-    argocd.argoproj.io/sync-wave: "002"
+    argocd.argoproj.io/sync-wave: "138"
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -264,75 +65,122 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ $job_label }}
+        app: "postsync-ibm-dro-dns-job"
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
+      restartPolicy: Never
       containers:
-        - name: {{ $_job_name_prefix }}
+        - name: run
           image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
-
           env:
             - name: ACCOUNT_ID
-              value: "{{ .Values.account_id }}"
+              value: {{ .Values.account_id }}
             - name: CLUSTER_ID
-              value: "{{ .Values.cluster_id }}"
-            - name: MAS_INSTANCE_ID
-              value: "{{ .Values.instance_id }}"
-            - name: MAS_WORKSPACE_ID
-              value: "{{ .Values.mas_workspace_id }}"
-            - name: MAS_VERSION
-              value: "{{ .Values.mas_version }}"
-
-            - name: SECRETS_KEY_SEPERATOR
-              value: "/"
-
-            - name: SM_AWS_REGION
-              value: "{{ .Values.sm_aws_region }}"
-
-            # Hard-coded for now:
+              value: {{ .Values.cluster_id }}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: DRO_PUBLIC_DOMAIN
+              value: '{{ .Values.dro_public_domain }}'
+            - name: CIS_CRN
+              value: '{{ .Values.cis_crn }}'
             - name: AVP_TYPE
               value: "aws"
-
+            - name: IBMCLOUD_HOME
+              value: /tmp/bluemix
           volumeMounts:
-            - name: "aws"
+            - name: aws
               mountPath: /etc/mas/creds/aws
-          command:
-            - /bin/sh
-            - -c
+              readOnly: true
+          command: ["/bin/sh", "-c"]
+          args:
             - |
 
               set -e
 
-              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              echo "Reading AWS credentials..."
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              export SM_AWS_REGION=${REGION_ID}
+
               source /mascli/functions/gitops_utils
               sm_login
 
-              mas-devops-create-initial-users-for-saas \
-                  --mas-instance-id "${MAS_INSTANCE_ID}" \
-                  --mas-workspace-id "${MAS_WORKSPACE_ID}" \
-                  --initial-users-secret-name "${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/initial_users"{{- if .Values.mas_version }} \
-                  --mas-version "${MAS_VERSION}"{{- end }}
-              rc=$?
-              exit $rc
+              echo "Fetching IBM API key from AWS Secrets Manager"
+              SECRET_NAME_CIS="${ACCOUNT_ID}/${CLUSTER_ID}/cis"
 
-      restartPolicy: Never
+              SECRET_JSON=$(sm_get_secret "${SECRET_NAME_CIS}")
 
-      serviceAccountName: "{{ $sa_name }}"
+              echo "Fetching OCP ingress from AWS Secrets Manager"
+              export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"
+              sm_get_secret_file ${ACCOUNT_ID}/${CLUSTER_ID}/public-elb ${PUBLIC_ELB_DNS_NAME_FILE}
+              export OCP_INGRESS=$(jq -r .dns ${PUBLIC_ELB_DNS_NAME_FILE})
+
+              IBM_APIKEY=$(echo ${SECRET_JSON} | jq -r '.ibm_apikey')
+
+              if [[ -z "${IBM_APIKEY}" || "${IBM_APIKEY}" == "null" ]]; then
+                echo "Failed to fetch ibm_apikey from ${SECRET_NAME_CIS}"
+                exit 1
+              fi
+
+              if [[ -z "${OCP_INGRESS}" || "${OCP_INGRESS}" == "null" ]]; then
+                echo "Failed to fetch dns value from public-elb secret"
+                exit 1
+              fi
+
+              echo "Setting IBM CLI home to writable location..."
+              export IBMCLOUD_HOME=/tmp/bluemix
+              mkdir -p ${IBMCLOUD_HOME}
+
+              echo "Disabling version check..."
+              ibmcloud config --check-version=false
+
+              echo "Logging into IBM Cloud..."
+              ibmcloud login --apikey ${IBM_APIKEY} -r us-east
+
+              echo "Installing CIS plugin..."
+              ibmcloud plugin install cis -f
+
+              echo "Setting CIS instance..."
+              ibmcloud cis instance-set ${CIS_CRN}
+
+              echo "Fetching DOMAIN_ID..."
+              DOMAIN_ID=$(ibmcloud cis domains --output json | jq -r ".[] | select(.name==\"${DRO_PUBLIC_DOMAIN}\") | .id")
+
+              echo "domain id : ${DOMAIN_ID}"
+
+              if [[ -z "${DOMAIN_ID}" || "${DOMAIN_ID}" == "null" ]]; then
+                echo "ERROR: Could not find Domain ID for name: ${DRO_PUBLIC_DOMAIN}"
+                exit 1
+              fi
+
+              RECORD_NAME="dro.${CLUSTER_ID}"
+              echo "RECORD_NAME: ${RECORD_NAME}"
+              
+              echo "Creating DNS record..."
+              CREATE_OUTPUT=$(ibmcloud cis dns-record-create "${DOMAIN_ID}" \
+                --type CNAME \
+                --name "${RECORD_NAME}" \
+                --content "${OCP_INGRESS}" \
+                --proxied false 2>&1 || true)
+
+              if echo "${CREATE_OUTPUT}" | grep -qi "already exists\|duplicate"; then
+                echo "DNS record already exists."
+                exit 0
+              elif echo "${CREATE_OUTPUT}" | grep -qi "OK\|Created\|success"; then
+                echo "DNS record created successfully!"
+              else
+                echo "ERROR: DNS record creation failed"
+                echo "${CREATE_OUTPUT}"
+                exit 1
+              fi
+
       volumes:
-        - name: "aws"
+        - name: aws
           secret:
-            secretName: "{{ $aws_secret }}"
+            secretName: aws
             defaultMode: 420
-            optional: false
-
-  backoffLimit: 4
-
-{{- end }}
-{{- end }}
-{{- end }}
-{{- end }}
 {{- end }}

@@ -108,6 +108,25 @@ metadata:
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
+{{- $containers := fromJson (replace "'" "\"" (default "[]" .Values.additional_exclude_containers)) }}
+spec:
+  inputs:
+    - application:
+        excludes:
+          - container: auth-store
+            namespace: mas-*-iot
+          - container: api-authorization
+            namespace: mas-*-iot
+          - container: rest-v2-sync-scheduler
+            namespace: mas-*-monitor
+          - container: run
+            namespace: mas-*-core
+{{- range $containers }}
+          - container: {{ .container }}
+            namespace: {{ .namespace }}
+{{- end }}
+      name: application-logs
+      type: application
 spec:
   inputs:
     - application:
@@ -122,6 +141,10 @@ spec:
             namespace: mas-*-core
           # - container: instana-agent
           #   namespace: instana-agent
+{{- range $containers }}
+          - container: {{ .container }}
+            namespace: {{ .namespace }}
+{{- end }}
       name: application-logs
       type: application
   serviceAccount:

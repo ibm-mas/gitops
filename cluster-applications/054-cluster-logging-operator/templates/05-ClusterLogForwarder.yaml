@@ -96,11 +96,17 @@ spec:
 
 {{- if ge $channel_version "6.0" }}
 {{- $containers := list }}
-{{- if .Values.additional_exclude_containers }}
-  {{- if kindIs "string" .Values.additional_exclude_containers }}
-    {{- $containers = fromJson (replace "'" "\"" .Values.additional_exclude_containers) }}
+{{- $excludeContainers := .Values.additional_exclude_containers }}
+{{- if not $excludeContainers }}
+  {{- if .Values.cluster_logging_operator }}
+    {{- $excludeContainers = .Values.cluster_logging_operator.additional_exclude_containers }}
+  {{- end }}
+{{- end }}
+{{- if $excludeContainers }}
+  {{- if kindIs "string" $excludeContainers }}
+    {{- $containers = fromJson (replace "'" "\"" $excludeContainers) }}
   {{- else }}
-    {{- $containers = .Values.additional_exclude_containers }}
+    {{- $containers = $excludeContainers }}
   {{- end }}
 {{- end }}
 ---

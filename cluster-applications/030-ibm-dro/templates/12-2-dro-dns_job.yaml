@@ -56,7 +56,6 @@ metadata:
   namespace: {{ .Values.dro_namespace }}
   annotations:
     argocd.argoproj.io/sync-wave: "138"
-    argocd.argoproj.io/sync-options: Prune=true
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -210,6 +209,11 @@ spec:
                   echo "DNS record content and proxy setting are already correct. No update needed."
                 fi
 
+              if echo "${CREATE_OUTPUT}" | grep -qi "already exists\|duplicate"; then
+                echo "DNS record already exists."
+                exit 0
+              elif echo "${CREATE_OUTPUT}" | grep -qi "OK\|Created\|success"; then
+                echo "DNS record created successfully!"
               else
 
                 echo "DNS record does not exist. Creating new record..."
@@ -224,14 +228,7 @@ spec:
 
                 echo "Create output:"
                 echo "${CREATE_OUTPUT}"
-
-                if [[ ${CREATE_RC} -eq 0 ]]; then
-                  echo "DNS record created successfully!"
-                else
-                  echo "ERROR: DNS record creation failed"
-                  exit 1
-                fi
-
+                exit 1
               fi
 
       volumes:
@@ -240,4 +237,3 @@ spec:
             secretName: aws
             defaultMode: 420
 {{- end }}
-

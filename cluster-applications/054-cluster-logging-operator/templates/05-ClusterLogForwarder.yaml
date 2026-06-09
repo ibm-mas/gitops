@@ -95,7 +95,14 @@ spec:
 
 
 {{- if ge $channel_version "6.0" }}
-{{- $containers := fromJson (replace "'" "\"" (default "[]" .Values.additional_exclude_containers)) }}
+{{- $containers := list }}
+{{- if .Values.additional_exclude_containers }}
+  {{- if kindIs "string" .Values.additional_exclude_containers }}
+    {{- $containers = fromJson (replace "'" "\"" .Values.additional_exclude_containers) }}
+  {{- else }}
+    {{- $containers = .Values.additional_exclude_containers }}
+  {{- end }}
+{{- end }}
 ---
 apiVersion: observability.openshift.io/v1
 kind: ClusterLogForwarder

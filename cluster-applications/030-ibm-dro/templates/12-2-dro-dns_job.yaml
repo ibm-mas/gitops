@@ -179,14 +179,17 @@ spec:
                 RECORD_ID=$(echo "${EXISTING_RECORD}" | jq -r '.[0].id')
                 EXISTING_CONTENT=$(echo "${EXISTING_RECORD}" | jq -r '.[0].content')
                 EXISTING_NAME=$(echo "${EXISTING_RECORD}" | jq -r '.[0].name')
+                EXISTING_PROXIED=$(echo "${EXISTING_RECORD}" | jq -r '.[0].proxied')
 
                 echo "DNS record found!"
                 echo "  Record ID: ${RECORD_ID}"
                 echo "  Record Name: ${EXISTING_NAME}"
                 echo "  Existing content: ${EXISTING_CONTENT}"
+                echo "  Existing proxied: ${EXISTING_PROXIED}"
                 echo "  New content: ${OCP_INGRESS}"
+                echo "  New proxied: true"
 
-                if [[ "${EXISTING_CONTENT}" != "${OCP_INGRESS}" ]]; then
+                if [[ "${EXISTING_CONTENT}" != "${OCP_INGRESS}" ]] || [[ "${EXISTING_PROXIED}" != "true" ]]; then
 
                   echo ""
                   echo "Content has changed. Updating DNS record..."
@@ -210,7 +213,7 @@ spec:
                   fi
 
                 else
-                  echo "DNS record content is already correct. No update needed."
+                  echo "DNS record content and proxy setting are already correct. No update needed."
                 fi
 
               else

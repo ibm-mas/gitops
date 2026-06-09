@@ -26,7 +26,7 @@ spec:
   policyTypes:
     - Egress
 
-{{- if and (not (empty .Values.dns_provider)) (not (empty .Values.cis_domain)) (not (empty .Values.cis_crn)) }}
+{{- if and (not (empty .Values.dns_provider)) (or (not (empty .Values.cis_domain)) (not (empty .Values.cis_service_name))) (not (empty .Values.cis_crn)) }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -62,7 +62,7 @@ spec:
             - name: DOMAIN
               value: '{{ .Values.sls_domain }}'
             - name: CIS_DOMAIN
-              value: '{{ .Values.cis_domain}}'
+              value: '{{ .Values.cis_domain | default .Values.cis_service_name }}'
             - name: CIS_CRN
               value: '{{ .Values.cis_crn }}'
             - name: AVP_TYPE
@@ -134,6 +134,13 @@ spec:
 
               echo "Setting CIS instance..."
               ibmcloud cis instance-set ${CIS_CRN}
+
+              # Parse CIS_DOMAIN in case it has "CIS - " prefix (for backwards compatibility)
+              if [[ "${CIS_DOMAIN}" == CIS\ -\ * ]]; then
+                echo "Detected old CIS_DOMAIN format with 'CIS - ' prefix, parsing..."
+                CIS_DOMAIN=$(echo "${CIS_DOMAIN}" | sed 's/^CIS - //')
+                echo "Parsed CIS_DOMAIN: ${CIS_DOMAIN}"
+              fi
 
               echo "Fetching DOMAIN_ID..."
               DOMAIN_ID=$(ibmcloud cis domains --output json | jq -r ".[] | select(.name==\"$CIS_DOMAIN\") | .id")

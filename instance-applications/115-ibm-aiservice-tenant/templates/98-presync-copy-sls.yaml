@@ -132,11 +132,10 @@ metadata:
 {{- end }}
 
 ---
-kind: Role
+kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ $role_name }}
-  namespace: {{ $ns }}
+  name: {{ $role_name }}-{{ $instance }}
   annotations:
     argocd.argoproj.io/sync-wave: "98"
 {{- if .Values.custom_labels }}
@@ -146,10 +145,12 @@ metadata:
 rules:
   - verbs:
       - get
+      - list
     apiGroups:
       - ""
     resources:
       - configmaps
+      - namespaces
   - verbs:
       - get
       - list
@@ -160,11 +161,10 @@ rules:
       - routes
 
 ---
-kind: RoleBinding
+kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ $rb_name }}
-  namespace: {{ $ns }}
+  name: {{ $rb_name }}-{{ $instance }}
   annotations:
     argocd.argoproj.io/sync-wave: "98"
 {{- if .Values.custom_labels }}
@@ -177,8 +177,8 @@ subjects:
     namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: {{ $role_name }}
+  kind: ClusterRole
+  name: {{ $role_name }}-{{ $instance }}
 
 ---
 apiVersion: batch/v1
@@ -244,8 +244,6 @@ spec:
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
-            - name: sls-suite-registration
-              mountPath: /etc/mas/creds/sls-suite-registration
           command:
             - /bin/sh
             - -c
@@ -285,17 +283,19 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
-              echo "Fetching registrationKey from sls-suite-registration ConfigMap in mas-${ICN}-${SUBSCRIPTION_ID}-sls"
-              SLS_REGISTRATION_KEY=$(cat /etc/mas/creds/sls-suite-registration/registrationKey)
+              # Fetch SLS data from ConfigMap in the SLS namespace using kubectl
+              SLS_NAMESPACE="mas-${ICN}-${SUBSCRIPTION_ID}-sls"
+              echo "Fetching registrationKey from sls-suite-registration ConfigMap in ${SLS_NAMESPACE}"
+              SLS_REGISTRATION_KEY=$(kubectl get configmap sls-suite-registration -n ${SLS_NAMESPACE} -o jsonpath='{.data.registrationKey}' 2>/dev/null)
               if [[ -z "${SLS_REGISTRATION_KEY}" ]]; then
-                echo "Failed to fetch registrationKey"
+                echo "Failed to fetch registrationKey from ${SLS_NAMESPACE}"
                 exit 1
               fi
 
-              echo "Fetching ca from sls-suite-registration ConfigMap in mas-${ICN}-${SUBSCRIPTION_ID}-sls"
-              SLS_CA=$(cat /etc/mas/creds/sls-suite-registration/ca | base64 -w0)
+              echo "Fetching ca from sls-suite-registration ConfigMap in ${SLS_NAMESPACE}"
+              SLS_CA=$(kubectl get configmap sls-suite-registration -n ${SLS_NAMESPACE} -o jsonpath='{.data.ca}' 2>/dev/null | base64 -w0)
               if [[ -z "${SLS_CA}" ]]; then
-                echo "Failed to fetch ca"
+                echo "Failed to fetch ca from ${SLS_NAMESPACE}"
                 exit 1
               fi
 
@@ -374,10 +374,6 @@ spec:
           secret:
             secretName: {{ $aws_secret }}
             defaultMode: 420
-            optional: false
-        - name: sls-suite-registration
-          configMap:
-            name: sls-suite-registration
             optional: false
 
   backoffLimit: 4

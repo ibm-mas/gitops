@@ -162,8 +162,9 @@ spec:
               echo "[INFO] Deleting AIServiceTenant ${TENANT_ID} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
               if oc get aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" > /dev/null 2>&1; then
                 # Must patch CR to remove finalizer otherwise we cannot delete it
-                oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
-                  -n "${AISERVICE_NAMESPACE}"
+                if oc get aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" -o jsonpath='{.metadata.finalizers}' | grep -q .; then
+                  oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' -n "${AISERVICE_NAMESPACE}"
+                fi
                 oc delete aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
               fi
 

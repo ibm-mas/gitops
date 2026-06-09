@@ -60,25 +60,13 @@ are required here.
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
 {{- /*
-Extract ICN and subscription_id from the SLS secret path
-Example: "<path:arn:aws:secretsmanager:us-west-2:435377327995:secret:aws-dev/87654321/bedd3ceac223/sls#ca_b64>"
-We need to extract: 87654321 and bedd3ceac223
+ICN and subscription_id will be extracted from the resolved slscfg_url at runtime.
+The namespace will be determined dynamically in the bash script.
+For now, we use a placeholder that will be replaced at runtime.
 */}}
-{{- $slsSecretPath := .Values.slscfg_ca_b64enc }}
-{{- $pathParts := regexFindAll "[^/]+" $slsSecretPath -1 }}
-{{- $ibm_customer_number := "" }}
-{{- $subscription_id := "" }}
-{{- if gt (len $pathParts) 3 }}
-  {{- $ibm_customer_number = index $pathParts 2 }}
-  {{- $subscription_id = index $pathParts 3 }}
-{{- end }}
 
-{{- /* Extract domain from cluster URL */}}
-{{- $clusterUrl := .Values.cluster.url }}
-{{- $domain := regexReplaceAll "https://api\\.[^.]+\\.(.+):\\d+" $clusterUrl "${1}" }}
-
-{{ $ns := printf "mas-%s-%s-sls" $ibm_customer_number $subscription_id }}
-{{ $instance := printf "%s-%s" $ibm_customer_number $subscription_id }}
+{{ $ns := "mas-sls-runtime" }}
+{{ $instance := "sls-runtime" }}
 
 {{ $aws_secret := "aws"}}
 {{ $np_name :=    "postsync-ibm-sls-update-sm-np" }}
@@ -126,8 +114,8 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 data:
-  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
-  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | default "" | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | default "" | b64enc }}
 type: Opaque
 
 ---
@@ -231,14 +219,22 @@ spec:
               value: {{ .Values.account_id }}
             - name: REGION_ID
               value: {{ .Values.region_id }}
+            {{- if .Values.cluster_url }}
+            - name: CLUSTER_URL
+              value: {{ .Values.cluster_url }}
+            {{- end }}
+            - name: SLSCFG_URL
+              value: '{{ .Values.slscfg_url }}'
+            {{- if .Values.ibm_customer_number }}
             - name: ICN
-              value: '{{ $ibm_customer_number }}'
+              value: '{{ .Values.ibm_customer_number }}'
+            {{- end }}
+            {{- if .Values.aiservice_sls_subscription_id }}
             - name: SUBSCRIPTION_ID
-              value: '{{ $subscription_id }}'
-            - name: DOMAIN
-              value: '{{ $domain }}'
+              value: '{{ .Values.aiservice_sls_subscription_id }}'
+            {{- end }}
             - name: TENANT
-              value: '{{ .Values.tenant.id }}'
+              value: '{{ .Values.tenant_id }}'
             - name: TENANT_NAMESPACE
               value: '{{ .Values.tenantNamespace }}'
 
@@ -256,6 +252,32 @@ spec:
             - |
 
               set -e
+
+              # Extract ICN, SUBSCRIPTION_ID, and DOMAIN from SLSCFG_URL if not provided
+              # SLSCFG_URL format: https://sls.mas-87654350-bedd3ceac250-sls.apps.fvtsaasai.2rdp.p1.openshiftapps.com
+              if [[ -z "${ICN}" || -z "${SUBSCRIPTION_ID}" ]]; then
+                echo "Extracting ICN and SUBSCRIPTION_ID from SLSCFG_URL: ${SLSCFG_URL}"
+                # Extract the namespace part: mas-87654350-bedd3ceac250-sls
+                SLS_NAMESPACE=$(echo "${SLSCFG_URL}" | sed -n 's|https://sls\.\(mas-[^.]*-sls\)\..*|\1|p')
+                if [[ -z "${SLS_NAMESPACE}" ]]; then
+                  echo "ERROR: Failed to extract SLS namespace from SLSCFG_URL"
+                  exit 1
+                fi
+                echo "Extracted SLS namespace: ${SLS_NAMESPACE}"
+                
+                # Extract ICN and SUBSCRIPTION_ID from namespace: mas-ICN-SUBID-sls
+                ICN=$(echo "${SLS_NAMESPACE}" | cut -d'-' -f2)
+                SUBSCRIPTION_ID=$(echo "${SLS_NAMESPACE}" | cut -d'-' -f3)
+                echo "Extracted ICN: ${ICN}, SUBSCRIPTION_ID: ${SUBSCRIPTION_ID}"
+              fi
+
+              # Extract DOMAIN from CLUSTER_URL or SLSCFG_URL
+              if [[ -n "${CLUSTER_URL}" ]]; then
+                DOMAIN=$(echo "${CLUSTER_URL}" | sed -n 's|https://api\.[^.]*\.\(.*\):.*|\1|p')
+              else
+                DOMAIN=$(echo "${SLSCFG_URL}" | sed -n 's|https://[^.]*\.\(.*\)|\1|p')
+              fi
+              echo "Using DOMAIN: ${DOMAIN}"
 
               # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
               # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),

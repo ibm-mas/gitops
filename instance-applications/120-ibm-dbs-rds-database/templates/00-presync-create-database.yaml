@@ -1,0 +1,248 @@
+{{- if .Values.application_admin_role }}
+{{- $_job_name_prefix := "dbs-rds-presync-create-db" }}
+{{- $_cli_image_digest := "sha256:1bbb19dc6e7e9b5c2b013fc3c53650ee99ac639ed27ee3e143a089ae3427ba1d" }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v1" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
+{{- $_job_cleanup_group := cat $_job_name_prefix .Values.db2_rds_instance_name | sha1sum }}
+
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: {{ .Values.db2_rds_instance_name }}-create-db-secret
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+  {{- if .Values.custom_labels }}
+labels:
+  {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+data:
+  username: {{ .Values.user | b64enc }}
+  password: {{ .Values.password | b64enc }}
+
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: {{ .Values.db2_rds_instance_name }}-aws-creds
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+  {{- if .Values.custom_labels }}
+  labels:
+    {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+  {{- if .Values.custom_labels }}
+  {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: 4
+  template:
+    {{- if .Values.custom_labels }}
+    metadata:
+      labels:
+        {{ .Values.custom_labels | toYaml | indent 8 }}
+    {{- end }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: create-database
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eo pipefail
+              
+              source /mascli/functions/gitops_utils
+              
+              echo "==== DB2 RDS Idempotent Provisioning ===="
+              echo ""
+              echo "📋 Input Parameters:"
+              echo "  AWS Account:    ${ACCOUNT_ID}"
+              echo "  Cluster ID:     ${CLUSTER_ID}"
+              echo "  Instance ID:    ${INSTANCE_ID}"
+              echo "  MAS App ID:     ${MAS_APP_ID}"
+              echo "  DB Name (env):  ${DB_NAME}"
+              echo "  DB Host:        ${DB_HOST}"
+              echo "  DB Port:        ${DB_PORT}"
+              echo "  RDS Admin DB:   ${RDS_ADMIN_DB}"
+              echo ""
+              
+              # -----------------------------
+              # Determine DB_NAME (if not provided, generate it)
+              # -----------------------------
+              if [ -z "${DB_NAME:-}" ]; then
+                echo "ℹ️  No DB_NAME provided, generating deterministic DB name"
+                
+                # Source common functions
+                source /etc/mas/db-common-functions/db_common_functions.sh
+                
+                # Generate database name using shared function
+                DB_NAME=$(generate_db_name "${INSTANCE_ID}" "${MAS_APP_ID}")
+                
+                echo "✅ Generated DB_NAME: ${DB_NAME}"
+              else
+                echo "ℹ️  Using provided DB_NAME: ${DB_NAME}"
+              fi
+              
+              export DB_NAME
+              
+              # -----------------------------
+              # Verify pre-installed dependencies
+              # -----------------------------
+              echo "Verifying ibm_db package..."
+              python3 -c "import ibm_db; print('✅ ibm_db version:', ibm_db.__version__)"
+              
+              mkdir -p /etc/mas/rds-ssl
+              curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+                -o /etc/mas/rds-ssl/global-bundle.pem
+              
+              export SSL_CERT_PATH=/etc/mas/rds-ssl/global-bundle.pem
+              
+              # -----------------------------
+              # Database Existence Check & Creation
+              # -----------------------------
+              echo "Checking if database '${DB_NAME}' exists..."
+              
+              echo "Running database creation script..."
+              python3 -u /etc/mas/scripts/db2_create_database.py 2>&1 | tee /tmp/db_output.log
+              RC=${PIPESTATUS[0]}
+              
+              echo "Script execution completed with rc=${RC}"
+              
+              case "${RC}" in
+                10)
+                  DB_WAS_CREATED=true
+                  echo "✅ Database '${DB_NAME}' was created"
+                  ;;
+                0)
+                  DB_WAS_CREATED=false
+                  echo "ℹ️  Database '${DB_NAME}' already exists"
+                  ;;
+                *)
+                  echo "❌ Database operation failed with exit code ${RC}"
+                  cat /tmp/db_output.log
+                  exit 1
+                  ;;
+              esac
+              
+              # -----------------------------
+              # Update Secrets Manager (using sm_* functions like create user Job)
+              # -----------------------------
+              echo "Checking if Secrets Manager needs updating..."
+              
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              export SM_AWS_REGION=${SM_AWS_SECRET_REGION}
+              
+              sm_login
+              
+              SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/jdbc/{{ .Values.db2_rds_instance_name }}/config"
+              
+              EXISTING_SECRET=$(sm_get_secret_value "${SECRET_PATH}" 2>/dev/null || echo "{}")
+              
+              # Validate JSON
+              if ! echo "${EXISTING_SECRET}" | jq empty >/dev/null 2>&1; then
+                echo "⚠️  Invalid JSON from Secrets Manager, using empty object"
+                EXISTING_SECRET="{}"
+              fi
+              
+              # Check if db2_name is already set correctly
+              EXISTING_DB_NAME=$(echo "${EXISTING_SECRET}" | jq -r '.db2_name // empty')
+              
+              if [ "$DB_WAS_CREATED" = "true" ] || [ -z "${EXISTING_DB_NAME}" ] || [ "${EXISTING_DB_NAME}" != "${DB_NAME}" ]; then
+                echo "Updating Secrets Manager..."
+                echo "  Reason: DB_WAS_CREATED=${DB_WAS_CREATED}, EXISTING_DB_NAME='${EXISTING_DB_NAME}', DB_NAME='${DB_NAME}'"
+                
+                NEW_SECRET=$(echo "${EXISTING_SECRET}" | jq --arg db "${DB_NAME}" '. + {db2_name: $db}')
+                
+                if [ -n "${JDBC_CONNECTION_URL:-}" ]; then
+                  NEW_URL=$(printf '%s\n' "${JDBC_CONNECTION_URL:-}" | sed -E "s|(jdbc:db2://[^/]+/)([^:]*)(:.*)?$|\\1${DB_NAME}\\3|")
+                  NEW_SECRET=$(echo "${NEW_SECRET}" | jq --arg url "${NEW_URL}" '. + {jdbc_connection_url: $url}')
+                fi
+                
+                # Tags for Secrets Manager
+                TAGS="[{\"Key\": \"source\", \"Value\": \"presync-create-database\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}, {\"Key\": \"instance\", \"Value\": \"${INSTANCE_ID}\"}, {\"Key\": \"app\", \"Value\": \"${MAS_APP_ID}\"}, {\"Key\": \"db_name\", \"Value\": \"${DB_NAME}\"}]"
+                
+                sm_update_secret "${SECRET_PATH}" "${NEW_SECRET}" "${TAGS}"
+                echo "✓ Secrets Manager updated with db2_name: ${DB_NAME}"
+              else
+                echo "ℹ️  Secrets Manager already has correct db2_name: ${EXISTING_DB_NAME}"
+              fi
+              
+              echo "==== COMPLETED ===="
+          env:
+            - name: DB_NAME
+              value: {{ .Values.dbname | default "" | quote }}
+            - name: DB_HOST
+              value: {{ .Values.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.port | default "50000" | quote }}
+            - name: RDS_ADMIN_DB
+              value: {{ .Values.rds_admin_db_name | default "rdsadmin" | quote }}
+            - name: JDBC_CONNECTION_URL
+              value: {{ .Values.jdbc_connection_url | default "" | quote }}
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id | quote }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id | quote }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id | quote }}
+            - name: MAS_APP_ID
+              value: {{ .Values.mas_application_id | default "" | quote }}
+            - name: SM_AWS_SECRET_REGION
+              value: {{ .Values.sm_aws_secret_region | default "us-east-1" | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.sm_aws_secret_region | default "us-east-1" | quote }}
+          volumeMounts:
+            - name: dbs-rds-create-db-secret
+              mountPath: /etc/mas/dbs-rds-creds/
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+            - name: create-db-script
+              mountPath: /etc/mas/scripts/
+            - name: db-common-functions
+              mountPath: /etc/mas/db-common-functions/
+      volumes:
+        - name: dbs-rds-create-db-secret
+          secret:
+            secretName: {{ .Values.db2_rds_instance_name }}-create-db-secret
+        - name: aws
+          secret:
+            secretName: {{ .Values.db2_rds_instance_name }}-aws-creds
+        - name: create-db-script
+          configMap:
+            name: {{ .Values.db2_rds_instance_name }}-create-db-script
+            defaultMode: 0755
+        - name: db-common-functions
+          configMap:
+            name: {{ .Values.db2_rds_instance_name }}-db-common-functions
+            defaultMode: 0755
+
+{{- end }}

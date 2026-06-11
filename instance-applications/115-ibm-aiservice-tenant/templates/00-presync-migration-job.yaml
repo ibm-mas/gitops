@@ -199,43 +199,47 @@ spec:
                     export IS_API_READY="false"
                   fi
                 }
+        
 
-              function copy_resource() {
-                local resource_type="${1}"
-                local resource_name="${2}"
-                local new_resource_name="${3:-${resource_name}}"
-                if oc get ${resource_type} ${resource_name} -n ${AISERVICE_NAMESPACE} -o json > /tmp/${resource_name}.json; then
-                  echo "[INFO] Copying ${resource_type} ${resource_name} from namespace ${AISERVICE_NAMESPACE} to namespace ${TENANT_NAMESPACE}"
-                  # Clean metadata fields to avoid resourceVersion conflicts. Delete the owner refs to prevent garbage collection.
-                  jq 'del(.metadata.ownerReferences, .metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.selfLink, .metadata.managedFields)' /tmp/${resource_name}.json \
-                    | sed "s/\"namespace\": \"${AISERVICE_NAMESPACE}\"/\"namespace\": \"${TENANT_NAMESPACE}\"/" > /tmp/${resource_name}_clean.json
-                  # These resources are not defined in Git so exclude them from ArgoCD's reconcilliation.
-                  jq '.metadata.annotations = (.metadata.annotations // {}) + {"argocd.argoproj.io/sync-options": "IgnoreExtraneous,Prune=false"}' /tmp/${resource_name}_clean.json > /tmp/${resource_name}_annotated.json
-                  # Change the name to avoid possibly conflicting with the secret synced by ArgoCD
-                  jq --arg name "${new_resource_name}" --arg namespace "${TENANT_NAMESPACE}" '.metadata.name = $name | .metadata.namespace = $namespace' /tmp/${resource_name}_annotated.json > /tmp/${resource_name}_renamed.json
-                  oc apply -f /tmp/${resource_name}_renamed.json
-                else
-                 echo "[WARNING] ${resource_type} ${resource_name} not found in ${AISERVICE_NAMESPACE} => cannot copy resource to tenant namespace"
-                fi
-              }
+                copy_resource secret "${SLS_SECRET_NAME}" "${SLS_SECRET_NAME}-copy" "${AISERVICE_NAMESPACE}" "${TENANT_NAMESPACE}"
+                copy_resource secret "${API_KEY_SECRET_NAME}" "${API_KEY_SECRET_NAME}" "${AISERVICE_NAMESPACE}" "${TENANT_NAMESPACE}"
+                
+                if oc get secret "${API_KEY_SECRET_NAME}" -n "${TENANT_NAMESPACE}" &>/dev/null; then
+                  echo "[INFO] ${API_KEY_SECRET_NAME} copied successfully"
 
-              copy_resource secret "${SLS_SECRET_NAME}" "${SLS_SECRET_NAME}-copy"
-              copy_resource secret "${API_KEY_SECRET_NAME}"
-
-              is_v91_installed
-              while [[ "${IS_V91_INSTALLED}" == "true" ]]; do
-                echo "[INFO] ibm-aiservice-tenant operator v9.1 is deployed so cannot proceed. Checking again in 30 seconds ..."
-                sleep 30
                 is_v91_installed
-              done
-              echo "[INFO] ibm-aiservice-tenant operator v9.1 is not deployed. Proceeding ..."
-
-                is_api_ready
-                while [[ "${IS_API_READY}" != "true" ]]; do
-                  echo "[INFO] API Broker is not ready. Checking again in 30 seconds ..."
+                while [[ "${IS_V91_INSTALLED}" == "true" ]]; do
+                  echo "[INFO] ibm-aiservice-tenant operator v9.1 is deployed so cannot proceed. Checking again in 30 seconds ..."
                   sleep 30
-                  is_api_ready
+                  is_v91_installed
                 done
-                echo "[INFO] API Broker is ready. Proceeding ..."
+                echo "[INFO] ibm-aiservice-tenant operator v9.1 is not deployed. Proceeding ..."
+
+                  is_api_ready
+                  while [[ "${IS_API_READY}" != "true" ]]; do
+                    echo "[INFO] API Broker is not ready. Checking again in 30 seconds ..."
+                    sleep 30
+                    is_api_ready
+                  done
+                  echo "[INFO] API Broker is ready. Proceeding ..."
+              elif [[ "${CATALOG_CHANNEL}" == 9.1.* ]]; then
+              
+                # We cannot know for sure if we are in a rollback scenario.
+                # So, check if API key and SLS secrets exist in the tenant namespace.
+                # If they do, we assume that 9.2.x was previously installed so we copy the secrets
+                # back to the AI Service namespace for processing later.
+
+                if oc get secret "${SLS_SECRET_NAME}" -n "${TENANT_NAMESPACE}" &>/dev/null && \
+                  oc get secret "${API_KEY_SECRET_NAME}" -n "${TENANT_NAMESPACE}" &>/dev/null; then
+                    echo "[WARNING] Tenant API key secret and SLS secret found in tenant namespace => assuming the deployment is a rollback from 9.2.x"
+                    copy_resource secret "${SLS_SECRET_NAME}" "${SLS_SECRET_NAME}-copy" "${TENANT_NAMESPACE}" "${AISERVICE_NAMESPACE}"
+                    copy_resource secret "${API_KEY_SECRET_NAME}" "${API_KEY_SECRET_NAME}" "${TENANT_NAMESPACE}" "${AISERVICE_NAMESPACE}"
+                else
+                    echo "[INFO] Tenant API key secret and SLS secret not found in tenant namespace => assuming the deployment is not a rollback"
+                fi
+
+              else
+                echo "[INFO] Catalog channel is not 9.1.x or 9.2.x => no pre-sync migration required."
+              fi
 
               exit 0

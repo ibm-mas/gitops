@@ -4,6 +4,11 @@ Deploy and configure ODH with configurable version
 
 <!--docs-include-start-->
 
+## Migration to RHOAI
+
+**Note**: OpenDataHub (ODH) is being replaced by Red Hat OpenShift AI (RHOAI). To migrate to RHOAI, see the [RHOAI Migration Guide](../116-ibm-rhoai/README.md#migration-from-odh-to-rhoai).
+
+Shared resources (aiservice namespace, ServiceMesh, Authorino, Serverless operators, and NetworkPolicies) have ArgoCD protection annotations that prevent deletion during ODH uninstallation, ensuring a safe migration path to RHOAI.
 
 ## Resources Created
 
@@ -25,6 +30,7 @@ This chart accepts the following configuration values in the ArgoCD Application 
 
 ```yaml
 ibm_odh:
+  install: string                    # Set to "true" to enable ODH installation
   openshift_namespace: string
   odh_pipeline_channel: string
   odh_pipeline_installplan: string

@@ -108,6 +108,94 @@ data:
       db2.execute(stmt, (tablespace_name.upper(),))
       return int(db2.fetch_tuple(stmt)[0]) > 0
     
+    def partition_group_exists(pg_name):
+      stmt = db2.prepare(db2_conn, "SELECT COUNT(*) FROM syscat.dbpartitiongroupdef WHERE dbpgname = ?")
+      db2.execute(stmt, (pg_name.upper(),))
+      return int(db2.fetch_tuple(stmt)[0]) > 0
+
+    def create_partition_group_ddl(pg_name, partition_nums="0"):
+        global has_errors, created_any
+        try:
+            sql = f"CREATE DATABASE PARTITION GROUP \"{pg_name}\" ON DBPARTITIONNUMS ({partition_nums})"
+            db2.exec_immediate(db2_conn, sql)
+            
+            # Wait for partition group to appear
+            print(f"⏳ Waiting for partition group {pg_name} to be created...")
+            max_retries = 12
+            retry_delay = 5
+            
+            for attempt in range(max_retries):
+                time.sleep(retry_delay)
+                
+                if partition_group_exists(pg_name):
+                    print(f"✅ Created partition group: {pg_name} (verified after {(attempt + 1) * retry_delay} seconds)")
+                    created_any = True
+                    return
+                else:
+                    print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Partition group {pg_name} not yet visible, waiting...")
+            
+            error_msg = f"Partition group {pg_name} not found after {max_retries * retry_delay} seconds."
+            print(f"❌ {error_msg}")
+            has_errors = True
+            raise Exception(error_msg)
+        except Exception as e:
+            error_str = str(e)
+            if "not found after" not in error_str and "already exists" not in error_str.lower():
+                print(f"❌ Error creating partition group {pg_name}: {error_str}")
+                has_errors = True
+            raise
+
+    def create_large_tablespace_ddl(
+        tbname,
+        partition_group,
+        bufferpool="IBMDEFAULTBP",
+        pagesize=32768,
+        initialsize=32,
+        extentsize=4
+    ):
+        global has_errors, created_any
+        try:
+            sql = f"""CREATE LARGE TABLESPACE "{tbname}" IN DATABASE PARTITION GROUP {partition_group}
+                PAGESIZE {pagesize} MANAGED BY AUTOMATIC STORAGE
+                USING STOGROUP "IBMSTOGROUP"
+                AUTORESIZE YES
+                INITIALSIZE {initialsize} M
+                MAXSIZE NONE
+                EXTENTSIZE {extentsize}
+                PREFETCHSIZE AUTOMATIC
+                BUFFERPOOL "{bufferpool}"
+                DATA TAG INHERIT
+                OVERHEAD INHERIT
+                TRANSFERRATE INHERIT
+                DROPPED TABLE RECOVERY ON"""
+            db2.exec_immediate(db2_conn, sql)
+            
+            # Wait for tablespace to appear
+            print(f"⏳ Waiting for large tablespace {tbname} to be created...")
+            max_retries = 12
+            retry_delay = 5
+            
+            for attempt in range(max_retries):
+                time.sleep(retry_delay)
+                
+                if tablespace_exists(tbname):
+                    print(f"✅ Created large tablespace: {tbname} (verified after {(attempt + 1) * retry_delay} seconds)")
+                    created_any = True
+                    return
+                else:
+                    print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Tablespace {tbname} not yet visible, waiting...")
+            
+            error_msg = f"Tablespace {tbname} not found after {max_retries * retry_delay} seconds."
+            print(f"❌ {error_msg}")
+            has_errors = True
+            raise Exception(error_msg)
+        except Exception as e:
+            error_str = str(e)
+            if "not found after" not in error_str and "already exists" not in error_str.lower():
+                print(f"❌ Error creating large tablespace {tbname}: {error_str}")
+                has_errors = True
+            raise
+    
 
     def create_bufferpool(bpname, pagesize=32768):
         global has_errors
@@ -213,6 +301,7 @@ data:
         "DEDICATEDBPINDX",
         "DEDICATEDBPLOB",
     ]
+    monitor_bufferpools = ["IBMDEFAULTBP"]  # Monitor uses default bufferpool
 
     if mas_application_id == "manage":
         for bp in manage_bufferpools:
@@ -228,6 +317,13 @@ data:
             else:
                 create_bufferpool(bp)
                 created_any = True
+    elif mas_application_id == "monitor":
+        # Monitor uses IBMDEFAULTBP which should already exist
+        for bp in monitor_bufferpools:
+            if bufferpool_exists(bp):
+                print(f"ℹ️ Bufferpool '{bp}' already exists (used by Monitor)")
+            else:
+                print(f"⚠️  Bufferpool '{bp}' does not exist - this is unexpected")
     else:
         print(f"ℹ️ BUFFERPOOL CHAIN : mas_application_id is not provided ")
     
@@ -263,6 +359,28 @@ data:
               else:
                   create_tablespace(tsp, bp)
               created_any = True
+    elif mas_application_id == "monitor":
+        # 3. Monitor: Create partition group and large tablespace
+        print("\n📝 Setting up Monitor application database objects...")
+        
+        # Create partition group MONITORGRP0
+        if partition_group_exists("MONITORGRP0"):
+            print(f"ℹ️ Partition group 'MONITORGRP0' already exists")
+        else:
+            create_partition_group_ddl("MONITORGRP0", "0")
+        
+        # Create large tablespace MONITORSPACE0
+        if tablespace_exists("MONITORSPACE0"):
+            print(f"ℹ️ Tablespace 'MONITORSPACE0' already exists")
+        else:
+            create_large_tablespace_ddl(
+                tbname="MONITORSPACE0",
+                partition_group="MONITORGRP0",
+                bufferpool="IBMDEFAULTBP",
+                pagesize=32768,
+                initialsize=32,
+                extentsize=4
+            )
     else:
         print(f"ℹ️ TABLESPACE CHAIN: mas_application_id is not provided ")
 

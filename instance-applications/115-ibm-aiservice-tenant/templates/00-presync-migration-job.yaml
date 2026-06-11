@@ -176,13 +176,12 @@ spec:
                   jq --arg name "${new_resource_name}" --arg namespace "${target_namespace}" '.metadata.name = $name | .metadata.namespace = $namespace' /tmp/${resource_name}_annotated.json > /tmp/${resource_name}_renamed.json
                   oc apply -f /tmp/${resource_name}_renamed.json
                 else
-                echo "[WARNING] ${resource_type} ${resource_name} not found in ${source_namespace} => cannot copy resource to namespace ${target_namespace}"
+                  echo "[WARNING] ${resource_type} ${resource_name} not found in ${source_namespace} => cannot copy resource to namespace ${target_namespace}"
                 fi
               }
 
               echo "[INFO] Catalog channel = ${CATALOG_CHANNEL}"
               if [[ "${CATALOG_CHANNEL}" == 9.2.* ]]; then
-
                 function is_v91_installed() {
                   if oc get deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant -n ${AISERVICE_NAMESPACE} &>/dev/null; then
                     export IS_V91_INSTALLED="true"
@@ -199,13 +198,13 @@ spec:
                     export IS_API_READY="false"
                   fi
                 }
-        
 
                 copy_resource secret "${SLS_SECRET_NAME}" "${SLS_SECRET_NAME}-copy" "${AISERVICE_NAMESPACE}" "${TENANT_NAMESPACE}"
                 copy_resource secret "${API_KEY_SECRET_NAME}" "${API_KEY_SECRET_NAME}" "${AISERVICE_NAMESPACE}" "${TENANT_NAMESPACE}"
                 
                 if oc get secret "${API_KEY_SECRET_NAME}" -n "${TENANT_NAMESPACE}" &>/dev/null; then
                   echo "[INFO] ${API_KEY_SECRET_NAME} copied successfully"
+                fi
 
                 is_v91_installed
                 while [[ "${IS_V91_INSTALLED}" == "true" ]]; do

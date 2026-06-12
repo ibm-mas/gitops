@@ -116,11 +116,11 @@ data:
     def create_partition_group_ddl(pg_name, partition_nums="0"):
         global has_errors, created_any
         try:
-            # Use RDS stored procedure to execute DDL with proper privileges
-            # The rdsadmin.exec_ddl procedure allows execution of DDL statements
-            ddl_statement = f"CREATE DATABASE PARTITION GROUP \\\"{pg_name}\\\" ON DBPARTITIONNUMS ({partition_nums})"
-            sql = f"CALL rdsadmin.exec_ddl('{database_name}', '{ddl_statement}')"
-            db2.exec_immediate(admin_conn, sql)
+            # Create partition group using direct DDL on the database connection
+            # Note: The user must be a member of masterdba group or have SYSCTRL/SYSADM authority
+            # This should be the db2rds_ssp user which is added to masterdba group during user creation
+            sql = f"CREATE DATABASE PARTITION GROUP \"{pg_name}\" ON DBPARTITIONNUMS ({partition_nums})"
+            db2.exec_immediate(db2_conn, sql)
             
             # Wait for partition group to appear
             print(f"⏳ Waiting for partition group {pg_name} to be created...")

@@ -116,8 +116,10 @@ data:
     def create_partition_group_ddl(pg_name, partition_nums="0"):
         global has_errors, created_any
         try:
-            # Use RDS stored procedure instead of direct DDL
-            sql = f"CALL rdsadmin.create_dbpartitiongroup('{database_name}', '{pg_name}', '{partition_nums}')"
+            # Use RDS stored procedure to execute DDL with proper privileges
+            # The rdsadmin.exec_ddl procedure allows execution of DDL statements
+            ddl_statement = f"CREATE DATABASE PARTITION GROUP \\\"{pg_name}\\\" ON DBPARTITIONNUMS ({partition_nums})"
+            sql = f"CALL rdsadmin.exec_ddl('{database_name}', '{ddl_statement}')"
             db2.exec_immediate(admin_conn, sql)
             
             # Wait for partition group to appear

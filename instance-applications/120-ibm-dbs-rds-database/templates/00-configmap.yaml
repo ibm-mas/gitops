@@ -85,6 +85,19 @@ data:
     
         db2_conn = db2.connect(conn_rds_db2_str, "", "")
         print(f"✅ Connected to database '{database_name}'")
+        
+        # Add user to masterdba group if not already a member (needed for partition group creation)
+        # This grants the necessary privileges to create partition groups
+        try:
+            add_groups_sql = f"CALL rdsadmin.add_groups('{username}','masterdba')"
+            db2.exec_immediate(admin_conn, add_groups_sql)
+            print(f"✅ Added {username} to masterdba group (or already a member)")
+        except Exception as e:
+            error_msg = str(e)
+            # Ignore if user is already in the group
+            if "already" not in error_msg.lower():
+                print(f"⚠️  Warning: Could not add {username} to masterdba group: {error_msg}")
+                print(f"ℹ️  User may not have privileges to create partition groups")
     except Exception as e:
         print(f"❌ Connection failed: {e}")
         sys.exit(1)

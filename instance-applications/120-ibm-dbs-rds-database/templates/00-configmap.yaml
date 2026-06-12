@@ -98,17 +98,20 @@ data:
             if "already" not in error_msg.lower():
                 print(f"⚠️  Warning: Could not add {username} to masterdba group: {error_msg}")
         
-        # Grant SYSADM authority to the user (needed for partition group creation)
+        # Grant SYSCTRL authority to the user (needed for partition group creation)
+        # SYSCTRL provides system control authority including partition group management
         try:
-            grant_sysadm_sql = f"CALL rdsadmin.grant_sysadm('{username}')"
-            db2.exec_immediate(admin_conn, grant_sysadm_sql)
-            print(f"✅ Granted SYSADM authority to {username}")
+            # Use GRANT statement directly as there's no rdsadmin procedure for SYSCTRL
+            grant_sysctrl_sql = f"GRANT SYSCTRL ON DATABASE TO USER {username}"
+            db2.exec_immediate(db2_conn, grant_sysctrl_sql)
+            print(f"✅ Granted SYSCTRL authority to {username}")
         except Exception as e:
             error_msg = str(e)
-            # Ignore if user already has SYSADM
-            if "already" not in error_msg.lower():
-                print(f"⚠️  Warning: Could not grant SYSADM to {username}: {error_msg}")
-                print(f"ℹ️  User may not have privileges to create partition groups")
+            # Ignore if user already has SYSCTRL or if grant fails
+            if "already" not in error_msg.lower() and "sql0552n" not in error_msg.lower():
+                print(f"⚠️  Warning: Could not grant SYSCTRL to {username}: {error_msg}")
+            else:
+                print(f"ℹ️  SYSCTRL grant skipped (may already have authority or insufficient privileges)")
     except Exception as e:
         print(f"❌ Connection failed: {e}")
         sys.exit(1)

@@ -63,10 +63,10 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list", "patch", "delete"]
+    verbs: ["get", "list", "patch", "delete", "create"]
   - apiGroups: ["aiservice.ibm.com"]
     resources: ["aiservicetenants"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "patch", "delete"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -185,6 +185,7 @@ spec:
 
                 echo "[INFO] Deleting AIServiceTenant ${TENANT_ID} in namespace ${TENANT_ID} (if it exists)"
                 if oc get aiservicetenant "${TENANT_ID}" -n "${TENANT_ID}" > /dev/null 2>&1; then
+                  echo "[INFO] Deleting AIServiceTenant ${TENANT_ID} in namespace ${TENANT_ID}"
                   # Must patch CR to remove finalizer otherwise we cannot delete it
                   oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
                     -n "${TENANT_ID}"

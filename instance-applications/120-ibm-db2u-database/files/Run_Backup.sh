@@ -1,8 +1,6 @@
 #!/bin/bash
-#set -x
-
 #########################################################
-#                Run_Backup.sh 
+#   Run_Backup.sh 
 #   Run_Backup.sh will be called from the Cron Jobs 
 #   This script will list all local databases running in the instance on a node.  It will call the
 #   DB2_Backup.sh script to run a backup for each running database.
@@ -10,100 +8,161 @@
 #   based on the day of the week.  Currently, Saturday is when the full backup runs, incremental backups run
 #   every all other days.
 #
-#    Variables to be set
+#   Variables to be set
 #   SLACKURL = The channel were notifications are send
 #   BACKUP_SCRIPT =  The backup script that Run_Backup.sh calls
-#   DAYOFFULL = Defines the day of the week that the full backup will on on (must match the same format as the output from `date`)
+#   DAYOFFULL = Defines the day of the week that the full backup will on on (must match the same format as the output from $(date))
 #   NUMOFBKUPTOKEEP = This defines the number of days to keep a backup image on local disk
 #
-#    Variables determined by the environment
-#   BACKUPTYPE = Is determined from the `date` command and the DAYOFFULL value
+#   Variables determined by the environment
+#   BKPTYPE = Is determined from the $(date) command and the DAYOFFULL value
 #   DB2INSTANCE = Pulled from the environment
 #   HOSTNAME
-#   DBNAME = Pulled from the `db2 list db directory`
+#   DBNAME = Pulled from the $(db2 list db directory)
 #   
-#    Backup command issued
-#   ./DB2_Backup.sh ${DB2INSTANCE} ${DBNAME} ${NUMOFBKUPTOKEEP} ${BACKUPTYPE} 2>>.BackupLOG.stderr > .BackupLOG.out
+#   Backup command issued
+#   ./DB2_Backup.sh ${DB2INSTANCE} ${DBNAME} ${NUMOFBKUPTOKEEP} ${BKPTYPE} 2>>.BackupLOG.stderr > .BackupLOG.out
+#
+# -- Revision of script to include new ICD URL
 #########################################################
 
-. /mnt/backup/bin/.PROPS
+# -- Standard Parameters
+HOSTNAME=$(hostname)
+IP=$(/sbin/ifconfig | grep "inet" | grep broadcast | awk '{print $2}')
+DATETIME=$(date +'%Y%m%d_%H%M%S');
+DBINSTANCE=$(whoami);
+NAMESPACE=$(hostname -A | awk -F '.' '{print $3}')
+INSTANCE_HOME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${DBINSTANCE}" | awk -F ',' '{print $5}'| sed 's/\/sqllib//' )
+CUSTNAME=$(hostname | sed 's/c-db2wh-//; s/c-db2u-//; s/c-//; s/-db2u-0//; s/db2u/-/; ' | tr '[:lower:]' '[:upper:]' )
+SCRIPT_DIR=${INSTANCE_HOME}/bin
+ICD_LOG=${SCRIPT_DIR}/.Maillive.log
 
-DBINSTANCE=`whoami`
-HOSTNAME=`hostname`
-BACKUP_DIR=${HOME}/bin
-BACKUP_SCRIPT=DB2_Backup.sh
-DATETIME=`date +%Y-%m-%d_%H%M%S`;
+# -- Verify and source db2profile 
 
-if [ ! -f "${HOME}/sqllib/db2profile" ]
-then
+if [[ ! -f "${HOME}/sqllib/db2profile" ]]; then
    echo "ERROR - ${HOME}/sqllib/db2profile not found"
    EXIT_STATUS=1
 else
    . ${HOME}/sqllib/db2profile
 fi
 
+# -- Source the Props File
+. /mnt/backup/bin/.PROPS
 
-DOW=`date |  awk '{print $1}'`
+# -- Debug Mode 
+# set -x;       # Uncomment to debug this shell script
+# set -n;       # Uncomment to check your syntax, without execution.
 
- if [ ${DOW} = ${DAYOFFULL} ] ; then
-   BACKUPTYPE=full
- else 
-    BACKUPTYPE=inc
- fi
+# -- Backup Parameters
+BACKUP_SCRIPT="${SCRIPT_DIR}/DB2_Backup.sh"
+BUCKET_ALIAS=$(db2 list storage access | grep ${CONTAINER} -B4 | grep ALIAS | awk -F '=' '{print $2}' )
+DOW=$(date | awk '{print $1}')
+HSTYPE="Backup"
 
-DBS=`db2 list db directory | grep -B5 "Indirect" | grep "Database name" |  awk '{ print $4 }'`
-for DBNAME in ${DBS}
-do
- cd ${BACKUP_DIR}
- ./DB2_Backup.sh ${DB2INSTANCE} ${DBNAME} ${NUMOFBKUPTOKEEP} ${BACKUPTYPE} 2>.BackupLOG.stderr > .BackupLOG.out
+# -- Valid only for MAS-CP4D customers 
+if (( ${CUSTNAME} )) ; then 
+   CUSTNAME=$( echo ${CONTAINER} | awk -F '-backup-' '{print $2}'  | awk -F '-pr-' '{print $1}' | tr '[:lower:]' '[:upper:]' )
+fi 
 
- RC=$?
- if [ ${RC} -ne 0 ]; then
-
-   longdes="Failure to start the Backup job ${DATETIME} CUST=${CUSTNAME}      ${RC}"
-  ##  Send Failure notification to a slack channel  ##
-  cat << ! >.curl_${DBNAME}_RUN.sh
-  if [[ -n "${SLACKURL}" ]]; then
-    curl -X POST -H 'Content-type: application/json' --data '{"text":"$longdes"}' $SLACKURL
-  fi
-!
-/bin/bash .curl_${DBNAME}_RUN.sh > .curl_${DBNAME}_RUN.out 2>&1
-
-  #####   Create ICD Incident  ####
-  #######   If Backup fails  ###
-   des="${DBINSTANCE} - Backup - ${HOSTNAME} ${DBNAME} ${CUSTNAME} - MASMS -- Backup Failed"
-   echo "TESTING $instance - Backup - $ ${DBNAME}  - Backup Failed" > .Maillive.log
-   echo "############################"             >> .Maillive.log
-   #cat  $BACK_LOG                   >> .Maillive.log
-   longdes=`cat .Maillive.log | sed 's/"//g' | sed "s/'//g"`
-   ICD_URL="https://servicedesk.mro.com"
-   if ! curl -k -s --connect-timeout 3 ${ICD_URL} >/dev/null; then
-       ICD_URL="https://servicedesk.cds.mro.com"
-   fi
-
-cat << ! >.curl_${DBNAME}_ICD.sh
-  curl --insecure --location --request POST "${ICD_URL}/maximo_mif/oslc/os/hsincident?lean=1" \
-  --header "Authorization: Basic ${ICD_AUTH_KEY}" \
-  --header 'Content-Type: application/json' \
-  --data '{
-  "description":"$des",
-  "reportedpriority":4,
-  "internalpriority":4,
-  "reportedby":"DB2",
-  "affectedperson":"CTGINST1",
-  "description_longdescription":"$longdes",
-  "siteid":"001",
-  "classstructureid":"1341",
-  "classificationid":"IN-DBPERF",
-  "hshost":"{servicedesk-pdb-sjc03-2.cds.mro.com:0:50}",
-  "hstype":"BACKUP"
-  }'
-!
-if [[ -n "${ICD_AUTH_KEY}" ]]; then
-  /bin/bash .curl_${DBNAME}_ICD.sh > .curl_${DBNAME}_ICD.out 2>&1
+# -- Database Environment 
+if [[ ${BUCKET_ALIAS} == "IBMCOS" ]]; then 
+   DBENV="MASMS"
+else
+   DBENV="MASSaaS"
 fi
 
-fi   
+# -- For mapping Hostname with Servicedesk
+
+NS=$( echo ${NAMESPACE} | sed 's/mas-//; s/-core//; s/-manage//; s/-facilities// ; s/-db2u//;' );
+if [[ "$NAMESPACE" =~ "manage" ]] ; then 
+   HSHOSTS="main.manage.${NS}.suite"
+elif [[ "$NAMESPACE" =~ "core" ]]; then
+   HSHOSTS="main.home.${NS}.suite"
+elif [[ "$NAMESPACE" =~ "monitor" ]]; then
+   HSHOSTS="main.monitor.${NS}.suite"
+elif [[ "$NAMESPACE" =~ "facilities" ]]; then
+   HSHOSTS="main.facilities.${NS}.suite"
+fi
+
+
+# -- Create ICD Incident , If Backup fails 
+
+CREATE_ICD() {
+   HTYPE=$(echo ${HSTYPE} | tr '[:lower:]' '[:upper:]')
+   DES="$1"
+   LONGDES=$(cat ${ICD_LOG} | sed 's/"//g' | sed "s/'//g")
+   LONGDES=$(echo "<pre>${LONGDES}</pre>")
+
+   # -- Verify the ICD Status 
+   if curl -k -s --connect-timeout 3 ${ICD_URL_SAAS} >/dev/null; then
+      CURL_REQ="--request POST --url ${ICD_URL_SAAS} "
+      AUTH_REQ="apikey: ${ICD_API_KEY}"
+   fi 
+
+   # -- Generate Curl Syntax to push to ICD
+   cat << ! >.curl_${DBNAME}_ICD.sh
+      curl ${CURL_REQ}           \
+      --header '${AUTH_REQ}'     \
+      --header 'Content-Type: application/json' \
+      --data '{
+         "description":"${DES}",
+         "reportedpriority":4,
+         "internalpriority":4,
+         "reportedby":"DB2",
+         "affectedperson":"${DBENV}",
+         "ownergroup":"HSDBA",
+         "description_longdescription":"${LONGDES}",
+         "siteid":"001",
+         "classstructureid":"1341",
+         "classificationid":"IN-DBPERF",
+         "hshost":"${HSHOSTS}",
+         "hstype":"${HTYPE}"
+      }'
+!
+   /bin/bash .curl_${DBNAME}_ICD.sh > .curl_${DBNAME}_ICD.out 2>&1
+
+}
+
+# -- Verify the day of the week
+if [[ ${DOW} = ${DAYOFFULL} ]] ; then
+   BKPTYPE="FULL"
+else 
+   BKPTYPE="DIFF"
+fi
+
+# -- Loop through the available databases in the instance 
+
+DBS=$(db2 list db directory | grep -B5 "Indirect" | grep "Database name" |  awk '{ print $4 }')
+for DBNAME in ${DBS}
+do
+   cd ${SCRIPT_DIR}
+   ${BACKUP_SCRIPT} ${DB2INSTANCE} ${DBNAME} ${NUMOFBKUPTOKEEP} ${BKPTYPE} 2>.BackupLOG.stderr > .BackupLOG.out
+   RC=$?
+   if [[ ${RC} -ne 0 ]]; then
+      LONGDES="Failure to start the Backup job ${DATETIME} CUST=${CUSTNAME} ${RC}"
+      # -- Send Failure notification to a slack channel
+      cat << ! >.curl_${DBNAME}_RUN.sh
+         curl -X POST -H 'Content-type: application/json' --data '{"text":"$LONGDES"}' ${SLACKURL}
+!
+      /bin/bash .curl_${DBNAME}_RUN.sh > .curl_${DBNAME}_RUN.out 2>&1
+
+      # -- Create ICD ticket if fails  
+      DES="${CUSTNAME} - ${DBENV} - ${DBNAME} - ${HOSTNAME} -- Failed to Initiate Backup!! "
+      CREATE_ICD "${DES}"
+   fi   
+
+      # -- Execute Online Reorgs for qualified tables and indexes after every Full Backup
+      if [[ ${DOW} = ${DAYOFFULL} ]] ; then
+         /bin/bash ${SCRIPT_DIR}/reorgTablesIndexesInplace.sh -db ${DBNAME} -s MAXIMO -tb_stats -ix_stats -tr -window 180 >${INSTANCE_HOME}/maintenance/logs/reorgTablesIndexesInplace_${DATETIME}.log 2>&1
+      fi
+
 done
-/bin/bash ${HOME}/bin/runstats_rebind.sh  >${HOME}/bin/.runstats_rebind.out 2>&1
-/bin/bash ${HOME}/bin/grant_check.sh bludb  >${HOME}/bin/.grant_check.out 2>&1
+
+# -- Exeucte Runstats and Rebind for all tables on weekly after full backup 
+/bin/bash ${SCRIPT_DIR}/runstats_rebind.sh >${SCRIPT_DIR}/.runstats_rebind.out 2>&1
+#/bin/bash ${SCRIPT_DIR}/grant_check.sh bludb >${SCRIPT_DIR}/.grant_check.out 2>&1
+
+# -- Extract the audit logs and transfer to Bucket 
+/bin/bash ${SCRIPT_DIR}/auditExtractUpload.sh >${INSTANCE_HOME}/maintenance/logs/auditExtractUpload_${DATETIME}.log & disown
+
+# -- END OF SCRIPT

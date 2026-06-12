@@ -116,8 +116,8 @@ data:
     def create_partition_group_ddl(pg_name, partition_nums="0"):
         global has_errors, created_any
         try:
-            sql = f"CREATE DATABASE PARTITION GROUP \"{pg_name}\" ON DBPARTITIONNUMS ({partition_nums})"
-            # Use admin_conn for elevated privileges
+            # Use RDS stored procedure instead of direct DDL
+            sql = f"CALL rdsadmin.create_dbpartitiongroup('{database_name}', '{pg_name}', '{partition_nums}')"
             db2.exec_immediate(admin_conn, sql)
             
             # Wait for partition group to appear
@@ -169,7 +169,6 @@ data:
                 OVERHEAD INHERIT
                 TRANSFERRATE INHERIT
                 DROPPED TABLE RECOVERY ON"""
-            # Use admin_conn for elevated privileges
             db2.exec_immediate(admin_conn, sql)
             
             # Wait for tablespace to appear

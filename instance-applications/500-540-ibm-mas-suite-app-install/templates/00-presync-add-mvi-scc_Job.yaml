@@ -1,10 +1,13 @@
 {{- if .Values.run_sync_hooks }}
- {{- if eq .Values.mas_app_id "visualinspection" }}
+{{- if .Values.cluster_admin_role }}
+{{- if eq .Values.mas_app_id "visualinspection" }}
+# If the rreadOnlyRootFilesystem is true then we don't need this SCC
+{{- if not (and (hasKey .Values.mas_app_spec "settings") (hasKey .Values.mas_app_spec.settings "readOnlyRootFilesystem") (eq .Values.mas_app_spec.settings.readOnlyRootFilesystem true)) }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
 
 
 {{ $ns := .Values.mas_app_namespace }}
@@ -39,7 +42,6 @@ spec:
     - {}
   policyTypes:
     - Egress
-
 
 ---
 kind: ServiceAccount
@@ -78,7 +80,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: cluster-admin
-
 
 
 ---
@@ -130,5 +131,7 @@ spec:
       volumes: []
   backoffLimit: 4
 
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

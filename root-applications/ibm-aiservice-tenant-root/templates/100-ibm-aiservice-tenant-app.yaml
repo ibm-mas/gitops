@@ -10,6 +10,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
     instance: '{{ .Values.instance.id }}'
     tenant: '{{ .Values.tenant.id }}'
   annotations:
@@ -25,7 +28,11 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
+    {{- if hasPrefix "9.1." (toString .Values.ibm_aiservice_tenant.catalog_channel) }}
     namespace: "{{ .Values.ibm_aiservice_tenant.aiservice_namespace }}"
+    {{- else }}
+    namespace: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}"
+    {{- end }}
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: instance-applications/115-ibm-aiservice-tenant
@@ -35,12 +42,20 @@ spec:
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
+            catalog_source: "{{ .Values.ibm_aiservice_tenant.catalog_source }}"
+            catalog_channel: "{{ .Values.ibm_aiservice_tenant.catalog_channel }}"
+            aiservice_tenant_install_plan_approval: "{{ .Values.ibm_aiservice_tenant.aiservice_tenant_install_plan_approval }}" 
+            
             tenant_id: "{{ .Values.ibm_aiservice_tenant.tenant_id }}"
             aiservice_instance_id: "{{ .Values.ibm_aiservice_tenant.aiservice_instance_id }}"
             aiservice_namespace: "{{ .Values.ibm_aiservice_tenant.aiservice_namespace }}"
+            enable_deprovisioning: {{ .Values.ibm_aiservice_tenant.enable_deprovisioning }}
+            
             account_id: "{{ .Values.account.id }}"
             region_id: "{{ .Values.region.id }}"
             cluster_id: "{{ .Values.cluster.id }}"
+            cluster_admin_role: {{ if hasKey .Values "cluster_admin_role" }}{{ .Values.cluster_admin_role }}{{ else }}true{{ end }}
+            application_admin_role: {{ if hasKey .Values "application_admin_role" }}{{ .Values.application_admin_role }}{{ else }}true{{ end }}
             # SAAS
             aiservice_saas_apikey: "{{ .Values.ibm_aiservice_tenant.aiservice_saas_apikey }}"
             mas_aiservice_saas: "{{ .Values.ibm_aiservice_tenant.mas_aiservice_saas }}"
@@ -56,9 +71,9 @@ spec:
 
             # DRO
             drocfg_ca: "{{ .Values.ibm_aiservice_tenant.drocfg_ca }}"
-            drocfg_ca_b64enc: "{{ .Values.ibm_aiservice_tenant.drocfg_ca_b64enc }}"
-            drocfg_registration_key: "{{ .Values.ibm_aiservice_tenant.drocfg_registration_key }}"
-            drocfg_url: "{{ .Values.ibm_aiservice_tenant.drocfg_url }}"
+            dro_ca_b64enc: "{{ .Values.ibm_aiservice_tenant.dro_ca_b64enc }}"
+            dro_api_token: "{{ .Values.ibm_aiservice_tenant.dro_api_token }}"
+            dro_url: "{{ .Values.ibm_aiservice_tenant.dro_url }}"
 
             #sls
             slscfg_registration_key: "{{ .Values.ibm_aiservice_tenant.slscfg_registration_key }}"
@@ -71,7 +86,6 @@ spec:
             aiservice_s3_secretkey: "{{ .Values.ibm_aiservice_tenant.aiservice_s3_secretkey }}"
             aiservice_s3_region: "{{ .Values.ibm_aiservice_tenant.aiservice_s3_region }}"
 
-
             # WatsonX
             aiservice_watsonxai_apikey: "{{ .Values.ibm_aiservice_tenant.aiservice_watsonxai_apikey }}"
             aiservice_watsonxai_url: "{{ .Values.ibm_aiservice_tenant.aiservice_watsonxai_url }}"
@@ -83,10 +97,7 @@ spec:
             aiservice_watsonxai_username: "{{ .Values.ibm_aiservice_tenant.aiservice_watsonxai_username }}"
             aiservice_watsonxai_verify: "{{ .Values.ibm_aiservice_tenant.aiservice_watsonxai_verify }}"
             
-            #rsl
-            rsl_url: "{{ .Values.ibm_aiservice_tenant.rsl_url }}"
-            rsl_org_id: "{{ .Values.ibm_aiservice_tenant.rsl_org_id }}"
-            rsl_token: "{{ .Values.ibm_aiservice_tenant.rsl_token }}"
+            #rsl - Per MASAIB-1915: Only CA cert for self-signed certificates
             rsl_ca_crt: "{{ .Values.ibm_aiservice_tenant.rsl_ca_crt }}"
 
             tenant_entitlement_type: "{{ .Values.ibm_aiservice_tenant.tenant_entitlement_type }}"
@@ -94,6 +105,10 @@ spec:
             tenant_entitlement_end_date: "{{ .Values.ibm_aiservice_tenant.tenant_entitlement_end_date }}"
 
             aiservice_operator_log_level: "{{ .Values.ibm_aiservice_tenant.aiservice_operator_log_level }}"
+
+            {{- if .Values.ibm_aiservice_tenant.tenant_scheduling_config }}
+            tenant_scheduling_config: {{ .Values.ibm_aiservice_tenant.tenant_scheduling_config | toYaml | nindent 14 }}
+            {{- end }}
 
             junitreporter:
               reporter_name: "ibm-aiservice-tenant-{{ .Values.instance.id }}"
@@ -115,11 +130,26 @@ spec:
       selfHeal: true
     retry:
       limit: 20
+{{- if .Values.cluster_admin_role }}
     syncOptions:
       - CreateNamespace=true
-{{- if .Values.custom_labels }}
+{{- end }}
+{{- if or .Values.custom_labels .Values.argocluster_instance }}
     managedNamespaceMetadata:
       labels:
+        {{- if .Values.argocluster_instance }}
+        argocd.argoproj.io/managed-by: {{ .Values.argocluster_instance }}
+        {{- end }}
+        {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
+        {{- end }}
 {{- end }}
+  ignoreDifferences:
+    # Tenant operator updates the secret
+    - group: ""
+      kind: Secret
+      name: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}----sls-secret"
+      namespace: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}"
+      jsonPointers:
+        - /data
 {{- end }}

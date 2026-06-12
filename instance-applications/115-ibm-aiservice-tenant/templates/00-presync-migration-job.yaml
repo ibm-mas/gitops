@@ -1,0 +1,219 @@
+###################################################################################################
+# For 9.2 migrations, this pre-sync job blocks the sync of tenant resources until the 9.1 tenant
+# operator is deleted. This allows the safe migration of resources to the tenant namespace from the
+# AI Service namespace without triggering for example the tenant operator finalizer, i.e. tenant
+# deprovisioning.
+###################################################################################################
+
+{{- if hasPrefix "9.2." (toString .Values.catalog_channel) }}
+
+{{- $_job_name_prefix := "presync-tenant-migration" }}
+{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v1" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: presync-tenant-migration
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "presync-tenant-migration-{{ .Values.tenantNamespace }}"
+  namespace: {{ .Values.aiservice_namespace  }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "presync-tenant-migration-{{ .Values.tenantNamespace }}"
+  namespace: {{ .Values.aiservice_namespace  }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+subjects:
+  - kind: ServiceAccount
+    name: presync-tenant-migration
+    namespace: {{ .Values.tenantNamespace }}
+roleRef:
+  kind: Role
+  name: "presync-tenant-migration-{{ .Values.tenantNamespace }}"
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: presync-tenant-migration
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: presync-tenant-migration
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+subjects:
+  - kind: ServiceAccount
+    name: presync-tenant-migration
+    namespace: {{ .Values.tenantNamespace }}
+roleRef:
+  kind: Role
+  name: presync-tenant-migration
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: presync-tenant-migration
+  namespace: "{{ .Values.tenantNamespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  podSelector:
+    matchLabels:
+      app: presync-job
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ .Values.tenantNamespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  activeDeadlineSeconds: 3600 # 1 hour
+  template:
+    metadata:
+      labels:
+        app: presync-job
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: presync-tenant-migration
+      restartPolicy: OnFailure
+      containers:
+        - name: main
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AISERVICE_INSTANCE_ID
+              value: "{{ .Values.aiservice_instance_id }}"
+            - name: AISERVICE_NAMESPACE
+              value: "{{ .Values.aiservice_namespace }}"
+            - name: TENANT_NAMESPACE
+              value: "{{ .Values.tenantNamespace }}"
+              # Secrets to copy from AI Service namespace to tenant namespace. They will be further processed
+              # later in the sync cycle.
+            - name: SLS_SECRET_NAME
+              value: "{{ .Values.tenantNamespace }}----sls-secret"
+            - name: API_KEY_SECRET_NAME
+              value: "{{ .Values.tenantNamespace }}----apikey-secret"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              function is_v91_installed() {
+                if oc get deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant -n ${AISERVICE_NAMESPACE} &>/dev/null; then
+                  export IS_V91_INSTALLED="true"
+                else
+                  export IS_V91_INSTALLED="false"
+                fi
+              }
+
+              function is_api_ready() {
+                local response=$(curl -k -H 'Accept: application/json' https://aibroker.${AISERVICE_NAMESPACE}.svc/ibm/aibroker/service/rest/api/v1/health)
+                if [ "$(echo "${response}" | jq -r '.healthy')" = "true" ]; then
+                  export IS_API_READY="true"
+                else
+                  export IS_API_READY="false"
+                fi
+              }
+
+              function copy_resource() {
+                local resource_type="${1}"
+                local resource_name="${2}"
+                local new_resource_name="${3:-${resource_name}}"
+                if oc get ${resource_type} ${resource_name} -n ${AISERVICE_NAMESPACE} -o json > /tmp/${resource_name}.json; then
+                  echo "[INFO] Copying ${resource_type} ${resource_name} from namespace ${AISERVICE_NAMESPACE} to namespace ${TENANT_NAMESPACE}"
+                  # Clean metadata fields to avoid resourceVersion conflicts. Delete the owner refs to prevent garbage collection.
+                  jq 'del(.metadata.ownerReferences, .metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.selfLink, .metadata.managedFields)' /tmp/${resource_name}.json \
+                    | sed "s/\"namespace\": \"${AISERVICE_NAMESPACE}\"/\"namespace\": \"${TENANT_NAMESPACE}\"/" > /tmp/${resource_name}_clean.json
+                  # These resources are not defined in Git so exclude them from ArgoCD's reconcilliation.
+                  jq '.metadata.annotations = (.metadata.annotations // {}) + {"argocd.argoproj.io/sync-options": "IgnoreExtraneous,Prune=false"}' /tmp/${resource_name}_clean.json > /tmp/${resource_name}_annotated.json
+                  # Change the name to avoid possibly conflicting with the secret synced by ArgoCD
+                  jq --arg name "${new_resource_name}" --arg namespace "${TENANT_NAMESPACE}" '.metadata.name = $name | .metadata.namespace = $namespace' /tmp/${resource_name}_annotated.json > /tmp/${resource_name}_renamed.json
+                  oc apply -f /tmp/${resource_name}_renamed.json
+                else
+                 echo "[WARNING] ${resource_type} ${resource_name} not found in ${AISERVICE_NAMESPACE} => cannot copy resource to tenant namespace"
+                fi
+              }
+
+              copy_resource secret "${SLS_SECRET_NAME}" "${SLS_SECRET_NAME}-copy"
+              copy_resource secret "${API_KEY_SECRET_NAME}"
+
+              is_v91_installed
+              while [[ "${IS_V91_INSTALLED}" == "true" ]]; do
+                echo "[INFO] ibm-aiservice-tenant operator v9.1 is deployed so cannot proceed. Checking again in 30 seconds ..."
+                sleep 30
+                is_v91_installed
+              done
+              echo "[INFO] ibm-aiservice-tenant operator v9.1 is not deployed. Proceeding ..."
+
+              is_api_ready
+              while [[ "${IS_API_READY}" != "true" ]]; do
+                echo "[INFO] API Broker is not ready. Checking again in 30 seconds ..."
+                sleep 30
+                is_api_ready
+              done
+              echo "[INFO] API Broker is ready. Proceeding ..."
+
+              exit 0
+
+{{- end }}

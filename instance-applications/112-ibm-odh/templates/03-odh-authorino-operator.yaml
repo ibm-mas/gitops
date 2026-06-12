@@ -1,3 +1,4 @@
+{{- if .Values.cluster_admin_role }}
 ---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
@@ -6,8 +7,12 @@ metadata:
   namespace: openshift-operators
   annotations:
     argocd.argoproj.io/sync-wave: "121"
+    # Prevent ArgoCD from deleting this subscription during ODH to RHOAI migration
+    # This subscription is shared between ODH and RHOAI
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
 spec:
   channel: stable
   name: authorino-operator
   source: community-operators
   sourceNamespace: openshift-marketplace
+{{- end }}

@@ -1,3 +1,4 @@
+{{- if .Values.application_admin_role }}
 {{- /*
 Check if should_execute flag is set to true by parent template.
 This flag is set when there's a matching entry in ibm_mas_suite_configs where:
@@ -17,7 +18,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -34,7 +35,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v15" }}
+{{- $_job_version := "v16" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -238,6 +239,8 @@ spec:
               value: "{{ .Values.db2_backup_bucket_endpoint }}"
             - name: SLACKURL
               value: "{{ .Values.db2_backup_notify_slack_url }}"
+            - name: NUM_DB_BACKUPS
+              value: "{{ .Values.db2_database_db_config.NUM_DB_BACKUPS | default "60" }}"
 {{- end }}
 
           volumeMounts:
@@ -827,7 +830,7 @@ spec:
                 echo "SERVER=${COS_SERVER}" >> /tmp/${PROPS_FILE_NAME}
                 echo "SLACKURL=${SLACKURL}" >> /tmp/${PROPS_FILE_NAME}
                 echo "DAYOFFULL=Sat" >> /tmp/${PROPS_FILE_NAME}
-                echo "NUMOFBKUPTOKEEP=60" >> /tmp/${PROPS_FILE_NAME}
+                echo "NUMOFBKUPTOKEEP=${NUM_DB_BACKUPS}" >> /tmp/${PROPS_FILE_NAME}
                 echo "ICD_AUTH_KEY=${ICD_AUTH_KEY}" >> /tmp/${PROPS_FILE_NAME}
 
                 echo ""
@@ -898,5 +901,5 @@ spec:
 {{- end }}
   backoffLimit: 4
 {{- end }}
-
+{{- end }}
 {{- end }}

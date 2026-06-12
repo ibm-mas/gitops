@@ -2,7 +2,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
 
 
 ---
@@ -18,13 +18,14 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  schedule: "*/15 * * * *" # every 15 minutes
+  schedule: "0 */3 * * *" # every 3 hours
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
-      backoffLimit: 5
+      backoffLimit: 2  # Reduced from 5 to limit retries
+      activeDeadlineSeconds: 600  # Kill job after 10 minutes to prevent indefinite runs
       template:
         metadata:
           labels:
@@ -93,7 +94,7 @@ spec:
                 - /bin/sh
                 - -c
                 - |
-                  set -e
+                  set -eo pipefail
                   source /mascli/functions/gitops_utils
         
                   function get_all_jdbc_secret_names() {
@@ -133,13 +134,19 @@ spec:
                     local db2_username="${2}"
                     local db2_password="${3}"
                     local jdbc_secret=$(sm_get_secret "${secret_name}")
-                    local url=$(extract_secret_value "${jdbc_secret}" jdbc_connection_url)           
+                    local url=$(extract_secret_value "${jdbc_secret}" jdbc_connection_url)
                     local yaml=$(set_yaml_string_field "${DB2_PLUGIN_REMOTE_TEMPLATE}" host $(echo "${url}" | cut -d'/' -f3 | cut -d':' -f1))
-                    local yaml=$(set_yaml_string_field "${yaml}" user ${db2_username})   
+                    local yaml=$(set_yaml_string_field "${yaml}" user ${db2_username})
                     local yaml=$(set_yaml_string_field "${yaml}" password ${db2_password})
                     local yaml=$(set_yaml_string_field "${yaml}" availabilityZone "${CLUSTER_ID}:db2")
-                    local db_name=$(extract_secret_value "${jdbc_secret}" db2_dbname)              
-                    local yaml=$(set_yaml_array_field "${yaml}" databases "${db_name}")  
+                    local db_name=$(extract_secret_value "${jdbc_secret}" db2_dbname)
+                    # Fallback: extract database name from JDBC URL if not found in secret
+                    if [[ -z "${db_name}" || "${db_name}" == "null" ]]; then
+                      # Format: jdbc:db2://host:port/DBNAME:params or jdbc:db2://host:port/DBNAME;params
+                      db_name=$(echo "${url}" | sed -n 's|.*://[^/]*/\([^:;]*\).*|\1|p')
+                      echo "[WARN] db2_dbname not found in secret, extracted '${db_name}' from URL"
+                    fi
+                    local yaml=$(set_yaml_array_field "${yaml}" databases "${db_name}")
                     echo "${yaml}"
                   }
 
@@ -187,8 +194,26 @@ spec:
                     local secret_name="${1}"
                     local jdbc_secret=$(sm_get_secret "${secret_name}")
                     local jdbc_instance_name=$(extract_secret_value "${jdbc_secret}" jdbc_instance_name)
-                    local pem_cert=$(extract_secret_value "${jdbc_secret}" ca_b64 | base64 --decode)     
+                    # local pem_cert=$(extract_secret_value "${jdbc_secret}" ca_b64 | base64 --decode)     
+                    # echo "${pem_cert}" > "/jks/${jdbc_instance_name}.pem"
+                    #JDBC instance validation
+                    if [[ -z "${jdbc_instance_name}" || "${jdbc_instance_name}" == "null" ]]; then
+                     echo "[WARN] Skipping certificate file creation for ${secret_name} - jdbc_instance_name is null or empty"
+                     return 1
+                    fi
+                    
+                    echo "[INFO] Writing certificate file for jdbc_instance_name: ${jdbc_instance_name}"
+                    local pem_cert=$(extract_secret_value "${jdbc_secret}" ca_b64 | base64 --decode)
+
+                    # Certificate validation
+                    if [[ -z "${pem_cert}" || "${pem_cert}" == "null" ]]; then
+                     echo "[WARN] Skipping certificate file creation for ${secret_name} - ca_b64 is null or empty"
+                     return 1
+                    fi
+
                     echo "${pem_cert}" > "/jks/${jdbc_instance_name}.pem"
+                    echo "[INFO] Successfully wrote certificate file: /jks/${jdbc_instance_name}.pem"
+
                   }
 
                   function get_db2_credentials() {
@@ -202,35 +227,129 @@ spec:
                     echo "${db2_username} ${db2_password}"
                   }
 
+                  # Validate AWS credentials exist before proceeding
+                  if [[ ! -f /etc/mas/creds/aws/aws_access_key_id ]] || [[ ! -f /etc/mas/creds/aws/aws_secret_access_key ]]; then
+                    echo "[ERROR] AWS credentials not found. Cannot proceed."
+                    exit 1
+                  fi
+
                   SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
                   SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
                   SM_AWS_REGION=${REGION_ID}
-                  sm_login
+                  
+                  # Validate credentials are not empty
+                  if [[ -z "${SM_AWS_ACCESS_KEY_ID}" ]] || [[ -z "${SM_AWS_SECRET_ACCESS_KEY}" ]]; then
+                    echo "[ERROR] AWS credentials are empty. Cannot proceed."
+                    exit 1
+                  fi
+                  
+                  if ! sm_login; then
+                    echo "[ERROR] Failed to login to AWS Secrets Manager. Check credentials and permissions."
+                    exit 1
+                  fi
 
                   echo '[INFO] Starting Instana agent configuration update for DB2 ...'
+                  # To understand which account are we working on
+                  echo "[DEBUG] Account ID: ${ACCOUNT_ID}, Cluster ID: ${CLUSTER_ID}, Region: ${REGION_ID}"
+                  
+                  # Cleaning all old/null PEM files before we start.
+                  echo "[INFO] Cleaning up old PEM files from /jks/"
+                  find /jks/ -name "*.pem" -type f -delete 2>/dev/null || true
+                  echo "[INFO] Cleanup completed"
+
                   remotes_list=$(yq eval -n '."com.instana.plugin.db2".remote = []')
-                  secret_names=$(get_all_jdbc_secret_names)
+                  
+                  # Get JDBC secrets with error handling
+                  if ! secret_names=$(get_all_jdbc_secret_names); then
+                    echo "[ERROR] Failed to retrieve JDBC secrets from Secrets Manager"
+                    exit 1
+                  fi
+                  
+                  # Check if any secrets were found
+                  if [[ -z "${secret_names}" ]]; then
+                    echo "[INFO] No JDBC secrets found matching pattern ${JDBC_SECRET_NAME_PATTERN}"
+                    echo "[INFO] Nothing to process. Exiting successfully."
+                    exit 0
+                  fi
+                  
                   num_secrets=$(echo "${secret_names}" | wc -l)
                   echo "[INFO] Found ${num_secrets} JDBC secrets"
+
+                  # Initialize counters to track processing results
+                  processed_count=0
+                  skipped_count=0
+                  secret_number=0
+
+                  echo "[DEBUG] Starting to process secrets..."
                   for secret_name in ${secret_names}; do
-                    echo "[INFO] Processing JDBC secret ${secret_name}"
-                    db2_credentials=$(get_db2_credentials "${secret_name}")
-                    db2_user=$(echo "${db2_credentials}" | awk '{print $1}')
-                    if [[ -z "${db2_user}" || "${db2_user}" == "null" ]]; then
-                      echo "[INFO] Skipping JDBC secret ${secret_name} as username is null"
+                    secret_number=$((secret_number + 1))
+                    echo "[INFO] [$secret_number/$num_secrets] Processing JDBC secret ${secret_name}"
+                    
+                    # Get DB2 credentials with error handling
+                    echo "[DEBUG] Retrieving DB2 credentials for ${secret_name}"
+                    if ! db2_credentials=$(get_db2_credentials "${secret_name}" 2>&1); then
+                      echo "[WARN] Failed to get DB2 credentials for ${secret_name}: ${db2_credentials}"
+                      skipped_count=$((skipped_count + 1))
                       continue
                     fi
-                    jdbc_remote=$(create_jdbc_remote "${secret_name}" $(echo ${db2_credentials} | awk '{print $1}') $(echo ${db2_credentials} | awk '{print $2}'))
-                    write_cert_file "${secret_name}"
-                    remotes_list=$(update_remotes_list "${remotes_list}" "${jdbc_remote}")
+                    echo "[DEBUG] Successfully retrieved DB2 credentials"
+                    
+                    db2_user=$(echo "${db2_credentials}" | awk '{print $1}')
+                    db2_pass=$(echo "${db2_credentials}" | awk '{print $2}')
+
+                    if [[ -z "${db2_user}" || "${db2_user}" == "null" ]]; then
+                      echo "[WARN] Skipping JDBC secret ${secret_name} as username is null or empty"
+                      skipped_count=$((skipped_count + 1))
+                      continue
+                    fi
+                    if [[ -z "${db2_pass}" || "${db2_pass}" == "null" ]]; then
+                      echo "[WARN] Skipping JDBC secret ${secret_name} as password is null or empty"
+                      skipped_count=$((skipped_count + 1))
+                      continue
+                    fi
+                    
+                    echo "[DEBUG] Creating JDBC remote configuration for ${secret_name}"
+                    if ! jdbc_remote=$(create_jdbc_remote "${secret_name}" "${db2_user}" "${db2_pass}" 2>&1); then
+                      echo "[WARN] Failed to create JDBC remote configuration for ${secret_name}: ${jdbc_remote}"
+                      skipped_count=$((skipped_count + 1))
+                      continue
+                    fi
+                    
+                    if write_cert_file "${secret_name}"; then
+                     remotes_list=$(update_remotes_list "${remotes_list}" "${jdbc_remote}")
+                     processed_count=$((processed_count + 1))
+                     echo "[INFO] Successfully processed JDBC secret ${secret_name}"
+                    else
+                     echo "[WARN] Failed to write certificate file for ${secret_name}, skipping remote configuration"
+                     skipped_count=$((skipped_count + 1))
+                    fi
+        
                   done
-                  echo "[INFO] Getting InstanaAgent custom resource"
-                  instana_cr=$(get_instana_cr)
-                  agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${remotes_list}")
-                  instana_cr=$(generate_updated_instana_cr "${instana_cr}" "${agent_config_yaml}")
-                  echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
-                  submit_instana_cr "${instana_cr}"
-                  echo "[INFO] Completed updating Instana agent configuration for DB2"
+                  echo "[INFO] Processing summary: ${processed_count} secrets processed, ${skipped_count} secrets skipped"
+                  if [[ ${processed_count} -eq 0 ]]; then
+                    echo "[WARN] No secrets were processed. Skipping Instana agent configuration update."
+                  else
+                
+                    echo "[INFO] Getting InstanaAgent custom resource"
+                    if ! instana_cr=$(get_instana_cr); then
+                      echo "[ERROR] Failed to get InstanaAgent custom resource"
+                      exit 1
+                    fi
+                    
+                    if [[ -z "${instana_cr}" ]]; then
+                      echo "[ERROR] InstanaAgent custom resource is empty"
+                      exit 1
+                    fi
+                    
+                    echo "[DEBUG] Generating updated agent configuration with ${processed_count} DB2 remotes"
+                    agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${remotes_list}")
+                    instana_cr=$(generate_updated_instana_cr "${instana_cr}" "${agent_config_yaml}")
+                    echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
+                    submit_instana_cr "${instana_cr}"
+                    echo "[INFO] Successfully updated Instana agent configuration for DB2"
+                  fi
+                  echo "[INFO] Completed Instana agent configuration update for DB2"
+                  echo "[INFO] Total execution time: $SECONDS seconds"
 
           # This container runs second and creates the JKS file for Instana agent from DB2 PEM certificate.
           containers:
@@ -245,8 +364,40 @@ spec:
                 - |
                   readonly CERTS_DIR=/jks
                   readonly JKS_PATH="${CERTS_DIR}/db2-ca-certs.jks"
+                  echo "[INFO] Starting JKS keystore update process"
+                  cert_count=0
+
                   for cert in ${CERTS_DIR}/*.pem; do
-                    echo "[INFO] Importing DB2 CA PEM certificate ${cert} to Instana agent JKS keystore ${JKS_PATH}"
-                    keytool -list -keystore ${JKS_PATH} -alias ${cert%.*} -storepass changeit && keytool -delete -alias ${cert%.*} -keystore ${JKS_PATH} -storepass changeit
-                    echo "yes" | keytool -importcert -alias ${cert%.*} -file ${cert} -keystore ${JKS_PATH} -storepass changeit
-                  done    
+                  # Skip if no PEM files found 
+                  if [[ ! -f "${cert}" ]]; then
+                    echo "[WARN] No DB2 CA PEM certificates found in ${CERTS_DIR}"
+                    break
+                  fi
+
+                  #   echo "[INFO] Importing DB2 CA PEM certificate ${cert} to Instana agent JKS keystore ${JKS_PATH}"
+                  #   keytool -list -keystore ${JKS_PATH} -alias ${cert%.*} -storepass changeit && keytool -delete -alias ${cert%.*} -keystore ${JKS_PATH} -storepass changeit
+                  #   echo "yes" | keytool -importcert -alias ${cert%.*} -file ${cert} -keystore ${JKS_PATH} -storepass changeit
+                  # done    
+                  cert_name=$(basename "${cert}")
+                  echo "[INFO] Processing certificate: ${cert_name}"
+
+                  # Validate certificate file is not empty
+                  if [[ ! -s "${cert}" ]]; then
+                    echo "[WARN] Certificate file is empty: ${cert}"
+                    continue
+                  fi
+
+                  echo "[DEBUG] Importing ${cert_name} to JKS keystore ${JKS_PATH}"
+                  # Remove existing alias if present
+                  keytool -list -keystore ${JKS_PATH} -alias ${cert%.*} -storepass changeit 2>/dev/null && \
+                    keytool -delete -alias ${cert%.*} -keystore ${JKS_PATH} -storepass changeit
+                  # Import certificate
+
+                  if echo "yes" | keytool -importcert -alias ${cert%.*} -file ${cert} -keystore ${JKS_PATH} -storepass changeit; then
+                    echo "[INFO] Successfully imported ${cert_name} to JKS keystore"
+                    ((cert_count++))
+                  else
+                    echo "[ERROR] Failed to import ${cert_name} to JKS keystore"
+                  fi
+                  done
+                  echo "[INFO] JKS keystore update completed. Imported ${cert_count} certificates"

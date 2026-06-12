@@ -180,25 +180,25 @@ spec:
                 fi
               }
 
+              function is_v91_installed() {
+                if oc get deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant -n ${AISERVICE_NAMESPACE} &>/dev/null; then
+                  export IS_V91_INSTALLED="true"
+                else
+                  export IS_V91_INSTALLED="false"
+                fi
+              }
+
+              function is_api_ready() {
+                local response=$(curl -k -H 'Accept: application/json' https://aibroker.${AISERVICE_NAMESPACE}.svc/ibm/aibroker/service/rest/api/v1/health)
+                if [ "$(echo "${response}" | jq -r '.healthy')" = "true" ]; then
+                  export IS_API_READY="true"
+                else
+                  export IS_API_READY="false"
+                fi
+              }
+
               echo "[INFO] Catalog channel = ${CATALOG_CHANNEL}"
               if [[ "${CATALOG_CHANNEL}" == 9.2.* ]]; then
-                function is_v91_installed() {
-                  if oc get deployment ${AISERVICE_INSTANCE_ID}-entitymgr-tenant -n ${AISERVICE_NAMESPACE} &>/dev/null; then
-                    export IS_V91_INSTALLED="true"
-                  else
-                    export IS_V91_INSTALLED="false"
-                  fi
-                }
-
-                function is_api_ready() {
-                  local response=$(curl -k -H 'Accept: application/json' https://aibroker.${AISERVICE_NAMESPACE}.svc/ibm/aibroker/service/rest/api/v1/health)
-                  if [ "$(echo "${response}" | jq -r '.healthy')" = "true" ]; then
-                    export IS_API_READY="true"
-                  else
-                    export IS_API_READY="false"
-                  fi
-                }
-
                 copy_resource secret "${SLS_SECRET_NAME}" "${SLS_SECRET_NAME}-copy" "${AISERVICE_NAMESPACE}" "${TENANT_NAMESPACE}"
                 copy_resource secret "${API_KEY_SECRET_NAME}" "${API_KEY_SECRET_NAME}" "${AISERVICE_NAMESPACE}" "${TENANT_NAMESPACE}"
                 
@@ -230,6 +230,15 @@ spec:
 
                 if oc get secret "${SLS_SECRET_NAME}" -n "${TENANT_NAMESPACE}" &>/dev/null && \
                   oc get secret "${API_KEY_SECRET_NAME}" -n "${TENANT_NAMESPACE}" &>/dev/null; then
+
+                    # Need to wait for 9.1 to be installed
+                    is_v91_installed
+                    while [[ "${IS_V91_INSTALLED}" == "true" ]]; do
+                      echo "[INFO] ibm-aiservice-tenant operator v9.1 is deployed so cannot proceed. Checking again in 30 seconds ..."
+                      sleep 30
+                      is_v91_installed
+                    done
+                    
                     echo "[WARNING] Tenant API key secret and SLS secret found in tenant namespace => assuming the deployment is a rollback from 9.2.x"
                     copy_resource secret "${SLS_SECRET_NAME}" "${SLS_SECRET_NAME}-copy" "${TENANT_NAMESPACE}" "${AISERVICE_NAMESPACE}"
                     copy_resource secret "${API_KEY_SECRET_NAME}" "${API_KEY_SECRET_NAME}" "${TENANT_NAMESPACE}" "${AISERVICE_NAMESPACE}"

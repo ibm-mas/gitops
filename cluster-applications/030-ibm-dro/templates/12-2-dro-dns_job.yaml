@@ -157,7 +157,7 @@ spec:
                 echo "ERROR: Could not find Domain ID for name: ${DRO_PUBLIC_DOMAIN}"
                 exit 1
               fi
-              CLUSTER_ID=12
+
               RECORD_NAME="dro.${CLUSTER_ID}"
 
               FULL_RECORD_NAME="${RECORD_NAME}.${DRO_PUBLIC_DOMAIN}"
@@ -234,10 +234,29 @@ spec:
 
               fi
 
+              echo ""
+              echo "Ordering edge certificate for ${FULL_RECORD_NAME}..."
+              
+              CERT_ORDER_OUTPUT=$(ibmcloud cis certificate-order "${DOMAIN_ID}" \
+                --hostnames "${FULL_RECORD_NAME}" 2>&1)
+              
+              CERT_ORDER_RC=$?
+              
+              echo "Certificate order output:"
+              echo "${CERT_ORDER_OUTPUT}"
+              
+              if [[ ${CERT_ORDER_RC} -eq 0 ]]; then
+                echo "Edge certificate ordered successfully!"
+              else
+                echo "WARNING: Edge certificate order failed or certificate may already exist"
+              fi
+
       volumes:
         - name: aws
           secret:
             secretName: aws
             defaultMode: 420
 {{- end }}
+
+
 

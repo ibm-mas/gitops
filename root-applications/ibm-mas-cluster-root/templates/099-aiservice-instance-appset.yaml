@@ -70,13 +70,23 @@ spec:
 {{- end }}
       annotations:
         healthCheckTimeout: "1800"
-        argocd.argoproj.io/sync-wave: "099"
+        argocd.argoproj.io/sync-wave: "130"
         {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
         notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
         notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
         {{- end }}
     spec:
       project: "{{ .Values.argo.projects.rootapps }}"
+      syncPolicy:
+        automated:
+          prune: {{- if .Values.auto_delete }}true{{- else }}false{{- end }}
+          selfHeal: true
+        retry:
+          limit: 10
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m
       source:
           repoURL: "{{ .Values.source.repo_url }}"
           targetRevision: "{{ .Values.source.revision }}"

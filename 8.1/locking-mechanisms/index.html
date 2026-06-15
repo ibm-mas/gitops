@@ -1,0 +1,727 @@
+<!DOCTYPE html><html lang="en"><head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Locking Mechanisms - MAS GitOps</title>
+
+    <!-- Pure CSS (https://pure-css.github.io/) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/purecss@3.0.0/build/pure-min.css" integrity="sha384-X38yfunGUhNzHpBaEBsWLO+A0HDYOQi8ufWDkZ0k9e0eXz/tH3II7uKZ9msv++Ls" crossorigin="anonymous">
+    <link rel="stylesheet" href="../css/theme.css">
+
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha256-3edrmyuQ0w65f8gfBsqowzjJe2iM6n0nKciPUp8y+7E=" crossorigin="anonymous"></script>
+    <script src="../js/theme.js"></script>
+
+    <!-- Carbon theme zones (white, g10, g90, g100) -->
+    <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/web-components/tag/latest/themes.css">
+
+    <!-- The Carbon web-components/framework -->
+    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.15.0/ui-shell.min.js"></script>
+    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.15.0/accordion.min.js"></script>
+    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.15.0/breadcrumb.min.js"></script>
+    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.15.0/select.min.js"></script>
+    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.15.0/tabs.min.js"></script>
+    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.15.0/search.min.js"></script>
+
+    <!-- HighlightJS code formatting support -->
+    <link rel="stylesheet" id="hljs-light" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
+    <link rel="stylesheet" id="hljs-dark" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled="">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/yaml.min.js"></script>
+    <script>hljs.highlightAll();</script>
+
+    <!-- Required by MkDocs search -->
+    <script>var base_url = "..";</script>
+
+    <!-- User defined extras -->
+    
+    
+
+    
+
+    
+    <script src="../search/main.js"></script>
+    
+  <link href="../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: black; }
+        </style></head>
+
+  <body class="md-grid" data-theme-default="g90">
+    <!-- Header -->
+    <cds-header aria-label="MAS GitOps" class="md-header">
+      <cds-header-menu-button button-label-active="Close menu" button-label-inactive="Open menu"></cds-header-menu-button>
+      <cds-header-name href=".." prefix="IBM">MAS GitOps</cds-header-name>
+      <cds-header-nav menu-bar-label="IBM MAS GitOps">
+          <cds-header-nav-item is-active="" target="" href="">GitOps</cds-header-nav-item>
+          <cds-header-nav-item target="" href="https://ibm-mas.github.io/ansible-devops/">Ansible</cds-header-nav-item>
+          <cds-header-nav-item target="" href="https://ibm-mas.github.io/cli/">CLI</cds-header-nav-item>
+      </cds-header-nav>
+
+      <div class="cds--header__global">
+<div class="md-theme-toggle" data-theme-default="g90">
+  <button class="md-theme-toggle__button" aria-label="Toggle theme" title="Toggle theme">
+    <svg class="md-theme-toggle__icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"></path>
+    </svg>
+  </button>
+  <div class="md-theme-toggle__menu" hidden="">
+    <button class="md-theme-toggle__option" data-theme="white">
+      <span class="md-theme-toggle__label">Light</span>
+      <span class="md-theme-toggle__preview md-theme-toggle__preview--white"></span>
+    </button>
+    <button class="md-theme-toggle__option" data-theme="g10">
+      <span class="md-theme-toggle__label">Light Gray</span>
+      <span class="md-theme-toggle__preview md-theme-toggle__preview--g10"></span>
+    </button>
+    <button class="md-theme-toggle__option" data-theme="g90">
+      <span class="md-theme-toggle__label">Dark Gray</span>
+      <span class="md-theme-toggle__preview md-theme-toggle__preview--g90"></span>
+    </button>
+    <button class="md-theme-toggle__option" data-theme="g100">
+      <span class="md-theme-toggle__label">Dark</span>
+      <span class="md-theme-toggle__preview md-theme-toggle__preview--g100"></span>
+    </button>
+  </div>
+</div>
+        <cds-search id="header-search" label-text="Search" cds-search-input="search-event" expandable=""></cds-search>
+      </div>
+      <script>
+        var el = document.getElementById("header-search");
+        el.addEventListener("cds-search-input", function (ev) {
+          console.info(ev.detail.value)
+          document.getElementById("header-search-value").setAttribute("value", ev.detail.value);
+        });
+        el.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') {
+            location.href="../search.html?q=" + document.querySelector("#header-search").shadowRoot.querySelector("#input").value;
+          }
+        });
+      </script>
+
+      
+        <cds-header-nav>
+          <cds-header-nav-item href="https://github.com/ibm-mas/gitops/blob/main/docs/locking-mechanisms.md">Edit on GitHub</cds-header-nav-item>
+        </cds-header-nav>
+      
+    </cds-header>
+
+    <!-- Main container with three-column layout -->
+    <div class="md-container">
+      <!-- Left sidebar - Navigation -->
+      <aside class="md-sidebar md-sidebar--primary" data-md-component="sidebar">
+        <div class="md-sidebar__scrollwrap">
+          <div class="md-sidebar__inner">
+            <cds-side-nav aria-label="Side navigation">
+              <cds-side-nav-items>
+                
+                  
+  <cds-side-nav-menu-item href="..">
+    Home
+  </cds-side-nav-menu-item>
+
+                
+                  
+  <cds-side-nav-menu title="Architecture">
+    
+      
+  <cds-side-nav-menu-item href="../architecture/">
+    Overview
+  </cds-side-nav-menu-item>
+
+    
+      
+  <cds-side-nav-menu-item href="../helmcharts/">
+    The Source Repository
+  </cds-side-nav-menu-item>
+
+    
+      
+  <cds-side-nav-menu-item href="../configrepo/">
+    The Config Repository
+  </cds-side-nav-menu-item>
+
+    
+      
+  <cds-side-nav-menu-item href="../secrets/">
+    The Secrets Vault
+  </cds-side-nav-menu-item>
+
+    
+  </cds-side-nav-menu>
+
+                
+                  
+  <cds-side-nav-menu title="Details">
+    
+      
+  <cds-side-nav-menu-item href="../configtoinstances/">
+    Mapping Config to MAS Deployments
+  </cds-side-nav-menu-item>
+
+    
+      
+  <cds-side-nav-menu-item href="../orchestration/">
+    Deployment Orchestration
+  </cds-side-nav-menu-item>
+
+    
+      
+  <cds-side-nav-menu-item href="../timings/">
+    Deployment Timings
+  </cds-side-nav-menu-item>
+
+    
+      
+  <cds-side-nav-menu-item href="../rbac-configuration/">
+    RBAC Configuration
+  </cds-side-nav-menu-item>
+
+    
+  </cds-side-nav-menu>
+
+                
+                  
+  <cds-side-nav-menu title="Reference" active="" expanded="">
+    
+      
+  <cds-side-nav-menu-item href="../charts-index/">
+    Helm Charts Index
+  </cds-side-nav-menu-item>
+
+    
+      
+  <cds-side-nav-menu-item href="./" active="" expanded="">
+    Locking Mechanisms
+  </cds-side-nav-menu-item>
+
+    
+      
+  <cds-side-nav-menu-item href="../accountrootmanifest/">
+    Account Root Application Manifest
+  </cds-side-nav-menu-item>
+
+    
+      
+  <cds-side-nav-menu-item href="../limitations/">
+    Known Limitations
+  </cds-side-nav-menu-item>
+
+    
+  </cds-side-nav-menu>
+
+                
+              </cds-side-nav-items>
+            </cds-side-nav>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main content area -->
+      <div class="md-content" data-md-component="content">
+        <article class="md-content__inner">
+          <!-- Breadcrumbs -->
+          <div class="md-breadcrumbs"><cds-breadcrumb no-trailing-slash="">
+  <cds-breadcrumb-item>
+    <cds-breadcrumb-link href="..">Home</cds-breadcrumb-link>
+  </cds-breadcrumb-item>
+      <cds-breadcrumb-item>Reference</cds-breadcrumb-item>
+  <cds-breadcrumb-item>
+    <cds-breadcrumb-link href="#locking-mechanisms">Locking Mechanisms</cds-breadcrumb-link>
+  </cds-breadcrumb-item>
+
+  <cds-breadcrumb-item aria-current="page">
+    <cds-select id="breadcrumbs-toc" inline="" placeholder="..." oninput="changeAnchor(this.value)">
+    
+    
+      <cds-select-item value="#overview">Overview</cds-select-item>
+    
+      <cds-select-item value="#git-branch-locking-default">Git Branch Locking (Default)</cds-select-item>
+    
+      <cds-select-item value="#troubleshooting">Troubleshooting</cds-select-item>
+    
+      <cds-select-item value="#redis-based-locking-optional">Redis-Based Locking (Optional)</cds-select-item>
+    
+    </cds-select>
+  </cds-breadcrumb-item>
+</cds-breadcrumb>
+          </div>
+
+          <!-- Page content -->
+          <div class="rst-content">
+            
+            <h1 id="locking-mechanisms">Locking Mechanisms<a class="headerlink" href="#locking-mechanisms" title="Permanent link">¤</a></h1>
+<p>When using the MAS CLI GitOps functions to push configuration changes to your Git repository, a locking mechanism is employed to prevent concurrent updates from causing merge conflicts. This ensures that multiple processes or users can safely interact with the same configuration repository without corrupting the state.</p>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">¤</a></h2>
+<p>The GitOps CLI functions support two locking mechanisms to coordinate concurrent access to the configuration repository:</p>
+<ol>
+<li><strong>Git Branch Locking (Default)</strong> - Uses temporary Git branches to coordinate access</li>
+<li><strong>Redis-Based Locking (Optional)</strong> - Uses Redis for distributed locking with better performance</li>
+</ol>
+<p>Both approaches ensure sequential execution of updates when multiple processes attempt to modify the same configuration files simultaneously.</p>
+<h2 id="git-branch-locking-default">Git Branch Locking (Default)<a class="headerlink" href="#git-branch-locking-default" title="Permanent link">¤</a></h2>
+<h3 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">¤</a></h3>
+<p>The Git branch locking mechanism creates temporary lock branches in your Git repository to coordinate access between concurrent processes. When a GitOps CLI function needs to push changes:</p>
+<ol>
+<li><strong>Lock Acquisition</strong>: The process attempts to create a uniquely named lock branch (e.g., <code>lock.gitops.account.cluster.instance</code>)</li>
+<li><strong>Conflict Detection</strong>: If the lock branch already exists, another process is currently making changes</li>
+<li><strong>Retry Logic</strong>: The process waits and retries until it successfully acquires the lock</li>
+<li><strong>Change Application</strong>: Once the lock is acquired, the process applies its changes</li>
+<li><strong>Lock Release</strong>: After pushing changes, the lock branch is automatically deleted</li>
+</ol>
+<h3 id="lock-branch-naming">Lock Branch Naming<a class="headerlink" href="#lock-branch-naming" title="Permanent link">¤</a></h3>
+<p>Lock branches follow a consistent naming pattern based on the scope of the operation:</p>
+<pre><code>lock.&lt;operation&gt;.&lt;account&gt;.&lt;cluster&gt;[.&lt;instance&gt;]
+</code></pre>
+<p>For example:<br>
+- <code>lock.gitops-cluster.dev.masdemo1</code><br>
+- <code>lock.gitops-suite.dev.masdemo1.inst1</code></p>
+<p>This naming scheme ensures that operations affecting different scopes can proceed in parallel, while operations affecting the same scope are serialized.</p>
+<h3 id="advantages">Advantages<a class="headerlink" href="#advantages" title="Permanent link">¤</a></h3>
+<ul>
+<li><strong>No external dependencies</strong>: Uses only Git, which is already required for GitOps</li>
+<li><strong>Simple setup</strong>: No additional infrastructure needed</li>
+<li><strong>Transparent</strong>: Lock branches are visible in the repository</li>
+<li><strong>Automatic cleanup</strong>: Exit traps ensure locks are released even on failure</li>
+<li><strong>Scope-based</strong>: Different operations can run in parallel if they affect different scopes</li>
+</ul>
+<h3 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Permanent link">¤</a></h3>
+<ul>
+<li><strong>Polling-based</strong>: Processes must poll to check if the lock is available</li>
+<li><strong>Network dependent</strong>: Requires network access to the Git repository</li>
+<li><strong>Cleanup required</strong>: If a process crashes without cleanup, manual intervention may be needed</li>
+<li><strong>Not suitable for high-frequency updates</strong>: The retry delay makes this approach less suitable for very frequent concurrent updates</li>
+</ul>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¤</a></h2>
+<h3 id="stuck-lock-branches">Stuck Lock Branches<a class="headerlink" href="#stuck-lock-branches" title="Permanent link">¤</a></h3>
+<p>If a lock branch is not properly cleaned up (e.g., due to a process crash), subsequent operations may wait indefinitely. You can identify and resolve this issue:</p>
+<ol>
+<li>
+<p><strong>List lock branches</strong>:<br>
+<code>git branch -r | grep "lock\."</code></p>
+</li>
+<li>
+<p><strong>Delete stuck lock branch</strong>:<br>
+<code>git push origin --delete lock.gitops.account.cluster.instance</code></p>
+</li>
+</ol>
+<p>Lock branches follow the naming pattern <code>lock.*</code> and should only exist temporarily during active operations.</p>
+<h3 id="local-repository-conflicts">Local Repository Conflicts<a class="headerlink" href="#local-repository-conflicts" title="Permanent link">¤</a></h3>
+<p>If a process exits early, it may leave a local repository clone that blocks subsequent operations:</p>
+<pre><code>fatal: destination path 'xxxxxx' already exists and is not an empty directory.
+</code></pre>
+<p><strong>Solution</strong>: Manually delete the local repository clone from the filesystem (typically in <code>/tmp</code> or the working directory).</p>
+<h2 id="redis-based-locking-optional">Redis-Based Locking (Optional)<a class="headerlink" href="#redis-based-locking-optional" title="Permanent link">¤</a></h2>
+<p>As an alternative to Git branch locking, the MAS CLI supports Redis-based distributed locking for environments that require higher performance or more frequent concurrent updates.</p>
+<h3 id="overview_1">Overview<a class="headerlink" href="#overview_1" title="Permanent link">¤</a></h3>
+<p>Redis-based locking uses Redis's atomic operations to implement distributed locks. This approach offers several advantages over Git branch locking:</p>
+<ul>
+<li><strong>Lower latency</strong>: No need to push/pull from remote Git repository</li>
+<li><strong>Better performance</strong>: Faster lock acquisition and release</li>
+<li><strong>Native distributed locking</strong>: Built-in support for distributed systems</li>
+<li><strong>Automatic expiration</strong>: Locks can be configured to expire automatically</li>
+</ul>
+<h3 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">¤</a></h3>
+<p>To use Redis-based locking, you need:</p>
+<ol>
+<li><strong>Redis Server</strong>: A Redis instance accessible from where the MAS CLI runs</li>
+<li><strong>Redis Connection Details</strong>: Host, port, and authentication credentials</li>
+<li><strong>Network Access</strong>: The CLI must be able to connect to the Redis server</li>
+</ol>
+<h3 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">¤</a></h3>
+<h4 id="1-deploy-redis">1. Deploy Redis<a class="headerlink" href="#1-deploy-redis" title="Permanent link">¤</a></h4>
+<p>You can deploy Redis in several ways:</p>
+<p><strong>Option A: Redis on OpenShift/Kubernetes</strong></p>
+<pre><code class="language-bash"># Deploy Redis using a Helm chart or operator
+# Ensure it's accessible from your CI/CD environment
+</code></pre>
+<p><strong>Option B: Managed Redis Service</strong>
+- AWS ElastiCache for Redis
+- Azure Cache for Redis
+- IBM Cloud Databases for Redis
+- Google Cloud Memorystore for Redis</p>
+<p><strong>Option C: Standalone Redis</strong></p>
+<pre><code class="language-bash"># Install Redis on a dedicated server
+# Configure for network access and authentication
+</code></pre>
+<p>For detailed setup instructions, refer to the <a href="https://github.com/ibm-mas/cli/blob/master/docs/redis-locking-setup.md">Redis Locking Setup Guide</a> in the MAS CLI repository.</p>
+<h4 id="2-configure-environment-variables">2. Configure Environment Variables<a class="headerlink" href="#2-configure-environment-variables" title="Permanent link">¤</a></h4>
+<p>Set the following environment variables to enable Redis-based locking:</p>
+<pre><code class="language-bash"># Enable Redis locking
+export GITOPS_USE_REDIS_LOCKING="true"
+
+# Redis connection details
+export REDIS_HOST="your-redis-host"
+export REDIS_PORT="6379"
+export REDIS_USERNAME="your-redis-username"
+export REDIS_PASSWORD="your-redis-password"
+
+# Optional: Redis TLS configuration
+export REDIS_TLS="true"
+export REDIS_TLS_CA_CERT="/path/to/ca-cert.pem"
+
+# Optional: Lock timeout (seconds)
+export REDIS_LOCK_TIMEOUT="300"
+</code></pre>
+<h3 id="how-it-works_1">How It Works<a class="headerlink" href="#how-it-works_1" title="Permanent link">¤</a></h3>
+<p>When Redis-based locking is enabled:</p>
+<ol>
+<li>
+<p><strong>Lock Acquisition</strong>: The process attempts to set a key in Redis using <code>SET key value NX EX timeout</code>:</p>
+<ul>
+<li><code>NX</code>: Only set if key doesn't exist (atomic operation). </li>
+<li><code>EX</code>: Set expiration time to prevent stuck locks  </li>
+</ul>
+</li>
+<li>
+<p><strong>Lock Key Naming</strong>: Similar to Git branch locks, Redis keys follow a pattern:<br>
+<code>gitops:lock:&lt;operation&gt;:&lt;account&gt;:&lt;cluster&gt;[:&lt;instance&gt;]</code></p>
+</li>
+<li>
+<p><strong>Retry Logic</strong>: If the lock is held by another process, the CLI retries with exponential backoff</p>
+</li>
+<li>
+<p><strong>Lock Release</strong>: After completing the operation, the lock is explicitly deleted from Redis</p>
+</li>
+<li>
+<p><strong>Automatic Expiration</strong>: If a process crashes, the lock automatically expires after the timeout period</p>
+</li>
+</ol>
+<h3 id="configuration-options">Configuration Options<a class="headerlink" href="#configuration-options" title="Permanent link">¤</a></h3>
+<table>
+<thead>
+<tr>
+<th>Environment Variable</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GITOPS_USE_REDIS_LOCKING</code></td>
+<td>Enable Redis-based locking (<code>true</code> or <code>false</code>)</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>REDIS_HOST</code></td>
+<td>Redis server hostname</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>REDIS_PORT</code></td>
+<td>Redis server port</td>
+<td><code>6379</code></td>
+</tr>
+<tr>
+<td><code>REDIS_USERNAME</code></td>
+<td>Redis authentication username</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>REDIS_PASSWORD</code></td>
+<td>Redis authentication password</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>REDIS_TLS</code></td>
+<td>Enable TLS connection</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>REDIS_TLS_CA_CERT</code></td>
+<td>Path to CA certificate for TLS</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>REDIS_LOCK_TIMEOUT</code></td>
+<td>Lock expiration time in seconds</td>
+<td><code>300</code></td>
+</tr>
+<tr>
+<td><code>REDIS_LOCK_RETRY_DELAY</code></td>
+<td>Delay between retry attempts in seconds</td>
+<td><code>5</code></td>
+</tr>
+<tr>
+<td><code>REDIS_LOCK_MAX_RETRIES</code></td>
+<td>Maximum number of retry attempts</td>
+<td><code>60</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="advantages_1">Advantages<a class="headerlink" href="#advantages_1" title="Permanent link">¤</a></h3>
+<ul>
+<li><strong>Performance</strong>: Significantly faster than Git branch locking</li>
+<li><strong>Scalability</strong>: Better suited for high-frequency concurrent operations</li>
+<li><strong>Reliability</strong>: Automatic lock expiration prevents permanent deadlocks</li>
+<li><strong>Visibility</strong>: Lock status can be monitored directly in Redis</li>
+<li><strong>Flexibility</strong>: Fine-grained control over timeout and retry behavior</li>
+</ul>
+<h3 id="limitations_1">Limitations<a class="headerlink" href="#limitations_1" title="Permanent link">¤</a></h3>
+<ul>
+<li><strong>External Dependency</strong>: Requires a Redis server to be deployed and maintained</li>
+<li><strong>Network Dependency</strong>: Requires network connectivity to Redis</li>
+<li><strong>Additional Complexity</strong>: More infrastructure to manage and monitor</li>
+<li><strong>Cost</strong>: May incur additional costs for managed Redis services</li>
+</ul>
+<h3 id="monitoring">Monitoring<a class="headerlink" href="#monitoring" title="Permanent link">¤</a></h3>
+<p>You can monitor Redis locks using the Redis CLI:</p>
+<pre><code class="language-bash"># Connect to Redis
+redis-cli -h $REDIS_HOST -p $REDIS_PORT -a $REDIS_PASSWORD
+
+# List all active locks
+KEYS gitops:lock:*
+
+# Check specific lock details
+GET gitops:lock:gitops-suite:dev:cluster1:inst1
+
+# Check lock TTL (time to live)
+TTL gitops:lock:gitops-suite:dev:cluster1:inst1
+</code></pre>
+<h3 id="troubleshooting-redis-locks">Troubleshooting Redis Locks<a class="headerlink" href="#troubleshooting-redis-locks" title="Permanent link">¤</a></h3>
+<h4 id="stuck-locks">Stuck Locks<a class="headerlink" href="#stuck-locks" title="Permanent link">¤</a></h4>
+<p>If a lock appears to be stuck:</p>
+<ol>
+<li>
+<p><strong>Check lock expiration</strong>:<br>
+<code>redis-cli -h $REDIS_HOST -p $REDIS_PORT -a $REDIS_PASSWORD TTL gitops:lock:&lt;key&gt;</code></p>
+</li>
+<li>
+<p><strong>Manually delete stuck lock</strong> (use with caution):<br>
+<code>redis-cli -h $REDIS_HOST -p $REDIS_PORT -a $REDIS_PASSWORD DEL gitops:lock:&lt;key&gt;</code></p>
+</li>
+</ol>
+<h4 id="connection-issues">Connection Issues<a class="headerlink" href="#connection-issues" title="Permanent link">¤</a></h4>
+<p>If the CLI cannot connect to Redis:</p>
+<ol>
+<li>Verify Redis is running and accessible</li>
+<li>Check firewall rules and network connectivity</li>
+<li>Verify authentication credentials</li>
+<li>Check SSL/TLS configuration if enabled</li>
+</ol>
+<h3 id="choosing-between-git-and-redis-locking">Choosing Between Git and Redis Locking<a class="headerlink" href="#choosing-between-git-and-redis-locking" title="Permanent link">¤</a></h3>
+<table>
+<thead>
+<tr>
+<th>Factor</th>
+<th>Git Branch Locking</th>
+<th>Redis-Based Locking</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Setup Complexity</strong></td>
+<td>Simple (no additional infrastructure)</td>
+<td>Moderate (requires Redis)</td>
+</tr>
+<tr>
+<td><strong>Performance</strong></td>
+<td>Slower (network I/O to Git)</td>
+<td>Faster (in-memory operations)</td>
+</tr>
+<tr>
+<td><strong>Concurrent Operations</strong></td>
+<td>Suitable for low-medium frequency</td>
+<td>Suitable for high frequency</td>
+</tr>
+<tr>
+<td><strong>Lock Visibility</strong></td>
+<td>Git branches</td>
+<td>Redis keys</td>
+</tr>
+<tr>
+<td><strong>Automatic Cleanup</strong></td>
+<td>Exit traps</td>
+<td>Automatic expiration</td>
+</tr>
+<tr>
+<td><strong>External Dependencies</strong></td>
+<td>None (Git already required)</td>
+<td>Redis server required</td>
+</tr>
+<tr>
+<td><strong>Best For</strong></td>
+<td>Standard deployments, lower concurrency</td>
+<td>High-frequency updates, CI/CD pipelines</td>
+</tr>
+</tbody>
+</table>
+<h3 id="migration-from-git-to-redis-locking">Migration from Git to Redis Locking<a class="headerlink" href="#migration-from-git-to-redis-locking" title="Permanent link">¤</a></h3>
+<p>To migrate from Git branch locking to Redis-based locking:</p>
+<ol>
+<li>Deploy and configure Redis as described above</li>
+<li>Set the <code>GITOPS_USE_REDIS_LOCKING=true</code> environment variable</li>
+<li>Configure Redis connection details (host, port, password, TLS settings)</li>
+<li>Test with a non-production environment first</li>
+<li>Monitor for any stuck Git lock branches and clean them up</li>
+<li>Roll out to production environments</li>
+</ol>
+<p>No changes to your GitOps configuration files are required - only the locking mechanism changes.</p>
+            
+          </div>
+
+          <!-- Navigation footer (prev/next) -->
+<nav class="md-footer-nav" aria-label="Footer navigation">
+  <div class="md-footer-nav__inner">
+    <a href="../charts-index/" class="md-footer-nav__link md-footer-nav__link--prev" rel="prev">
+      <div class="md-footer-nav__direction">
+        <svg class="md-footer-nav__icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"></path>
+        </svg>
+        <span>Previous</span>
+      </div>
+      <div class="md-footer-nav__title">
+        <span class="md-footer-nav__title-text">Helm Charts Index</span>
+      </div>
+    </a>
+    <a href="../accountrootmanifest/" class="md-footer-nav__link md-footer-nav__link--next" rel="next">
+      <div class="md-footer-nav__direction">
+        <span>Next</span>
+        <svg class="md-footer-nav__icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"></path>
+        </svg>
+      </div>
+      <div class="md-footer-nav__title">
+        <span class="md-footer-nav__title-text">Account Root Application Manifest</span>
+      </div>
+    </a>
+  </div>
+</nav>
+        </article>
+      </div>
+
+      <!-- Right sidebar - Table of Contents -->
+      <aside class="md-sidebar md-sidebar--secondary" data-md-component="toc">
+<nav class="md-sidebar md-sidebar--secondary" aria-label="Table of contents">
+  <div class="md-sidebar__scrollwrap">
+    <div class="md-sidebar__inner">
+      <div class="md-toc">
+        <div class="md-toc__title">On this page</div>
+        <ul class="md-toc__list">
+              <li class="md-toc__item">
+                <a href="#overview" class="md-toc__link" data-md-level="1">
+                  Overview
+                </a>
+              </li>
+              <li class="md-toc__item">
+                <a href="#git-branch-locking-default" class="md-toc__link" data-md-level="1">
+                  Git Branch Locking (Default)
+                </a>
+                  <ul class="md-toc__list">
+                      <li class="md-toc__item">
+                        <a href="#how-it-works" class="md-toc__link" data-md-level="2">
+                          How It Works
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#lock-branch-naming" class="md-toc__link" data-md-level="2">
+                          Lock Branch Naming
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#advantages" class="md-toc__link" data-md-level="2">
+                          Advantages
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#limitations" class="md-toc__link" data-md-level="2">
+                          Limitations
+                        </a>
+                      </li>
+                  </ul>
+              </li>
+              <li class="md-toc__item">
+                <a href="#troubleshooting" class="md-toc__link" data-md-level="1">
+                  Troubleshooting
+                </a>
+                  <ul class="md-toc__list">
+                      <li class="md-toc__item">
+                        <a href="#stuck-lock-branches" class="md-toc__link" data-md-level="2">
+                          Stuck Lock Branches
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#local-repository-conflicts" class="md-toc__link" data-md-level="2">
+                          Local Repository Conflicts
+                        </a>
+                      </li>
+                  </ul>
+              </li>
+              <li class="md-toc__item">
+                <a href="#redis-based-locking-optional" class="md-toc__link" data-md-level="1">
+                  Redis-Based Locking (Optional)
+                </a>
+                  <ul class="md-toc__list">
+                      <li class="md-toc__item">
+                        <a href="#overview_1" class="md-toc__link" data-md-level="2">
+                          Overview
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#prerequisites" class="md-toc__link" data-md-level="2">
+                          Prerequisites
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#setup" class="md-toc__link" data-md-level="2">
+                          Setup
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#how-it-works_1" class="md-toc__link" data-md-level="2">
+                          How It Works
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#configuration-options" class="md-toc__link" data-md-level="2">
+                          Configuration Options
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#advantages_1" class="md-toc__link" data-md-level="2">
+                          Advantages
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#limitations_1" class="md-toc__link" data-md-level="2">
+                          Limitations
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#monitoring" class="md-toc__link" data-md-level="2">
+                          Monitoring
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#troubleshooting-redis-locks" class="md-toc__link" data-md-level="2">
+                          Troubleshooting Redis Locks
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#choosing-between-git-and-redis-locking" class="md-toc__link" data-md-level="2">
+                          Choosing Between Git and Redis Locking
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#migration-from-git-to-redis-locking" class="md-toc__link" data-md-level="2">
+                          Migration from Git to Redis Locking
+                        </a>
+                      </li>
+                  </ul>
+              </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</nav>
+      </aside>
+    </div>
+
+    <!-- Footer - Full width outside container -->
+    <footer class="md-footer">
+      Built with <a href="https://www.mkdocs.org/">MkDocs</a> using <a href="https://github.com/durera/mkdocs-carbon">Carbon theme</a>
+    </footer>
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": false, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+</script></body></html>

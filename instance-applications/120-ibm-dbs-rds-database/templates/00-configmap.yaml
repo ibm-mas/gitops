@@ -390,27 +390,21 @@ data:
                   create_tablespace(tsp, bp)
               created_any = True
     elif mas_application_id == "monitor":
-        # 3. Monitor: Create partition group and large tablespace
+        # 3. Monitor: Create tablespace using RDS admin procedure (same pattern as Manage/Facilities)
         print("\n📝 Setting up Monitor application database objects...")
         
-        # # Create partition group MONITORGRP0
-        # if partition_group_exists("MONITORGRP0"):
-        #     print(f"ℹ️ Partition group 'MONITORGRP0' already exists")
-        # else:
-        #     create_partition_group_ddl("MONITORGRP0", "0")
-        
-        # Create large tablespace MONITORSPACE0
+        # Create tablespace MONITORSPACE0 using IBMDEFAULTBP (32K pagesize)
         if tablespace_exists("MONITORSPACE0"):
             print(f"ℹ️ Tablespace 'MONITORSPACE0' already exists")
         else:
-            create_large_tablespace_ddl(
+            create_tablespace(
                 tbname="MONITORSPACE0",
-                partition_group="IBMDEFAULTGROUP",
                 bufferpool="IBMDEFAULTBP",
                 pagesize=32768,
-                initialsize=32,
-                extentsize=4
+                initialsize=5000,
+                increasesize=10000
             )
+            created_any = True
     else:
         print(f"ℹ️ TABLESPACE CHAIN: mas_application_id is not provided ")
 

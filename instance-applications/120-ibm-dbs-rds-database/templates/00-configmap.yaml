@@ -112,6 +112,18 @@ data:
                 print(f"⚠️  Warning: Could not grant SYSCTRL to {username}: {error_msg}")
             else:
                 print(f"ℹ️  SYSCTRL grant skipped (may already have authority or insufficient privileges)")
+        
+        # Grant DBADM privileges using RDS admin procedure
+        try:
+            task_id = db2.callproc(
+                admin_conn,
+                "rdsadmin.dbadm_grant",
+                (None, database_name, "DBADM", f"USER {username}")
+            )
+            print(f"✅ Granted DBADM privileges to {username} (task_id: {task_id})")
+        except Exception as e:
+            error_msg = str(e)
+            print(f"⚠️  Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
     except Exception as e:
         print(f"❌ Connection failed: {e}")
         sys.exit(1)

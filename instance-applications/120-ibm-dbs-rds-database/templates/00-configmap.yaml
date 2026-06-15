@@ -332,7 +332,7 @@ data:
         "DEDICATEDBPINDX",
         "DEDICATEDBPLOB",
     ]
-    monitor_bufferpools = ["IBMDEFAULTBP"]  # Monitor uses default bufferpool
+    monitor_bufferpools = ["MONITORBP"]  # Monitor uses custom 32K bufferpool
 
     if mas_application_id == "manage":
         for bp in manage_bufferpools:
@@ -349,12 +349,13 @@ data:
                 create_bufferpool(bp)
                 created_any = True
     elif mas_application_id == "monitor":
-        # Monitor uses IBMDEFAULTBP which should already exist
+        # Monitor: Create custom 32K bufferpool
         for bp in monitor_bufferpools:
             if bufferpool_exists(bp):
-                print(f"ℹ️ Bufferpool '{bp}' already exists (used by Monitor)")
+                print(f"ℹ️ Bufferpool '{bp}' already exists")
             else:
-                print(f"⚠️  Bufferpool '{bp}' does not exist - this is unexpected")
+                create_bufferpool(bp, pagesize=32768)
+                created_any = True
     else:
         print(f"ℹ️ BUFFERPOOL CHAIN : mas_application_id is not provided ")
     
@@ -394,13 +395,13 @@ data:
         # 3. Monitor: Create tablespace using RDS admin procedure (same pattern as Manage/Facilities)
         print("\n📝 Setting up Monitor application database objects...")
         
-        # Create tablespace MONITORSPACE0 using IBMDEFAULTBP (32K pagesize)
+        # Create tablespace MONITORSPACE0 using MONITORBP (32K pagesize)
         if tablespace_exists("MONITORSPACE0"):
             print(f"ℹ️ Tablespace 'MONITORSPACE0' already exists")
         else:
             create_tablespace(
                 tbname="MONITORSPACE0",
-                bufferpool="IBMDEFAULTBP",
+                bufferpool="MONITORBP",
                 pagesize=32768,
                 initialsize=5000,
                 increasesize=10000

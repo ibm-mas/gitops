@@ -133,6 +133,7 @@ spec:
 {{- if .Values.cluster_admin_role }}
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
 {{- end }}
 {{- if or .Values.custom_labels .Values.argocluster_instance }}
     managedNamespaceMetadata:
@@ -145,11 +146,19 @@ spec:
         {{- end }}
 {{- end }}
   ignoreDifferences:
-    # Tenant operator updates the secret
+    # Secret is patched in tenant namespace by tenant operator in 9.2 and above.
     - group: ""
       kind: Secret
       name: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}----sls-secret"
       namespace: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}"
+      jsonPointers:
+        - /data
+    # Secret is patched in AI Service namespace by tenant operator in 9.1 only.
+    # Rollback procedure also patches the secret here.
+    - group: ""
+      kind: Secret
+      name: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}----sls-secret"
+      namespace: "{{ .Values.ibm_aiservice_tenant.aiservice_namespace }}"
       jsonPointers:
         - /data
 {{- end }}

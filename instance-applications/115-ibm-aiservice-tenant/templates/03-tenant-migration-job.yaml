@@ -2,7 +2,9 @@
 {{- $_cli_image_digest := "sha256:14c852062a8c6149820d9aa7b8315d83f25bb29172b0f318e4fe10af613533f3" }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
 {{- $_job_version := "v2" }}
-{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+# We use the timestamp to ensure a unique job name on each run but preserve the existing name generation
+# logic for future use. The job is idempotent but safest to always run it.
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version (now | unixEpoch) | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
@@ -161,6 +163,7 @@ spec:
                 fi
               }
 
+              echo "[INFO] Running tenant migration at $(date)"
               echo "[INFO] Catalog channel = ${CATALOG_CHANNEL}"
               if [[ "${CATALOG_CHANNEL}" == 9.2.* ]]; then           
                 patch_secret "${SLS_SECRET_NAME}-copy" "${SLS_SECRET_NAME}" "${TENANT_NAMESPACE}"

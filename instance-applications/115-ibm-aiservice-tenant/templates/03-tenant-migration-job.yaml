@@ -141,6 +141,8 @@ spec:
             # these secrets.
             - name: SLS_SECRET_NAME
               value: "{{ .Values.tenantNamespace }}----sls-secret"
+            - name: API_KEY_SECRET_NAME
+              value: "{{ .Values.tenantNamespace }}----apikey-secret"
           command:
             - /bin/sh
             - -c
@@ -167,8 +169,10 @@ spec:
               echo "[INFO] Catalog channel = ${CATALOG_CHANNEL}"
               if [[ "${CATALOG_CHANNEL}" == 9.2.* ]]; then           
                 patch_secret "${SLS_SECRET_NAME}-copy" "${SLS_SECRET_NAME}" "${TENANT_NAMESPACE}"
+                patch_secret "${API_KEY_SECRET_NAME}" "${API_KEY_SECRET_NAME}" "${TENANT_NAMESPACE}"
               elif [[ "${CATALOG_CHANNEL}" == 9.1.* ]]; then
                 patch_secret "${SLS_SECRET_NAME}-copy" "${SLS_SECRET_NAME}" "${AISERVICE_NAMESPACE}"
+                patch_secret "${API_KEY_SECRET_NAME}" "${API_KEY_SECRET_NAME}" "${AISERVICE_NAMESPACE}"
               else
                 echo "[INFO] Catalog channel is not 9.1.x or 9.2.x => no migration required"
               fi

@@ -152,11 +152,11 @@ spec:
                 local target="${2}"
                 local namespace="${3}"
                 if oc get secret ${source} -n ${namespace} -o json > /tmp/${source}_patch.json; then
-                  echo "[INFO] Replacing data in secret ${target} with data from ${source}"
+                  echo "[INFO] Replacing data in secret ${target} with data from ${source} in namespace ${namespace}"
                   oc get secret ${target} -n ${namespace} -o json > /tmp/${target}_patch.json
                   jq -s '.[1].data = .[0].data | .[1]' /tmp/${source}_patch.json /tmp/${target}_patch.json > /tmp/${target}_patched.json
                   oc apply -f /tmp/${target}_patched.json
-                  echo "[INFO] Deleting secret ${source}"
+                  echo "[INFO] Deleting secret ${source} from namespace ${namespace}"
                   oc delete secret "${source}" -n "${namespace}"
                 else
                  echo "[WARNING] Secret ${source} not found in ${namespace} => cannot patch secret ${target}"

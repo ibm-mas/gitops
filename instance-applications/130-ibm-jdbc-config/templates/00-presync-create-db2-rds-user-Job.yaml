@@ -3,7 +3,7 @@
   {{- /*
         Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
     */}}
-  {{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+  {{- $_cli_image_digest := "sha256:14c852062a8c6149820d9aa7b8315d83f25bb29172b0f318e4fe10af613533f3" }}
 
   {{ $ns := printf "mas-%s-core" .Values.instance_id }}
   {{ $prefix := printf "pre-jdbc-create-user-%s" .Values.mas_config_name }}
@@ -133,7 +133,7 @@ spec:
             
             echo ""
             echo "================================================================================"
-            echo "Settings"
+            echo "Settings (2026-05-11-v8-final)"
             echo "================================================================================"
             echo "ACCOUNT_ID .......................... ${ACCOUNT_ID}"
             echo "REGION_ID ........................... ${REGION_ID}"
@@ -148,10 +148,11 @@ spec:
             export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
             export SM_AWS_REGION=${REGION_ID}
             
-            echo ""
-            echo "Installing required Python packages..."
-            echo "--------------------------------------------------------------------------------"
-            pip install ibm_db
+            # -----------------------------
+            # Verify pre-installed dependencies
+            # -----------------------------
+            echo "Verifying ibm_db package..."
+            python3 -c "import ibm_db; print('✅ ibm_db version:', ibm_db.__version__)"
             
             echo ""
             echo "Downloading RDS SSL certificate..."
@@ -273,7 +274,7 @@ spec:
             # 1. Admin users: We CREATE these with DBADM (for schema management)
             
             # Validate MAS_APP_ID
-            valid_apps = ['manage', 'facilities', 'iot']
+            valid_apps = ['manage', 'facilities', 'iot', 'monitor']
             if mas_app_id not in valid_apps:
                 print(f"Unknown MAS_APP_ID: {mas_app_id}")
                 sys.exit(1)
@@ -436,7 +437,7 @@ spec:
                 
                 # Determine the secret path based on app_type
                 if [ "${app_type}" = "rds-ssp" ]; then
-                  SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2rds-ssp/credentials"
+                  SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2rds-ssp/${MAS_APP_ID}/credentials"
                 else
                   SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${app_type}/credentials"
                 fi

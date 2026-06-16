@@ -3,7 +3,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Values.scriptConfigMapName | quote }}
+  name: {{ .Values.db2_rds_instance_name }}-init-script
   annotations:
     argocd.argoproj.io/sync-wave: "135"
 {{- if .Values.custom_labels }}
@@ -60,7 +60,7 @@ data:
     
     # Creating database connection string for db2rds user
     conn_rds_db2_str = (
-        f"DATABASE={os.environ['DB_NAME']};"
+        f"DATABASE={database_name};"
         f"HOSTNAME={os.environ['DB_HOST']};"
         f"PORT={os.environ['DB_PORT']};"
         f"PROTOCOL=TCPIP;"
@@ -70,13 +70,21 @@ data:
         f"SSLVersion={ssl_version};"
         f"SSLServerCertificate={ssl_cert_path};"
     )
+    
+    # Debug: Print connection strings with masked passwords
+    masked_admin_str = conn_rds_admin_str.replace(f"PWD={password}", "PWD=***MASKED***")
+    masked_db2_str = conn_rds_db2_str.replace(f"PWD={password}", "PWD=***MASKED***")
+    print(f"🔍 Admin connection string: {masked_admin_str}")
+    print(f"🔍 DB2 connection string: {masked_db2_str}")
 
+    # Connect to both databases
+    # Note: Database availability is checked by bash script before calling this Python script
     try:
         admin_conn = db2.connect(conn_rds_admin_str, "", "")
-        print(f"✅ Connected to Db2 as {username} user")
+        print(f"✅ Connected to RDS admin database as {username}")
     
-        db2_conn   = db2.connect(conn_rds_db2_str, "", "")
-        print("✅ Connected to Db2 as db2rds user")
+        db2_conn = db2.connect(conn_rds_db2_str, "", "")
+        print(f"✅ Connected to database '{database_name}'")
     except Exception as e:
         print(f"❌ Connection failed: {e}")
         sys.exit(1)

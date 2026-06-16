@@ -4,7 +4,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:14c852062a8c6149820d9aa7b8315d83f25bb29172b0f318e4fe10af613533f3" }}
 
 # A verify test is one that is non disruptive i.e. it won't create new users, i won't call authenticated apis, and it won't creates resources 
 # in the application. This type of test is run on every environment and allows a layer of verification of the app
@@ -12,8 +12,10 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 {{ $ns               :=  .Values.mas_app_namespace }}
 {{ $np_name          :=  "postsync-verify-manage-np" }}
 {{ $role_name        :=  "postsync-verify-manage-role" }}
+{{ $crole_name       :=  "postsync-verify-manage-crole" }}
 {{ $sa_name          :=  "postsync-verify-manage-sa" }}
 {{ $rb_name          :=  "postsync-verify-manage-rb" }}
+{{ $crb_name         :=  "postsync-verify-manage-crb" }}
 {{ $tests_cm_name    :=  "postsync-verify-tests-manage-cm" }}
 {{ $record_cm_name   :=  "postsync-verify-tests-manage-record-cm" }}
 {{ $job_name         :=  "postsync-verify-manage-job" }}
@@ -126,6 +128,53 @@ roleRef:
   kind: Role
   name: {{ $role_name }}
 # -------------------------------------
+
+
+---
+# ClusterRole for API discovery - needed by Kubernetes client
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $crole_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  # Minimal permissions for Kubernetes client API discovery
+  - verbs:
+      - get
+    nonResourceURLs:
+      - /apis
+      - /apis/*
+      - /api
+      - /api/*
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $crb_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "601"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $crole_name }}
 
 
 ---

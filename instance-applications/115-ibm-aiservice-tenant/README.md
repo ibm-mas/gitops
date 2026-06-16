@@ -4,6 +4,9 @@ Deploy and configure aiservice tenant with configurable version
 
 <!--docs-include-start-->
 
+## Overview
+
+This chart provisions a tenant for Maximo AI Service. It installs the AI Service tenant operator and creates a tenant custom resource with all necessary configurations including SLS licensing, DRO integration, WatsonX connectivity, and optional tenant-specific scheduling configurations.
 
 ## Resources Created
 
@@ -107,3 +110,122 @@ sm:                             # Secrets Manager configuration
 ```
 
 For complete documentation of all base instance values including optional fields like `custom_labels`, `argocluster_instance`, `application_admin_service_account`, `mas_wipe_mongo_data`, `allow_list`, `additional_vpn`, `application_configuration`, `use_postdelete_hooks`, `additional_resources`, `extensions`, `enhanced_dr`, and `cli_image_repo`, see the [Instance Base Values Reference](../../docs/reference/instance-base-values.md).
+
+
+## Examples
+
+### Basic Tenant Configuration
+
+```yaml
+# aiservice-tenant-params.yaml
+merge-key: "production/us-west-2/aiservice-inst-1/tenants/tenant-01"
+ibm_aiservice_tenant:
+  tenant_id: "tenant-01"
+  aiservice_namespace: "aiservice-inst-1-aiservice"
+  aiservice_instance_id: "aiservice-inst-1"
+  tenantNamespace: "aiservice-tenant-01"
+  catalog_channel: "9.2.x"
+  catalog_source: "ibm-operator-catalog"
+  
+  mas_icr_cp: "cp.icr.io/cp"
+  mas_icr_cpopen: "icr.io/cpopen"
+  
+  # DRO Configuration
+  dro_url: "<path:secret#dro_url>"
+  dro_ca_b64enc: "<path:secret#dro_ca>"
+  dro_api_token: "<path:secret#dro_token>"
+  
+  # SLS Configuration
+  slscfg_ca_b64enc: "<path:secret#sls_slscfg_ca_b64encca>"
+  slscfg_url: "<path:secret#sls_url>"
+  slscfg_registration_key: "<path:secret#slscfg_registration_key>"
+  aiservice_sls_subscription_id: "001"
+  
+  # RSL Configuration
+  rsl_url: "rsl_url"
+  rsl_org_id: "<path:secret#rsl_org_id>"
+  rsl_token: "<path:secret#rsl_token>"
+  rsl_ca_crt: "<path:secret#rsl_ca>"
+
+  # S3 Configuration for Manage Job
+  aiservice_s3_accesskey: "<path:secret#s3_accesskey>"
+  aiservice_s3_secretkey: "<path:secret#s3_secretkey>"
+  aiservice_s3_region: "<path:secret#s3_region>"
+  
+  # WatsonX Configuration
+  aiservice_watsonxai_url: "https://us-south.ml.cloud.ibm.com"
+  aiservice_watsonxai_project_id: "<path:secret#wx_project_id>"
+  aiservice_watsonxai_apikey: "<path:secret#wx_apikey>"
+  aiservice_watsonxai_on_prem: "false"
+  
+  # Tenant Entitlement
+  tenant_entitlement_type: "standard"
+  tenant_entitlement_start_date: "2025-01-01"
+  tenant_entitlement_end_date: "2026-12-31"
+  
+  aiservice_operator_log_level: "2"
+```
+
+### Tenant with Custom Scheduling (9.2.x+)
+
+```yaml
+ibm_aiservice_tenant:
+  # Specify all parameters as per above example
+  
+  # Tenant Scheduling Configuration
+  tenant_scheduling_config:
+    pipeline:
+      nodeSelector:
+        aiservice: pipeline
+      tolerations:
+        - effect: NoSchedule
+          key: aiservice
+          operator: Equal
+          value: pipeline
+    predictor:
+      nodeSelector:
+        aiservice: inference
+      tolerations:
+        - effect: NoSchedule
+          key: aiservice
+          operator: Equal
+          value: inference
+```
+
+
+## Prerequisites
+
+- AI Service instance deployed and running
+- IBM Operator Catalog installed
+- Suite License Service (SLS) or RSL configured
+- DRO (Dynamic Resource Orchestrator) configured
+- WatsonX instance accessible
+- Sufficient cluster resources for tenant workloads
+
+## Troubleshooting
+
+### Tenant Operator Not Installing
+
+Check the subscription and operator group:
+```bash
+oc get subscription ibm-aiservice-tenant -n <tenant-namespace>
+oc get operatorgroup -n <tenant-namespace>
+oc describe subscription ibm-aiservice-tenant -n <tenant-namespace>
+```
+
+### Tenant CR Not Reconciling
+
+Check the tenant custom resource status:
+```bash
+oc get aiservicetenant -n <tenant-namespace>
+oc describe aiservicetenant <tenant-id> -n <tenant-namespace>
+oc logs -n <tenant-namespace> -l control-plane=ibm-aiservice --tail=100
+```
+
+## Related Documentation
+
+- [AI Service Tenant Root Application](../../root-applications/ibm-aiservice-tenant-root/README.md)
+- [AI Service Chart](../113-ibm-aiservice/README.md)
+- [AI Service Instance Root Application](../../root-applications/ibm-aiservice-instance-root/README.md)
+- [Instance Base Values Reference](../../docs/reference/instance-base-values.md)
+- [Configuration Repository](../../docs/configrepo.md)

@@ -248,8 +248,10 @@ data:
                 create_bufferpool(bp)
                 created_any = True
     elif mas_application_id == "monitor":
-        # Monitor: Create custom 32K bufferpool
-        for bp in monitor_bufferpools:
+        # Monitor: Create custom 32K bufferpools
+        # Create IBMDEFAULTBP32K for 32K pagesize tablespaces
+        monitor_bufferpools_extended = ["MONITORBP", "IBMDEFAULTBP32K"]
+        for bp in monitor_bufferpools_extended:
             if bufferpool_exists(bp):
                 print(f"ℹ️ Bufferpool '{bp}' already exists")
             else:
@@ -295,17 +297,18 @@ data:
         print("\n📝 Setting up Monitor application database objects...")
         
         # Define monitor tablespaces with their configurations
-        # Format: (tablespace_name, bufferpool, pagesize, initialsize, increasesize, type, auto_resize)
+        # Using IBMDEFAULTBP32K (32K pagesize) bufferpool for all tablespaces
+        # Format: (tablespace_name, bufferpool, pagesize, initialsize, increasesize, type)
         monitor_tablespaces = [
-            ("TS4CONSOLE", "IBMDEFAULTBP", 32768, 5242880, 10, "U", "AUTOMATIC"),
-            ("BIGSQLCATUTILITY", "IBMDEFAULTBP", 32768, 5242880, 10, "U", "AUTOMATIC"),
-            ("MONITORSPACE0", "IBMDEFAULTBP", 32768, 5242880, 10, "U", "AUTOMATIC"),
-            ("TEMPSPACE1", "IBMDEFAULTBP", 32768, 5242880, 10, "T", "AUTOMATIC"),
-            ("SYSTOOLSTMPSPACE", "IBMDEFAULTBP", 32768, 5242880, 10, "T", "AUTOMATIC"),
-            ("USERTEMPSPACE1", "IBMDEFAULTBP", 32768, 5242880, 10, "T", "AUTOMATIC"),
+            ("TS4CONSOLE", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("BIGSQLCATUTILITY", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("MONITORSPACE0", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("TEMPSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "T"),
+            ("SYSTOOLSTMPSPACE", "IBMDEFAULTBP32K", 32768, 5242880, 10, "T"),
+            ("USERTEMPSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "T"),
         ]
         
-        for tsp, bp, pagesize, initialsize, increasesize, tsp_type, auto_resize in monitor_tablespaces:
+        for tsp, bp, pagesize, initialsize, increasesize, tsp_type in monitor_tablespaces:
             if tablespace_exists(tsp):
                 print(f"ℹ️ Tablespace '{tsp}' already exists")
             else:

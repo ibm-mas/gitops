@@ -86,33 +86,6 @@ data:
         db2_conn = db2.connect(conn_rds_db2_str, "", "")
         print(f"✅ Connected to database '{database_name}'")
         
-        # Add user to masterdba group if not already a member (needed for partition group creation)
-        # This grants the necessary privileges to create partition groups
-        try:
-            add_groups_sql = f"CALL rdsadmin.add_groups('{username}','masterdba')"
-            db2.exec_immediate(admin_conn, add_groups_sql)
-            print(f"✅ Added {username} to masterdba group (or already a member)")
-        except Exception as e:
-            error_msg = str(e)
-            # Ignore if user is already in the group
-            if "already" not in error_msg.lower():
-                print(f"⚠️  Warning: Could not add {username} to masterdba group: {error_msg}")
-        
-        # Grant SYSCTRL authority to the user (needed for partition group creation)
-        # SYSCTRL provides system control authority including partition group management
-        try:
-            # Use GRANT statement directly as there's no rdsadmin procedure for SYSCTRL
-            grant_sysctrl_sql = f"GRANT SYSCTRL ON DATABASE TO USER {username}"
-            db2.exec_immediate(db2_conn, grant_sysctrl_sql)
-            print(f"✅ Granted SYSCTRL authority to {username}")
-        except Exception as e:
-            error_msg = str(e)
-            # Ignore if user already has SYSCTRL or if grant fails
-            if "already" not in error_msg.lower() and "sql0552n" not in error_msg.lower():
-                print(f"⚠️  Warning: Could not grant SYSCTRL to {username}: {error_msg}")
-            else:
-                print(f"ℹ️  SYSCTRL grant skipped (may already have authority or insufficient privileges)")
-        
         # Grant DBADM privileges using RDS admin procedure
         try:
             task_id = db2.callproc(
@@ -151,92 +124,6 @@ data:
       stmt = db2.prepare(db2_conn, "SELECT COUNT(*) FROM syscat.dbpartitiongroupdef WHERE dbpgname = ?")
       db2.execute(stmt, (pg_name.upper(),))
       return int(db2.fetch_tuple(stmt)[0]) > 0
-
-    def create_partition_group_ddl(pg_name, partition_nums="0"):
-        global has_errors, created_any
-        try:
-            # Create partition group using direct DDL on the database connection
-            # Note: The user must be a member of masterdba group or have SYSCTRL/SYSADM authority
-            # This should be the db2rds_ssp user which is added to masterdba group during user creation
-            sql = f"CREATE DATABASE PARTITION GROUP \"{pg_name}\" ON DBPARTITIONNUMS ({partition_nums})"
-            db2.exec_immediate(db2_conn, sql)
-            
-            # Wait for partition group to appear
-            print(f"⏳ Waiting for partition group {pg_name} to be created...")
-            max_retries = 12
-            retry_delay = 5
-            
-            for attempt in range(max_retries):
-                time.sleep(retry_delay)
-                
-                if partition_group_exists(pg_name):
-                    print(f"✅ Created partition group: {pg_name} (verified after {(attempt + 1) * retry_delay} seconds)")
-                    created_any = True
-                    return
-                else:
-                    print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Partition group {pg_name} not yet visible, waiting...")
-            
-            error_msg = f"Partition group {pg_name} not found after {max_retries * retry_delay} seconds."
-            print(f"❌ {error_msg}")
-            has_errors = True
-            raise Exception(error_msg)
-        except Exception as e:
-            error_str = str(e)
-            if "not found after" not in error_str and "already exists" not in error_str.lower():
-                print(f"❌ Error creating partition group {pg_name}: {error_str}")
-                has_errors = True
-            raise
-
-    def create_large_tablespace_ddl(
-        tbname,
-        partition_group,
-        bufferpool="IBMDEFAULTBP",
-        pagesize=32768,
-        initialsize=32,
-        extentsize=4
-    ):
-        global has_errors, created_any
-        try:
-            sql = f"""CREATE LARGE TABLESPACE "{tbname}" IN DATABASE PARTITION GROUP {partition_group}
-                PAGESIZE {pagesize} MANAGED BY AUTOMATIC STORAGE
-                USING STOGROUP "IBMSTOGROUP"
-                AUTORESIZE YES
-                INITIALSIZE {initialsize} M
-                MAXSIZE NONE
-                EXTENTSIZE {extentsize}
-                PREFETCHSIZE AUTOMATIC
-                BUFFERPOOL "{bufferpool}"
-                DATA TAG INHERIT
-                OVERHEAD INHERIT
-                TRANSFERRATE INHERIT
-                DROPPED TABLE RECOVERY ON"""
-            db2.exec_immediate(admin_conn, sql)
-            
-            # Wait for tablespace to appear
-            print(f"⏳ Waiting for large tablespace {tbname} to be created...")
-            max_retries = 12
-            retry_delay = 5
-            
-            for attempt in range(max_retries):
-                time.sleep(retry_delay)
-                
-                if tablespace_exists(tbname):
-                    print(f"✅ Created large tablespace: {tbname} (verified after {(attempt + 1) * retry_delay} seconds)")
-                    created_any = True
-                    return
-                else:
-                    print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Tablespace {tbname} not yet visible, waiting...")
-            
-            error_msg = f"Tablespace {tbname} not found after {max_retries * retry_delay} seconds."
-            print(f"❌ {error_msg}")
-            has_errors = True
-            raise Exception(error_msg)
-        except Exception as e:
-            error_str = str(e)
-            if "not found after" not in error_str and "already exists" not in error_str.lower():
-                print(f"❌ Error creating large tablespace {tbname}: {error_str}")
-                has_errors = True
-            raise
     
 
     def create_bufferpool(bpname, pagesize=32768):
@@ -404,27 +291,33 @@ data:
                   create_tablespace(tsp, bp)
               created_any = True
     elif mas_application_id == "monitor":
-        # 3. Monitor: Create partition group and large tablespace
+        # 3. Monitor: Create tablespaces using rdsadmin.create_tablespace
         print("\n📝 Setting up Monitor application database objects...")
         
-        # Create partition group MONITORGRP0
-        if partition_group_exists("MONITORGRP0"):
-            print(f"ℹ️ Partition group 'MONITORGRP0' already exists")
-        else:
-            create_partition_group_ddl("MONITORGRP0", "0")
+        # Define monitor tablespaces with their configurations
+        # Format: (tablespace_name, bufferpool, pagesize, initialsize, increasesize, type, auto_resize)
+        monitor_tablespaces = [
+            ("TS4CONSOLE", "IBMDEFAULTBP", 32768, 5242880, 10, "U", "AUTOMATIC"),
+            ("BIGSQLCATUTILITY", "IBMDEFAULTBP", 32768, 5242880, 10, "U", "AUTOMATIC"),
+            ("MONITORSPACE0", "IBMDEFAULTBP", 32768, 5242880, 10, "U", "AUTOMATIC"),
+            ("TEMPSPACE1", "IBMDEFAULTBP", 32768, 5242880, 10, "T", "AUTOMATIC"),
+            ("SYSTOOLSTMPSPACE", "IBMDEFAULTBP", 32768, 5242880, 10, "T", "AUTOMATIC"),
+            ("USERTEMPSPACE1", "IBMDEFAULTBP", 32768, 5242880, 10, "T", "AUTOMATIC"),
+        ]
         
-        # Create large tablespace MONITORSPACE0
-        if tablespace_exists("MONITORSPACE0"):
-            print(f"ℹ️ Tablespace 'MONITORSPACE0' already exists")
-        else:
-            create_large_tablespace_ddl(
-                tbname="MONITORSPACE0",
-                partition_group="MONITORGRP0",
-                bufferpool="MONITORBP",
-                pagesize=32768,
-                initialsize=32,
-                extentsize=4
-            )
+        for tsp, bp, pagesize, initialsize, increasesize, tsp_type, auto_resize in monitor_tablespaces:
+            if tablespace_exists(tsp):
+                print(f"ℹ️ Tablespace '{tsp}' already exists")
+            else:
+                create_tablespace(
+                    tbname=tsp,
+                    bufferpool=bp,
+                    pagesize=pagesize,
+                    initialsize=initialsize,
+                    increasesize=increasesize,
+                    tablespace_type=tsp_type
+                )
+                created_any = True
     else:
         print(f"ℹ️ TABLESPACE CHAIN: mas_application_id is not provided ")
 

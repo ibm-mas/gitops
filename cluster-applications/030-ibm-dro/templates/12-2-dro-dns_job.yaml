@@ -18,11 +18,11 @@ data:
 type: Opaque
 ---
 {{- if and (eq .Values.dns_provider "cis") (not (empty .Values.cis_crn)) (not (empty .Values.dro_public_domain)) }}
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:14c852062a8c6149820d9aa7b8315d83f25bb29172b0f318e4fe10af613533f3" }}
 {{- $_job_name_prefix := "ibm-dro-dns" }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v3" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 ---
 # NetworkPolicy to allow egress traffic for AWS Secrets Manager and IBM Cloud API
@@ -158,24 +158,96 @@ spec:
               fi
 
               RECORD_NAME="dro.${CLUSTER_ID}"
-              echo "RECORD_NAME: ${RECORD_NAME}"
-              
-              echo "Creating DNS record..."
-              CREATE_OUTPUT=$(ibmcloud cis dns-record-create "${DOMAIN_ID}" \
-                --type CNAME \
-                --name "${RECORD_NAME}" \
-                --content "${OCP_INGRESS}" \
-                --proxied false 2>&1 || true)
 
-              if echo "${CREATE_OUTPUT}" | grep -qi "already exists\|duplicate"; then
-                echo "DNS record already exists."
-                exit 0
-              elif echo "${CREATE_OUTPUT}" | grep -qi "OK\|Created\|success"; then
-                echo "DNS record created successfully!"
+              FULL_RECORD_NAME="${RECORD_NAME}.${DRO_PUBLIC_DOMAIN}"
+
+              echo ""
+              echo "Checking if DNS record already exists..."
+
+              EXISTING_RECORD=$(ibmcloud cis dns-records "${DOMAIN_ID}" \
+                --name "${FULL_RECORD_NAME}" \
+                --output json)
+
+              RECORD_COUNT=$(echo "${EXISTING_RECORD}" | jq 'length')
+
+              if [[ "${RECORD_COUNT}" -gt 0 ]]; then
+
+                RECORD_ID=$(echo "${EXISTING_RECORD}" | jq -r '.[0].id')
+                EXISTING_CONTENT=$(echo "${EXISTING_RECORD}" | jq -r '.[0].content')
+                EXISTING_NAME=$(echo "${EXISTING_RECORD}" | jq -r '.[0].name')
+                EXISTING_PROXIED=$(echo "${EXISTING_RECORD}" | jq -r '.[0].proxied')
+
+                echo "DNS record found!"
+                echo "  Record ID: ${RECORD_ID}"
+                echo "  Record Name: ${EXISTING_NAME}"
+                echo "  Existing content: ${EXISTING_CONTENT}"
+                echo "  Existing proxied: ${EXISTING_PROXIED}"
+
+                if [[ "${EXISTING_CONTENT}" != "${OCP_INGRESS}" ]] || [[ "${EXISTING_PROXIED}" != "true" ]]; then
+
+                  echo "Dns entry has changed. Updating DNS record..."
+
+                  UPDATE_OUTPUT=$(ibmcloud cis dns-record-update "${DOMAIN_ID}" "${RECORD_ID}" \
+                    --type CNAME \
+                    --name "${RECORD_NAME}" \
+                    --content "${OCP_INGRESS}" \
+                    --proxied true 2>&1)
+
+                  UPDATE_RC=$?
+
+                  echo "Update output:"
+                  echo "${UPDATE_OUTPUT}"
+
+                  if [[ ${UPDATE_RC} -eq 0 ]]; then
+                    echo "DNS record updated successfully!"
+                  else
+                    echo "ERROR: DNS record update failed"
+                    exit 1
+                  fi
+
+                else
+                  echo "DNS record content and proxy setting are already correct. No update needed."
+                fi
+
               else
-                echo "ERROR: DNS record creation failed"
+
+                echo "DNS record does not exist. Creating new record..."
+
+                CREATE_OUTPUT=$(ibmcloud cis dns-record-create "${DOMAIN_ID}" \
+                  --type CNAME \
+                  --name "${RECORD_NAME}" \
+                  --content "${OCP_INGRESS}" \
+                  --proxied true 2>&1)
+
+                CREATE_RC=$?
+
+                echo "Create output:"
                 echo "${CREATE_OUTPUT}"
-                exit 1
+
+                if [[ ${CREATE_RC} -eq 0 ]]; then
+                  echo "DNS record created successfully!"
+                else
+                  echo "ERROR: DNS record creation failed"
+                  exit 1
+                fi
+
+              fi
+
+              echo ""
+              echo "Ordering edge certificate for ${FULL_RECORD_NAME}..."
+              
+              CERT_ORDER_OUTPUT=$(ibmcloud cis certificate-order "${DOMAIN_ID}" \
+                --hostnames "${FULL_RECORD_NAME}" 2>&1)
+              
+              CERT_ORDER_RC=$?
+              
+              echo "Certificate order output:"
+              echo "${CERT_ORDER_OUTPUT}"
+              
+              if [[ ${CERT_ORDER_RC} -eq 0 ]]; then
+                echo "Edge certificate ordered successfully!"
+              else
+                echo "WARNING: Edge certificate order failed or certificate may already exist"
               fi
 
       volumes:
@@ -184,4 +256,6 @@ spec:
             secretName: aws
             defaultMode: 420
 {{- end }}
+
+
 

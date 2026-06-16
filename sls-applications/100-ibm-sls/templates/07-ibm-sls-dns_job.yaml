@@ -1,10 +1,10 @@
 
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:14c852062a8c6149820d9aa7b8315d83f25bb29172b0f318e4fe10af613533f3" }}
 {{ $aws_secret := "aws"}}
 {{- $_job_name_prefix := "ibm-sls-dns" }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v7" }}
+{{- $_job_version := "v8" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
 ---
@@ -26,7 +26,7 @@ spec:
   policyTypes:
     - Egress
 
-{{- if and (not (empty .Values.dns_provider)) (not (empty .Values.cis_service_name)) (not (empty .Values.cis_crn)) }}
+{{- if and (not (empty .Values.dns_provider)) (not (empty .Values.cis_domain)) (not (empty .Values.cis_crn)) }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -61,8 +61,8 @@ spec:
               value: '{{ .Values.subscription_id }}'
             - name: DOMAIN
               value: '{{ .Values.sls_domain }}'
-            - name: CIS_SERVICE_NAME
-              value: '{{ .Values.cis_service_name }}'
+            - name: CIS_DOMAIN
+              value: '{{ .Values.cis_domain }}'
             - name: CIS_CRN
               value: '{{ .Values.cis_crn }}'
             - name: AVP_TYPE
@@ -135,40 +135,96 @@ spec:
               echo "Setting CIS instance..."
               ibmcloud cis instance-set ${CIS_CRN}
 
-              echo "Exporting DOMAIN_NAME..."
-              export DOMAIN_NAME=$(echo "$CIS_SERVICE_NAME" | sed 's/^CIS - //') 
-
-              echo "Domain Name: $DOMAIN_NAME"
-
-              echo "Listing all available CIS domains:"
-              ibmcloud cis domains --output json
+              # Parse CIS_DOMAIN in case it has "CIS - " prefix (for backwards compatibility)
+              if [[ "${CIS_DOMAIN}" == CIS\ -\ * ]]; then
+                echo "Detected old CIS_DOMAIN format with 'CIS - ' prefix, parsing..."
+                CIS_DOMAIN=$(echo "${CIS_DOMAIN}" | sed 's/^CIS - //')
+                echo "Parsed CIS_DOMAIN: ${CIS_DOMAIN}"
+              fi
 
               echo "Fetching DOMAIN_ID..."
-              DOMAIN_ID=$(ibmcloud cis domains --output json | jq -r ".[] | select(.name==\"$DOMAIN_NAME\") | .id")
+              DOMAIN_ID=$(ibmcloud cis domains --output json | jq -r ".[] | select(.name==\"$CIS_DOMAIN\") | .id")
 
               echo "domain id : $DOMAIN_ID"
 
               if [ -z "$DOMAIN_ID" ] || [ "$DOMAIN_ID" == "null" ]; then
-              echo "ERROR: Could not find Domain ID for name: $DOMAIN_NAME"
+              echo "ERROR: Could not find Domain ID for name: $CIS_DOMAIN"
               exit 1
               fi
 
-              echo "Creating DNS record..."
-              CREATE_OUTPUT=$(ibmcloud cis dns-record-create "$DOMAIN_ID" \
-               --type CNAME \
-               --name "sls.mas-${ICN}-${SUBSCRIPTION_ID}-sls" \
-               --content "${OCP_INGRESS}" \
-               --proxied false 2>&1 || true)
+              Name="sls.mas-${ICN}-${SUBSCRIPTION_ID}-sls"
 
-              if echo "${CREATE_OUTPUT}" | grep -qi "already exists\|duplicate"; then
-                echo "DNS record already exists."
-                exit 0
-              elif echo "${CREATE_OUTPUT}" | grep -qi "OK\|Created\|success"; then
-                echo "DNS record created successfully!"
+              echo "Name: ${Name}"
+              echo "CIS_DOMAIN: ${CIS_DOMAIN}"
+              echo "Value: ${OCP_INGRESS}"
+
+              FULL_Name="${Name}.${CIS_DOMAIN}"
+
+              echo "Checking if DNS record already exists..."
+
+              EXISTING_RECORD=$(ibmcloud cis dns-records "${DOMAIN_ID}" \
+                --name "${FULL_Name}" \
+                --output json)
+
+              RECORD_COUNT=$(echo "${EXISTING_RECORD}" | jq 'length')
+
+              if [[ "${RECORD_COUNT}" -gt 0 ]]; then
+
+                EXISTING_CONTENT=$(echo "${EXISTING_RECORD}" | jq -r '.[0].content')
+                EXISTING_NAME=$(echo "${EXISTING_RECORD}" | jq -r '.[0].name')
+
+                echo "DNS record found!"
+                RECORD_ID=$(echo "${EXISTING_RECORD}" | jq -r '.[0].id')
+                echo "  Record Name: ${EXISTING_NAME}"
+                echo "  Existing Value: ${EXISTING_CONTENT}"
+
+                if [[ "${EXISTING_CONTENT}" != "${OCP_INGRESS}" ]]; then
+
+                  echo "Value has changed. Updating DNS record..."
+
+                  UPDATE_OUTPUT=$(ibmcloud cis dns-record-update "${DOMAIN_ID}" "${RECORD_ID}" \
+                    --type CNAME \
+                    --name "${Name}" \
+                    --content "${OCP_INGRESS}" \
+                    --proxied false 2>&1)
+
+                  UPDATE_RC=$?
+
+                  echo "${UPDATE_OUTPUT}"
+
+                  if [[ ${UPDATE_RC} -eq 0 ]]; then
+                    echo "DNS record updated successfully!"
+                  else
+                    echo "ERROR: DNS record update failed"
+                    exit 1
+                  fi
+
+                else
+                  echo "DNS record value is already correct. No update needed."
+                fi
+
               else
-                echo "ERROR: DNS record creation failed"
+
+                echo "DNS record does not exist. Creating new record..."
+
+                CREATE_OUTPUT=$(ibmcloud cis dns-record-create "${DOMAIN_ID}" \
+                  --type CNAME \
+                  --name "${Name}" \
+                  --content "${OCP_INGRESS}" \
+                  --proxied false 2>&1)
+
+                CREATE_RC=$?
+
+                echo "Create output:"
                 echo "${CREATE_OUTPUT}"
-                exit 1
+
+                if [[ ${CREATE_RC} -eq 0 ]]; then
+                  echo "DNS record created successfully!"
+                else
+                  echo "ERROR: DNS record creation failed"
+                  exit 1
+                fi
+
               fi
 
       volumes:

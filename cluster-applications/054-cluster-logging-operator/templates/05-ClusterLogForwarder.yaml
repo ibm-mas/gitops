@@ -27,6 +27,16 @@ spec:
             namespace: mas-*-core
           - container: instana-agent
             namespace: instana-agent
+{{- if ne .Values.environment_type "prod" }}
+          - container: cron
+            namespace: mas-*-manage
+{{- end }}
+{{- if .Values.additional_exclude_containers }}
+{{- range .Values.additional_exclude_containers }}
+          - container: {{ .container }}
+            namespace: {{ .namespace }}
+{{- end }}
+{{- end }}
       name: application-logs
       type: application
   filters:
@@ -120,8 +130,18 @@ spec:
             namespace: mas-*-monitor
           - container: run
             namespace: mas-*-core
-          # - container: instana-agent
-          #   namespace: instana-agent
+          - container: instana-agent
+            namespace: instana-agent
+{{- if ne .Values.environment_type "prod" }}
+          - container: cron
+            namespace: mas-*-manage
+{{- end }}
+{{- if .Values.additional_exclude_containers }}
+{{- range .Values.additional_exclude_containers }}
+          - container: {{ .container }}
+            namespace: {{ .namespace }}
+{{- end }}
+{{- end }}
       name: application-logs
       type: application
   serviceAccount:

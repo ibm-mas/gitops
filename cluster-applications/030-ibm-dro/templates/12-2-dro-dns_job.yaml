@@ -84,6 +84,8 @@ spec:
               value: {{ .Values.region_id }}
             - name: DRO_PUBLIC_DOMAIN
               value: '{{ .Values.dro_public_domain }}'
+            - name: OCP_CLUSTER_DOMAIN
+              value: '{{ .Values.ocp_cluster_domain }}'
             - name: CIS_CRN
               value: '{{ .Values.cis_crn }}'
             - name: AVP_TYPE
@@ -116,18 +118,27 @@ spec:
 
               echo "Fetching OCP ingress from AWS Secrets Manager"
               export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"
-              sm_get_secret_file ${ACCOUNT_ID}/${CLUSTER_ID}/public-elb ${PUBLIC_ELB_DNS_NAME_FILE}
-              export OCP_INGRESS=$(jq -r .dns ${PUBLIC_ELB_DNS_NAME_FILE})
+              
+              # Try to get public-elb secret, but don't fail if it doesn't exist
+              if sm_get_secret_file ${ACCOUNT_ID}/${CLUSTER_ID}/public-elb ${PUBLIC_ELB_DNS_NAME_FILE} 2>/dev/null; then
+                export OCP_INGRESS=$(jq -r .dns ${PUBLIC_ELB_DNS_NAME_FILE})
+                echo "Using OCP_INGRESS from public-elb secret: ${OCP_INGRESS}"
+              else
+                echo "public-elb secret not found, will use cis-proxy-route fallback"
+                export OCP_INGRESS=""
+              fi
+
+              # If OCP_INGRESS is not set or null, use cis-proxy-route fallback
+              if [[ -z "${OCP_INGRESS}" || "${OCP_INGRESS}" == "null" ]]; then
+                echo "Using cis-proxy-route fallback with OCP_CLUSTER_DOMAIN: ${OCP_CLUSTER_DOMAIN}"
+                export OCP_INGRESS="cis-proxy-route.${OCP_CLUSTER_DOMAIN}"
+                echo "OCP_INGRESS set to: ${OCP_INGRESS}"
+              fi
 
               IBM_APIKEY=$(echo ${SECRET_JSON} | jq -r '.ibm_apikey')
 
               if [[ -z "${IBM_APIKEY}" || "${IBM_APIKEY}" == "null" ]]; then
                 echo "Failed to fetch ibm_apikey from ${SECRET_NAME_CIS}"
-                exit 1
-              fi
-
-              if [[ -z "${OCP_INGRESS}" || "${OCP_INGRESS}" == "null" ]]; then
-                echo "Failed to fetch dns value from public-elb secret"
                 exit 1
               fi
 

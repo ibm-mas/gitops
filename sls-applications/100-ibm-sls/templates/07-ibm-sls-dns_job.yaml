@@ -1,5 +1,5 @@
 
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:14c852062a8c6149820d9aa7b8315d83f25bb29172b0f318e4fe10af613533f3" }}
 {{ $aws_secret := "aws"}}
 {{- $_job_name_prefix := "ibm-sls-dns" }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
@@ -101,19 +101,28 @@ spec:
               echo "Fetching OCP_INGRESS from AWS Secrets Manager"
 
               export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"
-              sm_get_secret_file ${ACCOUNT_ID}/${CLUSTER_ID}/public-elb ${PUBLIC_ELB_DNS_NAME_FILE}
-              export OCP_INGRESS=$(jq -r .dns $PUBLIC_ELB_DNS_NAME_FILE)
+              
+              # Try to get public-elb secret, but don't fail if it doesn't exist
+              if sm_get_secret_file ${ACCOUNT_ID}/${CLUSTER_ID}/public-elb ${PUBLIC_ELB_DNS_NAME_FILE} 2>/dev/null; then
+                export OCP_INGRESS=$(jq -r .dns $PUBLIC_ELB_DNS_NAME_FILE)
+                echo "Using OCP_INGRESS from public-elb secret: ${OCP_INGRESS}"
+              else
+                echo "public-elb secret not found, will use cis-proxy-route fallback"
+                export OCP_INGRESS=""
+              fi
+
+              # If OCP_INGRESS is not set or null, use cis-proxy-route fallback
+              if [[ -z "${OCP_INGRESS}" || "${OCP_INGRESS}" == "null" ]]; then
+                echo "Using cis-proxy-route fallback with DOMAIN: ${DOMAIN}"
+                export OCP_INGRESS="cis-proxy-route.${DOMAIN}"
+                echo "OCP_INGRESS set to: ${OCP_INGRESS}"
+              fi
 
               IBM_APIKEY=$(echo ${SECRET_JSON} | jq -r '.ibm_apikey')
 
-               if [[ -z "${IBM_APIKEY}" || "${IBM_APIKEY}" == "null" ]]; then
+              if [[ -z "${IBM_APIKEY}" || "${IBM_APIKEY}" == "null" ]]; then
                 echo "Failed to fetch ibm_apikey from ${SECRET_NAME_CIS}"
                 exit 1
-              fi
-
-              if [[ -z "${OCP_INGRESS}" || "${OCP_INGRESS}" == "null" ]]; then
-              echo "Failed to fetch dns value from public-elb secret"
-              exit 1
               fi
 
               echo "Setting IBM CLI home to writable location.."

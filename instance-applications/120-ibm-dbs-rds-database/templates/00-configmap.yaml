@@ -120,6 +120,42 @@ data:
       db2.execute(stmt, (tablespace_name.upper(),))
       return int(db2.fetch_tuple(stmt)[0]) > 0
     
+    def get_tablespace_pagesize(tablespace_name):
+      """Get the pagesize of an existing tablespace. Returns None if tablespace doesn't exist."""
+      stmt = db2.prepare(db2_conn, "SELECT pagesize FROM syscat.tablespaces WHERE tbspace = ?")
+      db2.execute(stmt, (tablespace_name.upper(),))
+      result = db2.fetch_tuple(stmt)
+      return int(result[0]) if result else None
+    
+    def drop_tablespace(tablespace_name):
+      """Drop a tablespace using RDS admin procedure."""
+      global has_errors
+      try:
+          sql = f"CALL rdsadmin.drop_tablespace('{database_name}', '{tablespace_name}')"
+          print(f"⏳ Dropping tablespace {tablespace_name}...")
+          db2.exec_immediate(admin_conn, sql)
+          
+          # Wait for tablespace to be dropped
+          max_retries = 12
+          retry_delay = 5
+          
+          for attempt in range(max_retries):
+              time.sleep(retry_delay)
+              if not tablespace_exists(tablespace_name):
+                  print(f"✅ Dropped tablespace: {tablespace_name} (verified after {(attempt + 1) * retry_delay} seconds)")
+                  return True
+              else:
+                  print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Tablespace {tablespace_name} still exists, waiting...")
+          
+          error_msg = f"Tablespace {tablespace_name} still exists after {max_retries * retry_delay} seconds"
+          print(f"❌ {error_msg}")
+          has_errors = True
+          return False
+      except Exception as e:
+          print(f"❌ Error dropping tablespace {tablespace_name}: {e}")
+          has_errors = True
+          return False
+    
     def partition_group_exists(pg_name):
       stmt = db2.prepare(db2_conn, "SELECT COUNT(*) FROM syscat.dbpartitiongroupdef WHERE dbpgname = ?")
       db2.execute(stmt, (pg_name.upper(),))
@@ -317,7 +353,24 @@ data:
         
         for tsp, bp, pagesize, initialsize, increasesize, tsp_type in monitor_tablespaces:
             if tablespace_exists(tsp):
-                print(f"ℹ️ Tablespace '{tsp}' already exists")
+                current_pagesize = get_tablespace_pagesize(tsp)
+                if current_pagesize != pagesize:
+                    print(f"⚠️  Tablespace '{tsp}' exists with pagesize {current_pagesize}, but requires {pagesize}")
+                    print(f"🔄 Dropping and recreating tablespace '{tsp}' with correct pagesize...")
+                    if drop_tablespace(tsp):
+                        create_tablespace(
+                            tbname=tsp,
+                            bufferpool=bp,
+                            pagesize=pagesize,
+                            initialsize=initialsize,
+                            increasesize=increasesize,
+                            tablespace_type=tsp_type
+                        )
+                        created_any = True
+                    else:
+                        print(f"❌ Failed to drop tablespace '{tsp}', skipping recreation")
+                else:
+                    print(f"ℹ️ Tablespace '{tsp}' already exists with correct pagesize {pagesize}")
             else:
                 create_tablespace(
                     tbname=tsp,

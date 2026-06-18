@@ -85,18 +85,6 @@ data:
     
         db2_conn = db2.connect(conn_rds_db2_str, "", "")
         print(f"✅ Connected to database '{database_name}'")
-        
-        # Grant DBADM privileges using RDS admin procedure
-        try:
-            task_id = db2.callproc(
-                admin_conn,
-                "rdsadmin.dbadm_grant",
-                (None, database_name, "DBADM", f"USER {username}")
-            )
-            print(f"✅ Granted DBADM privileges to {username} (task_id: {task_id})")
-        except Exception as e:
-            error_msg = str(e)
-            print(f"⚠️  Error granting DBADM privileges via rdsadmin.dbadm_grant(): {error_msg}")
     except Exception as e:
         print(f"❌ Connection failed: {e}")
         sys.exit(1)
@@ -155,12 +143,6 @@ data:
           print(f"❌ Error dropping tablespace {tablespace_name}: {e}")
           has_errors = True
           return False
-    
-    def partition_group_exists(pg_name):
-      stmt = db2.prepare(db2_conn, "SELECT COUNT(*) FROM syscat.dbpartitiongroupdef WHERE dbpgname = ?")
-      db2.execute(stmt, (pg_name.upper(),))
-      return int(db2.fetch_tuple(stmt)[0]) > 0
-    
 
     def create_bufferpool(bpname, pagesize=32768):
         global has_errors
@@ -226,7 +208,6 @@ data:
                   '{tablespace_type}'
               )
               """
-            print(f"⏳ creating ....... {tbname}")
             db2.exec_immediate(admin_conn, sql)
     
             # CRITICAL: Wait for tablespace to appear (AWS RDS DB2 creates tablespaces asynchronously)
@@ -267,7 +248,6 @@ data:
         "DEDICATEDBPINDX",
         "DEDICATEDBPLOB",
     ]
-    monitor_bufferpools = ["MONITORBP"]  # Monitor uses custom 32K bufferpool
 
     if mas_application_id == "manage":
         for bp in manage_bufferpools:
@@ -286,8 +266,8 @@ data:
     elif mas_application_id in ["monitor", "iot"]:
         # Monitor: Create custom 32K bufferpools
         # Create IBMDEFAULTBP32K for 32K pagesize tablespaces
-        monitor_bufferpools_extended = ["MONITORBP", "IBMDEFAULTBP32K"]
-        for bp in monitor_bufferpools_extended:
+        bufferpools_extended = ["IBMDEFAULTBP32K"]
+        for bp in bufferpools_extended:
             if bufferpool_exists(bp):
                 print(f"ℹ️ Bufferpool '{bp}' already exists")
             else:
@@ -335,8 +315,7 @@ data:
         # Define monitor/IoT tablespaces with their configurations
         # Using IBMDEFAULTBP32K (32K pagesize) bufferpool for all tablespaces
         # Format: (tablespace_name, bufferpool, pagesize, initialsize, increasesize, type)
-        # Note: SYSCATSPACE and STEMPSPACE1 are critical system tablespaces that cannot be dropped/recreated
-        monitor_tablespaces = [
+        monitor_iot_tablespaces = [
             # User tablespaces with 32K pagesize (can be recreated if needed)
             ("SYSTOOLSPACE", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
             ("USERSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
@@ -350,7 +329,7 @@ data:
             ("USERTEMPSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "T"),
         ]
         
-        for tsp, bp, pagesize, initialsize, increasesize, tsp_type in monitor_tablespaces:
+        for tsp, bp, pagesize, initialsize, increasesize, tsp_type in monitor_iot_tablespaces:
             if tablespace_exists(tsp):
                 current_pagesize = get_tablespace_pagesize(tsp)
                 if current_pagesize != pagesize:

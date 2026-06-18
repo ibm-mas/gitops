@@ -293,13 +293,20 @@ data:
                   create_tablespace(tsp, bp)
               created_any = True
     elif mas_application_id in ["monitor", "iot"]:
-        # 3. Monitor: Create tablespaces using rdsadmin.create_tablespace
-        print("\n📝 Setting up Monitor application database objects...")
+        # 3. Monitor/IoT: Create tablespaces using rdsadmin.create_tablespace
+        print("\n📝 Setting up Monitor/IoT application database objects...")
         
-        # Define monitor tablespaces with their configurations
+        # Define monitor/IoT tablespaces with their configurations
         # Using IBMDEFAULTBP32K (32K pagesize) bufferpool for all tablespaces
         # Format: (tablespace_name, bufferpool, pagesize, initialsize, increasesize, type)
         monitor_tablespaces = [
+            # System tablespaces with 32K pagesize (required for monitor and IoT)
+            ("SYSCATSPACE", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("SYSTOOLSPACE", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("USERSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("STEMPSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "T"),
+            ("UTEMPSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "T"),
+            # Application-specific tablespaces
             ("TS4CONSOLE", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
             ("BIGSQLCATUTILITY", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
             ("MONITORSPACE0", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),

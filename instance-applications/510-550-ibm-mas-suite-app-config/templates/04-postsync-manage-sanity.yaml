@@ -1469,50 +1469,16 @@ data:
 
 
     ##############################################################################
-    # MCP-Specific Helper Functions
+    # Fixtures and Helper Functions
     ##############################################################################
-
-
-    @pytest.fixture(scope="session")
-    def dyn_client():
-        """Initialize Kubernetes dynamic client."""
-        if "KUBERNETES_SERVICE_HOST" in os.environ:
-            config.load_incluster_config()
-            k8s_config = Configuration.get_default_copy()
-            k8s_client = client.ApiClient(configuration=k8s_config)
-        else:
-            k8s_client = config.new_client_from_config()
-
-        dyn_client = DynamicClient(k8s_client)
-        dyn_client.namespace = manageNamespace
-        yield dyn_client
-
-
-    @pytest.fixture(scope="session")
-    def v1_routes(dyn_client):
-        """Get Route resource API."""
-        yield dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
-
-
-    @pytest.fixture(scope="session")
-    def v1_secrets(dyn_client):
-        """Get Secret resource API."""
-        yield dyn_client.resources.get(api_version='v1', kind='Secret')
-
-
-    @pytest.fixture(scope="session")
-    def manage_route(v1_routes):
-        """Get Manage route resource."""
-        yield v1_routes.get(name=manage_route_name, namespace=manageNamespace)
-
-
-    @pytest.fixture(scope="session")
-    def manage_host(manage_route):
-        """Extract Manage host from route."""
-        try:
-            yield manage_route['spec']['host']
-        except KeyError as e:
-            assert False, f"Unable to determine Manage host; spec.host key not present in {manage_route_name}/{manageNamespace}: {manage_route}. Error details: {e}"
+    # Note: Reusing session-scoped fixtures from tests.py:
+    #   - dyn_client: Kubernetes dynamic client
+    #   - v1_routes: Route resource API
+    #   - v1_secrets: Secret resource API
+    #   - manage_route: Manage route object
+    #   - manage_host: Manage host from route
+    #   - client_cert: Client certificate tuple
+    # Pytest automatically shares these across test files in the same session.
 
 
     @pytest.fixture(scope="session")
@@ -1521,38 +1487,6 @@ data:
         url = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'
         logger.info(f"Manage URL: {url}")
         yield url
-
-
-    @pytest.fixture(scope="session")
-    def client_cert(v1_secrets):
-        """
-        Retrieve and setup client certificate for authentication.
-        
-        Returns:
-            Tuple of (cert_file, key_file) paths
-        """
-        try:
-            certSecret = v1_secrets.get(
-                f"{mas_instance_id}-internal-manage-tls", manageNamespace
-            )
-            
-            internal_cert = certSecret.data["tls.crt"]
-            internal_key = certSecret.data["tls.key"]
-            decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
-            decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
-
-            with open("internal.crt", "w") as f:
-                f.write(decoded_internal_cert)
-            with open("internal.key", "w") as f:
-                f.write(decoded_internal_key)
-            
-            cert_tuple = ("internal.crt", "internal.key")
-            logger.info("Client certificate retrieved and saved")
-            yield cert_tuple
-            
-        except Exception as e:
-            logger.error(f"Error retrieving client certificate: {e}")
-            raise
 
 
     def get_api_key(user_id, client_cert, manage_url):

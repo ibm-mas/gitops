@@ -1440,7 +1440,14 @@ data:
     This module contains tests for verifying MCP server health probes.
     It reuses fixtures from the main tests.py file to avoid duplication.
     """
+    from kubernetes import client, config
+    from kubernetes.client import Configuration
+    from openshift.dynamic import DynamicClient
     import os
+    import urllib3
+    import requests
+    import logging
+    import base64
     import json
     import subprocess
     import logging
@@ -1449,10 +1456,15 @@ data:
 
     logger = logging.getLogger()
 
-    # Import shared variables from tests module
+    # Global variables
+    session = requests.Session()
+    session.verify = False
+
+    # Get environment variables
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
     mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
     manageNamespace = f"mas-{mas_instance_id}-manage"
+    manage_route_name = f"{mas_instance_id}-{mas_workspace_id}"
     user_id = "maxadmin"
 
 
@@ -1461,7 +1473,175 @@ data:
     ##############################################################################
 
 
-    def get_mcp_server_url(apikey, manage_url, client_cert, session):
+    @pytest.fixture(scope="session")
+    def dyn_client():
+        """Initialize Kubernetes dynamic client."""
+        if "KUBERNETES_SERVICE_HOST" in os.environ:
+            config.load_incluster_config()
+            k8s_config = Configuration.get_default_copy()
+            k8s_client = client.ApiClient(configuration=k8s_config)
+        else:
+            k8s_client = config.new_client_from_config()
+
+        dyn_client = DynamicClient(k8s_client)
+        dyn_client.namespace = manageNamespace
+        yield dyn_client
+
+
+    @pytest.fixture(scope="session")
+    def v1_routes(dyn_client):
+        """Get Route resource API."""
+        yield dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+
+
+    @pytest.fixture(scope="session")
+    def v1_secrets(dyn_client):
+        """Get Secret resource API."""
+        yield dyn_client.resources.get(api_version='v1', kind='Secret')
+
+
+    @pytest.fixture(scope="session")
+    def manage_route(v1_routes):
+        """Get Manage route resource."""
+        yield v1_routes.get(name=manage_route_name, namespace=manageNamespace)
+
+
+    @pytest.fixture(scope="session")
+    def manage_host(manage_route):
+        """Extract Manage host from route."""
+        try:
+            yield manage_route['spec']['host']
+        except KeyError as e:
+            assert False, f"Unable to determine Manage host; spec.host key not present in {manage_route_name}/{manageNamespace}: {manage_route}. Error details: {e}"
+
+
+    @pytest.fixture(scope="session")
+    def manage_url():
+        """Get Manage URL using internal service URL for cluster access."""
+        url = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'
+        logger.info(f"Manage URL: {url}")
+        yield url
+
+
+    @pytest.fixture(scope="session")
+    def client_cert(v1_secrets):
+        """
+        Retrieve and setup client certificate for authentication.
+        
+        Returns:
+            Tuple of (cert_file, key_file) paths
+        """
+        try:
+            certSecret = v1_secrets.get(
+                f"{mas_instance_id}-internal-manage-tls", manageNamespace
+            )
+            
+            internal_cert = certSecret.data["tls.crt"]
+            internal_key = certSecret.data["tls.key"]
+            decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
+            decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
+
+            with open("internal.crt", "w") as f:
+                f.write(decoded_internal_cert)
+            with open("internal.key", "w") as f:
+                f.write(decoded_internal_key)
+            
+            cert_tuple = ("internal.crt", "internal.key")
+            logger.info("Client certificate retrieved and saved")
+            yield cert_tuple
+            
+        except Exception as e:
+            logger.error(f"Error retrieving client certificate: {e}")
+            raise
+
+
+    def get_api_key(user_id, client_cert, manage_url):
+        """
+        Get existing API key for user.
+        
+        Args:
+            user_id: User ID to get API key for
+            client_cert: Client certificate tuple
+            manage_url: Manage service URL
+            
+        Returns:
+            API key string or None
+        """
+        api_key = None
+        try:
+            get_api_key_url = f'{manage_url}/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22{user_id}%22'
+            logger.info(f"Getting API key from: {get_api_key_url}")
+            resp = session.get(get_api_key_url, cert=client_cert, timeout=600)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get('member') and len(data['member']) > 0:
+                    api_key = data['member'][0]['apikey']
+                    logger.info(f"Retrieved existing API key for {user_id}")
+            else:
+                logger.info(f"No existing API key found for {user_id}")
+        except Exception as ex:
+            logger.warning(f"Error getting API key: {ex}")
+        return api_key
+
+
+    def generate_api_key(user_id, client_cert, manage_url):
+        """
+        Generate new API key for user.
+        
+        Args:
+            user_id: User ID to generate API key for
+            client_cert: Client certificate tuple
+            manage_url: Manage service URL
+            
+        Returns:
+            API key string or None
+        """
+        url = manage_url + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
+        logger.info(f"Generating API key at: {url}")
+        
+        try:
+            headers = {'content-type': 'application/json'}
+            payload = {'expiration': '-1', 'userid': user_id}
+            resp = session.post(url, headers=headers, json=payload, cert=client_cert, timeout=600)
+            
+            if resp.status_code <= 201:
+                api_key = get_api_key(user_id, client_cert, manage_url)
+                if api_key:
+                    logger.info(f"Generated API key for {user_id}")
+                    return api_key
+            else:
+                logger.error(f"Failed to create API key: {resp.status_code}")
+                logger.error(resp.text)
+                return None
+        except Exception as ex:
+            logger.error(f"Error generating API key: {ex}")
+            return None
+
+
+    @pytest.fixture(scope="session")
+    def admin_api_key(manage_url, client_cert):
+        """
+        Get or generate API key for admin user.
+        
+        Returns:
+            API key string
+        """
+        # Try to get existing API key
+        api_key = get_api_key(user_id, client_cert, manage_url)
+        
+        # Generate new one if not found
+        if api_key is None:
+            api_key = generate_api_key(user_id, client_cert, manage_url)
+        
+        if api_key is None:
+            raise Exception(f"Failed to obtain API key for {user_id}")
+        
+        logger.info(f"Admin API key ready for {user_id}")
+        yield api_key
+
+
+    @pytest.fixture(scope="session")
+    def proxy_pod(dyn_client):
         """
         Find a suitable pod to proxy MCP calls through (mea or all pod).
         
@@ -1693,70 +1873,65 @@ data:
 
 
     ##############################################################################
-    # Test Class
+    # Test Functions
     ##############################################################################
 
 
-    class TestMCPServerHealthChecks:
-        """
-        Test class for MCP server health probe verification.
-        
-        Tests the basic health endpoints of the MCP server.
-        """
+    def test_mcp_startup_probe(admin_api_key, manage_url, client_cert, proxy_pod):
+        """Test 1: Verify MCP server startup probe."""
+        logger.info("=" * 80)
+        logger.info("TEST 1: MCP Startup Probe")
+        logger.info("=" * 80)
 
-        def test_mcp_startup_probe(self, admin_api_key, manage_url, client_cert, proxy_pod):
-            """Test 1: Verify MCP server startup probe."""
-            logger.info("=" * 80)
-            logger.info("TEST 1: MCP Startup Probe")
-            logger.info("=" * 80)
+        response_data = verify_health_probe(
+            apikey=admin_api_key,
+            manage_url=manage_url,
+            client_cert=client_cert,
+            proxy_pod=proxy_pod,
+            probe_type="startup"
+        )
 
-            response_data = verify_health_probe(
-                apikey=admin_api_key,
-                manage_url=manage_url,
-                client_cert=client_cert,
-                proxy_pod=proxy_pod,
-                probe_type="startup"
-            )
+        assert_that(response_data["status"]).is_in("ready", "live")
+        logger.info("MCP server startup probe: PASSED")
+        logger.info("=" * 80)
 
-            assert_that(response_data["status"]).is_in("ready", "live")
-            logger.info("MCP server startup probe: PASSED")
-            logger.info("=" * 80)
 
-        def test_mcp_readiness_probe(self, admin_api_key, manage_url, client_cert, proxy_pod):
-            """Test 2: Verify MCP server readiness probe."""
-            logger.info("=" * 80)
-            logger.info("TEST 2: MCP Readiness Probe")
-            logger.info("=" * 80)
+    def test_mcp_readiness_probe(admin_api_key, manage_url, client_cert, proxy_pod):
+        """Test 2: Verify MCP server readiness probe."""
+        logger.info("=" * 80)
+        logger.info("TEST 2: MCP Readiness Probe")
+        logger.info("=" * 80)
 
-            response_data = verify_health_probe(
-                apikey=admin_api_key,
-                manage_url=manage_url,
-                client_cert=client_cert,
-                proxy_pod=proxy_pod,
-                probe_type="ready"
-            )
+        response_data = verify_health_probe(
+            apikey=admin_api_key,
+            manage_url=manage_url,
+            client_cert=client_cert,
+            proxy_pod=proxy_pod,
+            probe_type="ready"
+        )
 
-            assert_that(response_data["status"]).is_in("ready", "live")
-            logger.info("MCP server readiness probe: PASSED")
-            logger.info("=" * 80)
+        assert_that(response_data["status"]).is_in("ready", "live")
+        logger.info("MCP server readiness probe: PASSED")
+        logger.info("=" * 80)
 
-        def test_mcp_liveness_probe(self, admin_api_key, manage_url, client_cert, proxy_pod):
-            """Test 3: Verify MCP server liveness probe."""
-            logger.info("=" * 80)
-            logger.info("TEST 3: MCP Liveness Probe")
-            logger.info("=" * 80)
 
-            response_data = verify_health_probe(
-                apikey=admin_api_key,
-                manage_url=manage_url,
-                client_cert=client_cert,
-                proxy_pod=proxy_pod,
-                probe_type="liveness"
-            )
+    def test_mcp_liveness_probe(admin_api_key, manage_url, client_cert, proxy_pod):
+        """Test 3: Verify MCP server liveness probe."""
+        logger.info("=" * 80)
+        logger.info("TEST 3: MCP Liveness Probe")
+        logger.info("=" * 80)
 
-            assert_that(response_data["status"]).is_in("ready", "live")
-            logger.info("MCP server liveness probe: PASSED")
-            logger.info("=" * 80)
+        response_data = verify_health_probe(
+            apikey=admin_api_key,
+            manage_url=manage_url,
+            client_cert=client_cert,
+            proxy_pod=proxy_pod,
+            probe_type="liveness"
+        )
+
+        assert_that(response_data["status"]).is_in("ready", "live")
+        logger.info("MCP server liveness probe: PASSED")
+        logger.info("=" * 80)
 
 
 

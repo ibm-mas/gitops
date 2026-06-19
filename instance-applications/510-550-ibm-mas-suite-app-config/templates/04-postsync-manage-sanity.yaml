@@ -1631,7 +1631,8 @@ data:
         logger.info("=" * 80)
         
         try:
-            core_v1_api = dyn_client.client
+            # Create CoreV1Api from the ApiClient
+            core_v1_api = client.CoreV1Api(api_client=dyn_client.client)
             
             # Try to find 'mea' pod first (preferred)
             logger.info(f"Looking for 'mea' pods in namespace: {manageNamespace}")
@@ -1646,7 +1647,7 @@ data:
                 for pod in mea_pods.items:
                     if pod.status.phase == "Running":
                         pod_name = pod.metadata.name
-                        logger.info(f"Found 'mea' pod: {pod_name}")
+                        logger.info(f"✅ Found 'mea' pod: {pod_name}")
                         logger.info("=" * 80)
                         yield (pod_name, manageNamespace)
                         return
@@ -1664,17 +1665,17 @@ data:
                 for pod in all_pods.items:
                     if pod.status.phase == "Running":
                         pod_name = pod.metadata.name
-                        logger.info(f"Found 'all' pod: {pod_name}")
+                        logger.info(f"✅ Found 'all' pod: {pod_name}")
                         logger.info("=" * 80)
                         yield (pod_name, manageNamespace)
                         return
             
-            logger.warning("No suitable proxy pod found (mea or all)")
+            logger.warning("⚠️  No suitable proxy pod found (mea or all)")
             logger.info("=" * 80)
             yield (None, None)
             
         except Exception as e:
-            logger.error(f"Error finding proxy pod: {e}")
+            logger.error(f"❌ Error finding proxy pod: {e}")
             logger.info("=" * 80)
             yield (None, None)
 

@@ -23,15 +23,48 @@ spec:
             namespace: mas-*-iot
           - container: rest-v2-sync-scheduler
             namespace: mas-*-monitor
+          - container: instana-agent
+            namespace: instana-agent
+{{- if ne .Values.environment_type "prod" }}
+          - container: cron
+            namespace: mas-*-manage
+{{- end }}
+{{- if .Values.additional_exclude_containers }}
+{{- range .Values.additional_exclude_containers }}
+          - container: {{ .container }}
+            namespace: {{ .namespace }}
+{{- end }}
+{{- end }}
       name: application-logs
       type: application
   filters:
+{{- if ne .Values.environment_type "prod" }}
     - drop:
         - test:
             - field: .level
               matches: info|Info|INFO|DEBUG|Debug|debug
+        - test:
+            - field: .message
+              matches: '\[CID\-CRON\-[0-9]+\]'
+        - test:
+            - field: .message
+              matches: 'BMX[A-Z0-9]+I'
+        - test:
+            - field: .message
+              matches: 'BMXAA8229W'
       name: noise
       type: drop
+{{- else }}
+    - drop:
+        - test:
+            - field: .level
+              matches: info|Info|INFO|DEBUG|Debug|debug
+        - test:
+            - field: .message
+              matches: 'BMX[A-Z0-9]+I'
+      name: noise
+      type: drop
+{{- end }}
     - kubeAPIAudit:
         omitStages: []
         rules:
@@ -114,23 +147,71 @@ spec:
             namespace: mas-*-iot
           - container: rest-v2-sync-scheduler
             namespace: mas-*-monitor
+          - container: instana-agent
+            namespace: instana-agent
+{{- if ne .Values.environment_type "prod" }}
+          - container: cron
+            namespace: mas-*-manage
+{{- end }}
+{{- if .Values.additional_exclude_containers }}
+{{- range .Values.additional_exclude_containers }}
+          - container: {{ .container }}
+            namespace: {{ .namespace }}
+{{- end }}
+{{- end }}
       name: application-logs
       type: application
   serviceAccount:
     name: collector
   filters:
+    - name: detect-multiline-errors
+      type: detectMultilineException
+{{- if ne .Values.environment_type "prod" }}
     - drop:
         - test:
             - field: .level
               matches: info|Info|INFO|DEBUG|Debug|debug
+        - test:
+            - field: .message
+              matches: '\[CID\-CRON\-[0-9]+\]'
+        - test:
+            - field: .message
+              matches: 'BMX[A-Z0-9]+I'
+        - test:
+            - field: .message
+              matches: 'BMXAA8229W'
       name: noise
       type: drop
+{{- else }}
+    - drop:
+        - test:
+            - field: .level
+              matches: info|Info|INFO|DEBUG|Debug|debug
+        - test:
+            - field: .message
+              matches: 'BMX[A-Z0-9]+I'
+      name: noise
+      type: drop
+{{- end }}
     - kubeAPIAudit:
         omitStages: []
         rules:
           - level: Metadata
       name: sos-policy
       type: kubeAPIAudit
+    - prune:
+        notIn:
+          - .message
+          - .log_type
+          - .log_source
+          - .kubernetes.namespace_name
+          - .kubernetes.pod_name
+          - .kubernetes.container_name
+          - .kubernetes.labels.app
+          - .kubernetes.labels."mas.ibm.com/instanceId"
+          - .kubernetes.container_image
+      type: prune
+      name: prune-fields
   outputs:
     - name: cloudwatch-1
       type: cloudwatch
@@ -163,19 +244,25 @@ spec:
   pipelines:
     - name: app-logs
       filterRefs:
+        - detect-multiline-errors
         - noise
+        - prune-fields
       inputRefs:
         - application-logs
       outputRefs:
         - cloudwatch-1
     - name: infra-logs
+      filterRefs:
+        - detect-multiline-errors
+        - prune-fields
       inputRefs:
         - infrastructure
       outputRefs:
         - cloudwatch-1
     - name: audit-logs
       filterRefs:
-         - sos-policy
+        - sos-policy
+        - prune-fields
       inputRefs:
         - audit
       outputRefs:

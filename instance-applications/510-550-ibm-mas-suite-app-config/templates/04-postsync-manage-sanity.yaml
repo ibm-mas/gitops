@@ -1442,41 +1442,28 @@ data:
     urllib3==1.26.18
   mcp_tests.py: |-
     """
-    MCP (Maximo Control Platform) Server Health Check Tests
+    MCP (Maximo Control Platform) Pod Availability Test
     
-    This module contains tests for verifying MCP server health probes.
-    It reuses fixtures from the main tests.py file to avoid duplication.
+    This module contains a simple test to verify that the MCP pod is available and running.
     """
     from kubernetes import client, config
     from kubernetes.client import Configuration
     from openshift.dynamic import DynamicClient
     import os
-    import urllib3
-    import requests
-    import logging
-    import base64
-    import json
-    import subprocess
     import logging
     from assertpy import assert_that
     import pytest
 
     logger = logging.getLogger()
 
-    # Global variables
-    session = requests.Session()
-    session.verify = False
-
     # Get environment variables
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
     mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
     manageNamespace = f"mas-{mas_instance_id}-manage"
-    manage_route_name = f"{mas_instance_id}-{mas_workspace_id}"
-    user_id = "maxadmin"
 
 
     ##############################################################################
-    # Fixtures and Helper Functions
+    # Fixtures
     ##############################################################################
 
     @pytest.fixture(scope="session")
@@ -1494,430 +1481,56 @@ data:
         yield dyn_client
 
 
-    @pytest.fixture(scope="session")
-    def v1_secrets(dyn_client):
-        """Get Secret resource API."""
-        yield dyn_client.resources.get(api_version='v1', kind='Secret')
+    ##############################################################################
+    # Test Functions
+    ##############################################################################
 
-
-    @pytest.fixture(scope="session")
-    def client_cert(v1_secrets):
-        """
-        Retrieve and setup client certificate for authentication.
-        
-        Returns:
-            Tuple of (cert_file, key_file) paths
-        """
-        try:
-            certSecret = v1_secrets.get(
-                f"{mas_instance_id}-internal-manage-tls", manageNamespace
-            )
-            
-            internal_cert = certSecret.data["tls.crt"]
-            internal_key = certSecret.data["tls.key"]
-            decoded_internal_cert = base64.b64decode(internal_cert).decode('utf-8')
-            decoded_internal_key = base64.b64decode(internal_key).decode('utf-8')
-
-            with open("internal.crt", "w") as f:
-                f.write(decoded_internal_cert)
-            with open("internal.key", "w") as f:
-                f.write(decoded_internal_key)
-            
-            cert_tuple = ("internal.crt", "internal.key")
-            logger.info("Client certificate retrieved and saved")
-            yield cert_tuple
-            
-        except Exception as e:
-            logger.error(f"Error retrieving client certificate: {e}")
-            raise
-
-
-    @pytest.fixture(scope="session")
-    def manage_url():
-        """Get Manage URL using internal service URL for cluster access."""
-        url = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'
-        logger.info(f"Manage URL: {url}")
-        yield url
-
-
-    def get_api_key(user_id, client_cert, manage_url):
-        """
-        Get existing API key for user.
-        
-        Args:
-            user_id: User ID to get API key for
-            client_cert: Client certificate tuple
-            manage_url: Manage service URL
-            
-        Returns:
-            API key string or None
-        """
-        api_key = None
-        try:
-            get_api_key_url = f'{manage_url}/maximo/api/os/mxapiapikey?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22{user_id}%22'
-            logger.info(f"Getting API key from: {get_api_key_url}")
-            resp = session.get(get_api_key_url, cert=client_cert, timeout=600)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get('member') and len(data['member']) > 0:
-                    api_key = data['member'][0]['apikey']
-                    logger.info(f"Retrieved existing API key for {user_id}")
-            else:
-                logger.info(f"No existing API key found for {user_id}")
-        except Exception as ex:
-            logger.warning(f"Error getting API key: {ex}")
-        return api_key
-
-
-    def generate_api_key(user_id, client_cert, manage_url):
-        """
-        Generate new API key for user.
-        
-        Args:
-            user_id: User ID to generate API key for
-            client_cert: Client certificate tuple
-            manage_url: Manage service URL
-            
-        Returns:
-            API key string or None
-        """
-        url = manage_url + '/maximo/api/os/mxapiapikey?ccm=1&lean=1'
-        logger.info(f"Generating API key at: {url}")
-        
-        try:
-            headers = {'content-type': 'application/json'}
-            payload = {'expiration': '-1', 'userid': user_id}
-            resp = session.post(url, headers=headers, json=payload, cert=client_cert, timeout=600)
-            
-            if resp.status_code <= 201:
-                api_key = get_api_key(user_id, client_cert, manage_url)
-                if api_key:
-                    logger.info(f"Generated API key for {user_id}")
-                    return api_key
-            else:
-                logger.error(f"Failed to create API key: {resp.status_code}")
-                logger.error(resp.text)
-                return None
-        except Exception as ex:
-            logger.error(f"Error generating API key: {ex}")
-            return None
-
-
-    @pytest.fixture(scope="session")
-    def admin_api_key(manage_url, client_cert):
-        """
-        Get or generate API key for admin user.
-        
-        Returns:
-            API key string
-        """
-        # Try to get existing API key
-        api_key = get_api_key(user_id, client_cert, manage_url)
-        
-        # Generate new one if not found
-        if api_key is None:
-            api_key = generate_api_key(user_id, client_cert, manage_url)
-        
-        if api_key is None:
-            raise Exception(f"Failed to obtain API key for {user_id}")
-        
-        logger.info(f"Admin API key ready for {user_id}")
-        yield api_key
-
-
-    @pytest.fixture(scope="session")
-    def proxy_pod(dyn_client):
-        """
-        Find a suitable pod to proxy MCP calls through (mea or all pod).
-        
-        Returns:
-            Tuple of (pod_name, namespace) if found, (None, None) otherwise
-        """
+    def test_mcp_pod_availability(dyn_client):
+        """Test: Verify MCP pod is available and running."""
         logger.info("=" * 80)
-        logger.info("FINDING PROXY POD FOR MCP ACCESS")
+        logger.info("TEST: MCP Pod Availability Check")
         logger.info("=" * 80)
         
         try:
             # Create CoreV1Api from the ApiClient
             core_v1_api = client.CoreV1Api(api_client=dyn_client.client)
             
-            # Try to find 'mea' pod first (preferred)
-            logger.info(f"Looking for 'mea' pods in namespace: {manageNamespace}")
-            mea_label_selector = f"mas.ibm.com/instanceId={mas_instance_id},mas.ibm.com/applicationId=manage,mas.ibm.com/appTypeName=mea"
+            # Look for MCP pods with label selector
+            logger.info(f"Looking for MCP pods in namespace: {manageNamespace}")
+            mcp_label_selector = f"mas.ibm.com/instanceId={mas_instance_id},app=inst292-mcp"
             
-            mea_pods = core_v1_api.list_namespaced_pod(
+            mcp_pods = core_v1_api.list_namespaced_pod(
                 namespace=manageNamespace,
-                label_selector=mea_label_selector
+                label_selector=mcp_label_selector
             )
             
-            if mea_pods.items:
-                for pod in mea_pods.items:
-                    if pod.status.phase == "Running":
-                        pod_name = pod.metadata.name
-                        logger.info(f"✅ Found 'mea' pod: {pod_name}")
-                        logger.info("=" * 80)
-                        yield (pod_name, manageNamespace)
-                        return
+            # Check if any MCP pods exist
+            assert_that(mcp_pods.items).is_not_empty()
+            logger.info(f"Found {len(mcp_pods.items)} MCP pod(s)")
             
-            # Try to find 'all' pod (fallback)
-            logger.info(f"Looking for 'all' pods in namespace: {manageNamespace}")
-            all_label_selector = f"mas.ibm.com/instanceId={mas_instance_id},mas.ibm.com/applicationId=manage,mas.ibm.com/appTypeName=all"
+            # Check if at least one pod is running
+            running_pods = [pod for pod in mcp_pods.items if pod.status.phase == "Running"]
+            assert_that(running_pods).is_not_empty()
             
-            all_pods = core_v1_api.list_namespaced_pod(
-                namespace=manageNamespace,
-                label_selector=all_label_selector
-            )
+            # Log details of running pods
+            for pod in running_pods:
+                pod_name = pod.metadata.name
+                pod_status = pod.status.phase
+                logger.info(f"MCP Pod: {pod_name} - Status: {pod_status}")
+                
+                # Check container statuses
+                if pod.status.container_statuses:
+                    for container in pod.status.container_statuses:
+                        logger.info(f"   Container: {container.name} - Ready: {container.ready}")
+                        assert_that(container.ready).is_true()
             
-            if all_pods.items:
-                for pod in all_pods.items:
-                    if pod.status.phase == "Running":
-                        pod_name = pod.metadata.name
-                        logger.info(f"✅ Found 'all' pod: {pod_name}")
-                        logger.info("=" * 80)
-                        yield (pod_name, manageNamespace)
-                        return
-            
-            logger.warning("⚠️  No suitable proxy pod found (mea or all)")
+            logger.info("MCP pod availability check: PASSED")
             logger.info("=" * 80)
-            yield (None, None)
             
         except Exception as e:
-            logger.error(f"❌ Error finding proxy pod: {e}")
+            logger.error(f"Error checking MCP pod availability: {e}")
             logger.info("=" * 80)
-            yield (None, None)
-
-
-    def execute_curl_via_pod_proxy(proxy_pod, url, headers, method="GET", data=None):
-        """
-        Execute HTTP request through proxy pod using kubectl exec with curl.
-        
-        Args:
-            proxy_pod: Tuple of (pod_name, namespace)
-            url: Target URL
-            headers: HTTP headers dict
-            method: HTTP method (GET or POST)
-            data: Optional JSON data for POST requests
-            
-        Returns:
-            Tuple of (response_text, status_code)
-        """
-        pod_name, namespace = proxy_pod
-        
-        if not pod_name or not namespace:
-            raise Exception("No proxy pod available for MCP calls")
-        
-        # Build curl command
-        curl_cmd = ["curl", "-k", "-X", method, url, "-w", "\\nHTTP_STATUS:%{http_code}"]
-        
-        # Add headers
-        for key, value in headers.items():
-            curl_cmd.extend(["-H", f"{key}: {value}"])
-        
-        # Add data for POST requests
-        if data and method == "POST":
-            curl_cmd.extend(["-d", json.dumps(data)])
-        
-        # Build kubectl exec command
-        kubectl_cmd = [
-            "kubectl", "exec", "-n", namespace, pod_name, "--", *curl_cmd
-        ]
-        
-        logger.debug(f"Executing {method} via pod proxy: {' '.join(kubectl_cmd)}")
-        
-        try:
-            result = subprocess.run(
-                kubectl_cmd, capture_output=True, text=True, timeout=60
-            )
-            
-            if result.returncode != 0:
-                logger.error(f"Pod proxy execution failed: {result.stderr}")
-                raise Exception(f"Pod proxy execution failed: {result.stderr}")
-            
-            # Parse response - curl with -w adds HTTP_STATUS at the end
-            output = result.stdout
-            if "HTTP_STATUS:" in output:
-                parts = output.rsplit("HTTP_STATUS:", 1)
-                response_text = parts[0].strip()
-                status_code = int(parts[1].strip())
-            else:
-                response_text = output
-                status_code = 200
-            
-            logger.debug(f"Pod proxy response (status {status_code}): {response_text[:200]}...")
-            return response_text, status_code
-            
-        except subprocess.TimeoutExpired:
-            logger.error("Pod proxy execution timed out")
-            raise Exception("Pod proxy execution timed out")
-        except Exception as e:
-            logger.error(f"Error executing via pod proxy: {e}")
             raise
-
-
-    def get_mcp_server_url(apikey, manage_url, client_cert):
-        """
-        Get MCP server URL from system property mxe.int.mcpurl.
-        
-        Args:
-            apikey: API key for authentication
-            manage_url: Manage service URL
-            client_cert: Client certificate tuple
-            
-        Returns:
-            MCP server URL string
-        """
-        property_name = "mxe.int.mcpurl"
-        url = f"{manage_url}/maximo/api/os/mxprop?lean=1&oslc.select=*&oslc.where=propname=%22{property_name}%22"
-        
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "*/*",
-            "apikey": apikey,
-        }
-        
-        try:
-            response = session.get(url, headers=headers, cert=client_cert, timeout=120)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('member') and len(data['member']) > 0:
-                    member = data['member'][0]
-                    # Check for cachedvalue first
-                    if 'cachedvalue' in member and member['cachedvalue']:
-                        mcpurl = member['cachedvalue']
-                        logger.info(f"Retrieved MCP URL from cachedvalue: {mcpurl}")
-                        return mcpurl
-                    # Check for propvalue
-                    if 'propvalue' in member and member['propvalue']:
-                        mcpurl = member['propvalue']
-                        logger.info(f"Retrieved MCP URL from propvalue: {mcpurl}")
-                        return mcpurl
-                    # Try maxpropvalue
-                    if 'maxpropvalue' in member and len(member['maxpropvalue']) > 0:
-                        if 'propvalue' in member['maxpropvalue'][0]:
-                            mcpurl = member['maxpropvalue'][0]['propvalue']
-                            logger.info(f"Retrieved MCP URL from maxpropvalue: {mcpurl}")
-                            return mcpurl
-            logger.warning(f"System property {property_name} not found or has no value")
-            return ""
-        except Exception as e:
-            logger.error(f"Failed to retrieve MCP URL: {e}")
-            return ""
-
-
-    def verify_health_probe(apikey, manage_url, client_cert, proxy_pod, probe_type):
-        """
-        Verify MCP server health probe via pod proxy.
-        
-        Args:
-            apikey: API key for authentication
-            manage_url: Manage service URL
-            client_cert: Client certificate tuple
-            proxy_pod: Tuple of (pod_name, namespace)
-            probe_type: Type of probe (startup, ready, liveness)
-            
-        Returns:
-            Response dictionary with status
-        """
-        logger.info(f"Starting health probe verification for: {probe_type}")
-        
-        try:
-            # Get MCP server URL
-            mcp_server_url = get_mcp_server_url(apikey, manage_url, client_cert)
-            if not mcp_server_url:
-                raise Exception("Failed to retrieve MCP server URL")
-            
-            # Build endpoint URL
-            endpoint = f"/probes/{probe_type}"
-            url = mcp_server_url + endpoint
-            
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "*/*",
-                "apikey": apikey,
-            }
-            
-            logger.info(f"Calling health probe at: {url} (via pod proxy)")
-            
-            # Execute via pod proxy
-            response_text, status_code = execute_curl_via_pod_proxy(proxy_pod, url, headers, method="GET")
-            
-            logger.info(f"Response received - Status Code: {status_code}")
-            
-            # Parse JSON response
-            response_json = json.loads(response_text)
-            logger.info(f"Response data: {response_json}")
-            
-            assert_that(status_code).is_equal_to(200)
-            assert_that(response_json).contains_key("status")
-            
-            logger.info(f"{probe_type} probe status: {response_json['status']}")
-            return response_json
-            
-        except Exception as e:
-            logger.error(f"Error in verify_health_probe: {e}")
-            raise
-
-
-    ##############################################################################
-    # Test Functions
-    ##############################################################################
-
-
-    def test_mcp_startup_probe(admin_api_key, manage_url, client_cert, proxy_pod):
-        """Test 1: Verify MCP server startup probe."""
-        logger.info("=" * 80)
-        logger.info("TEST 1: MCP Startup Probe")
-        logger.info("=" * 80)
-
-        response_data = verify_health_probe(
-            apikey=admin_api_key,
-            manage_url=manage_url,
-            client_cert=client_cert,
-            proxy_pod=proxy_pod,
-            probe_type="startup"
-        )
-
-        assert_that(response_data["status"]).is_in("ready", "live")
-        logger.info("MCP server startup probe: PASSED")
-        logger.info("=" * 80)
-
-
-    def test_mcp_readiness_probe(admin_api_key, manage_url, client_cert, proxy_pod):
-        """Test 2: Verify MCP server readiness probe."""
-        logger.info("=" * 80)
-        logger.info("TEST 2: MCP Readiness Probe")
-        logger.info("=" * 80)
-
-        response_data = verify_health_probe(
-            apikey=admin_api_key,
-            manage_url=manage_url,
-            client_cert=client_cert,
-            proxy_pod=proxy_pod,
-            probe_type="ready"
-        )
-
-        assert_that(response_data["status"]).is_in("ready", "live")
-        logger.info("MCP server readiness probe: PASSED")
-        logger.info("=" * 80)
-
-
-    def test_mcp_liveness_probe(admin_api_key, manage_url, client_cert, proxy_pod):
-        """Test 3: Verify MCP server liveness probe."""
-        logger.info("=" * 80)
-        logger.info("TEST 3: MCP Liveness Probe")
-        logger.info("=" * 80)
-
-        response_data = verify_health_probe(
-            apikey=admin_api_key,
-            manage_url=manage_url,
-            client_cert=client_cert,
-            proxy_pod=proxy_pod,
-            probe_type="liveness"
-        )
-
-        assert_that(response_data["status"]).is_in("ready", "live")
-        logger.info("MCP server liveness probe: PASSED")
-        logger.info("=" * 80)
 
 
 

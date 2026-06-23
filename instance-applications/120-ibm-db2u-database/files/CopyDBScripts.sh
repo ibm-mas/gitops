@@ -28,13 +28,13 @@ cp -rp RUNEXPORT.sh ${INSTHOME}/bin/
 cp -rp Explain.ddl ${INSTHOME}/bin/
 cp -rp RUN_OnDemandFULL_BKP.sh ${INSTHOME}/bin/
 cp -rp runstats_rebind.sh ${INSTHOME}/bin/
+cp -rp runstats_volatile.sh ${INSTHOME}/bin/
 cp -rp CreateRoles.sh ${INSTHOME}/bin/
 cp -rp grant_check.sh ${INSTHOME}/bin/
-cp -rp reorgTablesIndexesInplace.sh ${INSTHOME}/bin/
+cp -rp reorgTablesIndexesInplace2.sh ${INSTHOME}/bin/
 cp -rp extract_authorization.sh  ${INSTHOME}/bin
 cp -rp HADRMON.sh ${INSTHOME}/bin
 cp -rp auditExtractUpload.sh ${INSTHOME}/bin/
-
 
 echo -e "\nCopying the file to bin/ITCS104 directory under Instance Home . . ."
 cp -rp FixInvalidObjects.sh ${INSTHOME}/bin/ITCS104/
@@ -50,7 +50,7 @@ cp PostBackFlow.sh ${INSTHOME}/Managed
 cp OwnerCheck.txt ${INSTHOME}/Managed
 
 echo -e "\nCopying files to maintenance directory under Instance Home . . . ";
-cp -rp reorgTablesIndexesInplace2_maintenance.sh ${INSTHOME}/maintenance/reorgTablesIndexesInplace.sh
+cp -rp reorgTablesIndexesInplace2_maintenance.sh ${INSTHOME}/maintenance/reorgTablesIndexesInplace2.sh
 if [ ! -d ${INSTHOME}/maintenance/logs ] ; then
     mkdir -p ${INSTHOME}/maintenance/logs
     echo "${DATETIME}:Creating directory ${INSTHOME}/maintenance/logs"

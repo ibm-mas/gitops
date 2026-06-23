@@ -5,7 +5,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:8c4a6d183315f7dc5628a40773602b625f8b9aabecd54b24a968b8fffdf87923" }}
+{{- $_cli_image_digest := "sha256:14c852062a8c6149820d9aa7b8315d83f25bb29172b0f318e4fe10af613533f3" }}
 
 # A verify test is one that is non disruptive i.e. it won't create new users, i won't call authenticated apis, and it won't creates resources 
 # in the application. This type of test is run on every environment and allows a layer of verification of the app
@@ -142,316 +142,314 @@ data:
     kubernetes
     openshift
   tests.py: |-
-from kubernetes import client, config
-from kubernetes.client import Configuration
-from openshift.dynamic import DynamicClient
-import pytest
-import os
-import urllib3
-import requests
-import certifi
-import logging
-import tempfile
-import base64
+    from kubernetes import client, config
+    from kubernetes.client import Configuration
+    from openshift.dynamic import DynamicClient
+    import pytest
+    import os
+    import urllib3
+    import requests
+    import certifi
+    import logging
+    import tempfile
+    import base64
 
 
-logger = logging.getLogger()
-
-mas_instance_id = os.getenv("MAS_INSTANCE_ID")
-if mas_instance_id is None:
-    raise Exception("Required MAS_INSTANCE_ID environment variable is not set")
-
-mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
-if mas_workspace_id is None:
-    raise Exception("Required MAS_WORKSPACE_ID environment variable is not set")
-
-manageNamespace = os.getenv("MANAGE_NAMESPACE")
-if manageNamespace is None:
-    raise Exception("Required MANAGE_NAMESPACE environment variable is not set")
-
-
-MANAGE_URL = f"https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc"
-# MANAGE_URL = "https://localhost:9443"  # Use for local
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-
-@pytest.fixture(scope="session")
-def dyn_client():
-    if "KUBERNETES_SERVICE_HOST" in os.environ:
-        config.load_incluster_config()
-        k8s_config = Configuration.get_default_copy()
-        k8s_client = client.ApiClient(configuration=k8s_config)
-    else:
-        k8s_client = config.new_client_from_config()
-
-    dyn_client = DynamicClient(k8s_client)
-    dyn_client.namespace = manageNamespace
-    yield dyn_client
-
-
-@pytest.fixture(scope="session")
-def v1_routes(dyn_client):
-    yield dyn_client.resources.get(api_version="route.openshift.io/v1", kind="Route")
+    logger = logging.getLogger()
+    
+    mas_instance_id = os.getenv("MAS_INSTANCE_ID")
+    if mas_instance_id is None:
+        raise Exception("Required MAS_INSTANCE_ID environment variable is not set")
+    
+    mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
+    if mas_workspace_id is None:
+        raise Exception("Required MAS_WORKSPACE_ID environment variable is not set")
+    
+    manageNamespace = os.getenv("MANAGE_NAMESPACE")
+    if manageNamespace is None:
+        raise Exception("Required MANAGE_NAMESPACE environment variable is not set")
+    
+    
+    MANAGE_URL = f"https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc"
+    # MANAGE_URL = "https://localhost:9443"  # Use for local
+    
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
+    
+    @pytest.fixture(scope="session")
+    def dyn_client():
+        if "KUBERNETES_SERVICE_HOST" in os.environ:
+            config.load_incluster_config()
+            k8s_config = Configuration.get_default_copy()
+            k8s_client = client.ApiClient(configuration=k8s_config)
+        else:
+            k8s_client = config.new_client_from_config()
+    
+        dyn_client = DynamicClient(k8s_client)
+        dyn_client.namespace = manageNamespace
+        yield dyn_client
 
 
-@pytest.fixture(scope="session")
-def manage_route(v1_routes):
-    yield v1_routes.get(
-        name=f"{mas_instance_id}-manage-{mas_workspace_id}",
-        namespace=manageNamespace
-    )
-
-
-@pytest.fixture(scope="session")
-def manage_host_ca_filepath(manage_route):
-    manage_route_certificate = None
-    manage_route_caCertificate = None
-    manage_route_destinationCACertificate = None
-
-    # Read the certificate field from the Manage Route.
-    try:
-        manage_route_certificate = manage_route["spec"]["tls"]["certificate"]
-    except KeyError:
-        pass
-
-    # Read the caCertificate field from the Manage Route.
-    try:
-        manage_route_caCertificate = manage_route["spec"]["tls"]["caCertificate"]
-    except KeyError:
-        pass
-
-    # Read the destinationCACertificate field from the Manage Route.
-    try:
-        manage_route_destinationCACertificate = manage_route["spec"]["tls"]["destinationCACertificate"]
-    except KeyError:
-        pass
-
-    # Load default CA bundle.
-    with open(certifi.where(), "rb") as default_ca:
-        default_ca_content = default_ca.read()
-
-    # Combine all certs into a single .pem file.
-    chain_file = tempfile.NamedTemporaryFile(delete=False)
-
-    try:
-        if manage_route_certificate:
-            chain_file.write(manage_route_certificate.encode())
-
-        if manage_route_caCertificate:
-            chain_file.write(manage_route_caCertificate.encode())
-
-        if manage_route_destinationCACertificate:
-            chain_file.write(manage_route_destinationCACertificate.encode())
-
-        chain_file.write(default_ca_content)
-
-        chain_file.flush()
-        chain_file.close()
-
-        yield chain_file.name
-
-    finally:
-        os.remove(chain_file.name)
-
-
-@pytest.fixture(scope="session")
-def client_cert(dyn_client):
-    certSecretObj = dyn_client.resources.get(api_version="v1", kind="Secret")
-    certSecret = certSecretObj.get(
-        name=f"{mas_instance_id}-internal-manage-tls",
-        namespace=f"mas-{mas_instance_id}-manage"
-    )
-
-    internal_cert = certSecret.data["tls.crt"]
-    internal_key = certSecret.data["tls.key"]
-
-    decoded_internal_cert = base64.b64decode(internal_cert).decode("utf-8")
-    decoded_internal_key = base64.b64decode(internal_key).decode("utf-8")
-
-    internal_crt_path = "/tmp/internal.crt"
-    internal_key_path = "/tmp/internal.key"
-
-    with open(internal_crt_path, "w") as f:
-        f.write(decoded_internal_cert)
-
-    with open(internal_key_path, "w") as f:
-        f.write(decoded_internal_key)
-
-    return internal_crt_path, internal_key_path
-
-
-@pytest.fixture()
-def user_api_key(client_cert, manage_host_ca_filepath):
-    user_id = "maxadmin"
-
-    api_key = get_api_key(user_id, client_cert, manage_host_ca_filepath)
-
-    if api_key is None:
-        url = f"{MANAGE_URL}/maximo/api/os/mxapiapikey?ccm=1&lean=1"
-        logger.info("generate_api_key_URL: %s", url)
-        logger.info("generate_api_key_CERT: %s", str(client_cert))
-
+    @pytest.fixture(scope="session")
+    def v1_routes(dyn_client):
+        yield dyn_client.resources.get(api_version="route.openshift.io/v1", kind="Route")
+    
+    
+    @pytest.fixture(scope="session")
+    def manage_route(v1_routes):
+        yield v1_routes.get(
+            name=f"{mas_instance_id}-manage-{mas_workspace_id}",
+            namespace=manageNamespace
+        )
+    
+    
+    @pytest.fixture(scope="session")
+    def manage_host_ca_filepath(manage_route):
+        manage_route_certificate = None
+        manage_route_caCertificate = None
+        manage_route_destinationCACertificate = None
+    
+        # Read the certificate field from the Manage Route.
         try:
-            headers = {"content-type": "application/json"}
-            payload = {"expiration": "-1", "userid": user_id}
+            manage_route_certificate = manage_route["spec"]["tls"]["certificate"]
+        except KeyError:
+            pass
+    
+        # Read the caCertificate field from the Manage Route.
+        try:
+            manage_route_caCertificate = manage_route["spec"]["tls"]["caCertificate"]
+        except KeyError:
+            pass
+    
+        # Read the destinationCACertificate field from the Manage Route.
+        try:
+            manage_route_destinationCACertificate = manage_route["spec"]["tls"]["destinationCACertificate"]
+        except KeyError:
+            pass
+    
+        # Load default CA bundle.
+        with open(certifi.where(), "rb") as default_ca:
+            default_ca_content = default_ca.read()
+    
+        # Combine all certs into a single .pem file.
+        chain_file = tempfile.NamedTemporaryFile(delete=False)
+    
+        try:
+            if manage_route_certificate:
+                chain_file.write(manage_route_certificate.encode())
+    
+            if manage_route_caCertificate:
+                chain_file.write(manage_route_caCertificate.encode())
+    
+            if manage_route_destinationCACertificate:
+                chain_file.write(manage_route_destinationCACertificate.encode())
+    
+            chain_file.write(default_ca_content)
+    
+            chain_file.flush()
+            chain_file.close()
+    
+            yield chain_file.name
+    
+        finally:
+            os.remove(chain_file.name)
 
-            resp = requests.post(
-                url,
-                headers=headers,
-                json=payload,
+
+    @pytest.fixture(scope="session")
+    def client_cert(dyn_client):
+        certSecretObj = dyn_client.resources.get(api_version="v1", kind="Secret")
+        certSecret = certSecretObj.get(
+            name=f"{mas_instance_id}-internal-manage-tls",
+            namespace=f"mas-{mas_instance_id}-manage"
+        )
+    
+        internal_cert = certSecret.data["tls.crt"]
+        internal_key = certSecret.data["tls.key"]
+    
+        decoded_internal_cert = base64.b64decode(internal_cert).decode("utf-8")
+        decoded_internal_key = base64.b64decode(internal_key).decode("utf-8")
+    
+        internal_crt_path = "/tmp/internal.crt"
+        internal_key_path = "/tmp/internal.key"
+    
+        with open(internal_crt_path, "w") as f:
+            f.write(decoded_internal_cert)
+    
+        with open(internal_key_path, "w") as f:
+            f.write(decoded_internal_key)
+    
+        return internal_crt_path, internal_key_path
+    
+    
+    @pytest.fixture()
+    def user_api_key(client_cert, manage_host_ca_filepath):
+        user_id = "maxadmin"
+    
+        api_key = get_api_key(user_id, client_cert, manage_host_ca_filepath)
+    
+        if api_key is None:
+            url = f"{MANAGE_URL}/maximo/api/os/mxapiapikey?ccm=1&lean=1"
+            logger.info("generate_api_key_URL: %s", url)
+            logger.info("generate_api_key_CERT: %s", str(client_cert))
+    
+            try:
+                headers = {"content-type": "application/json"}
+                payload = {"expiration": "-1", "userid": user_id}
+    
+                resp = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    cert=client_cert,
+                    timeout=600,
+                    verify=manage_host_ca_filepath
+                )
+    
+                if resp.status_code <= 201:
+                    api_key = get_api_key(user_id, client_cert, manage_host_ca_filepath)
+                    logger.info("Generated MXAPIKEY for %s", user_id)
+                    yield api_key
+                else:
+                    logger.info("Failed to create APIKEY for: %s", user_id)
+                    logger.info("Status code: %s", resp.status_code)
+                    logger.info("Response body: %s", resp.text)
+                    yield None
+    
+            except Exception as ex:
+                logger.info("Something went wrong while creating API key")
+                logger.info(ex)
+                yield None
+    
+        else:
+            logger.info("Retrieved existing MXAPIKEY for %s", user_id)
+            yield api_key
+    
+    
+    def get_api_key(user_id, client_cert, manage_host_ca_filepath):
+        api_key = None
+    
+        try:
+            get_api_key_url = (
+                f"{MANAGE_URL}/maximo/api/os/mxapiapikey"
+                f"?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22{user_id}%22"
+            )
+    
+            logger.info("get APIKEY URL: %s", get_api_key_url)
+    
+            resp = requests.get(
+                get_api_key_url,
                 cert=client_cert,
                 timeout=600,
                 verify=manage_host_ca_filepath
             )
-
-            if resp.status_code <= 201:
-                api_key = get_api_key(user_id, client_cert, manage_host_ca_filepath)
-                logger.info("Generated MXAPIKEY for %s", user_id)
-                yield api_key
+    
+            if resp.status_code == 200:
+                data = resp.json()
+                api_key = data["member"][0]["apikey"]
             else:
-                logger.info("Failed to create APIKEY for: %s", user_id)
+                logger.info("Failed to get APIKEY for: %s", user_id)
                 logger.info("Status code: %s", resp.status_code)
                 logger.info("Response body: %s", resp.text)
-                yield None
-
+    
         except Exception as ex:
-            logger.info("Something went wrong while creating API key")
             logger.info(ex)
-            yield None
-
-    else:
-        logger.info("Retrieved existing MXAPIKEY for %s", user_id)
-        yield api_key
-
-
-def get_api_key(user_id, client_cert, manage_host_ca_filepath):
-    api_key = None
-
-    try:
-        get_api_key_url = (
-            f"{MANAGE_URL}/maximo/api/os/mxapiapikey"
-            f"?lean=1&ccm=1&oslc.select=*&oslc.where=userid%3D%22{user_id}%22"
-        )
-
-        logger.info("get APIKEY URL: %s", get_api_key_url)
-
-        resp = requests.get(
-            get_api_key_url,
-            cert=client_cert,
-            timeout=600,
+    
+        return api_key
+    
+    
+    @pytest.fixture
+    def headers(user_api_key):
+        yield {
+            "Accept": "application/json",
+            "apikey": user_api_key
+        }
+    
+    
+    def normalize_product_name(value):
+        return str(value).lower().replace("-", " ").replace("_", " ")
+    
+    
+    # *********************** Test Functions ***************
+    
+    # Function to check system info has Maximo IT
+    def test_fetch_system_info(headers, manage_host_ca_filepath):
+        response = requests.get(
+            f"{MANAGE_URL}/maximo/api/systeminfo",
+            headers=headers,
             verify=manage_host_ca_filepath
         )
-
-        if resp.status_code == 200:
-            data = resp.json()
-            api_key = data["member"][0]["apikey"]
-        else:
-            logger.info("Failed to get APIKEY for: %s", user_id)
-            logger.info("Status code: %s", resp.status_code)
-            logger.info("Response body: %s", resp.text)
-
-    except Exception as ex:
-        logger.info(ex)
-
-    return api_key
-
-
-@pytest.fixture
-def headers(user_api_key):
-    yield {
-        "Accept": "application/json",
-        "apikey": user_api_key
-    }
-
-
-def normalize_product_name(value):
-    return str(value).lower().replace("-", " ").replace("_", " ")
-
-
-# *********************** Test Functions ***************
-
-# Function to check system info has Maximo IT
-def test_fetch_system_info(headers, manage_host_ca_filepath):
-    response = requests.get(
-        f"{MANAGE_URL}/maximo/api/systeminfo",
-        headers=headers,
-        verify=manage_host_ca_filepath
-    )
-
-    assert response.status_code == 200, f"Unexpected status code: {response.status_code}. Body: {response.text}"
-
-    print("System info fetched successfully")
-
-    response_json = response.json()
-    response_text = normalize_product_name(response_json)
-
-    assert "maximo it" in response_text, "Maximo IT string is not present in system info response"
-
-    print("Maximo IT is present in System Information")
-
-
-# Function to check if an app exists in API response
-def is_app_present(response_json, target_app):
-    if "member" in response_json and isinstance(response_json["member"], list):
-        return any(
-            "maxapps" in member and any(app["app"] == target_app for app in member["maxapps"])
-            for member in response_json["member"]
+    
+        assert response.status_code == 200, f"Unexpected status code: {response.status_code}. Body: {response.text}"
+    
+        print("System info fetched successfully")
+    
+        response_json = response.json()
+        response_text = normalize_product_name(response_json)
+    
+        assert "maximo it" in response_text, "Maximo IT string is not present in system info response"
+    
+        print("Maximo IT is present in System Information")
+    
+    
+    # Function to check if an app exists in API response
+    def is_app_present(response_json, target_app):
+        if "member" in response_json and isinstance(response_json["member"], list):
+            return any(
+                "maxapps" in member and any(app["app"] == target_app for app in member["maxapps"])
+                for member in response_json["member"]
+            )
+    
+        return False
+    
+    
+    # Check if SELFSERVE app exists
+    @pytest.mark.parametrize("user_id, app", [("maxadmin", "SELFSERVE")])
+    def test_selserve_app_presence(user_id, app, headers, manage_host_ca_filepath):
+        group_url = (
+            f"{MANAGE_URL}/maximo/api/os/mxapigroup"
+            f"?lean=1&oslc.select=*&oslc.where=groupname=%22{user_id}%22"
         )
-
-    return False
-
-
-# Check if SELFSERVE app exists
-@pytest.mark.parametrize("user_id, app", [("maxadmin", "SELFSERVE")])
-def test_selserve_app_presence(user_id, app, headers, manage_host_ca_filepath):
-    group_url = (
-        f"{MANAGE_URL}/maximo/api/os/mxapigroup"
-        f"?lean=1&oslc.select=*&oslc.where=groupname=%22{user_id}%22"
-    )
-
-    response = requests.get(
-        group_url,
-        headers=headers,
-        verify=manage_host_ca_filepath
-    )
-
-    assert response.status_code == 200, f"Unexpected status code: {response.status_code}. Body: {response.text}"
-
-    response_json = response.json()
-    app_found = is_app_present(response_json, app)
-
-    assert app_found, f"App {app} is not present in the response"
-
-    print(f"App {app} is present")
-
-
-# Check if SERVICEVIEW app exists
-@pytest.mark.parametrize("user_id, app", [("maxadmin", "SERVICEVIEW")])
-def test_serviceview_app_presence(user_id, app, headers, manage_host_ca_filepath):
-    group_url = (
-        f"{MANAGE_URL}/maximo/api/os/mxapigroup"
-        f"?lean=1&oslc.select=*&oslc.where=groupname=%22{user_id}%22"
-    )
-
-    response = requests.get(
-        group_url,
-        headers=headers,
-        verify=manage_host_ca_filepath
-    )
-
-    assert response.status_code == 200, f"Unexpected status code: {response.status_code}. Body: {response.text}"
-
-    response_json = response.json()
-    app_found = is_app_present(response_json, app)
-
-    assert app_found, f"App {app} is not present in the response"
-
-    print(f"App {app} is present")
-
-
-
----
+    
+        response = requests.get(
+            group_url,
+            headers=headers,
+            verify=manage_host_ca_filepath
+        )
+    
+        assert response.status_code == 200, f"Unexpected status code: {response.status_code}. Body: {response.text}"
+    
+        response_json = response.json()
+        app_found = is_app_present(response_json, app)
+    
+        assert app_found, f"App {app} is not present in the response"
+    
+        print(f"App {app} is present")
+    
+    
+    # Check if SERVICEVIEW app exists
+    @pytest.mark.parametrize("user_id, app", [("maxadmin", "SERVICEVIEW")])
+    def test_serviceview_app_presence(user_id, app, headers, manage_host_ca_filepath):
+        group_url = (
+            f"{MANAGE_URL}/maximo/api/os/mxapigroup"
+            f"?lean=1&oslc.select=*&oslc.where=groupname=%22{user_id}%22"
+        )
+    
+        response = requests.get(
+            group_url,
+            headers=headers,
+            verify=manage_host_ca_filepath
+        )
+    
+        assert response.status_code == 200, f"Unexpected status code: {response.status_code}. Body: {response.text}"
+    
+        response_json = response.json()
+        app_found = is_app_present(response_json, app)
+    
+        assert app_found, f"App {app} is not present in the response"
+    
+        print(f"App {app} is present")
+        
+    ---
 kind: ConfigMap
 apiVersion: v1
 metadata:

@@ -31,7 +31,7 @@ cp -rp runstats_rebind.sh ${INSTHOME}/bin/
 cp -rp runstats_volatile.sh ${INSTHOME}/bin/
 cp -rp CreateRoles.sh ${INSTHOME}/bin/
 cp -rp grant_check.sh ${INSTHOME}/bin/
-cp -rp reorgTablesIndexesInplace2.sh ${INSTHOME}/bin/
+cp -rp reorgTablesIndexesInplace.sh ${INSTHOME}/bin/
 cp -rp extract_authorization.sh  ${INSTHOME}/bin
 cp -rp HADRMON.sh ${INSTHOME}/bin
 cp -rp auditExtractUpload.sh ${INSTHOME}/bin/

@@ -108,6 +108,41 @@ data:
       db2.execute(stmt, (tablespace_name.upper(),))
       return int(db2.fetch_tuple(stmt)[0]) > 0
     
+    def get_tablespace_pagesize(tablespace_name):
+      """Get the pagesize of an existing tablespace. Returns None if tablespace doesn't exist."""
+      stmt = db2.prepare(db2_conn, "SELECT pagesize FROM syscat.tablespaces WHERE tbspace = ?")
+      db2.execute(stmt, (tablespace_name.upper(),))
+      result = db2.fetch_tuple(stmt)
+      return int(result[0]) if result else None
+    
+    def drop_tablespace(tablespace_name):
+      """Drop a tablespace using RDS admin procedure."""
+      global has_errors
+      try:
+          sql = f"CALL rdsadmin.drop_tablespace('{database_name}', '{tablespace_name}')"
+          print(f"⏳ Dropping tablespace {tablespace_name}...")
+          db2.exec_immediate(admin_conn, sql)
+          
+          # Wait for tablespace to be dropped
+          max_retries = 12
+          retry_delay = 5
+          
+          for attempt in range(max_retries):
+              time.sleep(retry_delay)
+              if not tablespace_exists(tablespace_name):
+                  print(f"✅ Dropped tablespace: {tablespace_name} (verified after {(attempt + 1) * retry_delay} seconds)")
+                  return True
+              else:
+                  print(f"  ⏳ Attempt {attempt + 1}/{max_retries}: Tablespace {tablespace_name} still exists, waiting...")
+          
+          error_msg = f"Tablespace {tablespace_name} still exists after {max_retries * retry_delay} seconds"
+          print(f"❌ {error_msg}")
+          has_errors = True
+          return False
+      except Exception as e:
+          print(f"❌ Error dropping tablespace {tablespace_name}: {e}")
+          has_errors = True
+          return False
 
     def create_bufferpool(bpname, pagesize=32768):
         global has_errors
@@ -228,6 +263,16 @@ data:
             else:
                 create_bufferpool(bp)
                 created_any = True
+    elif mas_application_id in ["monitor", "iot"]:
+        # Monitor: Create custom 32K bufferpools
+        # Create IBMDEFAULTBP32K for 32K pagesize tablespaces
+        bufferpools_extended = ["IBMDEFAULTBP32K"]
+        for bp in bufferpools_extended:
+            if bufferpool_exists(bp):
+                print(f"ℹ️ Bufferpool '{bp}' already exists")
+            else:
+                create_bufferpool(bp, pagesize=32768)
+                created_any = True
     else:
         print(f"ℹ️ BUFFERPOOL CHAIN : mas_application_id is not provided ")
     
@@ -263,6 +308,57 @@ data:
               else:
                   create_tablespace(tsp, bp)
               created_any = True
+    elif mas_application_id in ["monitor", "iot"]:
+        # 3. Monitor/IoT: Create tablespaces using rdsadmin.create_tablespace
+        print("\n📝 Setting up Monitor/IoT application database objects...")
+        
+        # Define monitor/IoT tablespaces with their configurations
+        # Using IBMDEFAULTBP32K (32K pagesize) bufferpool for all tablespaces
+        # Format: (tablespace_name, bufferpool, pagesize, initialsize, increasesize, type)
+        monitor_iot_tablespaces = [
+            # User tablespaces with 32K pagesize (can be recreated if needed)
+            ("SYSTOOLSPACE", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("USERSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("UTEMPSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "T"),
+            # Application-specific tablespaces
+            ("TS4CONSOLE", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("BIGSQLCATUTILITY", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("MONITORSPACE0", "IBMDEFAULTBP32K", 32768, 5242880, 10, "U"),
+            ("TEMPSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "T"),
+            ("SYSTOOLSTMPSPACE", "IBMDEFAULTBP32K", 32768, 5242880, 10, "T"),
+            ("USERTEMPSPACE1", "IBMDEFAULTBP32K", 32768, 5242880, 10, "T"),
+        ]
+        
+        for tsp, bp, pagesize, initialsize, increasesize, tsp_type in monitor_iot_tablespaces:
+            if tablespace_exists(tsp):
+                current_pagesize = get_tablespace_pagesize(tsp)
+                if current_pagesize != pagesize:
+                    print(f"⚠️  Tablespace '{tsp}' exists with pagesize {current_pagesize}, but requires {pagesize}")
+                    print(f"🔄 Dropping and recreating tablespace '{tsp}' with correct pagesize...")
+                    if drop_tablespace(tsp):
+                        create_tablespace(
+                            tbname=tsp,
+                            bufferpool=bp,
+                            pagesize=pagesize,
+                            initialsize=initialsize,
+                            increasesize=increasesize,
+                            tablespace_type=tsp_type
+                        )
+                        created_any = True
+                    else:
+                        print(f"❌ Failed to drop tablespace '{tsp}', skipping recreation")
+                else:
+                    print(f"ℹ️ Tablespace '{tsp}' already exists with correct pagesize {pagesize}")
+            else:
+                create_tablespace(
+                    tbname=tsp,
+                    bufferpool=bp,
+                    pagesize=pagesize,
+                    initialsize=initialsize,
+                    increasesize=increasesize,
+                    tablespace_type=tsp_type
+                )
+                created_any = True
     else:
         print(f"ℹ️ TABLESPACE CHAIN: mas_application_id is not provided ")
 

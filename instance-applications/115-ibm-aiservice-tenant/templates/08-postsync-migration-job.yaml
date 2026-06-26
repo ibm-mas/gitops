@@ -1,9 +1,7 @@
-{{- if hasPrefix "9.2." (toString .Values.catalog_channel) }}
-
 {{- $_job_name_prefix := "postsync-tenant-migration" }}
-{{- $_cli_image_digest := "sha256:14c852062a8c6149820d9aa7b8315d83f25bb29172b0f318e4fe10af613533f3" }}
+{{- $_cli_image_digest := "sha256:64dbab13b7f1ca3d823abee851a94208cf51967849f72102a7e34a909c226df7" }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
@@ -68,7 +66,7 @@ rules:
     verbs: ["get", "list", "patch", "delete"]
   - apiGroups: ["aiservice.ibm.com"]
     resources: ["aiservicetenants"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "patch", "delete"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -139,34 +137,48 @@ spec:
           env:
             - name: AISERVICE_NAMESPACE
               value: "{{ .Values.aiservice_namespace }}"
-            - name: TENANT_ID
+            - name: TENANT_NAMESPACE
               value: "{{ .Values.tenantNamespace }}"
+            - name: CATALOG_CHANNEL
+              value: "{{ .Values.catalog_channel }}"
           command:
             - /bin/sh
             - -c
             - |
               set -e
 
-              readonly API_KEY_SECRET="${TENANT_ID}----apikey-secret"
-              echo "[INFO] Updating owner reference in secret ${API_KEY_SECRET} in namespace ${TENANT_ID}"
-              readonly CR_UID=$(oc get aiservicetenant "${TENANT_ID}" -n "${TENANT_ID}" -o jsonpath='{.metadata.uid}')
-              oc get secret "${API_KEY_SECRET}" -n "${TENANT_ID}" -o json > /tmp/apikey-secret.json
-              jq --arg name "${TENANT_ID}" --arg cr_uid "${CR_UID}" \
-                '.metadata.ownerReferences = [{"apiVersion": "aiservice.ibm.com/v1", "kind": "AIServiceTenant", "name": $name, "uid": $cr_uid}]' \
-                /tmp/apikey-secret.json > /tmp/apikey-secret_patched.json
-              oc apply -f /tmp/apikey-secret_patched.json
+              echo "[INFO] Running post-sync tenant migration at $(date)"
+              function clean_up() {
+                local clean_up_namespace=${1}
+                local cr_namespace=${2}
+                readonly API_KEY_SECRET="${TENANT_NAMESPACE}----apikey-secret"
+                echo "[INFO] Updating owner reference in secret ${API_KEY_SECRET} in namespace ${cr_namespace}"
+                readonly CR_UID=$(oc get aiservicetenant "${TENANT_NAMESPACE}" -n "${cr_namespace}" -o jsonpath='{.metadata.uid}')
+                oc get secret "${API_KEY_SECRET}" -n "${cr_namespace}" -o json > /tmp/apikey-secret.json
+                jq --arg name "${TENANT_NAMESPACE}" --arg cr_uid "${CR_UID}" \
+                  '.metadata.ownerReferences = [{"apiVersion": "aiservice.ibm.com/v1", "kind": "AIServiceTenant", "name": $name, "uid": $cr_uid}]' \
+                  /tmp/apikey-secret.json > /tmp/apikey-secret_patched.json
+                oc apply -f /tmp/apikey-secret_patched.json
 
-              echo "[INFO] Deleting secret ${API_KEY_SECRET} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
-              oc delete secret "${API_KEY_SECRET}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+                echo "[INFO] Deleting secret ${API_KEY_SECRET} in namespace ${clean_up_namespace} (if it exists)"
+                oc delete secret "${API_KEY_SECRET}" -n "${clean_up_namespace}" --ignore-not-found
 
-              echo "[INFO] Deleting AIServiceTenant ${TENANT_ID} in namespace ${AISERVICE_NAMESPACE} (if it exists)"
-              if oc get aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" > /dev/null 2>&1; then
-                # Must patch CR to remove finalizer otherwise we cannot delete it
-                oc patch aiservicetenant "${TENANT_ID}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' \
-                  -n "${AISERVICE_NAMESPACE}"
-                oc delete aiservicetenant "${TENANT_ID}" -n "${AISERVICE_NAMESPACE}" --ignore-not-found
+                oc get aiservicetenant "${TENANT_NAMESPACE}" -n "${clean_up_namespace}" --ignore-not-found
+                if oc get aiservicetenant "${TENANT_NAMESPACE}" -n "${clean_up_namespace}" > /dev/null 2>&1; then
+                  echo "[INFO] Deleting AIServiceTenant CR ${TENANT_NAMESPACE} in namespace ${clean_up_namespace}"
+                  # Must patch CR to remove finalizer otherwise we cannot delete it
+                  if oc get aiservicetenant "${TENANT_NAMESPACE}" -n "${clean_up_namespace}" -o jsonpath='{.metadata.finalizers}' | grep -q .; then
+                    oc patch aiservicetenant "${TENANT_NAMESPACE}" --type json --patch='[ { "op": "remove", "path": "/metadata/finalizers" } ]' -n "${clean_up_namespace}"
+                  fi
+                  oc delete aiservicetenant "${TENANT_NAMESPACE}" -n "${clean_up_namespace}"
+                fi
+              }
+
+              if [[ "${CATALOG_CHANNEL}" == 9.2.* ]]; then
+                clean_up ${AISERVICE_NAMESPACE} ${TENANT_NAMESPACE}
+              elif [[ "${CATALOG_CHANNEL}" == 9.1.* ]]; then
+                clean_up ${TENANT_NAMESPACE} ${AISERVICE_NAMESPACE}
+              else
+                echo "[INFO] Catalog channel is not 9.1.x or 9.2.x => no migration required"
               fi
-
               exit 0
-
-{{- end }}

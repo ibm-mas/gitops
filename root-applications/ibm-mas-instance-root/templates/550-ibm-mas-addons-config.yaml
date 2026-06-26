@@ -1,6 +1,6 @@
 {{ $app_dest_ns := printf "mas-%s-core" .Values.instance.id }}
 
-{{ if and (.Values.application_admin_role) (or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (.Values.application_configuration) (not (empty .Values.ibm_db2u_databases)) (.Values.cluster_nonshared) (.Values.additional_resources)) }}
+{{ if and (.Values.application_admin_role) (or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (.Values.application_configuration) (not (empty .Values.ibm_db2u_databases)) (.Values.cluster_nonshared) (.Values.additional_resources) (.Values.production_database_access)) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
@@ -64,10 +64,8 @@ spec:
               replica_db: {{ $val.replica_db }}
             {{- end }}
             {{- end }}
-            {{- range $val := .Values.ibm_db2u_databases }}
-            {{- if and (eq $val.mas_application_id "manage") ($val.production_database_access) }}
-            production_database_access: {{ $val.production_database_access | toYaml | nindent 14 }}
-            {{- end }}
+            {{- if .Values.production_database_access }}
+            production_database_access: {{ .Values.production_database_access | toYaml | nindent 14 }}
             {{- end }}
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}

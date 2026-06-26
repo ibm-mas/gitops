@@ -87,7 +87,15 @@ spec:
       prune: {{ $.Values.auto_delete }}
       selfHeal: true
     retry:
+      {{- if eq $value.mas_config_chart "ibm-mas-sls-config" }}
+      limit: 30
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 10m
+      {{- else }}
       limit: 20
+      {{- end }}
     syncOptions:
       {{- if $.Values.cluster_admin_role }}
       - CreateNamespace=true

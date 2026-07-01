@@ -18,7 +18,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:64dbab13b7f1ca3d823abee851a94208cf51967849f72102a7e34a909c226df7" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -35,7 +35,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v16" }}
+{{- $_job_version := "v17" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -247,7 +247,7 @@ spec:
             - name: SLACKURL
               value: "{{ .Values.db2_backup_notify_slack_url }}"
             - name: NUM_DB_BACKUPS
-              value: "{{ .Values.db2_database_db_config.NUM_DB_BACKUPS | default "60" }}"
+              value: "{{ if .Values.db2_database_db_config }}{{ .Values.db2_database_db_config.NUM_DB_BACKUPS | default "60" }}{{ else }}60{{ end }}"
 {{- end }}
 
           volumeMounts:
@@ -870,6 +870,7 @@ spec:
                 echo "DAYOFFULL=Sat" >> /tmp/${PROPS_FILE_NAME}
                 echo "NUMOFBKUPTOKEEP=${NUM_DB_BACKUPS}" >> /tmp/${PROPS_FILE_NAME}
                 echo "ICD_AUTH_KEY=${ICD_AUTH_KEY}" >> /tmp/${PROPS_FILE_NAME}
+                echo "APPENV=${MAS_APP_ID}" >> /tmp/${PROPS_FILE_NAME}
 
                 echo ""
                 echo "Copy ${PROPS_FILE_NAME} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"

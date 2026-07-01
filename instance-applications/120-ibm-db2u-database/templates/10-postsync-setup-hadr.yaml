@@ -11,7 +11,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:64dbab13b7f1ca3d823abee851a94208cf51967849f72102a7e34a909c226df7" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -28,7 +28,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v9" }}
+{{- $_job_version := "v10" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -540,7 +540,7 @@ spec:
                     # else copy using oc copy
                     if [[ ${AUTO_BACKUP} == 'true' ]]; then
                       # copy backup from primary to cos bucket
-                      SOURCE=backups-manage/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0/${backup_filename}
+                      SOURCE=backups-${MAS_APP_ID}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0/${backup_filename}
                       if [[ ${copy_to_cos} == 'true' ]]; then
                         SOURCE1=/mnt/backup/standby/${backup_filename}
                         oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager ALIAS PUT source=${SOURCE1} target=DB2REMOTE://AWSCOS//${SOURCE} | tee /tmp/backupupload_${backup_filename}.log" db2inst1 || exit $?

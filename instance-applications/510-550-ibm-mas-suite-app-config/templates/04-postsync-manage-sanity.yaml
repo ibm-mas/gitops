@@ -5,7 +5,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:64dbab13b7f1ca3d823abee851a94208cf51967849f72102a7e34a909c226df7" }}
 
 # A sanity test is one that can be disruptive i.e. it can create new users, call authenticated apis, creates resources 
 # in the application. This type of test should only be run in a downstream environment such as a dev or staging env
@@ -20,6 +20,7 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 {{ $rb_name          :=  "postsync-sanity-manage-rb" }}
 {{ $core_rb_name     :=  "postsync-sanity-manage-core-rb" }}
 {{ $tests_cm_name    :=  "postsync-sanity-tests-manage-cm" }}
+{{ $mcp_tests_cm_name :=  "postsync-sanity-mcp-tests-manage-cm" }}
 {{ $record_cm_name   :=  "postsync-sanity-tests-manage-record-cm" }}
 {{ $job_name         :=  "postsync-sanity-manage-job" }}
 
@@ -109,6 +110,13 @@ rules:
       - ""
     resources:
       - secrets
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - ""
+    resources:
+      - pods
   - verbs:
       - get
       - list
@@ -1409,6 +1417,122 @@ data:
         assert_that(response.status_code).is_equal_to(201)
 
 
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ $mcp_tests_cm_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "603"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+immutable: false
+data:
+  requirements.txt: |-
+    pytest
+    kubernetes
+    openshift
+    requests==2.31.0
+    assertpy==1.1
+    urllib3==1.26.18
+  mcp_tests.py: |-
+    """
+    MCP (Maximo Control Platform) Pod Availability Test
+    
+    This module contains a simple test to verify that the MCP pod is available and running.
+    """
+    from kubernetes import client, config
+    from kubernetes.client import Configuration
+    from openshift.dynamic import DynamicClient
+    import os
+    import logging
+    from assertpy import assert_that
+    import pytest
+
+    logger = logging.getLogger()
+
+    # Get environment variables
+    mas_instance_id = os.getenv("MAS_INSTANCE_ID")
+    mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
+    manageNamespace = f"mas-{mas_instance_id}-manage"
+
+
+    ##############################################################################
+    # Fixtures
+    ##############################################################################
+
+    @pytest.fixture(scope="session")
+    def dyn_client():
+        """Initialize Kubernetes dynamic client."""
+        if "KUBERNETES_SERVICE_HOST" in os.environ:
+            config.load_incluster_config()
+            k8s_config = Configuration.get_default_copy()
+            k8s_client = client.ApiClient(configuration=k8s_config)
+        else:
+            k8s_client = config.new_client_from_config()
+
+        dyn_client = DynamicClient(k8s_client)
+        dyn_client.namespace = manageNamespace
+        yield dyn_client
+
+
+    ##############################################################################
+    # Test Functions
+    ##############################################################################
+
+    def test_mcp_pod_availability(dyn_client):
+        """Test: Verify MCP pod is available and running."""
+        logger.info("=" * 80)
+        logger.info("TEST: MCP Pod Availability Check")
+        logger.info("=" * 80)
+        
+        try:
+            # Create CoreV1Api from the ApiClient
+            core_v1_api = client.CoreV1Api(api_client=dyn_client.client)
+            
+            # Look for MCP pods with label selector
+            logger.info(f"Looking for MCP pods in namespace: {manageNamespace}")
+            mcp_label_selector = f"mas.ibm.com/instanceId={mas_instance_id},mas.ibm.com/appType=mcp"
+            
+            mcp_pods = core_v1_api.list_namespaced_pod(
+                namespace=manageNamespace,
+                label_selector=mcp_label_selector
+            )
+            
+            # Check if any MCP pods exist
+            assert_that(mcp_pods.items).is_not_empty()
+            logger.info(f"Found {len(mcp_pods.items)} MCP pod(s)")
+            
+            # Check if at least one pod is running
+            running_pods = [pod for pod in mcp_pods.items if pod.status.phase == "Running"]
+            assert_that(running_pods).is_not_empty()
+            
+            # Log details of running pods
+            for pod in running_pods:
+                pod_name = pod.metadata.name
+                pod_status = pod.status.phase
+                logger.info(f"MCP Pod: {pod_name} - Status: {pod_status}")
+                
+                # Check container statuses
+                if pod.status.container_statuses:
+                    for container in pod.status.container_statuses:
+                        logger.info(f"   Container: {container.name} - Ready: {container.ready}")
+                        assert_that(container.ready).is_true()
+            
+            logger.info("MCP pod availability check: PASSED")
+            logger.info("=" * 80)
+            
+        except Exception as e:
+            logger.error(f"Error checking MCP pod availability: {e}")
+            logger.info("=" * 80)
+            raise
+
+
 
 ---
 kind: ConfigMap
@@ -1480,6 +1604,8 @@ spec:
           volumeMounts:
             - name: tests
               mountPath: /tmp/tests
+            - name: mcp-tests
+              mountPath: /tmp/mcp-tests
           command:
             - /bin/sh
             - -c
@@ -1490,7 +1616,7 @@ spec:
 
               set -o pipefail
               echo "Running tests..."
-              pytest -v --junit-xml=junitxml_test_output.xml -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py 2>&1 | tee test_log.txt
+              pytest -v --junit-xml=junitxml_test_output.xml -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py /tmp/mcp-tests/mcp_tests.py 2>&1 | tee test_log.txt
               if [[ $? -ne 0 ]]; then
                   TEST_PASSED=false
               else
@@ -1521,6 +1647,16 @@ spec:
                 path: requirements.txt
               - key: tests.py
                 path: tests.py
+            defaultMode: 420
+            optional: false
+        - name: mcp-tests
+          configMap:
+            name: {{ $mcp_tests_cm_name }}
+            items:
+              - key: requirements.txt
+                path: requirements.txt
+              - key: mcp_tests.py
+                path: mcp_tests.py
             defaultMode: 420
             optional: false
   backoffLimit: 10

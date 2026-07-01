@@ -170,9 +170,33 @@ spec:
               echo "Retrieve AIBroker API Key for tenant: ${AISERVICE_TENANT}"
               echo "================================================================================"
 
-              AISERVICE_APIKEY_SECRET=$(oc get secret ${AISERVICE_TENANT}----apikey-secret -n ${TARGET_NAMESPACE} -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
+              # Wait for the apikey-secret to be created by the AIService operator
+              # The operator creates this secret after the AIServiceTenant CR is reconciled
+              SECRET_NAME="${AISERVICE_TENANT}----apikey-secret"
+              MAX_RETRIES=30
+              RETRY_DELAY=10
+              
+              echo "Waiting for secret ${SECRET_NAME} to be created in namespace ${TARGET_NAMESPACE}..."
+              for i in $(seq 1 $MAX_RETRIES); do
+                if oc get secret ${SECRET_NAME} -n ${TARGET_NAMESPACE} > /dev/null 2>&1; then
+                  echo "Secret ${SECRET_NAME} found (attempt $i/$MAX_RETRIES)"
+                  break
+                fi
+                
+                if [ $i -eq $MAX_RETRIES ]; then
+                  echo "ERROR: Secret ${SECRET_NAME} not found after ${MAX_RETRIES} attempts"
+                  echo "The AIService operator may not have created the secret yet"
+                  exit 1
+                fi
+                
+                echo "Secret not found yet, waiting ${RETRY_DELAY}s... (attempt $i/$MAX_RETRIES)"
+                sleep $RETRY_DELAY
+              done
+
+              AISERVICE_APIKEY_SECRET=$(oc get secret ${SECRET_NAME} -n ${TARGET_NAMESPACE} -o jsonpath="{.data.AIBROKER_APIKEY}" | base64 --decode)
               if [ -z "$AISERVICE_APIKEY_SECRET" ]; then
-                echo "AISERVICE_APIKEY_SECRET is empty"
+                echo "ERROR: AISERVICE_APIKEY_SECRET is empty in secret ${SECRET_NAME}"
+                echo "The secret exists but does not contain the AIBROKER_APIKEY field"
                 exit 1
               fi
 

@@ -180,6 +180,8 @@ The following table lists all ArgoCD applications defined in the templates folde
 
 | Template File | Application Name | Cluster Admin Role | Application Admin Role | Both Roles |
 |--------------|------------------|-------------------|----------------------|------------|
+| [`010-ibm-db2u-app.yaml`](templates/010-ibm-db2u-app.yaml) | db2u | - | - | ✓ |
+| [`020-ibm-db2u-database-app.yaml`](templates/020-ibm-db2u-database-app.yaml) | db2u-database | - | - | ✓ |
 | [`030-ibm-odh-app.yaml`](templates/030-ibm-odh-app.yaml) | odh | - | - | ✓ |
 | [`031-ibm-rhoai-app.yaml`](templates/031-ibm-rhoai-app.yaml) | rhoai | - | - | ✓ |
 | [`040-ibm-aiservice-app.yaml`](templates/040-ibm-aiservice-app.yaml) | aiservice | - | - | ✓ |
@@ -189,7 +191,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 
 - **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (0 applications)
 - **Application Admin Role**: Applications that require `application_admin_role` to be set (0 applications)
-- **Both Roles**: Applications rendered regardless of role settings (3 applications)
+- **Both Roles**: Applications rendered regardless of role settings (6 applications)
 
 **Note**: Some applications have additional conditions beyond role requirements (e.g., specific configuration values must be defined). Refer to individual template files for complete rendering logic.
 

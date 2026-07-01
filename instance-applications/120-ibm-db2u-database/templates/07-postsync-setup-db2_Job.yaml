@@ -87,7 +87,7 @@ data:
   db2_backup_bucket_secret_key: {{ .Values.db2_backup_bucket_secret_key | b64enc }}
 {{- if .Values.db2_backup_icd_auth_key }}
   icd_auth_key: {{ .Values.db2_backup_icd_auth_key | b64enc }}
-{{- end }}  
+{{- end }}
 {{- end }}
 type: Opaque
 
@@ -139,15 +139,22 @@ rules:
     - list
 - apiGroups:
     - ""
-  resources: 
+  resources:
     - services
-  verbs: 
+  verbs:
     - "get"
 - apiGroups:
+    - ""
+  resources:
+    - secrets
+  verbs:
+    - get
+    - list
+- apiGroups:
     - db2u.databases.ibm.com
-  resources: 
+  resources:
     - db2uinstances
-  verbs: 
+  verbs:
     - "get"
 
 ---
@@ -306,10 +313,15 @@ spec:
                 RETRIES=${1:-5}
                 RETRY_DELAY_SECONDS=${2:-30}
 
-                mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
-                if [[ "$rc" == "0" ]]; then
-                  echo "... db2 config already matches expected config, returning without calling apply-db2cfg-settings"
-                  return 0
+                # Skip validation for AI Service (MAS_APP_ID is empty or "aiservice")
+                if [[ -n "${MAS_APP_ID}" && "${MAS_APP_ID}" != "aiservice" ]]; then
+                  mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
+                  if [[ "$rc" == "0" ]]; then
+                    echo "... db2 config already matches expected config, returning without calling apply-db2cfg-settings"
+                    return 0
+                  fi
+                else
+                  echo "... skipping db2 config validation for AI Service (MAS_APP_ID is empty or aiservice)"
                 fi
 
                 for (( c=1; c<="${RETRIES}"; c++ )); do
@@ -318,10 +330,16 @@ spec:
                   oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
                   # no useful info in return code of this script
 
-                  rc=0
-                  mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
-                  if [[ "$rc" == "0" ]]; then
-                    echo "...... success"
+                  # Skip validation for AI Service
+                  if [[ -n "${MAS_APP_ID}" && "${MAS_APP_ID}" != "aiservice" ]]; then
+                    rc=0
+                    mas-devops-db2-validate-config --mas-instance-id ${MAS_INSTANCE_ID} --mas-app-id ${MAS_APP_ID} --log-level DEBUG || rc=$?
+                    if [[ "$rc" == "0" ]]; then
+                      echo "...... success"
+                      return 0
+                    fi
+                  else
+                    echo "...... skipping validation for AI Service, assuming success"
                     return 0
                   fi
 
@@ -634,8 +652,15 @@ spec:
               fi
 
               # check if config LOGARCHMETH1 is defined
-              config_op=`oc get db2uinstances db2wh-${MAS_INSTANCE_ID}-${MAS_APP_ID} -n ${DB2_NAMESPACE} -o json | jq -r '.spec.environment.databases' | jq ".[] | select(.name==\"${DB2_DBNAME}\")" | jq '.dbConfig.LOGARCHMETH1' | sed 's/DISK://'`
-              if [[ "${config_op}" != "null" ]]; then
+              # For AI Service (empty MAS_APP_ID), use DB2_INSTANCE_NAME directly
+              if [[ -z "${MAS_APP_ID}" || "${MAS_APP_ID}" == "aiservice" ]]; then
+                DB2U_INSTANCE_NAME="${DB2_INSTANCE_NAME}"
+              else
+                DB2U_INSTANCE_NAME="db2wh-${MAS_INSTANCE_ID}-${MAS_APP_ID}"
+              fi
+              
+              config_op=`oc get db2uinstances ${DB2U_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o json | jq -r '.spec.environment.databases' | jq ".[] | select(.name==\"${DB2_DBNAME}\")" | jq '.dbConfig.LOGARCHMETH1' | sed 's/DISK://'`
+              if [[ "${config_op}" != "null" && -n "${config_op}" ]]; then
                 echo ""
                 echo "Creating directory ${config_op} for LOGARCHMETH1 on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
@@ -787,6 +812,38 @@ spec:
               sm_login
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-setup-db2\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret ${DB2_CONFIG_SECRET} "{ \"jdbc_connection_url\": \"${JDBC_CONNECTION_URL}\", \"jdbc_instance_name\": \"${DB2_INSTANCE_NAME}\", \"ca_b64\": \"${DB2_CA_PEM}\", \"db2_dbname\": \"${DB2_DBNAME}\", \"db2_namespace\": \"${DB2_NAMESPACE}\" }" "${TAGS}" || exit $?
+
+              # Update JDBC secret for AI Service (if MAS_APP_ID is empty or "aiservice")
+              if [[ -z "${MAS_APP_ID}" || "${MAS_APP_ID}" == "aiservice" ]]; then
+                echo ""
+                echo "================================================================================"
+                echo "Updating JDBC secret for AI Service"
+                echo "================================================================================"
+                
+                # Fetch DB2 instance password
+                echo ""
+                echo "Fetching DB2 instance password from c-${DB2_INSTANCE_NAME}-instancepassword secret"
+                echo "--------------------------------------------------------------------------------"
+                export DB2_PASSWORD=$(oc get secret c-${DB2_INSTANCE_NAME}-instancepassword -n ${DB2_NAMESPACE} -o jsonpath='{.data.password}' | base64 -d)
+                if [[ -z "${DB2_PASSWORD}" ]]; then
+                  echo "Failed to fetch DB2 instance password"
+                  exit 1
+                fi
+                
+                # Construct JDBC secret name
+                JDBC_SECRET_NAME="${ACCOUNT_ID}/${CLUSTER_ID}/jdbc"
+                
+                echo ""
+                echo "Updating JDBC secret: ${JDBC_SECRET_NAME}"
+                echo "--------------------------------------------------------------------------------"
+                
+                # Update JDBC secret with real DB2 connection details
+                JDBC_TAGS="[{\"Key\": \"jdbccfg_username\", \"Value\": \"jdbccfg_username\"}, {\"Key\": \"jdbccfg_password\", \"Value\": \"jdbccfg_password\"}, {\"Key\": \"jdbccfg_url\", \"Value\": \"jdbccfg_url\"}, {\"Key\": \"jdbccfg_sslenabled\", \"Value\": \"jdbccfg_sslenabled\"}, {\"Key\": \"jdbccfg_ca_b64enc\", \"Value\": \"jdbccfg_ca_b64enc\"}]"
+                
+                sm_update_secret "${JDBC_SECRET_NAME}" "{\"jdbccfg_username\":\"db2inst1\",\"jdbccfg_password\":\"${DB2_PASSWORD}\",\"jdbccfg_url\":\"${JDBC_CONNECTION_URL}\",\"jdbccfg_sslenabled\":\"true\",\"jdbccfg_ca_b64enc\":\"${DB2_CA_PEM}\"}" "${JDBC_TAGS}" || exit $?
+                
+                echo "✓ JDBC secret updated successfully for AI Service"
+              fi
 
               if [[ -n $BUCKET_NAME ]]; then
                 echo ""

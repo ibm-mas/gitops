@@ -102,6 +102,8 @@ spec:
               value: "{{ .Values.cluster_id }}"
             - name: MAS_INSTANCE_ID
               value: "{{ .Values.instance_id }}"
+            - name: SECRETS_KEY_SEPERATOR
+              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "_" "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
 
             - name: DOCDB_MASTER_USERNAME
               valueFrom:
@@ -163,7 +165,6 @@ spec:
               export DOCDB_HOSTS=${DOCDB_HOSTS%,}
 
               # Get docdb instance password from aws secrets manager
-              SECRETS_KEY_SEPERATOR="/"
               SECRET_NAME_MONGO=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}mongo
               source /mascli/functions/gitops_utils
               sm_login

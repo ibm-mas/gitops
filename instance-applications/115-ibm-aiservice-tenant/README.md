@@ -107,6 +107,9 @@ sm:                             # Secrets Manager configuration
   aws_secret_region: string
   aws_access_key_id: string (secret reference)
   aws_secret_access_key: string (secret reference)
+  backend: string               # Secrets manager backend type: "aws" (default) or "kubernetes"
+  secret_keys_seperator: string # Override the key separator used when constructing secret names.
+                                # Defaults to "/" for aws backend, "_" for kubernetes backend.
 ```
 
 For complete documentation of all base instance values including optional fields like `custom_labels`, `argocluster_instance`, `application_admin_service_account`, `mas_wipe_mongo_data`, `allow_list`, `additional_vpn`, `application_configuration`, `use_postdelete_hooks`, `additional_resources`, `extensions`, `enhanced_dr`, and `cli_image_repo`, see the [Instance Base Values Reference](../../docs/reference/instance-base-values.md).

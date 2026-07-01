@@ -45,6 +45,8 @@ spec:
               value: "{{ .Values.cluster_id }}"
             - name: MAS_INSTANCE_ID
               value: "{{ .Values.instance_id }}"
+            - name: SECRETS_KEY_SEPERATOR
+              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "_" "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
 
             - name: DOCDB_MASTER_USERNAME
               valueFrom:
@@ -179,7 +181,6 @@ spec:
               echo "Deleting Instance Mongo Secret"
               echo "================================================================================"
 
-              SECRETS_KEY_SEPERATOR="/"
               SECRET_NAME_MONGO=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}mongo
 
               echo "Params:"

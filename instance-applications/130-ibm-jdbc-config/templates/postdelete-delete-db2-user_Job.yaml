@@ -144,9 +144,10 @@ spec:
             - name: MAS_INSTANCE_ID
               value: "{{ .Values.instance_id }}"
               
-            # Hard-coded for now:
             - name: AVP_TYPE
-              value: "aws"
+              value: "{{ .Values.sm_backend | default "aws" }}"
+            - name: SECRETS_KEY_SEPERATOR
+              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "_" "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
             - name: SM_AWS_REGION
               valueFrom:
                 secretKeyRef:
@@ -175,7 +176,6 @@ spec:
               echo "Deleting Instance JDBC config Secrets"
               echo "================================================================================"
 
-              SECRETS_KEY_SEPERATOR="/"
               SECRET_NAME_JDBC_CONFIG=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}${DB2_INSTANCE_NAME}${SECRETS_KEY_SEPERATOR}config
 
               echo "Params:"

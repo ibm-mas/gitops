@@ -138,7 +138,7 @@ spec:
             - name: AISERVICE_INSTANCE_ID
               value: "{{ .Values.aiservice_instance_id }}"
             - name: SECRETS_KEY_SEPERATOR
-              value: "/"
+              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "_" "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
             - name: AISERVICE_TENANT
               value: "{{ .Values.tenantNamespace }}"
             - name: SM_AWS_REGION
@@ -148,7 +148,7 @@ spec:
             - name: SM_AWS_SECRET_ACCESS_KEY
               value: "{{ .Values.aiservice_s3_secretkey }}"
             - name: AVP_TYPE
-              value: "aws"
+              value: "{{ .Values.sm_backend | default "aws" }}"
             - name: TARGET_NAMESPACE
               value: "{{ $_namespace }}"
           command:
@@ -156,8 +156,7 @@ spec:
             - -c
             - |
               set -e
-              SECRETS_KEY_SEPERATOR="/"
-              SECRET_NAME_AISERVICE=${ACCOUNT_ID}/${CLUSTER_ID}/${AISERVICE_INSTANCE_ID}/${AISERVICE_TENANT}
+              SECRET_NAME_AISERVICE=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${AISERVICE_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}${AISERVICE_TENANT}
               echo "================================================================================"
               echo "Account Id ....................... ${ACCOUNT_ID}"
               echo "Cluster Id ....................... ${CLUSTER_ID}"

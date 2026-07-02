@@ -1,0 +1,54 @@
+{{- if .Values.application_admin_role }}
+{{- if eq .Values.mas_application_id "facilities" }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+
+#
+# CronJob for Volatile Tables RUNSTATS
+# Runs every 10 minutes to update statistics for frequently changing tables
+# Based on MASCORE-10348 - DB2 runstats required on MREF databases
+#
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: "db2-volatile-runstats-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  labels:
+    parent: cronjob
+    db2pod: "c-{{ .Values.db2_instance_name }}-db2u-0"
+    mas.ibm.com/applicationId: "{{ .Values.mas_application_id }}"
+    mas.ibm.com/instanceId: "{{ .Values.instance_id }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "100"
+spec:
+  # Run every 10 minutes
+  schedule: '*/10 * * * *'
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            parent: cronjob
+        spec:
+          containers:
+            - name: "db2-volatile-runstats-{{ .Values.db2_instance_name }}"
+              image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+              command:
+                - oc
+                - rsh
+                - "c-{{ .Values.db2_instance_name }}-db2u-0"
+                - su
+                - -lc
+                - /mnt/backup/bin/runstats_volatile.sh
+                - db2inst1
+              imagePullPolicy: IfNotPresent
+          restartPolicy: OnFailure
+          serviceAccountName: "account-{{ .Values.db2_namespace }}-{{ .Values.db2_instance_name }}"
+  successfulJobsHistoryLimit: 30
+  failedJobsHistoryLimit: 10
+{{- end }}
+{{- end }}

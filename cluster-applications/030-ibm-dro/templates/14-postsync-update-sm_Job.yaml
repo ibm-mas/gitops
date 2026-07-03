@@ -163,6 +163,8 @@ spec:
               value: {{ .Values.cluster_id }}
             - name: DRO_NAMESPACE
               value: {{ .Values.dro_namespace }}
+            - name: SECRETS_KEY_SEPERATOR
+              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
             - name: AVP_TYPE
               value: "{{ .Values.sm_backend | default "aws" }}"
             - name: DRO_PUBLIC_DOMAIN
@@ -274,7 +276,7 @@ spec:
               sm_login
 
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
-              SECRET_NAME_DRO=${ACCOUNT_ID}/${CLUSTER_ID}/dro
+              SECRET_NAME_DRO=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}dro
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-dro-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret $SECRET_NAME_DRO "{\"dro_api_token\": \"$DRO_API_TOKEN\", \"dro_url\": \"$DRO_URL\", \"dro_client_tls_tls_crt_b64\": \"$DRO_CLIENT_TLS_TLS_CRT\", \"dro_client_tls_tls_key_b64\": \"$DRO_CLIENT_TLS_TLS_KEY\", \"dro_ca_b64enc\": \"$DRO_CA_B64ENC\" }" "${TAGS}"
 

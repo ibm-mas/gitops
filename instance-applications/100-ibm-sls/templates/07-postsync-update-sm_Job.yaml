@@ -209,6 +209,8 @@ spec:
               value: {{ .Values.cluster_id }}
             - name: INSTANCE_ID
               value: {{ .Values.instance_id }}
+            - name: SECRETS_KEY_SEPERATOR
+              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
             - name: AVP_TYPE
               value: "{{ .Values.sm_backend | default "aws" }}"
           volumeMounts:
@@ -254,7 +256,7 @@ spec:
               sm_login
 
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
-              SECRET_NAME_SLS=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/sls
+              SECRET_NAME_SLS=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${INSTANCE_ID}${SECRETS_KEY_SEPERATOR}sls
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\" }" "${TAGS}"
 

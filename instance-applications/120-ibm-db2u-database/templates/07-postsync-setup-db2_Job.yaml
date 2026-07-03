@@ -219,6 +219,8 @@ spec:
               value: {{ .Values.mas_application_id}}
             - name: JDBC_CONNECTION_URL_ADDITIONAL_PARAMS
               value: {{ .Values.jdbc_connection_url_additional_params  }}
+            - name: SECRETS_KEY_SEPERATOR
+              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
             - name: AVP_TYPE
               value: "{{ .Values.sm_backend | default "aws" }}"
             - name: DB2_NAMESPACE
@@ -334,7 +336,7 @@ spec:
                 return 1
               }
 
-              export DB2_CONFIG_SECRET=${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/${DB2_INSTANCE_NAME}/config
+              export DB2_CONFIG_SECRET=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}${DB2_INSTANCE_NAME}${SECRETS_KEY_SEPERATOR}config
               export DB2_USER=db2_${MAS_APP_ID}
 
               echo ""

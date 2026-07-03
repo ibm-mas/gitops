@@ -163,7 +163,7 @@ spec:
               
               sm_login
               
-              SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/jdbc/{{ .Values.db2_rds_instance_name }}/config"
+              SECRET_PATH="${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}{{ .Values.db2_rds_instance_name }}${SECRETS_KEY_SEPERATOR}config"
               
               EXISTING_SECRET=$(sm_get_secret_value "${SECRET_PATH}" 2>/dev/null || echo "{}")
               
@@ -216,6 +216,8 @@ spec:
               value: {{ .Values.instance_id | quote }}
             - name: MAS_APP_ID
               value: {{ .Values.mas_application_id | default "" | quote }}
+            - name: SECRETS_KEY_SEPERATOR
+              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
             - name: SM_AWS_SECRET_REGION
               value: {{ .Values.sm_aws_secret_region | default "us-east-1" | quote }}
             - name: AWS_DEFAULT_REGION

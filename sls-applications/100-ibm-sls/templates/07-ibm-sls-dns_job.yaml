@@ -65,6 +65,8 @@ spec:
               value: '{{ .Values.cis_domain }}'
             - name: CIS_CRN
               value: '{{ .Values.cis_crn }}'
+            - name: SECRETS_KEY_SEPERATOR
+              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
             - name: AVP_TYPE
               value: "{{ .Values.sm_backend | default "aws" }}"
             - name: IBMCLOUD_HOME
@@ -93,7 +95,7 @@ spec:
 
               echo "Fetching IBM API key from AWS Secrets Manager"
 
-              SECRET_NAME_CIS="${ACCOUNT_ID}/${CLUSTER_ID}/cis"
+              SECRET_NAME_CIS="${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}cis"
 
               SECRET_JSON=$(sm_get_secret "${SECRET_NAME_CIS}")
               echo ${SECRET_JSON}
@@ -103,7 +105,7 @@ spec:
               export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"
               
               # Try to get public-elb secret, but don't fail if it doesn't exist
-              if sm_get_secret_file ${ACCOUNT_ID}/${CLUSTER_ID}/public-elb ${PUBLIC_ELB_DNS_NAME_FILE} 2>/dev/null; then
+              if sm_get_secret_file ${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}public-elb ${PUBLIC_ELB_DNS_NAME_FILE} 2>/dev/null; then
                 export OCP_INGRESS=$(jq -r .dns $PUBLIC_ELB_DNS_NAME_FILE)
                 echo "Using OCP_INGRESS from public-elb secret: ${OCP_INGRESS}"
               else

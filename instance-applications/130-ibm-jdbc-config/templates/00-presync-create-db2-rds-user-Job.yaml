@@ -119,6 +119,8 @@ spec:
             value: "{{ .Values.jdbc_instance_password }}"
           - name: MAS_APP_ID
             value: "{{ .Values.mas_application_id }}"
+          - name: SECRETS_KEY_SEPERATOR
+            value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
         volumeMounts:
           - name: aws
             mountPath: /etc/mas/creds/aws
@@ -437,9 +439,9 @@ spec:
                 
                 # Determine the secret path based on app_type
                 if [ "${app_type}" = "rds-ssp" ]; then
-                  SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2rds-ssp/${MAS_APP_ID}/credentials"
+                  SECRET_PATH="${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}db2rds-ssp${SECRETS_KEY_SEPERATOR}${MAS_APP_ID}${SECRETS_KEY_SEPERATOR}credentials"
                 else
-                  SECRET_PATH="${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/jdbc/rds-${MAS_INSTANCE_ID}-${app_type}/credentials"
+                  SECRET_PATH="${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}rds-${MAS_INSTANCE_ID}-${app_type}${SECRETS_KEY_SEPERATOR}credentials"
                 fi
                 
                 echo "Secret Path: ${SECRET_PATH}"

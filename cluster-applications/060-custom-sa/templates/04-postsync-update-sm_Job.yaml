@@ -102,6 +102,8 @@ spec:
               value: {{ $key }}
             - name: CUSTOM_SA_NAMESPACE
               value: {{ $.Values.custom_sa_namespace }}
+            - name: SECRETS_KEY_SEPERATOR
+              value: "{{ $.Values.sm_secret_keys_seperator | default (ternary "." "/" (eq ($.Values.sm_backend | default "aws") "kubernetes")) }}"
             - name: AVP_TYPE
               value: "{{ $.Values.sm_backend | default "aws" }}"
           volumeMounts:
@@ -159,7 +161,7 @@ spec:
               sm_login
 
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_TOKEN}" --tags "${SECRET_TAGS}"
-              SM_SECRET_NAME=${ACCOUNT_ID}/${CLUSTER_ID}/custom-sa/${CUSTOM_SA_NAME}
+              SM_SECRET_NAME=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}custom-sa${SECRETS_KEY_SEPERATOR}${CUSTOM_SA_NAME}
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-custom-sa-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret ${SM_SECRET_NAME} "{\"cluster\": \"${CLUSTER_ID}\",\"apiurl\":\"${CLUSTER_API_URL}\",\"token\":\"${SECRET_TOKEN}\"}" "${TAGS}"
 

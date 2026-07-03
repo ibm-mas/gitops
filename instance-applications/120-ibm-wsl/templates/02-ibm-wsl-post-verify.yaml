@@ -222,6 +222,8 @@ spec:
               value: {{ .Values.cluster_id }}
             - name: INSTANCE_ID
               value: {{ .Values.instance_id }}
+            - name: SECRETS_KEY_SEPERATOR
+              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetes")) }}"
             - name: AVP_TYPE
               value: "{{ .Values.sm_backend | default "aws" }}"
           volumeMounts:
@@ -324,11 +326,11 @@ spec:
               export SM_AWS_REGION=${REGION_ID}
               sm_login
 
-              SECRET_NAME_WSL_PROJECT_ID=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/$CPD_WSL_PROJECT_NAME
+              SECRET_NAME_WSL_PROJECT_ID=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${INSTANCE_ID}${SECRETS_KEY_SEPERATOR}${CPD_WSL_PROJECT_NAME}
               TAGS="[{\"Key\": \"source\", \"Value\": \"cpd-wsl-post-verify\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret $SECRET_NAME_WSL_PROJECT_ID "{\"wsl_project_id\": \"$WSL_PROJECT_ID\" }" "${TAGS}"
 
-              SECRET_NAME_WATSON_STUDIO=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wsl-cp4d
+              SECRET_NAME_WATSON_STUDIO=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${INSTANCE_ID}${SECRETS_KEY_SEPERATOR}wsl-cp4d
               sm_update_secret $SECRET_NAME_WATSON_STUDIO "{\"url\": \"$CPD_ADMIN_URL\", \"username\": \"$CPD_ADMIN_USERNAME\", \"password\": \"$CPD_ADMIN_PASSWORD\" }" "${TAGS}"
 
               echo "Done"

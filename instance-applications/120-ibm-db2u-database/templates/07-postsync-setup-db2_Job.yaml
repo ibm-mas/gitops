@@ -35,8 +35,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v19" }}
-
+{{- $_job_version := "v20" }}
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
 This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
@@ -614,9 +613,8 @@ spec:
                 echo ""
                 echo "Copying runstats_volatile.sh to /mnt/backup/bin in c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
-                oc cp /tmp/db2-scripts-facilities/runstats_volatile.sh ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/runstats_volatile.sh -c db2u || exit $?
+                cat /tmp/db2-scripts-facilities/runstats_volatile.sh | oc exec -i -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -c db2u -- tee /tmp/runstats_volatile.sh > /dev/null || exit $?
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "sudo rm -f /mnt/backup/bin/runstats_volatile.sh && sudo mv /tmp/runstats_volatile.sh /mnt/backup/bin/runstats_volatile.sh && sudo chmod +x /mnt/backup/bin/runstats_volatile.sh && sudo chown db2inst1:db2iadm1 /mnt/backup/bin/runstats_volatile.sh" db2inst1 || exit $?
-
                 # Execute db2configdb.sh
                 echo ""
                 echo "Executing db2config.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"

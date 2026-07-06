@@ -47,7 +47,7 @@ sm:                             # Secrets Manager configuration
   aws_access_key_id: string (secret reference)
   aws_secret_access_key: string (secret reference)
   backend: string               # Secrets manager backend type: "aws" (default) or "kubernetes"
-  secret_keys_seperator: string # Override the key separator used when constructing secret names.
+  secret_keys_separator: string # Override the key separator used when constructing secret names.
                                 # Defaults to "/" for aws backend, "_" for kubernetes backend.
 ```
 

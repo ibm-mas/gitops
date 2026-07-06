@@ -30,7 +30,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v5" }}
+{{- $_job_version := "v6" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -77,6 +77,7 @@ By convention, we sha1sum this value to guarantee we never exceed the 63 char li
 
 
 
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
 ---
 kind: Secret
 apiVersion: v1
@@ -94,6 +95,7 @@ stringData:
   aws_secret_access_key: {{ .Values.sm_aws_secret_access_key }}
   aws_default_region: {{ .Values.sm_aws_region }}
 type: Opaque
+{{- end }}
 
 
 ---
@@ -272,8 +274,8 @@ spec:
             - name: MAS_VERSION
               value: "{{ .Values.mas_version }}"
 
-            - name: SECRETS_KEY_SEPERATOR
-              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
+            - name: SECRETS_KEY_SEPARATOR
+              value: "{{ .Values.sm_secret_keys_separator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
 
             - name: SM_AWS_REGION
               value: "{{ .Values.sm_aws_region }}"
@@ -282,8 +284,10 @@ spec:
               value: "{{ .Values.sm_backend | default "aws" }}"
 
           volumeMounts:
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
             - name: "aws"
               mountPath: /etc/mas/creds/aws
+{{- end }}
           command:
             - /bin/sh
             - -c
@@ -291,15 +295,17 @@ spec:
 
               set -e
 
-              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              if [[ "${AVP_TYPE}" != "kubernetessecret" ]]; then
+                export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+                export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              fi
               source /mascli/functions/gitops_utils
               sm_login
 
               mas-devops-create-initial-users-for-saas \
                   --mas-instance-id "${MAS_INSTANCE_ID}" \
                   --mas-workspace-id "${MAS_WORKSPACE_ID}" \
-                  --initial-users-secret-name "${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}initial_users"{{- if .Values.mas_version }} \
+                  --initial-users-secret-name "${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPARATOR}initial_users"{{- if .Values.mas_version }} \
                   --mas-version "${MAS_VERSION}"{{- end }}
               rc=$?
               exit $rc
@@ -308,11 +314,13 @@ spec:
 
       serviceAccountName: "{{ $sa_name }}"
       volumes:
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
         - name: "aws"
           secret:
             secretName: "{{ $aws_secret }}"
             defaultMode: 420
             optional: false
+{{- end }}
 
   backoffLimit: 4
 

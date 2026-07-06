@@ -35,7 +35,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v17" }}
+{{- $_job_version := "v18" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -67,6 +67,7 @@ are required here.
 */}}
 {{- $_job_cleanup_group := cat $_job_name_prefix .Values.db2_instance_name | sha1sum }}
 
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
 ---
 kind: Secret
 apiVersion: v1
@@ -87,9 +88,10 @@ data:
   db2_backup_bucket_secret_key: {{ .Values.db2_backup_bucket_secret_key | b64enc }}
 {{- if .Values.db2_backup_icd_auth_key }}
   icd_auth_key: {{ .Values.db2_backup_icd_auth_key | b64enc }}
-{{- end }}  
+{{- end }}
 {{- end }}
 type: Opaque
+{{- end }}
 
 ---
 # Service account that is authorized to read k8s secrets (needed by the job)
@@ -219,8 +221,8 @@ spec:
               value: {{ .Values.mas_application_id}}
             - name: JDBC_CONNECTION_URL_ADDITIONAL_PARAMS
               value: {{ .Values.jdbc_connection_url_additional_params  }}
-            - name: SECRETS_KEY_SEPERATOR
-              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
+            - name: SECRETS_KEY_SEPARATOR
+              value: "{{ .Values.sm_secret_keys_separator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
             - name: AVP_TYPE
               value: "{{ .Values.sm_backend | default "aws" }}"
             - name: DB2_NAMESPACE
@@ -245,8 +247,10 @@ spec:
 {{- end }}
 
           volumeMounts:
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
             - name: aws
               mountPath: /etc/mas/creds/aws
+{{- end }}
             - name: db2u-certificate
               mountPath: /etc/mas/creds/db2u-certificate
 {{- if .Values.db2_backup_bucket_name }}
@@ -336,7 +340,7 @@ spec:
                 return 1
               }
 
-              export DB2_CONFIG_SECRET=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}${DB2_INSTANCE_NAME}${SECRETS_KEY_SEPERATOR}config
+              export DB2_CONFIG_SECRET=${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPARATOR}jdbc${SECRETS_KEY_SEPARATOR}${DB2_INSTANCE_NAME}${SECRETS_KEY_SEPARATOR}config
               export DB2_USER=db2_${MAS_APP_ID}
 
               echo ""
@@ -355,14 +359,16 @@ spec:
               echo "JDBC_CONNECTION_URL_ADDITIONAL_PARAMS ........... ${JDBC_CONNECTION_URL_ADDITIONAL_PARAMS}"
               echo "JDBC_CONNECTION_URL_ADDITIONAL_PARAMS is defined: $(if [[ -n "${JDBC_CONNECTION_URL_ADDITIONAL_PARAMS}" ]]; then echo 'YES'; else echo 'NO'; fi)"
 
-              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-              export SM_AWS_REGION=${REGION_ID}
+              if [[ "${AVP_TYPE}" != "kubernetessecret" ]]; then
+                export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+                export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+                export SM_AWS_REGION=${REGION_ID}
 
-              if [[ -n $BUCKET_NAME ]]; then
-                export DB2_BACKUP_BUCKET_ACCESS_KEY=$(cat /etc/mas/creds/aws/db2_backup_bucket_access_key)
-                export DB2_BACKUP_BUCKET_SECRET_KEY=$(cat /etc/mas/creds/aws/db2_backup_bucket_secret_key)
-                export ICD_AUTH_KEY=$(cat /etc/mas/creds/aws/icd_auth_key)
+                if [[ -n $BUCKET_NAME ]]; then
+                  export DB2_BACKUP_BUCKET_ACCESS_KEY=$(cat /etc/mas/creds/aws/db2_backup_bucket_access_key)
+                  export DB2_BACKUP_BUCKET_SECRET_KEY=$(cat /etc/mas/creds/aws/db2_backup_bucket_secret_key)
+                  export ICD_AUTH_KEY=$(cat /etc/mas/creds/aws/icd_auth_key)
+                fi
               fi
              
               echo ""
@@ -881,11 +887,13 @@ spec:
 
       serviceAccountName: "postsync-sa-{{ .Values.db2_instance_name }}"
       volumes:
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
         - name: aws
           secret:
             secretName: "aws-{{ .Values.db2_instance_name }}"
             defaultMode: 420
             optional: false
+{{- end }}
         - name: db2u-certificate
           secret:
             secretName: "db2u-certificate-{{ .Values.db2_instance_name }}"

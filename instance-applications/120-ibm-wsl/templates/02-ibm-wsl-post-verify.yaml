@@ -24,7 +24,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v4" }}
+{{- $_job_version := "v5" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -162,6 +162,7 @@ roleRef:
   name: wsl-precheck-role-instance-{{ .Values.instance_id }}
 
 
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
 ---
 kind: Secret
 apiVersion: v1
@@ -178,6 +179,7 @@ stringData:
   aws_access_key_id: {{ .Values.sm_aws_access_key_id }}
   aws_secret_access_key: {{ .Values.sm_aws_secret_access_key }}
 type: Opaque
+{{- end }}
 
 ---
 apiVersion: batch/v1
@@ -222,13 +224,15 @@ spec:
               value: {{ .Values.cluster_id }}
             - name: INSTANCE_ID
               value: {{ .Values.instance_id }}
-            - name: SECRETS_KEY_SEPERATOR
-              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
+            - name: SECRETS_KEY_SEPARATOR
+              value: "{{ .Values.sm_secret_keys_separator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
             - name: AVP_TYPE
               value: "{{ .Values.sm_backend | default "aws" }}"
           volumeMounts:
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
             - name: aws
               mountPath: /etc/mas/creds/aws
+{{- end }}
           command:
             - /bin/sh
             - -c
@@ -321,16 +325,18 @@ spec:
               # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
               # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
               # mount the secret on the jobs filesystem, and read them in here
-              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              if [[ "${AVP_TYPE}" != "kubernetessecret" ]]; then
+                SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+                SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              fi
               export SM_AWS_REGION=${REGION_ID}
               sm_login
 
-              SECRET_NAME_WSL_PROJECT_ID=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${INSTANCE_ID}${SECRETS_KEY_SEPERATOR}${CPD_WSL_PROJECT_NAME}
+              SECRET_NAME_WSL_PROJECT_ID=${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}${INSTANCE_ID}${SECRETS_KEY_SEPARATOR}${CPD_WSL_PROJECT_NAME}
               TAGS="[{\"Key\": \"source\", \"Value\": \"cpd-wsl-post-verify\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret $SECRET_NAME_WSL_PROJECT_ID "{\"wsl_project_id\": \"$WSL_PROJECT_ID\" }" "${TAGS}"
 
-              SECRET_NAME_WATSON_STUDIO=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${INSTANCE_ID}${SECRETS_KEY_SEPERATOR}wsl-cp4d
+              SECRET_NAME_WATSON_STUDIO=${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}${INSTANCE_ID}${SECRETS_KEY_SEPARATOR}wsl-cp4d
               sm_update_secret $SECRET_NAME_WATSON_STUDIO "{\"url\": \"$CPD_ADMIN_URL\", \"username\": \"$CPD_ADMIN_USERNAME\", \"password\": \"$CPD_ADMIN_PASSWORD\" }" "${TAGS}"
 
               echo "Done"
@@ -338,9 +344,11 @@ spec:
       restartPolicy: Never
       serviceAccountName: wsl-precheck-sa
       volumes:
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
         - name: aws
           secret:
             secretName: aws
             defaultMode: 420
             optional: false
+{{- end }}
   backoffLimit: 4

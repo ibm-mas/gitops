@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -102,13 +102,15 @@ spec:
               value: {{ $key }}
             - name: CUSTOM_SA_NAMESPACE
               value: {{ $.Values.custom_sa_namespace }}
-            - name: SECRETS_KEY_SEPERATOR
-              value: "{{ $.Values.sm_secret_keys_seperator | default (ternary "." "/" (eq ($.Values.sm_backend | default "aws") "kubernetessecret")) }}"
+            - name: SECRETS_KEY_SEPARATOR
+              value: "{{ $.Values.sm_secret_keys_separator | default (ternary "." "/" (eq ($.Values.sm_backend | default "aws") "kubernetessecret")) }}"
             - name: AVP_TYPE
               value: "{{ $.Values.sm_backend | default "aws" }}"
           volumeMounts:
+{{- if ne ($.Values.sm_backend | default "aws") "kubernetessecret" }}
             - name: aws
               mountPath: /etc/mas/creds/aws
+{{- end }}
           command:
             - /bin/sh
             - -c
@@ -122,8 +124,10 @@ spec:
               # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
               # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
               # mount the secret on the jobs filesystem, and read them in here
-              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              if [[ "${AVP_TYPE}" != "kubernetessecret" ]]; then
+                SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+                SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              fi
               
               # Get name of secret generated for the custom service account
               echo "Fetching name of secret generated for custom service account ${CUSTOM_SA_NAME}"
@@ -161,17 +165,19 @@ spec:
               sm_login
 
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_TOKEN}" --tags "${SECRET_TAGS}"
-              SM_SECRET_NAME=${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}custom-sa${SECRETS_KEY_SEPERATOR}${CUSTOM_SA_NAME}
+              SM_SECRET_NAME=${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}custom-sa${SECRETS_KEY_SEPARATOR}${CUSTOM_SA_NAME}
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-custom-sa-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret ${SM_SECRET_NAME} "{\"cluster\": \"${CLUSTER_ID}\",\"apiurl\":\"${CLUSTER_API_URL}\",\"token\":\"${SECRET_TOKEN}\"}" "${TAGS}"
 
       restartPolicy: Never
       serviceAccountName: postsync-custom-sa-sa
       volumes:
+{{- if ne ($.Values.sm_backend | default "aws") "kubernetessecret" }}
         - name: aws
           secret:
             secretName: aws
             defaultMode: 420
             optional: false
+{{- end }}
   backoffLimit: 4
 {{- end }}

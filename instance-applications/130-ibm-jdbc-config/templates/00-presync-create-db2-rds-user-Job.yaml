@@ -11,6 +11,7 @@
   {{ $np := printf "%s-np" $prefix }}
   {{ $job := printf "%s-job" $prefix }}
 
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
 ---
 kind: Secret
 apiVersion: v1
@@ -28,6 +29,7 @@ data:
   aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
 type: Opaque
+{{- end }}
 
 ---
 kind: ServiceAccount
@@ -119,11 +121,15 @@ spec:
             value: "{{ .Values.jdbc_instance_password }}"
           - name: MAS_APP_ID
             value: "{{ .Values.mas_application_id }}"
-          - name: SECRETS_KEY_SEPERATOR
-            value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
+          - name: SECRETS_KEY_SEPARATOR
+            value: "{{ .Values.sm_secret_keys_separator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
+          - name: AVP_TYPE
+            value: "{{ .Values.sm_backend | default "aws" }}"
         volumeMounts:
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
           - name: aws
             mountPath: /etc/mas/creds/aws
+{{- end }}
         command:
           - /bin/sh
           - -c
@@ -146,8 +152,10 @@ spec:
             echo "RDS_ADMIN_DB_NAME ................... ${RDS_ADMIN_DB_NAME}"
             echo "MAS_APP_ID .......................... ${MAS_APP_ID}"
             
-            export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-            export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+            if [[ "${AVP_TYPE}" != "kubernetessecret" ]]; then
+              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+            fi
             export SM_AWS_REGION=${REGION_ID}
             
             # -----------------------------
@@ -439,9 +447,9 @@ spec:
                 
                 # Determine the secret path based on app_type
                 if [ "${app_type}" = "rds-ssp" ]; then
-                  SECRET_PATH="${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}db2rds-ssp${SECRETS_KEY_SEPERATOR}${MAS_APP_ID}${SECRETS_KEY_SEPERATOR}credentials"
+                  SECRET_PATH="${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPARATOR}db2rds-ssp${SECRETS_KEY_SEPARATOR}${MAS_APP_ID}${SECRETS_KEY_SEPARATOR}credentials"
                 else
-                  SECRET_PATH="${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}rds-${MAS_INSTANCE_ID}-${app_type}${SECRETS_KEY_SEPERATOR}credentials"
+                  SECRET_PATH="${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}${MAS_INSTANCE_ID}${SECRETS_KEY_SEPARATOR}jdbc${SECRETS_KEY_SEPARATOR}rds-${MAS_INSTANCE_ID}-${app_type}${SECRETS_KEY_SEPARATOR}credentials"
                 fi
                 
                 echo "Secret Path: ${SECRET_PATH}"
@@ -471,10 +479,12 @@ spec:
       restartPolicy: Never
       serviceAccountName: {{ $sa }}
       volumes:
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
         - name: aws
           secret:
             secretName: "aws-{{ .Values.mas_config_name }}"
             defaultMode: 420
+{{- end }}
   backoffLimit: 4
 
   {{- end }}

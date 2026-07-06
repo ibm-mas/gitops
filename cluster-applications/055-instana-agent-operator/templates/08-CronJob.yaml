@@ -40,11 +40,13 @@ spec:
             - name: instana-db2-jks
               persistentVolumeClaim:
                 claimName: instana-db2-jks
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
             - name: aws
               secret:
                 secretName: aws
                 defaultMode: 420
                 optional: false
+{{- end }}
 
           # This container runs first to configure the Instana agent CR with the config for the DB2 instance.
           # Additionally, it writes the DB2 certificate to a persistent volume.
@@ -55,8 +57,10 @@ spec:
               volumeMounts:
                 - name: instana-db2-jks
                   mountPath: /jks/
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
                 - name: aws
                   mountPath: /etc/mas/creds/aws
+{{- end }}
               resources:
                 limits:
                   cpu: 200m
@@ -71,12 +75,12 @@ spec:
                   value: {{ .Values.region_id }}
                 - name: CLUSTER_ID
                   value: {{ .Values.cluster_id }}
-                - name: SECRETS_KEY_SEPERATOR
-                  value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
+                - name: SECRETS_KEY_SEPARATOR
+                  value: "{{ .Values.sm_secret_keys_separator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
                 - name: AVP_TYPE
                   value: "{{ .Values.sm_backend | default "aws" }}"
                 - name: JDBC_SECRET_NAME_PATTERN
-                  value: ".*${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}.*${SECRETS_KEY_SEPERATOR}config"
+                  value: ".*${SECRETS_KEY_SEPARATOR}jdbc${SECRETS_KEY_SEPARATOR}.*${SECRETS_KEY_SEPARATOR}config"
                 - name: DB2_PLUGIN_REMOTE_TEMPLATE
                   value: |
                     {
@@ -104,10 +108,10 @@ spec:
                   }
                   
                   # Secret name is of form: ${ACCOUNT_ID}<sep>${CLUSTER_ID}<sep>${MAS_INSTANCE_ID}<sep>jdbc<sep>${DB2_INSTANCE_NAME}<sep>config
-                  # where <sep> is the value of SECRETS_KEY_SEPERATOR (/ for aws, . for kubernetessecret)
+                  # where <sep> is the value of SECRETS_KEY_SEPARATOR (/ for aws, . for kubernetessecret)
                   function get_mas_instance_id() {
                     local secret_name="${1}"
-                    local sep="${SECRETS_KEY_SEPERATOR}"
+                    local sep="${SECRETS_KEY_SEPARATOR}"
                     local mas_instance_id=$(echo "${secret_name}" | sed -e "s_[^${sep}]*${sep}[^${sep}]*${sep}\([^${sep}]*\)${sep}jdbc${sep}.*_\1_")
                     echo "${mas_instance_id}"
                   }
@@ -225,26 +229,28 @@ spec:
                     local jdbc_secret=$(sm_get_secret "${jdbc_secret_name}")
                     local jdbc_instance_name=$(extract_secret_value "${jdbc_secret}" jdbc_instance_name)
                     local mas_instance_id=$(get_mas_instance_id "${jdbc_secret_name}")
-                    local db2_secret=$(sm_get_secret ${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${mas_instance_id}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}${jdbc_instance_name}${SECRETS_KEY_SEPERATOR}credentials)
+                    local db2_secret=$(sm_get_secret ${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}${mas_instance_id}${SECRETS_KEY_SEPARATOR}jdbc${SECRETS_KEY_SEPARATOR}${jdbc_instance_name}${SECRETS_KEY_SEPARATOR}credentials)
                     local db2_username=$(extract_secret_value "${db2_secret}" username)
                     local db2_password=$(extract_secret_value "${db2_secret}" password)
                     echo "${db2_username} ${db2_password}"
                   }
 
-                  # Validate AWS credentials exist before proceeding
-                  if [[ ! -f /etc/mas/creds/aws/aws_access_key_id ]] || [[ ! -f /etc/mas/creds/aws/aws_secret_access_key ]]; then
-                    echo "[ERROR] AWS credentials not found. Cannot proceed."
-                    exit 1
-                  fi
+                  if [[ "${AVP_TYPE}" != "kubernetessecret" ]]; then
+                    # Validate AWS credentials exist before proceeding
+                    if [[ ! -f /etc/mas/creds/aws/aws_access_key_id ]] || [[ ! -f /etc/mas/creds/aws/aws_secret_access_key ]]; then
+                      echo "[ERROR] AWS credentials not found. Cannot proceed."
+                      exit 1
+                    fi
 
-                  SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-                  SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-                  SM_AWS_REGION=${REGION_ID}
-                  
-                  # Validate credentials are not empty
-                  if [[ -z "${SM_AWS_ACCESS_KEY_ID}" ]] || [[ -z "${SM_AWS_SECRET_ACCESS_KEY}" ]]; then
-                    echo "[ERROR] AWS credentials are empty. Cannot proceed."
-                    exit 1
+                    SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+                    SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+                    SM_AWS_REGION=${REGION_ID}
+                    
+                    # Validate credentials are not empty
+                    if [[ -z "${SM_AWS_ACCESS_KEY_ID}" ]] || [[ -z "${SM_AWS_SECRET_ACCESS_KEY}" ]]; then
+                      echo "[ERROR] AWS credentials are empty. Cannot proceed."
+                      exit 1
+                    fi
                   fi
                   
                   if ! sm_login; then

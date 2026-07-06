@@ -24,6 +24,7 @@ data:
   username: {{ .Values.user | b64enc }}
   password: {{ .Values.password | b64enc }}
 
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
 ---
 apiVersion: v1
 kind: Secret
@@ -40,6 +41,7 @@ metadata:
 data:
   aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
   aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+{{- end }}
 
 ---
 apiVersion: batch/v1
@@ -157,13 +159,15 @@ spec:
               # -----------------------------
               echo "Checking if Secrets Manager needs updating..."
               
-              export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
-              export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              if [[ "${AVP_TYPE:-aws}" != "kubernetessecret" ]]; then
+                export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+                export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              fi
               export SM_AWS_REGION=${SM_AWS_SECRET_REGION}
               
               sm_login
               
-              SECRET_PATH="${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}${INSTANCE_ID}${SECRETS_KEY_SEPERATOR}jdbc${SECRETS_KEY_SEPERATOR}{{ .Values.db2_rds_instance_name }}${SECRETS_KEY_SEPERATOR}config"
+              SECRET_PATH="${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}${INSTANCE_ID}${SECRETS_KEY_SEPARATOR}jdbc${SECRETS_KEY_SEPARATOR}{{ .Values.db2_rds_instance_name }}${SECRETS_KEY_SEPARATOR}config"
               
               EXISTING_SECRET=$(sm_get_secret_value "${SECRET_PATH}" 2>/dev/null || echo "{}")
               
@@ -216,8 +220,8 @@ spec:
               value: {{ .Values.instance_id | quote }}
             - name: MAS_APP_ID
               value: {{ .Values.mas_application_id | default "" | quote }}
-            - name: SECRETS_KEY_SEPERATOR
-              value: "{{ .Values.sm_secret_keys_seperator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
+            - name: SECRETS_KEY_SEPARATOR
+              value: "{{ .Values.sm_secret_keys_separator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}"
             - name: SM_AWS_SECRET_REGION
               value: {{ .Values.sm_aws_secret_region | default "us-east-1" | quote }}
             - name: AWS_DEFAULT_REGION
@@ -225,8 +229,10 @@ spec:
           volumeMounts:
             - name: dbs-rds-create-db-secret
               mountPath: /etc/mas/dbs-rds-creds/
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
             - name: aws
               mountPath: /etc/mas/creds/aws
+{{- end }}
             - name: create-db-script
               mountPath: /etc/mas/scripts/
             - name: db-common-functions
@@ -235,9 +241,11 @@ spec:
         - name: dbs-rds-create-db-secret
           secret:
             secretName: {{ .Values.db2_rds_instance_name }}-create-db-secret
+{{- if ne (.Values.sm_backend | default "aws") "kubernetessecret" }}
         - name: aws
           secret:
             secretName: {{ .Values.db2_rds_instance_name }}-aws-creds
+{{- end }}
         - name: create-db-script
           configMap:
             name: {{ .Values.db2_rds_instance_name }}-create-db-script

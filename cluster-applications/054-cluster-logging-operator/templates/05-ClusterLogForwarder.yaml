@@ -27,6 +27,10 @@ spec:
             namespace: mas-*-core
           - container: instana-agent
             namespace: instana-agent
+{{- if ne .Values.environment_type "prod" }}
+          - container: cron
+            namespace: mas-*-manage
+{{- end }}
 {{- if .Values.additional_exclude_containers }}
 {{- range .Values.additional_exclude_containers }}
           - container: {{ .container }}
@@ -36,12 +40,33 @@ spec:
       name: application-logs
       type: application
   filters:
+{{- if ne .Values.environment_type "prod" }}
     - drop:
         - test:
             - field: .level
               matches: info|Info|INFO|DEBUG|Debug|debug
+        - test:
+            - field: .message
+              matches: '\[CID\-CRON\-[0-9]+\]'
+        - test:
+            - field: .message
+              matches: 'BMX[A-Z0-9]+I'
+        - test:
+            - field: .message
+              matches: 'BMXAA8229W'
       name: noise
       type: drop
+{{- else }}
+    - drop:
+        - test:
+            - field: .level
+              matches: info|Info|INFO|DEBUG|Debug|debug
+        - test:
+            - field: .message
+              matches: 'BMX[A-Z0-9]+I'
+      name: noise
+      type: drop
+{{- end }}
     - kubeAPIAudit:
         omitStages: []
         rules:
@@ -128,6 +153,10 @@ spec:
             namespace: mas-*-core
           - container: instana-agent
             namespace: instana-agent
+{{- if ne .Values.environment_type "prod" }}
+          - container: cron
+            namespace: mas-*-manage
+{{- end }}
 {{- if .Values.additional_exclude_containers }}
 {{- range .Values.additional_exclude_containers }}
           - container: {{ .container }}
@@ -141,12 +170,33 @@ spec:
   filters:
     - name: detect-multiline-errors
       type: detectMultilineException
+{{- if ne .Values.environment_type "prod" }}
     - drop:
         - test:
             - field: .level
               matches: info|Info|INFO|DEBUG|Debug|debug
+        - test:
+            - field: .message
+              matches: '\[CID\-CRON\-[0-9]+\]'
+        - test:
+            - field: .message
+              matches: 'BMX[A-Z0-9]+I'
+        - test:
+            - field: .message
+              matches: 'BMXAA8229W'
       name: noise
       type: drop
+{{- else }}
+    - drop:
+        - test:
+            - field: .level
+              matches: info|Info|INFO|DEBUG|Debug|debug
+        - test:
+            - field: .message
+              matches: 'BMX[A-Z0-9]+I'
+      name: noise
+      type: drop
+{{- end }}
     - kubeAPIAudit:
         omitStages: []
         rules:
@@ -155,14 +205,14 @@ spec:
       type: kubeAPIAudit
     - prune:
         notIn:
-          - .message 
+          - .message
           - .log_type
           - .log_source
           - .kubernetes.namespace_name
           - .kubernetes.pod_name
           - .kubernetes.container_name
           - .kubernetes.labels.app
-          # - .kubernetes.labels.mas_ibm_com_instanceId
+          - .kubernetes.labels."mas.ibm.com/instanceId"
           - .kubernetes.container_image
       type: prune
       name: prune-fields

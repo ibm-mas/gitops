@@ -34,7 +34,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v4" }}
+{{- $_job_version := "v5" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -213,6 +213,8 @@ spec:
 
               set -e
 
+              trap 'echo "[ERROR] Command failed at line ${LINENO}: ${BASH_COMMAND} (exit code: $?)"' ERR
+
               # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
               source /mascli/functions/gitops_utils
 
@@ -286,11 +288,25 @@ spec:
               # Used by the Subscription resource in the ibm-db2u chart (https://github.com/ibm-mas/gitops/blob/5fdeaacb9180756d52da3708f68cfcc1949c4c98/applications/060-ibm-db2u/templates/03-db2_Subscription.yaml#L10)
               SECRET_NAME_DB2_DEFAULT_CHANNEL=${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}db2_default_channel
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-rhcm-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
-              sm_update_secret $SECRET_NAME_DB2_DEFAULT_CHANNEL "{\"db2_default_channel\": \"$DB2_DEFAULT_CHANNEL\" }" "${TAGS}"
+              echo "Updating secret: ${SECRET_NAME_DB2_DEFAULT_CHANNEL}"
+              rc=0
+              output=$(sm_update_secret $SECRET_NAME_DB2_DEFAULT_CHANNEL "{\"db2_default_channel\": \"$DB2_DEFAULT_CHANNEL\" }" "${TAGS}" 2>&1) || rc=$?
+              echo "${output}"
+              if [[ "${rc}" != "0" ]]; then
+                echo "[ERROR] sm_update_secret failed for ${SECRET_NAME_DB2_DEFAULT_CHANNEL} (rc: ${rc})"
+                exit ${rc}
+              fi
 
               # Used by resources in the ibm-db2u-database chart (https://github.com/ibm-mas/gitops/tree/5fdeaacb9180756d52da3708f68cfcc1949c4c98/applications/120-ibm-db2u-database)
               SECRET_NAME_CLUSTER_DOMAIN=${ACCOUNT_ID}${SECRETS_KEY_SEPARATOR}${CLUSTER_ID}${SECRETS_KEY_SEPARATOR}cluster_domain
-              sm_update_secret $SECRET_NAME_CLUSTER_DOMAIN "{\"cluster_domain\": \"$CLUSTER_DOMAIN\" }" "${TAGS}"
+              echo "Updating secret: ${SECRET_NAME_CLUSTER_DOMAIN}"
+              rc=0
+              output=$(sm_update_secret $SECRET_NAME_CLUSTER_DOMAIN "{\"cluster_domain\": \"$CLUSTER_DOMAIN\" }" "${TAGS}" 2>&1) || rc=$?
+              echo "${output}"
+              if [[ "${rc}" != "0" ]]; then
+                echo "[ERROR] sm_update_secret failed for ${SECRET_NAME_CLUSTER_DOMAIN} (rc: ${rc})"
+                exit ${rc}
+              fi
 
 
 

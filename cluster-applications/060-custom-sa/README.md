@@ -44,6 +44,8 @@ cluster:
 sm:                             # Secrets Manager configuration
   aws_access_key_id: string (secret reference)
   aws_secret_access_key: string (secret reference)
+  backend: string               # aws (default) or kubernetessecret
+  secrets_path: string          # Required when backend is kubernetessecret — target namespace for Kubernetes Secrets
 ```
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
@@ -83,7 +85,7 @@ custom_sa:
 
 1. Creates a ServiceAccount in the specified namespace for each entry in `custom_sa_details`
 2. Creates a ClusterRoleBinding that binds the ServiceAccount to the specified ClusterRole
-3. Optionally runs a PostSync hook to store the ServiceAccount tokens in AWS Secrets Manager
+3. Optionally runs a PostSync hook to store the ServiceAccount tokens in the Secrets Manager. When `sm_backend` is `kubernetessecret`, tokens are stored as Kubernetes Secrets in the namespace specified by `sm_secrets_path`.
 
 ### Common ClusterRoles
 
@@ -99,12 +101,12 @@ custom_sa:
 |--------------|---------------|-----------|-----------|--------------|
 | `ServiceAccount` | `<custom_sa_name>` | Configurable via `custom_sa_namespace` | For each entry in `custom_sa_details` | `cluster_admin_role` |
 | `ClusterRoleBinding` | `<custom_sa_name>-crb` | N/A (cluster-scoped) | For each entry in `custom_sa_details` | `cluster_admin_role` |
-| `Secret` | `postsync-custom-sa-update-sm` | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
-| `ServiceAccount` | `postsync-custom-sa-update-sm-sa` | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
-| `Role` | `postsync-custom-sa-update-sm-role` | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
-| `RoleBinding` | `postsync-custom-sa-update-sm-rolebinding` | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
+| `Secret` | `aws` — AWS credentials for hook | `custom_sa_namespace` | When `run_sync_hooks` is true and `sm_backend` is not `kubernetessecret` | `cluster_admin_role` |
+| `ServiceAccount` | `postsync-custom-sa-sa` | `custom_sa_namespace` | When `run_sync_hooks` is true | `cluster_admin_role` |
 | `ClusterRole` | `postsync-custom-sa-update-sm-cluster-role` | N/A (cluster-scoped) | When `run_sync_hooks` is true | `cluster_admin_role` |
 | `ClusterRoleBinding` | `postsync-custom-sa-update-sm-cluster-rolebinding` | N/A (cluster-scoped) | When `run_sync_hooks` is true | `cluster_admin_role` |
-| `Job` | `postsync-custom-sa-update-sm-job-*` | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
+| `Role` | `postsync-custom-sa-update-sm-r-secrets` — secrets RBAC | `sm_secrets_path` namespace | When `run_sync_hooks` is true and `sm_backend` is `kubernetessecret` | `cluster_admin_role` |
+| `RoleBinding` | `postsync-custom-sa-update-sm-rb-secrets` — secrets RBAC | `sm_secrets_path` namespace | When `run_sync_hooks` is true and `sm_backend` is `kubernetessecret` | `cluster_admin_role` |
+| `Job` | `postsync-custom-sa-update-sm-job-*` | `custom_sa_namespace` | When `run_sync_hooks` is true | `cluster_admin_role` |
 
-**Note:** Service accounts are created dynamically based on the `custom_sa_details` configuration. Each service account is bound to a specified ClusterRole. The PostSync Job updates AWS Secrets Manager with service account tokens.
+**Note:** Service accounts are created dynamically based on the `custom_sa_details` configuration. Each service account is bound to a specified ClusterRole. The PostSync Job updates the Secrets Manager with service account tokens. When `sm_backend` is `kubernetessecret`, tokens are stored as Kubernetes Secrets in the namespace specified by `sm_secrets_path`.

@@ -5,7 +5,7 @@ Installs the `ibm-sls` operator and creates an instance of the `LicenseService`.
 <!--docs-include-start-->
 
 
-Contains a job that runs last (`07-postsync-update-sm_Job.yaml`). This registers the `${ACCOUNT_ID}<sep>${CLUSTER_ID}<sep>${INSTANCE_ID}<sep>sls` secret in the **Secrets Vault** used to share some information that is generated at runtime with other ArgoCD Applications. When the backend is AWS, `<sep>` is `/`.
+Contains a job that runs last (`07-postsync-update-sm_Job.yaml`). This registers the `${ACCOUNT_ID}<sep>${CLUSTER_ID}<sep>${INSTANCE_ID}<sep>sls` secret in the **Secrets Vault** used to share some information that is generated at runtime with other ArgoCD Applications. When the backend is AWS, `<sep>` is `/`. When the backend is `kubernetessecret`, the secret is created as a Kubernetes Secret in the namespace specified by `sm_secrets_path`.
 
 ## Resources Created
 
@@ -18,10 +18,12 @@ Contains a job that runs last (`07-postsync-update-sm_Job.yaml`). This registers
 | `Secret` | `sls-entitlement` | Instance SLS namespace | Always | `application_admin_role` |
 | `LicenseService` | `sls` instance CR | Instance SLS namespace | Always | `application_admin_role` |
 | `NetworkPolicy` | post-sync update secret manager network policy | Instance SLS namespace | Always | `application_admin_role` |
-| `Secret` | post-sync update secret manager runtime secret | Instance SLS namespace | Always | `application_admin_role` |
+| `Secret` | post-sync update secret manager runtime secret | Instance SLS namespace | When `sm_backend` is not `kubernetessecret` | `application_admin_role` |
 | `ServiceAccount` | post-sync update secret manager service account | Instance SLS namespace | Always | `application_admin_role` |
 | `Role` | post-sync update secret manager roles | Instance SLS namespace | Always | `application_admin_role` |
 | `RoleBinding` | post-sync update secret manager role binding | Instance SLS namespace | Always | `application_admin_role` |
+| `Role` | `postsync-ibm-sls-update-sm-r-secrets` — secrets RBAC | `sm_secrets_path` namespace | When `sm_backend` is `kubernetessecret` | `application_admin_role` |
+| `RoleBinding` | `postsync-ibm-sls-update-sm-rb-secrets` — secrets RBAC | `sm_secrets_path` namespace | When `sm_backend` is `kubernetessecret` | `application_admin_role` |
 | `Job` | post-sync update secret manager job | Instance SLS namespace | When `run_sync_hooks` and `application_admin_role` are enabled | `application_admin_role` |
 
 ## Configuration
@@ -99,6 +101,8 @@ sm:                             # Secrets Manager configuration
   aws_secret_region: string
   aws_access_key_id: string (secret reference)
   aws_secret_access_key: string (secret reference)
+  backend: string               # aws (default) or kubernetessecret
+  secrets_path: string          # Required when backend is kubernetessecret — target namespace for Kubernetes Secrets
 ```
 
 For complete documentation of all base instance values including optional fields like `custom_labels`, `argocluster_instance`, `application_admin_service_account`, `mas_wipe_mongo_data`, `allow_list`, `additional_vpn`, `application_configuration`, `use_postdelete_hooks`, `additional_resources`, `extensions`, `enhanced_dr`, and `cli_image_repo`, see the [Instance Base Values Reference](../../docs/reference/instance-base-values.md).

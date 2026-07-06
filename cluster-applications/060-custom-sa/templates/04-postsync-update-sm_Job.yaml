@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v3" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -106,6 +106,8 @@ spec:
               value: '{{ $.Values.sm_secret_keys_separator | default (ternary "." "/" (eq ($.Values.sm_backend | default "aws") "kubernetessecret")) }}'
             - name: AVP_TYPE
               value: '{{ $.Values.sm_backend | default "aws" }}'
+            - name: SECRETS_PATH
+              value: '{{ $.Values.sm_secrets_path }}'
           volumeMounts:
 {{- if ne ($.Values.sm_backend | default "aws") "kubernetessecret" }}
             - name: aws
@@ -180,4 +182,48 @@ spec:
             optional: false
 {{- end }}
   backoffLimit: 4
+{{- end }}
+{{- if eq ($.Values.sm_backend | default "aws") "kubernetessecret" }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: postsync-custom-sa-update-sm-r-secrets
+  namespace: {{ $.Values.sm_secrets_path }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "064"
+{{- if $.Values.custom_labels }}
+  labels:
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - create
+      - list
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: postsync-custom-sa-update-sm-rb-secrets
+  namespace: {{ $.Values.sm_secrets_path }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "064"
+{{- if $.Values.custom_labels }}
+  labels:
+{{ $.Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: postsync-custom-sa-sa
+    namespace: {{ $.Values.custom_sa_namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: postsync-custom-sa-update-sm-r-secrets
 {{- end }}

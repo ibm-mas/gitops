@@ -12,7 +12,7 @@ Installs Redhat OpenShift cert-manager Operator in cert-manager-operator namespa
 ```yaml
 redhat_cert_manager:
   # Enable sync hooks for post-deployment tasks
-  # When true, creates Jobs to update AWS Secrets Manager with cluster information
+  # When true, creates Jobs to update the Secrets Manager with cluster information
   # Default: true
   run_sync_hooks: true
 
@@ -45,6 +45,8 @@ cluster:
 sm:                             # Secrets Manager configuration
   aws_access_key_id: string (secret reference)
   aws_secret_access_key: string (secret reference)
+  backend: string               # aws (default) or kubernetessecret
+  secrets_path: string          # Required when backend is kubernetessecret — target namespace for Kubernetes Secrets
 ```
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
@@ -84,7 +86,10 @@ redhat_cert_manager:
 | `ClusterRole` | cert-manager operator cluster roles | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `ClusterRoleBinding` | cert-manager operator cluster role bindings | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `Secret` | cert-manager related secrets | `cert-manager` and `default` | Always and hook-driven as applicable | `cluster_admin_role` |
-| `ServiceAccount` | cert-manager hook service accounts | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
-| `Job` | `postsync-rhcm-update-sm-job-*` | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
+| `Secret` | `aws` — AWS credentials for hook | `cert-manager-operator` | When `run_sync_hooks` is true and `sm_backend` is not `kubernetessecret` | `cluster_admin_role` |
+| `ServiceAccount` | cert-manager hook service accounts | `cert-manager-operator` | When `run_sync_hooks` is true | `cluster_admin_role` |
+| `Role` | `postsync-rhcm-update-sm-r-secrets` — secrets RBAC | `sm_secrets_path` namespace | When `run_sync_hooks` is true and `sm_backend` is `kubernetessecret` | `cluster_admin_role` |
+| `RoleBinding` | `postsync-rhcm-update-sm-rb-secrets` — secrets RBAC | `sm_secrets_path` namespace | When `run_sync_hooks` is true and `sm_backend` is `kubernetessecret` | `cluster_admin_role` |
+| `Job` | `postsync-rhcm-update-sm-job-*` | `cert-manager-operator` | When `run_sync_hooks` is true | `cluster_admin_role` |
 
-**Note:** The PostSync Job updates AWS Secrets Manager with cluster information for use by other charts.
+**Note:** The PostSync Job updates the Secrets Manager with cluster information (db2 default channel and cluster domain) for use by other charts. When `sm_backend` is `kubernetessecret`, secrets are created as Kubernetes Secrets in the namespace specified by `sm_secrets_path`.

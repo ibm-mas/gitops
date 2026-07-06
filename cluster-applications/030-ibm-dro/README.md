@@ -26,7 +26,7 @@ ibm_dro:
   ibm_entitlement_key: ""
 
   # Enable sync hooks for post-deployment tasks
-  # When true, creates Jobs to update AWS Secrets Manager
+  # When true, creates Jobs to update the Secrets Manager with DRO connection details
   # Default: true
   run_sync_hooks: true
 
@@ -95,6 +95,8 @@ cluster:
 sm:                             # Secrets Manager configuration
   aws_access_key_id: string (secret reference)
   aws_secret_access_key: string (secret reference)
+  backend: string               # aws (default) or kubernetessecret
+  secrets_path: string          # Required when backend is kubernetessecret — target namespace for Kubernetes Secrets
 ```
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
@@ -170,16 +172,20 @@ ibm_dro:
 | `ClusterIssuer` | DRO cluster issuer resources | N/A (cluster-scoped) | When `cluster_admin_role` is true | `cluster_admin_role` |
 | `Secret` | `ibm-data-reporter-operator-api-token` | `ibm-software-central` | When `application_admin_role` is true | `application_admin_role` |
 | `NetworkPolicy` | `ibm-dro-dns-netpol` | `ibm-software-central` | When `dns_provider` is "cis" and `cis_crn` and `dro_public_domain` are set | `application_admin_role` |
-| `Secret` | `aws` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
+| `Secret` | `aws` | `ibm-software-central` | When `application_admin_role`, `run_sync_hooks` are true, and `sm_backend` is not `kubernetessecret` | `application_admin_role` |
 | `ServiceAccount` | `postsync-ibm-dro-update-sm-sa` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
 | `Role` | `postsync-ibm-dro-update-sm-r` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
 | `RoleBinding` | `postsync-ibm-dro-update-sm-rb` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
+| `Role` | `postsync-ibm-dro-update-sm-r-secrets` — secrets RBAC | `sm_secrets_path` namespace | When `application_admin_role`, `run_sync_hooks` are true, and `sm_backend` is `kubernetessecret` | `application_admin_role` |
+| `RoleBinding` | `postsync-ibm-dro-update-sm-rb-secrets` — secrets RBAC | `sm_secrets_path` namespace | When `application_admin_role`, `run_sync_hooks` are true, and `sm_backend` is `kubernetessecret` | `application_admin_role` |
 | `Job` | `postsync-ibm-dro-update-sm-job-*` | `ibm-software-central` | When `application_admin_role` and `run_sync_hooks` are true | `application_admin_role` |
 | `Secret` | `dest-header-map-secret` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
 | `Secret` | `auth-header-map-secret` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
 | `Secret` | `auth-body-data-secret` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
 | `ConfigMap` | `kazaam-configmap` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
 | `DataReporterConfig` | `datareporterconfig` | `ibm-software-central` | When `cluster_admin_role` and `dro_cmm_setup` are true | `cluster_admin_role` |
+
+**Note:** When `sm_backend` is `kubernetessecret`, secrets are created as Kubernetes Secrets in the namespace specified by `sm_secrets_path`.
 
 
 ## Examples

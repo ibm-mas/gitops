@@ -21,7 +21,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v4" }}
+{{- $_job_version := "v5" }}
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
 This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
@@ -44,6 +44,43 @@ are required here.*/}}
 {{- if hasPrefix "9.1." (toString .Values.catalog_channel) }}
   {{- $_namespace = .Values.aiservice_namespace }}
   {{- $_name_suffix = printf "-%s" .Values.tenantNamespace }}
+{{- end }}
+
+{{- if eq (.Values.sm_backend | default "aws") "kubernetessecret" }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "postsync-manage-aiservice-job-role-secrets{{ $_name_suffix }}"
+  namespace: "{{ .Values.sm_secrets_path }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "309"
+rules:
+  - verbs:
+      - get
+      - create
+      - list
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "postsync-manage-aiservice-job-rolebinding-secrets{{ $_name_suffix }}"
+  namespace: "{{ .Values.sm_secrets_path }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "310"
+subjects:
+  - kind: ServiceAccount
+    name: "postsync-manage-aiservice-job{{ $_name_suffix }}"
+    namespace: "{{ $_namespace }}"
+roleRef:
+  kind: Role
+  name: "postsync-manage-aiservice-job-role-secrets{{ $_name_suffix }}"
+  apiGroup: rbac.authorization.k8s.io
 {{- end }}
 
 ---
@@ -149,6 +186,8 @@ spec:
               value: "{{ .Values.aiservice_s3_secretkey }}"
             - name: AVP_TYPE
               value: '{{ .Values.sm_backend | default "aws" }}'
+            - name: SECRETS_PATH
+              value: '{{ .Values.sm_secrets_path }}'
             - name: TARGET_NAMESPACE
               value: "{{ $_namespace }}"
           command:

@@ -1,12 +1,59 @@
 
 {{- $_cli_image_digest := "sha256:95b6b16d3c14badc034556e14da99200ee2b834ac8d8a52031a6de56d64ff102" }}
 {{ $aws_secret := "aws"}}
+{{ $sls_ns := printf "mas-%s-%s-sls" .Values.ibm_customer_number .Values.subscription_id }}
 {{- $_job_name_prefix := "ibm-sls-dns" }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v9" }}
+{{- $_job_version := "v10" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: ibm-sls-dns-sa
+  namespace: {{ $sls_ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "112"
+
+{{- if eq (.Values.sm_backend | default "aws") "kubernetessecret" }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ibm-sls-dns-secrets-role
+  namespace: {{ .Values.sm_secrets_path }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "112"
+rules:
+  - verbs:
+      - get
+      - create
+      - list
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ibm-sls-dns-secrets-rb
+  namespace: {{ .Values.sm_secrets_path }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "112"
+subjects:
+  - kind: ServiceAccount
+    name: ibm-sls-dns-sa
+    namespace: {{ $sls_ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ibm-sls-dns-secrets-role
+{{- end }}
+
 ---
 # NetworkPolicy to allow egress traffic for AWS Secrets Manager and IBM Cloud API
 # (Needed to communicate with the K8S HTTP API and AWS SM)
@@ -44,6 +91,7 @@ spec:
         app: "postsync-ibm-sls-dns-job"
     spec:
       restartPolicy: Never
+      serviceAccountName: ibm-sls-dns-sa
       containers:
         - name: run
           image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
@@ -69,6 +117,8 @@ spec:
               value: '{{ .Values.sm_secret_keys_separator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}'
             - name: AVP_TYPE
               value: '{{ .Values.sm_backend | default "aws" }}'
+            - name: SECRETS_PATH
+              value: '{{ .Values.sm_secrets_path }}'
             - name: IBMCLOUD_HOME
               value: /tmp/bluemix
           volumeMounts:

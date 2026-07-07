@@ -2,10 +2,69 @@
 {{- $_job_name_prefix := "dbs-rds-presync-create-db" }}
 {{- $_cli_image_digest := "sha256:95b6b16d3c14badc034556e14da99200ee2b834ac8d8a52031a6de56d64ff102" }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
 {{- $_job_cleanup_group := cat $_job_name_prefix .Values.db2_rds_instance_name | sha1sum }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.db2_rds_instance_name }}-create-db-sa
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+  {{- if .Values.custom_labels }}
+labels:
+  {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+
+{{- if eq (.Values.sm_backend | default "aws") "kubernetessecret" }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Values.db2_rds_instance_name }}-create-db-secrets-role
+  namespace: {{ .Values.sm_secrets_path }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+  {{- if .Values.custom_labels }}
+labels:
+  {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+rules:
+  - verbs:
+      - get
+      - create
+      - list
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Values.db2_rds_instance_name }}-create-db-secrets-rb
+  namespace: {{ .Values.sm_secrets_path }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+  {{- if .Values.custom_labels }}
+labels:
+  {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.db2_rds_instance_name }}-create-db-sa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.db2_rds_instance_name }}-create-db-secrets-role
+{{- end }}
 
 ---
 apiVersion: v1
@@ -66,6 +125,7 @@ spec:
     {{- end }}
     spec:
       restartPolicy: Never
+      serviceAccountName: {{ .Values.db2_rds_instance_name }}-create-db-sa
       containers:
         - name: create-database
           image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
@@ -222,6 +282,10 @@ spec:
               value: {{ .Values.mas_application_id | default "" | quote }}
             - name: SECRETS_KEY_SEPARATOR
               value: '{{ .Values.sm_secret_keys_separator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}'
+            - name: AVP_TYPE
+              value: '{{ .Values.sm_backend | default "aws" }}'
+            - name: SECRETS_PATH
+              value: '{{ .Values.sm_secrets_path }}'
             - name: SM_AWS_SECRET_REGION
               value: {{ .Values.sm_aws_secret_region | default "us-east-1" | quote }}
             - name: AWS_DEFAULT_REGION

@@ -12,7 +12,9 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 {{ $secret := printf "%s-creds" $prefix }}
 {{ $sa := printf "%s-sa" $prefix }}
 {{ $role := printf "%s-role" $prefix }}
+{{ $role_sm := printf "%s-role-secrets" $prefix }}
 {{ $rb := printf "%s-rb" $prefix }}
+{{ $rb_sm := printf "%s-rb-secrets" $prefix }}
 {{ $np := printf "%s-np" $prefix }}
 {{ $job := printf "%s-job" $prefix }}
 
@@ -93,6 +95,53 @@ roleRef:
   kind: Role
   name: {{ $role }}
 
+{{- if eq (.Values.sm_backend | default "aws") "kubernetessecret" }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_sm }}
+  namespace: {{ .Values.sm_secrets_path }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - create
+      - list
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_sm }}
+  namespace: {{ .Values.sm_secrets_path }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_sm }}
+{{- end }}
+
 ---
 apiVersion: batch/v1
 kind: Job
@@ -146,6 +195,8 @@ spec:
               
             - name: AVP_TYPE
               value: '{{ .Values.sm_backend | default "aws" }}'
+            - name: SECRETS_PATH
+              value: '{{ .Values.sm_secrets_path }}'
             - name: SECRETS_KEY_SEPARATOR
               value: '{{ .Values.sm_secret_keys_separator | default (ternary "." "/" (eq (.Values.sm_backend | default "aws") "kubernetessecret")) }}'
             - name: SM_AWS_REGION

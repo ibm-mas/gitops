@@ -28,9 +28,11 @@ instance:
 
 # Secrets Manager Configuration
 sm:
-  aws_secret_region: string                     # AWS region where secrets are stored
-  aws_access_key_id: string                     # AWS access key (secret reference)
-  aws_secret_access_key: string                 # AWS secret key (secret reference)
+  backend: string                               # Secrets backend: "aws" or "kubernetessecrets" (default: "aws")
+  secrets_path: string                          # Namespace to create secrets in (required when backend is "kubernetessecrets")
+  aws_secret_region: string                     # AWS region where secrets are stored (required when backend is "aws")
+  aws_access_key_id: string                     # AWS access key (secret reference) (required when backend is "aws")
+  aws_secret_access_key: string                 # AWS secret key (secret reference) (required when backend is "aws")
 
 # Custom Labels (optional)
 custom_labels:
@@ -75,4 +77,4 @@ enhanced_dr:
 cli_image_repo: string                          # Container image repository for CLI tools
 ```
 
-**Secret Reference Format:** Use `<path:secrets/path:key>` to reference secrets stored in AWS Secrets Manager.
+**Secret Reference Format:** Use `<path:secrets/path:key>` to reference secrets stored in AWS Secrets Manager. This applies only when `sm.backend` is `aws`; when using `kubernetessecrets` the `aws_*` fields are not required.

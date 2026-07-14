@@ -3,7 +3,7 @@ ECR Token Updater Pod Template
 This template defines the pod specification used by both the CronJob and the initial Job
 */}}
 {{- define "ecr-token-updater.podTemplate" -}}
-{{- $_cli_image_digest := "sha256:08c775096d1876549a999087dbbe8c2fc6c758e0a4b4bccbac01ed21bf985102" }}
+{{- $_cli_image_digest := "sha256:987dcc70e244024613d5fe03af9f22a7a89b447a81eee53ae87c83e874bfb106" }}
 metadata:
 {{- if .Values.custom_labels }}
   labels:

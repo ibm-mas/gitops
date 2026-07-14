@@ -194,7 +194,7 @@ for file in ${files}; do
         if [[ $rc == 0 ]]; then
             # check $_job_hash has correct value
             while IFS= read -r job_hash_value; do
-                grep -Eq '^[[:space:]]*print[[:space:]]+\([[:space:]]*\$_job_config_values[[:space:]]*\|[[:space:]]*toYaml[[:space:]]*\)[[:space:]]+\$_cli_image_digest[[:space:]]+\$_job_version[[:space:]]*\|[[:space:]]*adler32sum' <<< "$job_hash_value"
+                grep -Eq '^[[:space:]]*print[[:space:]]+\([[:space:]]*\$_job_config_values[[:space:]]*\|[[:space:]]*toYaml[[:space:]]*\)[[:space:]]+\$_cli_image_digest[[:space:]]+\$_job_version([[:space:]]+\([[:space:]]*now[[:space:]]*\|[[:space:]]*unixEpoch[[:space:]]*\))?[[:space:]]*\|[[:space:]]*adler32sum' <<< "$job_hash_value"
                 rc=$?
                 if [[ $rc != 0 ]]; then
                     problems=${problems}'    Invalid $_job_hash value found: "'${job_hash_value}'" (should be "print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum")\n'

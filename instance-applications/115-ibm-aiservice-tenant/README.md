@@ -20,6 +20,8 @@ This chart provisions a tenant for Maximo AI Service. It installs the AI Service
 | `ServiceAccount` | Migration and post-sync service accounts | Tenant namespace | Always | `application_admin_role` |
 | `Role` | Migration and post-sync roles | Tenant namespace | Always | `application_admin_role` |
 | `RoleBinding` | Migration and post-sync role bindings | Tenant namespace | Always | `application_admin_role` |
+| `ClusterRole` | Tenant cluster-level permissions | Cluster-wide | Always | `application_admin_role` |
+| `ClusterRoleBinding` | Tenant cluster role bindings | Cluster-wide | Always | `application_admin_role` |
 | `NetworkPolicy` | Tenant migration and ingress network policies | Tenant namespace | Always | `application_admin_role` |
 | `Job` | Migration, post-sync, and secret setup jobs | Tenant namespace | Always | `application_admin_role` |
 

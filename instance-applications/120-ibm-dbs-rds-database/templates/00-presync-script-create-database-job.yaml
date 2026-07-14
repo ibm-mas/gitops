@@ -101,6 +101,20 @@ data:
                 log({"event":"missing_env","vars":missing})
                 sys.exit(1)
 
+            # Handle long hostnames (DB2 HOSTNAME parameter has 80 char limit)
+            # Resolve to IP address if hostname is too long
+            if len(db_host) > 80:
+                log({"event":"hostname_too_long","hostname":db_host,"length":len(db_host)})
+                import socket
+                try:
+                    original_host = db_host
+                    db_host = socket.gethostbyname(db_host)
+                    log({"event":"hostname_resolved","original":original_host,"resolved":db_host})
+                except socket.gaierror as e:
+                    log({"event":"hostname_resolution_failed","hostname":db_host,"error":str(e)})
+                    log({"event":"error","message":"Cannot resolve long hostname to IP address"})
+                    sys.exit(1)
+
             # Validate database name (SQL injection prevention)
             validate_db_name(db_name)
 

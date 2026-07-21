@@ -234,6 +234,7 @@ spec:
                   import sys
                   import re
                   import hashlib
+                  import socket
                   
                   # Get environment variables
                   rds_host = os.getenv('RDS_HOST')
@@ -244,6 +245,18 @@ spec:
                   rds_master_password = os.getenv('RDS_ADMIN_PASSWORD')
                   jdbc_connection_url = os.getenv('JDBC_CONNECTION_URL', '')
                   ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
+                  
+                  # Handle long hostnames (DB2 HOSTNAME parameter has 80 char limit)
+                  # Resolve to IP address if hostname is too long
+                  if len(rds_host) > 80:
+                      print(f"⚠️  Hostname too long ({len(rds_host)} chars): {rds_host}")
+                      try:
+                          original_host = rds_host
+                          rds_host = socket.gethostbyname(rds_host)
+                          print(f"✅ Resolved hostname to IP address: {rds_host}")
+                      except socket.gaierror as e:
+                          print(f"❌ Cannot resolve hostname to IP address: {str(e)}")
+                          sys.exit(1)
                   
                   # Extract SSL version from JDBC URL if provided
                   ssl_version = 'TLSv1.2'

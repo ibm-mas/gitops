@@ -58,12 +58,14 @@ DBNAME="BLUDB"
 
 DATA_DIR=$( db2audit describe | grep "Audit Data Path: " | awk -F ': ' '{gsub(/"/, ""); print $2}' | sed 's/\/$//' );
 ARCHIVE_DIR=$( db2audit describe | grep "Audit Archive Path:" | awk -F ': ' '{gsub(/"/, ""); print $2}' | sed 's/\/$//' );
+BUCKET_ALIAS=$(db2 list storage access | grep ${CONTAINER} -B4 | grep ALIAS | awk -F '=' '{print $2}')
+
 
 # -------------------------------
 # Functions
 # -------------------------------
 log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+  echo "[$(date '+%F %T')] $*"
 }
 
 cleanup() {
@@ -109,7 +111,7 @@ else
 fi
 #db2audit.db.BLUDB.log.0.20260504093246
 #db2audit.db."$DBNAME".log.0.
-DTN=$( date +'%Y%m%d%H' )
+DTN=$( date +'%Y%m%d' )
 
 # Identify latest archived audit file
 AUDIT_LOG=$(ls -t "$ARCHIVE_DIR"/db2audit.db."$DBNAME".log.0.$DTN* 2>/dev/null | head -1)
@@ -164,7 +166,7 @@ fi
 log "INFO  :: Uploading audit extract to COS"
 
 AUDZIP=$( echo $AUDIT_ZIP | awk -F '/' '{print $NF}' )
-COS_TARGET="DB2REMOTE://AWSCOS//AUDIT_LOGS/${AUDZIP}"
+COS_TARGET="DB2REMOTE://${BUCKET_ALIAS}//COS_AUDIT/${AUDZIP}"
 
 db2RemStgManager alias put \
   source="$AUDIT_ZIP" \

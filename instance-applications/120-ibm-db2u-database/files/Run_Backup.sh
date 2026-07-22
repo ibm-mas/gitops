@@ -29,7 +29,7 @@
 # -- Standard Parameters
 HOSTNAME=$(hostname)
 IP=$(/sbin/ifconfig | grep "inet" | grep broadcast | awk '{print $2}')
-DATETIME=$(date +'%Y%m%d_%H%M%S');
+DATETIME=$(date +'%F_%H%M%S');
 DBINSTANCE=$(whoami);
 NAMESPACE=$(hostname -A | awk -F '.' '{print $3}')
 INSTANCE_HOME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${DBINSTANCE}" | awk -F ',' '{print $5}'| sed 's/\/sqllib//' )
@@ -59,36 +59,34 @@ BUCKET_ALIAS=$(db2 list storage access | grep ${CONTAINER} -B4 | grep ALIAS | aw
 DOW=$(date | awk '{print $1}')
 HSTYPE="Backup"
 
-# -- Valid only for MAS-CP4D customers 
-if (( ${CUSTNAME} )) ; then 
-   CUSTNAME=$( echo ${CONTAINER} | awk -F '-backup-' '{print $2}'  | awk -F '-pr-' '{print $1}' | tr '[:lower:]' '[:upper:]' )
+# -- Valid only for MAS-CP4D Customers 
+if [[ "${NAMESPACE}" == "mas-cp4d" || "${NAMESPACE}" == "mas-cpd" ]] ; then 
+   CUSTNAME=$(echo ${CONTAINER} | awk -F '-backup-' '{print $2}'  | awk -F '-pr-' '{print $1}' | tr '[:lower:]' '[:upper:]')
 fi 
 
 # -- Database Environment 
-if [[ ${BUCKET_ALIAS} == "IBMCOS" ]]; then 
+if [[ "${CONTAINER}" =~ "masms" ]]; then 
    DBENV="MASMS"
 else
-   DBENV="MASSaaS"
+   DBENV="MASSAAS"
 fi
 
 # -- For mapping Hostname with Servicedesk
-
-NS=$( echo ${NAMESPACE} | sed 's/mas-//; s/-core//; s/-manage//; s/-facilities// ; s/-db2u//;' );
-if [[ "$NAMESPACE" =~ "manage" ]] ; then 
+NS=$( echo ${NAMESPACE} | sed 's/mas-//; s/-core//; s/-manage//; s/-facilities//; s/-db2u//;' );
+if   [[ "${NAMESPACE}" =~ "manage" || "${HOSTNAME}" =~ "manage" ]] ; then 
    HSHOSTS="main.manage.${NS}.suite"
-elif [[ "$NAMESPACE" =~ "core" ]]; then
+elif [[ "${NAMESPACE}" =~ "core" || "${HOSTNAME}" =~ "core" ]]; then
    HSHOSTS="main.home.${NS}.suite"
-elif [[ "$NAMESPACE" =~ "monitor" ]]; then
+elif [[ "${NAMESPACE}" =~ "monitor" || "${HOSTNAME}" =~ "iot" ]]; then
    HSHOSTS="main.monitor.${NS}.suite"
-elif [[ "$NAMESPACE" =~ "facilities" ]]; then
+elif [[ "${NAMESPACE}" =~ "facilities" || "${HOSTNAME}" =~ "facilities" ]]; then
    HSHOSTS="main.facilities.${NS}.suite"
 fi
-
 
 # -- Create ICD Incident , If Backup fails 
 
 CREATE_ICD() {
-   HTYPE=$(echo ${HSTYPE} | tr '[:lower:]' '[:upper:]')
+   HSTYPE=$(echo ${HSTYPE} | tr '[:lower:]' '[:upper:]')
    DES="$1"
    LONGDES=$(cat ${ICD_LOG} | sed 's/"//g' | sed "s/'//g")
    LONGDES=$(echo "<pre>${LONGDES}</pre>")
@@ -116,15 +114,14 @@ CREATE_ICD() {
          "classstructureid":"1341",
          "classificationid":"IN-DBPERF",
          "hshost":"${HSHOSTS}",
-         "hstype":"${HTYPE}"
+         "hstype":"${HSTYPE}"
       }'
 !
    /bin/bash .curl_${DBNAME}_ICD.sh > .curl_${DBNAME}_ICD.out 2>&1
-
 }
 
 # -- Verify the day of the week
-if [[ ${DOW} = ${DAYOFFULL} ]] ; then
+if [[ "${DOW}" == "${DAYOFFULL}" ]] ; then
    BKPTYPE="FULL"
 else 
    BKPTYPE="DIFF"
@@ -132,7 +129,7 @@ fi
 
 # -- Loop through the available databases in the instance 
 
-DBS=$(db2 list db directory | grep -B5 "Indirect" | grep "Database name" |  awk '{ print $4 }')
+DBS=$(db2 list db directory | grep -B5 "Indirect" | grep "Database name" |  awk '{ print $4 }' | sort -u )
 for DBNAME in ${DBS}
 do
    cd ${SCRIPT_DIR}
@@ -152,10 +149,9 @@ do
    fi   
 
       # -- Execute Online Reorgs for qualified tables and indexes after every Full Backup
-      if [[ ${DOW} = ${DAYOFFULL} ]] ; then
+      if [[ "${DOW}" == "${DAYOFFULL}" ]] ; then
          /bin/bash ${SCRIPT_DIR}/reorgTablesIndexesInplace.sh -db ${DBNAME} -s MAXIMO -tb_stats -ix_stats -tr -window 180 >${INSTANCE_HOME}/maintenance/logs/reorgTablesIndexesInplace_${DATETIME}.log 2>&1
       fi
-
 done
 
 # -- Exeucte Runstats and Rebind for all tables on weekly after full backup 

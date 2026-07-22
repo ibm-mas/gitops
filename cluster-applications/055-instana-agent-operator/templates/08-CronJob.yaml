@@ -357,6 +357,21 @@ spec:
                   echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
                   submit_instana_cr "${instana_cr}"
                   echo "[INFO] Successfully updated Instana agent configuration for DB2"
+
+                  # Print the live CR config for verification — confirm local:/remote: and field values
+                  echo "[INFO] ======== VERIFICATION: Live InstanaAgent CR configuration_yaml ========"
+                  live_cr=$(get_instana_cr)
+                  live_config=$(echo "${live_cr}" | yq .spec.agent.configuration_yaml)
+                  echo "${live_config}" | yq '."com.instana.plugin.db2"'
+                  echo "[INFO] ---- Key checks ----"
+                  echo "[INFO] local entries   : $(echo "${live_config}" | yq '."com.instana.plugin.db2".local | length') entry(s)"
+                  echo "[INFO] remote entries  : $(echo "${live_config}" | yq '."com.instana.plugin.db2".remote | length') entry(s) (expect 0)"
+                  echo "[INFO] hosts           : $(echo "${live_config}" | yq '."com.instana.plugin.db2".local[].host')"
+                  echo "[INFO] engn-svc present: $(echo "${live_config}" | yq '."com.instana.plugin.db2".local[].host' | grep -c 'engn-svc' || true) (expect 0)"
+                  echo "[INFO] instance values : $(echo "${live_config}" | yq '."com.instana.plugin.db2".local[].instance')"
+                  echo "[INFO] environment vals: $(echo "${live_config}" | yq '."com.instana.plugin.db2".local[].environment')"
+                  echo "[INFO] ========================================================================"
+
                   echo "[INFO] Completed Instana agent configuration update for DB2"
                   echo "[INFO] Total execution time: $SECONDS seconds"
 

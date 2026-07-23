@@ -73,9 +73,6 @@ spec:
                   value: {{ .Values.cluster_id }}
                 - name: AVP_TYPE
                   value: "aws"
-                # TEMP: set to "true" to simulate processed_count=0 (scenario 2 testing only)
-                - name: FORCE_SKIP_ALL
-                  value: "true"
                 - name: JDBC_SECRET_NAME_PATTERN
                   value: ".*/jdbc/.*/config"
                 - name: DB2_PLUGIN_LOCAL_TEMPLATE
@@ -295,13 +292,6 @@ spec:
                     secret_number=$((secret_number + 1))
                     echo "[INFO] [$secret_number/$num_secrets] Processing JDBC secret ${secret_name}"
 
-                    # TEMP: force skip all secrets to simulate processed_count=0 for scenario 2 testing
-                    if [[ "${FORCE_SKIP_ALL}" == "true" ]]; then
-                      echo "[WARN] FORCE_SKIP_ALL=true — skipping ${secret_name} for testing"
-                      skipped_count=$((skipped_count + 1))
-                      continue
-                    fi
-
                     # Get DB2 credentials with error handling
                     echo "[DEBUG] Retrieving DB2 credentials for ${secret_name}"
                     if ! db2_credentials=$(get_db2_credentials "${secret_name}" 2>&1); then
@@ -367,26 +357,6 @@ spec:
                   echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
                   submit_instana_cr "${instana_cr}"
                   echo "[INFO] Successfully updated Instana agent configuration for DB2"
-
-                  # Re-fetch the live CR and log the db2 section so the result
-                  # is visible in job logs for both processed_count=0 and processed_count>0.
-                  echo "[INFO] ---- CR verification (processed=${processed_count}) ----"
-                  live_config=$(get_instana_cr | yq .spec.agent.configuration_yaml)
-                  local_count=$(echo "${live_config}" | yq '."com.instana.plugin.db2".local | length')
-                  remote_count=$(echo "${live_config}" | yq '."com.instana.plugin.db2".remote | length')
-                  echo "[INFO] com.instana.plugin.db2.local  entries : ${local_count}"
-                  echo "[INFO] com.instana.plugin.db2.remote entries : ${remote_count} (expect 0)"
-                  if [[ "${remote_count}" != "0" && "${remote_count}" != "null" ]]; then
-                    echo "[ERROR] CR verification FAILED — stale remote: key still present"
-                  elif [[ ${processed_count} -gt 0 && "${local_count}" != "${processed_count}" ]]; then
-                    echo "[ERROR] CR verification FAILED — expected ${processed_count} local entries, found ${local_count}"
-                  else
-                    echo "[INFO] CR verification PASSED"
-                  fi
-                  echo "[INFO] Hosts in local:"
-                  echo "${live_config}" | yq '."com.instana.plugin.db2".local[].host'
-                  echo "[INFO] ---- End CR verification ----"
-
                   echo "[INFO] Completed Instana agent configuration update for DB2"
                   echo "[INFO] Total execution time: $SECONDS seconds"
 

@@ -73,6 +73,9 @@ spec:
                   value: {{ .Values.cluster_id }}
                 - name: AVP_TYPE
                   value: "aws"
+                # TEMP: set to "true" to simulate processed_count=0 (scenario 2 testing only)
+                - name: FORCE_SKIP_ALL
+                  value: "false"
                 - name: JDBC_SECRET_NAME_PATTERN
                   value: ".*/jdbc/.*/config"
                 - name: DB2_PLUGIN_LOCAL_TEMPLATE
@@ -291,7 +294,14 @@ spec:
                   for secret_name in ${secret_names}; do
                     secret_number=$((secret_number + 1))
                     echo "[INFO] [$secret_number/$num_secrets] Processing JDBC secret ${secret_name}"
-                    
+
+                    # TEMP: force skip all secrets to simulate processed_count=0 for scenario 2 testing
+                    if [[ "${FORCE_SKIP_ALL}" == "true" ]]; then
+                      echo "[WARN] FORCE_SKIP_ALL=true — skipping ${secret_name} for testing"
+                      skipped_count=$((skipped_count + 1))
+                      continue
+                    fi
+
                     # Get DB2 credentials with error handling
                     echo "[DEBUG] Retrieving DB2 credentials for ${secret_name}"
                     if ! db2_credentials=$(get_db2_credentials "${secret_name}" 2>&1); then

@@ -241,14 +241,17 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
-              echo "Fetching registrationKey from sls-suite-registration ConfigMap in mas-${ICN}-${SUBSCRIPTION_ID}-sls"
+              # Namespace names must be lowercase; ICN in the license file may be mixed-case
+              ICN_LOWER="${ICN,,}"
+
+              echo "Fetching registrationKey from sls-suite-registration ConfigMap in mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls"
               SLS_REGISTRATION_KEY=$(cat /etc/mas/creds/sls-suite-registration/registrationKey)
               if [[ -z "${SLS_REGISTRATION_KEY}" ]]; then
                 echo "Failed to fetch registrationKey"
                 exit 1
               fi
 
-              echo "Fetching ca from sls-suite-registration ConfigMap in mas-${ICN}-${SUBSCRIPTION_ID}-sls"
+              echo "Fetching ca from sls-suite-registration ConfigMap in mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls"
               SLS_CA=$(cat /etc/mas/creds/sls-suite-registration/ca | base64 -w0)
               if [[ -z "${SLS_CA}" ]]; then
                 echo "Failed to fetch ca"
@@ -256,7 +259,7 @@ spec:
               fi
 
               echo "Setting SLS URL"
-              SLS_URL="https://sls.mas-${ICN}-${SUBSCRIPTION_ID}-sls.${DOMAIN}"
+              SLS_URL="https://sls.mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls.${DOMAIN}"
 
               # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
               source /mascli/functions/gitops_utils
@@ -275,7 +278,7 @@ spec:
               sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\":\"$SLS_URL\" }" "${TAGS}"
     
               # 1. Define the namespace using the environment variables passed to the container
-              namespace="mas-${ICN}-${SUBSCRIPTION_ID}-sls"
+              namespace="mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls"
 
               echo "Fetching routes from ${namespace}"
 

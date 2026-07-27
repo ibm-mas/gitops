@@ -11,7 +11,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:08c775096d1876549a999087dbbe8c2fc6c758e0a4b4bccbac01ed21bf985102" }}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -203,20 +203,17 @@ spec:
                 echo "--------------------------------------------------------------"
                 echo ""
                 TRUST_UI_PREFIX=$(echo -e "${OIDC_CONFIG_YAML}" | yq eval '.configtool.trusted_uri_prefixes | join(",")')
-                # NOTE: "x" is used as workspace ID. This is just so the MAS_HOME parameter conforms to the format expected by the 
+                # NOTE: "x" is used as workspace ID. This is just so the MAS_HOME parameter conforms to the format expected by the
                 # configtool-oidc script. This is not a workspace-level operation. Its actual value is not used for anything else.
                 mas configtool-oidc \
                   register \
                   --mas-home "x.home.${DOMAIN}" \
                   --ui-prefix "${TRUST_UI_PREFIX}"
               else
-                echo "- oidc.configtool configuration absent, unregistering client"
+                echo "- oidc.configtool configuration absent, skipping unregister"
                 echo "--------------------------------------------------------------"
                 echo ""
-                mas configtool-oidc \
-                  unregister \
-                  --mas-home "x.home.${DOMAIN}" \
-                  --ui-prefix "not_used_but_must_be_set"
+                echo "No configtool OIDC configuration present; nothing to unregister."
               fi
 
               

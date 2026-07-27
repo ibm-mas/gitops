@@ -28,7 +28,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v9" }}
+{{- $_job_version := "v10" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -198,7 +198,7 @@ spec:
               export OAUTH_ADMIN_USERNAME="$(cat /etc/mas/creds/oauth_admin_secret/oauth-admin-username)"
               export OAUTH_ADMIN_PWD="$(cat /etc/mas/creds/oauth_admin_secret/oauth-admin-password)"
 
-              if $(echo -e "${OIDC_CONFIG_YAML}" | yq --exit-status=1 eval '(. | has("configtool")) and (.configtool | has("trusted_uri_prefixes"))' 1>/dev/null 2>&1); then
+              if [ -n "${OIDC_CONFIG_YAML}" ] && [ "${OIDC_CONFIG_YAML}" != "null" ] && $(echo -e "${OIDC_CONFIG_YAML}" | yq --exit-status=1 eval '(. | has("configtool")) and (.configtool | has("trusted_uri_prefixes"))' 1>/dev/null 2>&1); then
                 echo "- oidc.configtool configuration supplied, (re)registering client"
                 echo "--------------------------------------------------------------"
                 echo ""

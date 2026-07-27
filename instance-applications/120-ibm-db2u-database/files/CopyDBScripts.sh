@@ -28,6 +28,7 @@ cp -rp RUNEXPORT.sh ${INSTHOME}/bin/
 cp -rp Explain.ddl ${INSTHOME}/bin/
 cp -rp RUN_OnDemandFULL_BKP.sh ${INSTHOME}/bin/
 cp -rp runstats_rebind.sh ${INSTHOME}/bin/
+cp -rp runstats_volatile.sh ${INSTHOME}/bin/
 cp -rp CreateRoles.sh ${INSTHOME}/bin/
 cp -rp grant_check.sh ${INSTHOME}/bin/
 cp -rp reorgTablesIndexesInplace.sh ${INSTHOME}/bin/

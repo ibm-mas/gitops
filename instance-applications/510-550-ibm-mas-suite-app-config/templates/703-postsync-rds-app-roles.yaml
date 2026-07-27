@@ -3,7 +3,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:14c852062a8c6149820d9aa7b8315d83f25bb29172b0f318e4fe10af613533f3" }}
+{{- $_cli_image_digest := "sha256:08c775096d1876549a999087dbbe8c2fc6c758e0a4b4bccbac01ed21bf985102" }}
 
 {{ $app_ns          := .Values.mas_app_namespace }}
 {{ $np_name            := "postsync-app-rds-roles-np" }}
@@ -234,6 +234,7 @@ spec:
                   import sys
                   import re
                   import hashlib
+                  import socket
                   
                   # Get environment variables
                   rds_host = os.getenv('RDS_HOST')
@@ -244,6 +245,18 @@ spec:
                   rds_master_password = os.getenv('RDS_ADMIN_PASSWORD')
                   jdbc_connection_url = os.getenv('JDBC_CONNECTION_URL', '')
                   ssl_cert_path = '/tmp/rds-ssl/global-bundle.pem'
+                  
+                  # Handle long hostnames (DB2 HOSTNAME parameter has 80 char limit)
+                  # Resolve to IP address if hostname is too long
+                  if len(rds_host) > 80:
+                      print(f"⚠️  Hostname too long ({len(rds_host)} chars): {rds_host}")
+                      try:
+                          original_host = rds_host
+                          rds_host = socket.gethostbyname(rds_host)
+                          print(f"✅ Resolved hostname to IP address: {rds_host}")
+                      except socket.gaierror as e:
+                          print(f"❌ Cannot resolve hostname to IP address: {str(e)}")
+                          sys.exit(1)
                   
                   # Extract SSL version from JDBC URL if provided
                   ssl_version = 'TLSv1.2'
@@ -263,7 +276,7 @@ spec:
                       f"PWD={rds_master_password};"
                       f"SECURITY=SSL;"
                       f"SSLVersion={ssl_version};"
-                      f"SSLServerCertificate={ssl_cert_path}"
+                      f"SSLServerCertificate={ssl_cert_path};"
                   )
                   
                   # Build connection string for target database (for grants)
@@ -276,7 +289,7 @@ spec:
                       f"PWD={rds_master_password};"
                       f"SECURITY=SSL;"
                       f"SSLVersion={ssl_version};"
-                      f"SSLServerCertificate={ssl_cert_path}"
+                      f"SSLServerCertificate={ssl_cert_path};"
                   )
                   
                   print(f"Connecting to RDS DB2 - Admin DB: {rds_admin_dbname}, Target DB: {rds_dbname}")

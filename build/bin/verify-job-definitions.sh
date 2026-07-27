@@ -96,6 +96,10 @@ valid_count=0
 invalid_count=0
 skipped_count=0
 
+# Parallel arrays tracking each file and its $_cli_image_digest value, for cross-file consistency check
+digest_files=()
+digest_values=()
+
 for file in ${files}; do
 
 
@@ -113,10 +117,12 @@ for file in ${files}; do
 
     # Check $_cli_image_digest constant is defined (and is a string that looks like a digest, e.g. <alg>:<hex>)
     # NOTE: not validating actual alg or hex values; this is just enough to guard against accidental use of image tags here)
-    grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_cli_image_digest[[:space:]]*:=[[:space:]]*".+:.+"[[:space:]]*\}\}' $file
-    rc=$?
-    if [[ $rc != 0 ]]; then
+    digest_value=$(sed -En 's/.*\$_cli_image_digest[[:space:]]*:=[[:space:]]*"([^:]+:[^"]+)".*/\1/p' $file | head -1)
+    if [[ -z "$digest_value" ]]; then
         problems='    Missing {{- $_cli_image_digest := "..." }} or assigned value does not look like valid digest\n'
+    else
+        digest_files+=("$file")
+        digest_values+=("$digest_value")
     fi
 
     # Any line that has "quay.io/ibmmas/cli" must match quay.io/ibmmas/cli@{{ $_cli_image_digest }}
@@ -293,6 +299,24 @@ for file in ${files}; do
          (( valid_count++ ))
     fi
 done
+
+# Check all files agree on the same $_cli_image_digest value
+distinct_digests=$(printf '%s\n' "${digest_values[@]}" | sort -u)
+distinct_count=$(printf '%s\n' "${distinct_digests}" | grep -c .)
+if [[ $distinct_count -gt 1 ]]; then
+    echo ""
+    echo "ERROR: Inconsistent \$_cli_image_digest values found across template files:"
+    echo "  The following distinct digest values were seen:"
+    while IFS= read -r d; do
+        echo "    $d"
+    done <<< "$distinct_digests"
+    echo "  Per-file breakdown:"
+    for i in "${!digest_files[@]}"; do
+        echo "    ${digest_values[$i]}  ${digest_files[$i]}"
+    done | sort
+    echo ""
+    (( invalid_count++ ))
+fi
 
 echo
 echo "Complete"

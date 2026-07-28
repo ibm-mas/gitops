@@ -49,7 +49,7 @@ databases:
     replica_db: boolean
 
 production_database_access:
-  key: value
+  type: string
 
 custom_labels:
   key: value

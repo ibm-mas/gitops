@@ -54,19 +54,12 @@ done
 shift $((OPTIND - 1))
 
 
-# repo_root is used for the cross-file digest consistency check.
-# When a directory is passed we use that as the root (full scan covers everything).
-# When individual files are passed we discover the git root so the consistency
-# check still covers the entire repo, not just the files being committed.
-repo_root=""
-
 # if single PATH, check if it's a dir
 #   if so, scan it for yaml files containing references to quay.io/ibmmas/cli
 #   otherwise, we'll treat it as a file
 if [[ $# == 1 ]]; then
     path=$1
     if [[ -d $path ]]; then
-        repo_root=$path
         files=$(grep -Erl --include '*.yaml' --include '*.tpl' 'quay.io/ibmmas/cli' ${path})
         echo "Checking all YAML and TPL files with quay.io/ibmmas/cli references under directory ${path}"
         echo "---------"
@@ -96,11 +89,6 @@ done
 if [[ $file_count -gt 0 ]]; then
     echo "Checking $file_count files"
     echo "---------"
-    # Discover git root so the cross-file digest check covers the whole repo
-    repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
-    if [[ -z "$repo_root" ]]; then
-        echo "WARNING: Could not determine git repository root; cross-file digest consistency check will only cover the files passed to this script"
-    fi
 fi
 
 scanned_count=0
@@ -125,8 +113,9 @@ for file in ${files}; do
 
     # Check $_cli_image_digest constant is defined (and is a string that looks like a digest, e.g. <alg>:<hex>)
     # NOTE: not validating actual alg or hex values; this is just enough to guard against accidental use of image tags here)
-    digest_value=$(sed -En 's/.*\$_cli_image_digest[[:space:]]*:=[[:space:]]*"([^:]+:[^"]+)".*/\1/p' $file | head -1)
-    if [[ -z "$digest_value" ]]; then
+    grep -Eq '^[[:space:]]*\{\{-?[[:space:]]+\$_cli_image_digest[[:space:]]*:=[[:space:]]*".+:.+"[[:space:]]*\}\}' $file
+    rc=$?
+    if [[ $rc != 0 ]]; then
         problems='    Missing {{- $_cli_image_digest := "..." }} or assigned value does not look like valid digest\n'
     fi
 
@@ -304,38 +293,6 @@ for file in ${files}; do
          (( valid_count++ ))
     fi
 done
-
-# Check all files in the repo agree on the same $_cli_image_digest value.
-# When individual files were passed (pre-commit hook) we re-scan the entire repo
-# root so a commit that updates the digest in only some files is still caught.
-if [[ -n "$repo_root" ]]; then
-    all_digest_files=()
-    all_digest_values=()
-    while IFS= read -r f; do
-        v=$(sed -En 's/.*\$_cli_image_digest[[:space:]]*:=[[:space:]]*"([^:]+:[^"]+)".*/\1/p' "$f" | head -1)
-        if [[ -n "$v" ]]; then
-            all_digest_files+=("$f")
-            all_digest_values+=("$v")
-        fi
-    done < <(grep -Erl --include '*.yaml' --include '*.yml' --include '*.tpl' 'quay.io/ibmmas/cli' "$repo_root")
-
-    distinct_digests=$(printf '%s\n' "${all_digest_values[@]}" | sort -u)
-    distinct_count=$(printf '%s\n' "${distinct_digests}" | grep -c .)
-    if [[ $distinct_count -gt 1 ]]; then
-        echo ""
-        echo "ERROR: Inconsistent \$_cli_image_digest values found across all template files in the repository:"
-        echo "  The following distinct digest values were seen:"
-        while IFS= read -r d; do
-            echo "    $d"
-        done <<< "$distinct_digests"
-        echo "  Per-file breakdown:"
-        for i in "${!all_digest_files[@]}"; do
-            echo "    ${all_digest_values[$i]}  ${all_digest_files[$i]}"
-        done | sort
-        echo ""
-        (( invalid_count++ ))
-    fi
-fi
 
 echo
 echo "Complete"

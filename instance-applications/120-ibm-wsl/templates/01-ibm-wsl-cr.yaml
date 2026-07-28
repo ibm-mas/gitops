@@ -1,3 +1,33 @@
+# ---
+# apiVersion: ws.cpd.ibm.com/v1beta1
+# kind: WS
+# metadata:
+#   name: "ws-cr"
+#   namespace: "{{ .Values.cpd_instance_namespace }}"
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "091"
+#     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+# {{- if .Values.custom_labels }}
+#   labels:
+# {{ .Values.custom_labels | toYaml | indent 4 }}
+# {{- end }}
+# spec:
+#   imagePullSecret: ibm-entitlement-key
+#   ignoreForMaintenance: false
+#   license:
+#     accept: true
+#     license: Standard
+#   scaleConfig: "{{ .Values.cpd_service_scale_config }}"
+#   fileStorageClass: "{{ .Values.cpd_service_storage_class }}"
+#   blockStorageClass: "{{ .Values.cpd_service_block_storage_class }}"
+#   version: "{{ .Values.wsl_version }}"
+#   ccs_operand_version: "{{ .Values.ccs_version }}"
+#   datarefinery_operand_version: "{{ .Values.datarefinery_version }}"
+#   wsrt_operand_version: "{{ .Values.ws_runtimes_version }}"
+
+
+
+{{- if lt (semver .Values.cpd_product_version) (semver "5.3.1") }}
 ---
 apiVersion: ws.cpd.ibm.com/v1beta1
 kind: WS
@@ -24,3 +54,44 @@ spec:
   ccs_operand_version: "{{ .Values.ccs_version }}"
   datarefinery_operand_version: "{{ .Values.datarefinery_version }}"
   wsrt_operand_version: "{{ .Values.ws_runtimes_version }}"
+{{- else }}
+---
+# Helm-based installation for CPD 5.3.1+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: install-wsl-helm
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "091"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      containers:
+        - name: helm-install
+          image: quay.io/ibmmas/cli:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              helm repo add ibm-charts https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+              helm repo update
+              helm upgrade --install wsl ibm-charts/wsl \
+                --version 12.1.0 \
+                --namespace {{ .Values.cpd_instance_namespace }} \
+                --create-namespace \
+                --set global.licenseAccept=true \
+                --set global.releaseVersion={{ .Values.cpd_product_version }} \
+                --set global.operatorNamespace={{ .Values.cpd_operators_namespace }} \
+                --set global.instanceNamespace={{ .Values.cpd_instance_namespace }} \
+                --set global.fileStorageClass={{ .Values.cpd_service_storage_class }} \
+                --set global.blockStorageClass={{ .Values.cpd_service_block_storage_class }} \
+                --set global.imagePullSecret=ibm-entitlement-key \
+                --set ws.scaleConfig={{ .Values.cpd_service_scale_config }} \
+                --wait --timeout 30m
+      restartPolicy: Never
+      serviceAccountName: cpd-sa
+  backoffLimit: 2
+{{- end }}

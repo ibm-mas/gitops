@@ -57,6 +57,9 @@ spec:
 {{- else }}
 ---
 # Helm-based installation for CPD 5.3.1+
+# Installs WSL and all its dependencies (opensearch, ccs, datarefinery, ws-runtimes)
+# using IBM Helm charts. Each component requires a cluster-scoped chart (CRDs/ClusterRoles)
+# followed by a namespace-scoped chart (Operator + CR).
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -76,22 +79,123 @@ spec:
             - /bin/sh
             - -c
             - |
-              helm repo add ibm-charts https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+              set -e
+
+              HELM_REPO=ibm-charts
+              HELM_REPO_URL=https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+              OPERATORS_NS={{ .Values.cpd_operators_namespace }}
+              INSTANCE_NS={{ .Values.cpd_instance_namespace }}
+              FILE_SC={{ .Values.cpd_service_storage_class }}
+              BLOCK_SC={{ .Values.cpd_service_block_storage_class }}
+              SCALE={{ .Values.cpd_service_scale_config }}
+              CPD_VERSION={{ .Values.cpd_product_version }}
+              PULL_SECRET=ibm-entitlement-key
+
+              echo "================================================================"
+              echo "Adding IBM Helm repository"
+              echo "================================================================"
+              helm repo add ${HELM_REPO} ${HELM_REPO_URL} || true
               helm repo update
-              helm upgrade --install wsl ibm-charts/wsl \
-                --version 12.1.0 \
-                --namespace {{ .Values.cpd_instance_namespace }} \
-                --create-namespace \
-                --set global.licenseAccept=true \
-                --set global.releaseVersion={{ .Values.cpd_product_version }} \
-                --set global.operatorNamespace={{ .Values.cpd_operators_namespace }} \
-                --set global.instanceNamespace={{ .Values.cpd_instance_namespace }} \
-                --set global.fileStorageClass={{ .Values.cpd_service_storage_class }} \
-                --set global.blockStorageClass={{ .Values.cpd_service_block_storage_class }} \
-                --set global.imagePullSecret=ibm-entitlement-key \
-                --set ws.scaleConfig={{ .Values.cpd_service_scale_config }} \
-                --wait --timeout 30m
+
+              # Shared values file used by all components
+              cat > /tmp/cpd-global-values.yaml << EOF
+              global:
+                licenseAccept: true
+                releaseVersion: ${CPD_VERSION}
+                operatorNamespace: ${OPERATORS_NS}
+                instanceNamespace: ${INSTANCE_NS}
+                fileStorageClass: ${FILE_SC}
+                blockStorageClass: ${BLOCK_SC}
+                imagePullSecret: ${PULL_SECRET}
+                imagePullPrefix: cp.icr.io
+              EOF
+
+              install_component() {
+                local NAME=$1
+                local CHART=$2
+                local CLUSTER_CHART=$3
+                local VERSION=$4
+                local EXTRA_VALUES=$5
+
+                echo "================================================================"
+                echo "Installing ${NAME} (version ${VERSION})"
+                echo "================================================================"
+
+                # 1. Cluster-scoped chart (CRDs, ClusterRoles)
+                echo "  [${NAME}] Installing cluster-scoped chart..."
+                helm template ${NAME}-cluster ${HELM_REPO}/${CLUSTER_CHART} \
+                  --version ${VERSION} \
+                  -f /tmp/cpd-global-values.yaml \
+                  --namespace ${OPERATORS_NS} | oc apply -f -
+
+                # 2. Namespace-scoped chart (Operator + CR)
+                echo "  [${NAME}] Installing namespace-scoped chart..."
+                helm upgrade --install ${NAME} ${HELM_REPO}/${CHART} \
+                  --version ${VERSION} \
+                  -f /tmp/cpd-global-values.yaml \
+                  ${EXTRA_VALUES} \
+                  --namespace ${INSTANCE_NS} \
+                  --create-namespace \
+                  --wait --timeout 60m
+              }
+
+              # ----------------------------------------------------------------
+              # Step 1: OpenSearch (dependency)
+              # ----------------------------------------------------------------
+              install_component \
+                "opencontent-opensearch" \
+                "opencontent-opensearch" \
+                "opencontent-opensearch-cluster-scoped" \
+                "1.2.0"
+
+              # ----------------------------------------------------------------
+              # Step 2: CCS - Common Core Services (dependency)
+              # ----------------------------------------------------------------
+              install_component \
+                "ccs" \
+                "ccs" \
+                "ccs-cluster-scoped" \
+                "12.1.0" \
+                "--set ccs.scaleConfig=${SCALE}"
+
+              # Wait for CCS CR to be ready
+              echo "Waiting for CCS CR to be ready..."
+              oc wait ccs/ccs-cr -n ${INSTANCE_NS} \
+                --for=jsonpath='{.status.controlPlaneStatus}'=Completed \
+                --timeout=60m
+
+              # ----------------------------------------------------------------
+              # Step 3: DataRefinery (dependency)
+              # ----------------------------------------------------------------
+              install_component \
+                "datarefinery" \
+                "datarefinery" \
+                "datarefinery-cluster-scoped" \
+                "12.1.0"
+
+              # ----------------------------------------------------------------
+              # Step 4: WS Runtimes (dependency)
+              # ----------------------------------------------------------------
+              install_component \
+                "ws-runtimes" \
+                "ws-runtimes" \
+                "ws-runtimes-cluster-scoped" \
+                "12.1.0"
+
+              # ----------------------------------------------------------------
+              # Step 5: Watson Studio (main component)
+              # ----------------------------------------------------------------
+              install_component \
+                "wsl" \
+                "ws" \
+                "ws-cluster-scoped" \
+                "12.1.0" \
+                "--set ws.scaleConfig=${SCALE}"
+
+              echo "================================================================"
+              echo "WSL installation complete"
+              echo "================================================================"
       restartPolicy: Never
       serviceAccountName: cpd-sa
-  backoffLimit: 2
+  backoffLimit: 1
 {{- end }}

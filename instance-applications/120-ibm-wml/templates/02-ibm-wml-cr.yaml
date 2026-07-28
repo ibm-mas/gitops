@@ -26,6 +26,41 @@ spec:
 {{- else }}
 ---
 # Helm-based installation for CPD 5.3.1+
-# WML is installed via ansible-devops cp4d_service role using Helm
-# No OLM Subscription or CR is created here for CPD >= 5.3.1
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: install-wml-helm
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "092"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      containers:
+        - name: helm-install
+          image: quay.io/ibmmas/cli:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              helm repo add ibm-charts https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+              helm repo update
+              helm upgrade --install wml ibm-charts/wml \
+                --version 12.1.0 \
+                --namespace {{ .Values.cpd_instance_namespace }} \
+                --create-namespace \
+                --set global.licenseAccept=true \
+                --set global.releaseVersion={{ .Values.cpd_product_version }} \
+                --set global.operatorNamespace={{ .Values.cpd_operators_namespace }} \
+                --set global.instanceNamespace={{ .Values.cpd_instance_namespace }} \
+                --set global.fileStorageClass={{ .Values.cpd_service_storage_class }} \
+                --set global.blockStorageClass={{ .Values.cpd_service_block_storage_class }} \
+                --set global.imagePullSecret=ibm-entitlement-key \
+                --set wml.scaleConfig={{ .Values.cpd_service_scale_config }} \
+                --wait --timeout 30m
+      restartPolicy: Never
+      serviceAccountName: cpd-sa
+  backoffLimit: 2
 {{- end }}

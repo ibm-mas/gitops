@@ -5,7 +5,7 @@ INSTOWNER=`/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | awk 
 # Find the home directory
 INSTHOME=` cat /etc/passwd | grep ${INSTOWNER} | cut -d: -f6`
 
-DEST_USER=`db2 list applications show detail | cut -d" " -f1 | grep -v DB2INST1 | grep -v CTGINST1 | grep -v CONNECT |grep -E "MANA|FACI"  | grep -v "\-\-" |grep -v MONITOR | sort -n | uniq | tail -1`
+DEST_USER=`db2 list applications show detail | cut -d" " -f1 | grep -v DB2INST1 | grep -v CTGINST1 | grep -v CONNECT |grep MANA  | grep -v "\-\-" |grep -v MONITOR | sort -n | uniq | tail -1`
 SCRIPT=/mnt/backup/bin/PostBF_Scripts.sh
 
     echo "db2 connect to bludb" > ${SCRIPT}

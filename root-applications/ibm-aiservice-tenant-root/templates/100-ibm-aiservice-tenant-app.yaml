@@ -44,16 +44,18 @@ spec:
           value: |
             catalog_source: "{{ .Values.ibm_aiservice_tenant.catalog_source }}"
             catalog_channel: "{{ .Values.ibm_aiservice_tenant.catalog_channel }}"
+            aiservice_tenant_install_plan_approval: "{{ .Values.ibm_aiservice_tenant.aiservice_tenant_install_plan_approval }}" 
             
             tenant_id: "{{ .Values.ibm_aiservice_tenant.tenant_id }}"
             aiservice_instance_id: "{{ .Values.ibm_aiservice_tenant.aiservice_instance_id }}"
             aiservice_namespace: "{{ .Values.ibm_aiservice_tenant.aiservice_namespace }}"
+            enable_deprovisioning: {{ .Values.ibm_aiservice_tenant.enable_deprovisioning }}
             
             account_id: "{{ .Values.account.id }}"
             region_id: "{{ .Values.region.id }}"
             cluster_id: "{{ .Values.cluster.id }}"
-            cluster_admin_role: {{ .Values.cluster_admin_role }}
-            application_admin_role: {{ .Values.application_admin_role }}
+            cluster_admin_role: {{ if hasKey .Values "cluster_admin_role" }}{{ .Values.cluster_admin_role }}{{ else }}true{{ end }}
+            application_admin_role: {{ if hasKey .Values "application_admin_role" }}{{ .Values.application_admin_role }}{{ else }}true{{ end }}
             # SAAS
             aiservice_saas_apikey: "{{ .Values.ibm_aiservice_tenant.aiservice_saas_apikey }}"
             mas_aiservice_saas: "{{ .Values.ibm_aiservice_tenant.mas_aiservice_saas }}"
@@ -129,9 +131,10 @@ spec:
     retry:
       limit: 20
     syncOptions:
-      {{- if .Values.cluster_admin_role }}
+      - RespectIgnoreDifferences=true
+{{- if .Values.cluster_admin_role }}
       - CreateNamespace=true
-      {{- end }}
+{{- end }}
 {{- if or .Values.custom_labels .Values.argocluster_instance }}
     managedNamespaceMetadata:
       labels:
@@ -143,11 +146,19 @@ spec:
         {{- end }}
 {{- end }}
   ignoreDifferences:
-    # Tenant operator updates the secret
+    # Secret is patched in tenant namespace by tenant operator in 9.2 and above.
     - group: ""
       kind: Secret
       name: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}----sls-secret"
       namespace: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}"
+      jsonPointers:
+        - /data
+    # Secret is patched in AI Service namespace by tenant operator in 9.1 only.
+    # Rollback procedure also patches the secret here.
+    - group: ""
+      kind: Secret
+      name: "{{ .Values.ibm_aiservice_tenant.tenantNamespace }}----sls-secret"
+      namespace: "{{ .Values.ibm_aiservice_tenant.aiservice_namespace }}"
       jsonPointers:
         - /data
 {{- end }}

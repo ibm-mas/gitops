@@ -2,7 +2,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 
 
 ---
@@ -75,11 +75,13 @@ spec:
                   value: "aws"
                 - name: JDBC_SECRET_NAME_PATTERN
                   value: ".*/jdbc/.*/config"
-                - name: DB2_PLUGIN_REMOTE_TEMPLATE
+                - name: DB2_PLUGIN_LOCAL_TEMPLATE
                   value: |
                     {
                       "host": "",
                       "port": "50001",
+                      "instance": "db2inst1",
+                      "environment": "OCP",
                       "tabschema": "db2inst1",
                       "user": "",
                       "password": "",
@@ -129,13 +131,16 @@ spec:
                     echo "${secret}" | yq .${key}
                   }
 
-                  function create_jdbc_remote() {
+                  function create_jdbc_local() {
                     local secret_name="${1}"
                     local db2_username="${2}"
                     local db2_password="${3}"
                     local jdbc_secret=$(sm_get_secret "${secret_name}")
                     local url=$(extract_secret_value "${jdbc_secret}" jdbc_connection_url)
-                    local yaml=$(set_yaml_string_field "${DB2_PLUGIN_REMOTE_TEMPLATE}" host $(echo "${url}" | cut -d'/' -f3 | cut -d':' -f1))
+                    # Extract host from JDBC URL and strip the -engn-svc suffix to use the internal ClusterIP service
+                    local raw_host=$(echo "${url}" | cut -d'/' -f3 | cut -d':' -f1)
+                    local host=$(echo "${raw_host}" | sed 's/-engn-svc//')
+                    local yaml=$(set_yaml_string_field "${DB2_PLUGIN_LOCAL_TEMPLATE}" host "${host}")
                     local yaml=$(set_yaml_string_field "${yaml}" user ${db2_username})
                     local yaml=$(set_yaml_string_field "${yaml}" password ${db2_password})
                     local yaml=$(set_yaml_string_field "${yaml}" availabilityZone "${CLUSTER_ID}:db2")
@@ -150,18 +155,20 @@ spec:
                     echo "${yaml}"
                   }
 
-                  function update_remotes_list() {
-                    local remotes_list="${1}"
-                    export jdbc_remote="${2}"
-                    echo "${remotes_list}" | yq '."com.instana.plugin.db2".remote += [env(jdbc_remote)]'
+                  function update_locals_list() {
+                    local locals_list="${1}"
+                    export jdbc_local="${2}"
+                    echo "${locals_list}" | yq '."com.instana.plugin.db2".local += [env(jdbc_local)]'
                   }
 
                   function generate_updated_agent_config() {
                     local instana_cr="${1}"
-                    local jdbc_remotes="${2}"
-                    export jdbc_items=$(echo "${jdbc_remotes}" | yq '."com.instana.plugin.db2".remote')
+                    local jdbc_locals="${2}"
+                    export jdbc_items=$(echo "${jdbc_locals}" | yq '."com.instana.plugin.db2".local')
                     local config_yaml=$(echo "${instana_cr}" | yq .spec.agent.configuration_yaml)
-                    echo "${config_yaml}" | yq '."com.instana.plugin.db2".remote = env(jdbc_items)'
+                    # Write local: and explicitly remove any stale remote: key left by previous CronJob runs
+                    echo "${config_yaml}" | yq '."com.instana.plugin.db2".local = env(jdbc_items)' \
+                      | yq 'del(."com.instana.plugin.db2".remote)'
                   }
 
                   function generate_updated_instana_cr() {
@@ -257,7 +264,7 @@ spec:
                   find /jks/ -name "*.pem" -type f -delete 2>/dev/null || true
                   echo "[INFO] Cleanup completed"
 
-                  remotes_list=$(yq eval -n '."com.instana.plugin.db2".remote = []')
+                  locals_list=$(yq eval -n '."com.instana.plugin.db2".local = []')
                   
                   # Get JDBC secrets with error handling
                   if ! secret_names=$(get_all_jdbc_secret_names); then
@@ -284,7 +291,7 @@ spec:
                   for secret_name in ${secret_names}; do
                     secret_number=$((secret_number + 1))
                     echo "[INFO] [$secret_number/$num_secrets] Processing JDBC secret ${secret_name}"
-                    
+
                     # Get DB2 credentials with error handling
                     echo "[DEBUG] Retrieving DB2 credentials for ${secret_name}"
                     if ! db2_credentials=$(get_db2_credentials "${secret_name}" 2>&1); then
@@ -293,7 +300,7 @@ spec:
                       continue
                     fi
                     echo "[DEBUG] Successfully retrieved DB2 credentials"
-                    
+
                     db2_user=$(echo "${db2_credentials}" | awk '{print $1}')
                     db2_pass=$(echo "${db2_credentials}" | awk '{print $2}')
 
@@ -307,47 +314,49 @@ spec:
                       skipped_count=$((skipped_count + 1))
                       continue
                     fi
-                    
-                    echo "[DEBUG] Creating JDBC remote configuration for ${secret_name}"
-                    if ! jdbc_remote=$(create_jdbc_remote "${secret_name}" "${db2_user}" "${db2_pass}" 2>&1); then
-                      echo "[WARN] Failed to create JDBC remote configuration for ${secret_name}: ${jdbc_remote}"
+
+                    echo "[DEBUG] Creating JDBC local configuration for ${secret_name}"
+                    if ! jdbc_local=$(create_jdbc_local "${secret_name}" "${db2_user}" "${db2_pass}" 2>&1); then
+                      echo "[WARN] Failed to create JDBC local configuration for ${secret_name}: ${jdbc_local}"
                       skipped_count=$((skipped_count + 1))
                       continue
                     fi
                     
                     if write_cert_file "${secret_name}"; then
-                     remotes_list=$(update_remotes_list "${remotes_list}" "${jdbc_remote}")
+                     locals_list=$(update_locals_list "${locals_list}" "${jdbc_local}")
                      processed_count=$((processed_count + 1))
                      echo "[INFO] Successfully processed JDBC secret ${secret_name}"
                     else
-                     echo "[WARN] Failed to write certificate file for ${secret_name}, skipping remote configuration"
+                     echo "[WARN] Failed to write certificate file for ${secret_name}, skipping local configuration"
                      skipped_count=$((skipped_count + 1))
                     fi
         
                   done
                   echo "[INFO] Processing summary: ${processed_count} secrets processed, ${skipped_count} secrets skipped"
-                  if [[ ${processed_count} -eq 0 ]]; then
-                    echo "[WARN] No secrets were processed. Skipping Instana agent configuration update."
-                  else
-                
-                    echo "[INFO] Getting InstanaAgent custom resource"
-                    if ! instana_cr=$(get_instana_cr); then
-                      echo "[ERROR] Failed to get InstanaAgent custom resource"
-                      exit 1
-                    fi
-                    
-                    if [[ -z "${instana_cr}" ]]; then
-                      echo "[ERROR] InstanaAgent custom resource is empty"
-                      exit 1
-                    fi
-                    
-                    echo "[DEBUG] Generating updated agent configuration with ${processed_count} DB2 remotes"
-                    agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${remotes_list}")
-                    instana_cr=$(generate_updated_instana_cr "${instana_cr}" "${agent_config_yaml}")
-                    echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
-                    submit_instana_cr "${instana_cr}"
-                    echo "[INFO] Successfully updated Instana agent configuration for DB2"
+
+                  # Always update the CR: write whatever locals were built (possibly empty) and
+                  # remove any stale remote: key that may exist from pre-migration CronJob runs.
+                  echo "[INFO] Getting InstanaAgent custom resource"
+                  if ! instana_cr=$(get_instana_cr); then
+                    echo "[ERROR] Failed to get InstanaAgent custom resource"
+                    exit 1
                   fi
+
+                  if [[ -z "${instana_cr}" ]]; then
+                    echo "[ERROR] InstanaAgent custom resource is empty"
+                    exit 1
+                  fi
+
+                  if [[ ${processed_count} -eq 0 ]]; then
+                    echo "[WARN] No secrets were processed. CR will be updated only to remove stale remote: key if present."
+                  fi
+
+                  echo "[DEBUG] Generating updated agent configuration with ${processed_count} DB2 locals"
+                  agent_config_yaml=$(generate_updated_agent_config "${instana_cr}" "${locals_list}")
+                  instana_cr=$(generate_updated_instana_cr "${instana_cr}" "${agent_config_yaml}")
+                  echo '[INFO] Submitting updated Instana agent configuration to Kubernetes'
+                  submit_instana_cr "${instana_cr}"
+                  echo "[INFO] Successfully updated Instana agent configuration for DB2"
                   echo "[INFO] Completed Instana agent configuration update for DB2"
                   echo "[INFO] Total execution time: $SECONDS seconds"
 

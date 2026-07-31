@@ -18,7 +18,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -35,8 +35,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v15" }}
-
+{{- $_job_version := "v22" }}
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
 This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
@@ -87,7 +86,7 @@ data:
   db2_backup_bucket_secret_key: {{ .Values.db2_backup_bucket_secret_key | b64enc }}
 {{- if .Values.db2_backup_icd_auth_key }}
   icd_auth_key: {{ .Values.db2_backup_icd_auth_key | b64enc }}
-{{- end }}  
+{{- end }}
 {{- end }}
 type: Opaque
 
@@ -139,15 +138,22 @@ rules:
     - list
 - apiGroups:
     - ""
-  resources: 
+  resources:
     - services
-  verbs: 
+  verbs:
     - "get"
 - apiGroups:
+    - ""
+  resources:
+    - secrets
+  verbs:
+    - get
+    - list
+- apiGroups:
     - db2u.databases.ibm.com
-  resources: 
+  resources:
     - db2uinstances
-  verbs: 
+  verbs:
     - "get"
 
 ---
@@ -239,6 +245,8 @@ spec:
               value: "{{ .Values.db2_backup_bucket_endpoint }}"
             - name: SLACKURL
               value: "{{ .Values.db2_backup_notify_slack_url }}"
+            - name: NUM_DB_BACKUPS
+              value: "{{ if .Values.db2_database_db_config }}{{ .Values.db2_database_db_config.NUM_DB_BACKUPS | default "60" }}{{ else }}60{{ end }}"
 {{- end }}
 
           volumeMounts:
@@ -602,7 +610,12 @@ spec:
                 zip -r db2-scripts-facilities.zip db2-scripts-facilities-updated/
                 oc cp /tmp/db2-scripts-facilities.zip ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2-scripts-facilities.zip -c db2u || exit $?
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0  -- su -lc "cd /tmp; unzip -o db2-scripts-facilities.zip; chmod -R +x /tmp/db2-scripts-facilities-updated" db2inst1 || exit $?
-
+                echo ""
+                echo "Copying runstats_volatile.sh to /mnt/backup/bin in c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                cp /tmp/db2-scripts-facilities/runstats_volatile.sh /tmp/runstats_volatile.sh
+                oc cp /tmp/runstats_volatile.sh ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/runstats_volatile.sh -c db2u || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "sudo rm -f ${INSTHOME}/bin/runstats_volatile.sh && sudo mv /tmp/runstats_volatile.sh ${INSTHOME}/bin/runstats_volatile.sh && sudo chmod +x ${INSTHOME}/bin/runstats_volatile.sh && sudo chown db2inst1:db2iadm1 ${INSTHOME}/bin/runstats_volatile.sh" db2inst1 || exit $?
                 # Execute db2configdb.sh
                 echo ""
                 echo "Executing db2config.sh file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
@@ -786,6 +799,37 @@ spec:
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-setup-db2\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
               sm_update_secret ${DB2_CONFIG_SECRET} "{ \"jdbc_connection_url\": \"${JDBC_CONNECTION_URL}\", \"jdbc_instance_name\": \"${DB2_INSTANCE_NAME}\", \"ca_b64\": \"${DB2_CA_PEM}\", \"db2_dbname\": \"${DB2_DBNAME}\", \"db2_namespace\": \"${DB2_NAMESPACE}\" }" "${TAGS}" || exit $?
 
+              # Update JDBC secret for AI Service (if MAS_APP_ID is empty or "aiservice")
+              if [[ -z "${MAS_APP_ID}" || "${MAS_APP_ID}" == "aiservice" ]]; then
+                echo ""
+                echo "================================================================================"
+                echo "Updating JDBC secret for AI Service"
+                echo "================================================================================"
+                
+                # Fetch DB2 instance password
+                echo ""
+                echo "Fetching DB2 instance password from c-${DB2_INSTANCE_NAME}-instancepassword secret"
+                echo "--------------------------------------------------------------------------------"
+                export DB2_PASSWORD=$(oc get secret c-${DB2_INSTANCE_NAME}-instancepassword -n ${DB2_NAMESPACE} -o jsonpath='{.data.password}' | base64 -d)
+                if [[ -z "${DB2_PASSWORD}" ]]; then
+                  echo "Failed to fetch DB2 instance password"
+                  exit 1
+                fi
+                
+                # Construct JDBC secret name
+                JDBC_SECRET_NAME="${ACCOUNT_ID}/${CLUSTER_ID}/jdbc"
+                
+                echo ""
+                echo "Updating JDBC secret: ${JDBC_SECRET_NAME}"
+                echo "--------------------------------------------------------------------------------"
+                
+                # Update JDBC secret with real DB2 connection details    
+                
+                sm_update_secret "${JDBC_SECRET_NAME}" "{\"jdbccfg_username\":\"db2inst1\",\"jdbccfg_password\":\"${DB2_PASSWORD}\",\"jdbccfg_url\":\"${JDBC_CONNECTION_URL}\",\"jdbccfg_sslenabled\":\"true\",\"jdbccfg_ca_b64enc\":\"${DB2_CA_PEM}\"}" "${TAGS}" || exit $?
+                
+                echo "✓ JDBC secret updated successfully for AI Service"
+              fi
+
               if [[ -n $BUCKET_NAME ]]; then
                 echo ""
                 echo "================================================================================"
@@ -828,8 +872,9 @@ spec:
                 echo "SERVER=${COS_SERVER}" >> /tmp/${PROPS_FILE_NAME}
                 echo "SLACKURL=${SLACKURL}" >> /tmp/${PROPS_FILE_NAME}
                 echo "DAYOFFULL=Sat" >> /tmp/${PROPS_FILE_NAME}
-                echo "NUMOFBKUPTOKEEP=60" >> /tmp/${PROPS_FILE_NAME}
+                echo "NUMOFBKUPTOKEEP=${NUM_DB_BACKUPS}" >> /tmp/${PROPS_FILE_NAME}
                 echo "ICD_AUTH_KEY=${ICD_AUTH_KEY}" >> /tmp/${PROPS_FILE_NAME}
+                echo "APPENV=${MAS_APP_ID}" >> /tmp/${PROPS_FILE_NAME}
 
                 echo ""
                 echo "Copy ${PROPS_FILE_NAME} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"

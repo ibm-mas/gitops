@@ -9,7 +9,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:4636b74525a46ebd88cd540794e8e23143f0112ea85149f9dfc78d02704ad5a6" }}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -125,17 +125,21 @@ spec:
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               
               # Get name of secret generated for the custom service account
-              echo "Fetching name of secret generated for custom service account ${CUSTOM_SA_NAME}"
-              SECRET_NAME=$(oc get secret -n ${CUSTOM_SA_NAMESPACE} | grep ${CUSTOM_SA_NAME}-token | head -1 | cut -d' ' -f1)
-              # As of kubernetes 1.27, the token required is no longer generated
-              # OCP 4.18 ships with Kubernetes 1.31
-              # Create the token and the secret manually if it doesn't already exist.
-              if [[ -z "${SECRET_NAME}" ]]; then
-                SECRET_NAME="${CUSTOM_SA_NAME}-token"
-                SECRET_TOKEN=$(oc create token ${CUSTOM_SA_NAME} --duration=$((24*365*10))h)
-                oc create secret generic ${SECRET_NAME} --from-literal=token=${SECRET_TOKEN}
+              # As of kubernetes 1.24 (OCP 4.11+), tokens are no longer automatically generated for service accounts.
+              # On Kubernetes 1.27+ (OCP 4.17+) tokens must be created manually using oc create token.
+              # The bound object (secret) must exist before oc create token can bind to it.
+              SECRET_NAME="${CUSTOM_SA_NAME}-token"
+              EXISTING_TOKEN=$(oc get secret ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} --ignore-not-found -o json | jq -r '.data.token // empty')
+              if [[ -z "${EXISTING_TOKEN}" ]]; then
+                echo "Token not found in secret ${SECRET_NAME}; creating secret and generating bound token"
+                oc create secret generic ${SECRET_NAME} --from-literal=token=placeholder -n ${CUSTOM_SA_NAMESPACE} --dry-run=client -o yaml | oc apply -f -
+                SECRET_TOKEN=$(oc create token ${CUSTOM_SA_NAME} --bound-object-kind Secret --bound-object-name ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} -o json | jq -r '.status.token')
+                echo "Updating token secret ${SECRET_NAME} with generated token"
+                oc patch secret ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} --type merge -p "{\"data\":{\"token\":\"$(echo -n ${SECRET_TOKEN} | base64 -w 0)\"}}"
+              else
+                echo "Token secret ${SECRET_NAME} already exists with a token; skipping token generation"
               fi
-              
+
               # Get secret token to store in sm
               echo "Fetching token from secret ${SECRET_NAME} for service account ${CUSTOM_SA_NAME}"
               SECRET_TOKEN=$(oc get secret ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} --ignore-not-found -o json | jq -r '.data.token' | base64 -d)

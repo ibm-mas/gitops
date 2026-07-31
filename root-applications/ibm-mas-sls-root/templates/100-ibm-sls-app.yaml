@@ -4,7 +4,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: sls.{{ .Values.ibm_sls_standalone.ibm_customer_number }}.{{ .Values.ibm_sls_standalone.subscription_id }}
+  name: sls.{{ .Values.ibm_sls_standalone.ibm_customer_number | lower }}.{{ .Values.ibm_sls_standalone.subscription_id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -29,7 +29,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: mas-{{ .Values.ibm_sls_standalone.ibm_customer_number }}-{{ .Values.ibm_sls_standalone.subscription_id }}-sls
+    namespace: mas-{{ .Values.ibm_sls_standalone.ibm_customer_number | lower }}-{{ .Values.ibm_sls_standalone.subscription_id }}-sls
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: sls-applications/100-ibm-sls
@@ -48,7 +48,7 @@ spec:
             {{- if .Values.ibm_sls_standalone.dns_provider }}
             {{- if eq (lower .Values.ibm_sls_standalone.dns_provider) "cis" }}
             dns_provider: "{{ .Values.ibm_sls_standalone.dns_provider }}"
-            cis_service_name: "{{ .Values.ibm_sls_standalone.cis_service_name }}"
+            cis_domain: "{{ .Values.ibm_sls_standalone.cis_domain | default .Values.ibm_sls_standalone.cis_service_name }}"
             cis_crn: "{{ .Values.ibm_sls_standalone.cis_crn  }}"
             {{- end }}
             {{- end }}
@@ -71,7 +71,7 @@ spec:
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
             junitreporter:
-              reporter_name: "ibm-sls-{{ .Values.ibm_sls_standalone.ibm_customer_number }}-{{ .Values.ibm_sls_standalone.subscription_id}}"
+              reporter_name: "ibm-sls-{{ .Values.ibm_sls_standalone.ibm_customer_number | lower }}-{{ .Values.ibm_sls_standalone.subscription_id}}"
               cluster_id: "{{ .Values.cluster.id }}"
               customer_id: "{{ .Values.ibm_sls_standalone.ibm_customer_number }}"
               subscription_id: "{{ .Values.ibm_sls_standalone.subscription_id }}"

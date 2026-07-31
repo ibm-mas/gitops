@@ -1,6 +1,6 @@
 {{ $app_dest_ns := printf "mas-%s-core" .Values.instance.id }}
 
-{{ if and (.Values.application_admin_role) (or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (.Values.application_configuration) (not (empty .Values.ibm_db2u_databases)) (.Values.cluster_nonshared) (.Values.additional_resources)) }}
+{{ if and (.Values.application_admin_role) (or (not (empty .Values.allow_list)) (.Values.enhanced_dr) (.Values.extensions) (.Values.additional_vpn) (.Values.application_configuration) (not (empty .Values.ibm_db2u_databases)) (.Values.cluster_nonshared) (.Values.additional_resources) (.Values.production_database_access)) }}
 ---
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
@@ -57,16 +57,14 @@ spec:
             {{- if .Values.additional_resources }}
             additional_resources: {{ .Values.additional_resources | toYaml | nindent 14 }}
             {{- end }}
+            {{- if .Values.production_database_access }}
+            production_database_access: {{ .Values.production_database_access | toYaml | nindent 14 }}
+            {{- end }}
             databases:
             {{- range $val := .Values.ibm_db2u_databases }}
             {{- if and (contains "sdb" $val.db2_instance_name) ($val.replica_db) }}
             - mas_application_id: {{ $val.mas_application_id }}
               replica_db: {{ $val.replica_db }}
-            {{- end }}
-            {{- end }}
-            {{- range $val := .Values.ibm_db2u_databases }}
-            {{- if and (eq $val.mas_application_id "manage") ($val.production_database_access) }}
-            production_database_access: {{ $val.production_database_access | toYaml | nindent 14 }}
             {{- end }}
             {{- end }}
             {{- if .Values.custom_labels }}

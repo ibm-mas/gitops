@@ -181,7 +181,7 @@ The following table lists the ArgoCD application defined in the templates folder
 
 | Template File | Application Name | Cluster Admin Role | Application Admin Role | Both Roles |
 |--------------|------------------|-------------------|----------------------|------------|
-| [`100-ibm-sls-app.yaml`](templates/100-ibm-sls-app.yaml) | sls.{ibm_customer_number}.{subscription_id} | | | ✓ |
+| [`100-ibm-sls-app.yaml`](templates/100-ibm-sls-app.yaml) | sls.{ibm_customer_number \| lower}.{subscription_id} | | | ✓ |
 
 ### Role Conditions
 
@@ -195,7 +195,7 @@ The following table lists the ArgoCD application defined in the templates folder
 
 The SLS Application ([`100-ibm-sls-app.yaml`](templates/100-ibm-sls-app.yaml)) deploys a standalone Suite License Service instance:
 
-**Target Namespace:** `mas-{ibm_customer_number}-{subscription_id}-sls`
+**Target Namespace:** `mas-{ibm_customer_number | lower}-{subscription_id}-sls`
 
 **Source Path:** `sls-applications/100-ibm-sls`
 
@@ -212,7 +212,7 @@ The SLS Application ([`100-ibm-sls-app.yaml`](templates/100-ibm-sls-app.yaml)) d
 **Ignore Differences:**
 - ServiceAccount `imagePullSecrets` (automatically managed by OpenShift)
 
-**Application Naming:** `sls.{ibm_customer_number}.{subscription_id}`
+**Application Naming:** `sls.{ibm_customer_number | lower}.{subscription_id}`
 
 ## Example Configuration
 

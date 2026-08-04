@@ -208,7 +208,7 @@ ibm_aiservice_tenant:
 
 ### Tenant with Custom Operator Resource Limits (9.2.x+)
 
-Use `tenant_operator_config` to set resource requests and limits on the tenant operator pod. This maps directly to the [`spec.config`](https://olm.operatorframework.io/docs/concepts/crds/subscription/) field of the OLM `Subscription` resource.
+Use `tenant_operator_config` to set resource requests and limits on the tenant operator pod. This maps directly to the [`spec.config`](https://github.com/operator-framework/operator-lifecycle-manager/blob/master/doc/design/subscription-config.md) field of the OLM `Subscription` resource.
 
 ```yaml
 ibm_aiservice_tenant:

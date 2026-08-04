@@ -168,6 +168,7 @@ The following parameters are passed from the parent AI Service Instance Root App
 | `avp.values_varname` | Vault values variable name | `HELM_VALUES` |
 | `auto_delete` | Enable auto-pruning | `false` |
 | `cluster.url` | Kubernetes API URL | `https://kubernetes.default.svc` |
+| `ibm_aiservice_tenant.tenant_operator_config` | OLM `SubscriptionConfig` object applied to the tenant operator `Subscription` `spec.config` field. Use to set resource requests/limits, env vars, tolerations, etc. on the operator pod. Optional; omit to use operator defaults. | `{}` |
 
 ## ArgoCD Applications
 
@@ -200,7 +201,7 @@ config-repo/
 │                   └── aiservice-tenant-params.yaml  # Required
 ```
 
-See the [AI Service Tenant Chart](../../instance-applications/115-ibm-aiservice-tenant/README.md) for detailed tenant configuration examples.
+See the [AI Service Tenant Chart](../../instance-applications/115-ibm-aiservice-tenant/README.md) for detailed tenant configuration examples, including `tenant_operator_config` usage.
 
 ## Prerequisites
 

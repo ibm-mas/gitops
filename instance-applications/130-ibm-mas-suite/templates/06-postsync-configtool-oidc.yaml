@@ -28,7 +28,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v10" }}
+{{- $_job_version := "v9" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -198,22 +198,25 @@ spec:
               export OAUTH_ADMIN_USERNAME="$(cat /etc/mas/creds/oauth_admin_secret/oauth-admin-username)"
               export OAUTH_ADMIN_PWD="$(cat /etc/mas/creds/oauth_admin_secret/oauth-admin-password)"
 
-              if [ -n "${OIDC_CONFIG_YAML}" ] && [ "${OIDC_CONFIG_YAML}" != "null" ] && $(echo -e "${OIDC_CONFIG_YAML}" | yq --exit-status=1 eval '(. | has("configtool")) and (.configtool | has("trusted_uri_prefixes"))' 1>/dev/null 2>&1); then
+              if $(echo -e "${OIDC_CONFIG_YAML}" | yq --exit-status=1 eval '(. | has("configtool")) and (.configtool | has("trusted_uri_prefixes"))' 1>/dev/null 2>&1); then
                 echo "- oidc.configtool configuration supplied, (re)registering client"
                 echo "--------------------------------------------------------------"
                 echo ""
                 TRUST_UI_PREFIX=$(echo -e "${OIDC_CONFIG_YAML}" | yq eval '.configtool.trusted_uri_prefixes | join(",")')
-                # NOTE: "x" is used as workspace ID. This is just so the MAS_HOME parameter conforms to the format expected by the
+                # NOTE: "x" is used as workspace ID. This is just so the MAS_HOME parameter conforms to the format expected by the 
                 # configtool-oidc script. This is not a workspace-level operation. Its actual value is not used for anything else.
                 mas configtool-oidc \
                   register \
                   --mas-home "x.home.${DOMAIN}" \
                   --ui-prefix "${TRUST_UI_PREFIX}"
               else
-                echo "- oidc.configtool configuration absent, skipping unregister"
+                echo "- oidc.configtool configuration absent, unregistering client"
                 echo "--------------------------------------------------------------"
                 echo ""
-                echo "No configtool OIDC configuration present; nothing to unregister."
+                mas configtool-oidc \
+                  unregister \
+                  --mas-home "x.home.${DOMAIN}" \
+                  --ui-prefix "not_used_but_must_be_set"
               fi
 
               

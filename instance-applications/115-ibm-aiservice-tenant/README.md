@@ -81,6 +81,18 @@ ibm_aiservice_tenant:
   tenant_entitlement_end_date: string
   
   aiservice_operator_log_level: string
+
+  # Operator Resource Configuration (optional, requires catalog_channel 9.2.x+)
+  # Sets resource requests/limits on the tenant operator container via the
+  # Subscription spec.config field. Accepts any valid SubscriptionConfig object.
+  tenant_operator_config:
+    resources:
+      requests:
+        cpu: string
+        memory: string
+      limits:
+        cpu: string
+        memory: string
 ```
 
 **Note**: Values marked with "(secret reference)" should use the format `<path:secrets/path:key>` to reference secrets stored in the Secrets Vault.
@@ -193,6 +205,27 @@ ibm_aiservice_tenant:
           operator: Equal
           value: inference
 ```
+
+### Tenant with Custom Operator Resource Limits (9.2.x+)
+
+Use `tenant_operator_config` to set resource requests and limits on the tenant operator pod. This maps directly to the [`spec.config`](https://github.com/operator-framework/operator-lifecycle-manager/blob/master/doc/design/subscription-config.md) field of the OLM `Subscription` resource.
+
+```yaml
+ibm_aiservice_tenant:
+  # Specify all parameters as per above example
+
+  # Operator Resource Configuration
+  tenant_operator_config:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+```
+
+Any valid [`SubscriptionConfig`](https://pkg.go.dev/github.com/operator-framework/api/pkg/operators/v1alpha1#SubscriptionConfig) field is accepted (e.g. `env`, `volumes`, `tolerations`, `nodeSelector`).
 
 
 ## Prerequisites

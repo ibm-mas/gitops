@@ -69,6 +69,10 @@ ibm_sls:
       - alias: string
         crt: string (multiline)
   
+  # Pod Templates (optional)
+  sls_pod_templates:
+    key: value
+
   # Certificate Authority (optional)
   internal_certificate_authority: string
 ```

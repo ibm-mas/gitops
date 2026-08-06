@@ -174,11 +174,25 @@ spec:
                 "12.1.0" \
                 "--set ccs.scaleConfig=${SCALE}"
 
-              # Wait for CCS CR to be ready
-              echo "Waiting for CCS CR to be ready..."
-              oc wait ccs/ccs-cr -n ${INSTANCE_NS} \
-                --for=jsonpath='{.status.controlPlaneStatus}'=Completed \
-                --timeout=60m
+              # Wait for CCS CR to be created then reach Completed status
+              echo "Waiting for CCS CR to be created and ready..."
+              wait_period=0
+              while true; do
+                wait_period=$((wait_period+30))
+                if [ $wait_period -gt 3600 ]; then
+                  echo "CCS CR not ready after 60 minutes. Exiting."
+                  exit 1
+                fi
+                CCS_STATUS=$(oc get ccs ccs-cr -n ${INSTANCE_NS} \
+                  -o jsonpath='{.status.controlPlaneStatus}' \
+                  --ignore-not-found 2>/dev/null)
+                if [ "${CCS_STATUS}" = "Completed" ]; then
+                  echo "CCS CR is ready."
+                  break
+                fi
+                echo "  CCS status: '${CCS_STATUS:-not found}' - waiting 30s..."
+                sleep 30
+              done
 
               # ----------------------------------------------------------------
               # Step 3: DataRefinery (dependency)

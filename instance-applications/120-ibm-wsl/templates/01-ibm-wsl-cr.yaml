@@ -174,8 +174,17 @@ spec:
                 "12.1.0" \
                 "--set ccs.scaleConfig=${SCALE}"
 
-              # Wait for CCS CR to be created then reach Completed status
-              echo "Waiting for CCS CR to be created and ready..."
+              # In CPD 5.3.1 Helm mode the namespace-scoped chart only deploys the
+              # operator; the CCS CR must be created explicitly with non_olm_deploy=true
+              # so the operator reconciles the actual CCS instance.
+              echo "Creating ccs-cr (non_olm_deploy=true) if not already present..."
+              printf 'apiVersion: ccs.cpd.ibm.com/v1beta1\nkind: Ccs\nmetadata:\n  name: ccs-cr\n  namespace: %s\nspec:\n  license:\n    accept: true\n    license: Standard\n  imagePullSecret: %s\n  fileStorageClass: %s\n  blockStorageClass: %s\n  scaleConfig: %s\n  non_olm_deploy: true\n' \
+                "${INSTANCE_NS}" "${PULL_SECRET}" "${FILE_SC}" "${BLOCK_SC}" "${SCALE}" \
+                > /tmp/ccs-cr.yaml
+              oc apply -f /tmp/ccs-cr.yaml
+
+              # Wait for CCS CR to reach Completed status
+              echo "Waiting for CCS CR to be ready..."
               wait_period=0
               while true; do
                 wait_period=$((wait_period+30))

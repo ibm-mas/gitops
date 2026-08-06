@@ -120,6 +120,12 @@ spec:
                   -f /tmp/cpd-global-values.yaml \
                   --namespace ${OPERATORS_NS} | oc apply -f -
 
+                # Wait for all CRDs from the cluster-scoped chart to be established
+                # before running the namespace-scoped chart that depends on them.
+                echo "  [${NAME}] Waiting for CRDs to be established..."
+                sleep 5
+                oc wait crd --all --for=condition=Established --timeout=120s 2>/dev/null || true
+
                 # 2. Namespace-scoped chart (Operator + CR)
                 echo "  [${NAME}] Installing namespace-scoped chart..."
                 helm upgrade --install ${NAME} ${HELM_REPO}/${CHART} \
@@ -139,6 +145,22 @@ spec:
                 "opencontent-opensearch" \
                 "opencontent-opensearch-cluster-scoped" \
                 "1.2.0"
+
+              echo "Waiting for opensearchclusters.opensearch.cloudpackopen.ibm.com CRD to be established..."
+              wait_period=0
+              while true; do
+                wait_period=$((wait_period+10))
+                if [ $wait_period -gt 300 ]; then
+                  echo "CRD not established after 5 minutes. Exiting."
+                  exit 1
+                fi
+                STATUS=$(oc get crd opensearchclusters.opensearch.cloudpackopen.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
+                if [ "$STATUS" = "True" ]; then
+                  echo "CRD established."
+                  break
+                fi
+                sleep 10
+              done
 
               # ----------------------------------------------------------------
               # Step 2: CCS - Common Core Services (dependency)
@@ -165,6 +187,22 @@ spec:
                 "datarefinery-cluster-scoped" \
                 "12.1.0"
 
+              echo "Waiting for datarefineries.datarefinery.cpd.ibm.com CRD to be established..."
+              wait_period=0
+              while true; do
+                wait_period=$((wait_period+10))
+                if [ $wait_period -gt 300 ]; then
+                  echo "CRD not established after 5 minutes. Exiting."
+                  exit 1
+                fi
+                STATUS=$(oc get crd datarefineries.datarefinery.cpd.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
+                if [ "$STATUS" = "True" ]; then
+                  echo "CRD established."
+                  break
+                fi
+                sleep 10
+              done
+
               # ----------------------------------------------------------------
               # Step 4: WS Runtimes (dependency)
               # ----------------------------------------------------------------
@@ -173,6 +211,22 @@ spec:
                 "ws-runtimes" \
                 "ws-runtimes-cluster-scoped" \
                 "12.1.0"
+
+              echo "Waiting for wsruntimes.wsruntimes.cpd.ibm.com CRD to be established..."
+              wait_period=0
+              while true; do
+                wait_period=$((wait_period+10))
+                if [ $wait_period -gt 300 ]; then
+                  echo "CRD not established after 5 minutes. Exiting."
+                  exit 1
+                fi
+                STATUS=$(oc get crd wsruntimes.wsruntimes.cpd.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
+                if [ "$STATUS" = "True" ]; then
+                  echo "CRD established."
+                  break
+                fi
+                sleep 10
+              done
 
               # ----------------------------------------------------------------
               # Step 5: Watson Studio (main component)

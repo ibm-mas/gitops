@@ -1,3 +1,4 @@
+{{- if lt (semver "5.3.1" | (semver (.Values.cpd_product_version | toString)).Compare) 0 }}
 ---
 apiVersion: ae.cpd.ibm.com/v1
 kind: AnalyticsEngine
@@ -22,3 +23,73 @@ spec:
   scaleConfig: "{{ .Values.cpd_service_scale_config }}"
   version: "{{ .Values.spark_version }}"
   ccs_operand_version: "{{ .Values.ccs_version }}"
+{{- else }}
+---
+# Helm-based installation for CPD 5.3.1+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: install-spark-helm
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "092"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      containers:
+        - name: helm-install
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              helm repo add ibm-charts https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+              helm repo update
+
+              echo "Installing analyticsengine cluster-scoped chart (CRDs + ClusterRoles)..."
+              helm template analyticsengine-cluster ibm-charts/analyticsengine-cluster-scoped \
+                --version 12.1.0 \
+                --namespace {{ .Values.cpd_operators_namespace }} \
+                --set global.licenseAccept=true \
+                --set global.releaseVersion={{ .Values.cpd_product_version }} \
+                --set global.operatorNamespace={{ .Values.cpd_operators_namespace }} \
+                --set global.instanceNamespace={{ .Values.cpd_instance_namespace }} \
+                --set global.imagePullSecret=ibm-entitlement-key | oc apply -f -
+
+              echo "Waiting for analyticsengines.ae.cpd.ibm.com CRD to be established..."
+              wait_period=0
+              while true; do
+                wait_period=$((wait_period+10))
+                if [ $wait_period -gt 300 ]; then
+                  echo "CRD not established after 5 minutes. Exiting."
+                  exit 1
+                fi
+                STATUS=$(oc get crd analyticsengines.ae.cpd.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
+                if [ "$STATUS" = "True" ]; then
+                  echo "CRD established."
+                  break
+                fi
+                sleep 10
+              done
+
+              echo "Installing analyticsengine namespace-scoped chart (operator + CR)..."
+              helm upgrade --install analyticsengine ibm-charts/analyticsengine \
+                --version 12.1.0 \
+                --namespace {{ .Values.cpd_instance_namespace }} \
+                --create-namespace \
+                --set global.licenseAccept=true \
+                --set global.releaseVersion={{ .Values.cpd_product_version }} \
+                --set global.operatorNamespace={{ .Values.cpd_operators_namespace }} \
+                --set global.instanceNamespace={{ .Values.cpd_instance_namespace }} \
+                --set global.fileStorageClass={{ .Values.cpd_service_storage_class }} \
+                --set global.blockStorageClass={{ .Values.cpd_service_block_storage_class }} \
+                --set global.imagePullSecret=ibm-entitlement-key \
+                --set analyticsengine.scaleConfig={{ .Values.cpd_service_scale_config }} \
+                --wait --timeout 60m
+      restartPolicy: Never
+      serviceAccountName: cpd-sa
+  backoffLimit: 2
+{{- end }}

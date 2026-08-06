@@ -1,3 +1,33 @@
+# ---
+# apiVersion: ws.cpd.ibm.com/v1beta1
+# kind: WS
+# metadata:
+#   name: "ws-cr"
+#   namespace: "{{ .Values.cpd_instance_namespace }}"
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "091"
+#     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+# {{- if .Values.custom_labels }}
+#   labels:
+# {{ .Values.custom_labels | toYaml | indent 4 }}
+# {{- end }}
+# spec:
+#   imagePullSecret: ibm-entitlement-key
+#   ignoreForMaintenance: false
+#   license:
+#     accept: true
+#     license: Standard
+#   scaleConfig: "{{ .Values.cpd_service_scale_config }}"
+#   fileStorageClass: "{{ .Values.cpd_service_storage_class }}"
+#   blockStorageClass: "{{ .Values.cpd_service_block_storage_class }}"
+#   version: "{{ .Values.wsl_version }}"
+#   ccs_operand_version: "{{ .Values.ccs_version }}"
+#   datarefinery_operand_version: "{{ .Values.datarefinery_version }}"
+#   wsrt_operand_version: "{{ .Values.ws_runtimes_version }}"
+
+
+
+{{- if lt (semver "5.3.1" | (semver (.Values.cpd_product_version | toString)).Compare) 0 }}
 ---
 apiVersion: ws.cpd.ibm.com/v1beta1
 kind: WS
@@ -24,3 +54,194 @@ spec:
   ccs_operand_version: "{{ .Values.ccs_version }}"
   datarefinery_operand_version: "{{ .Values.datarefinery_version }}"
   wsrt_operand_version: "{{ .Values.ws_runtimes_version }}"
+{{- else }}
+---
+# Helm-based installation for CPD 5.3.1+
+# Installs WSL and all its dependencies (opensearch, ccs, datarefinery, ws-runtimes)
+# using IBM Helm charts. Each component requires a cluster-scoped chart (CRDs/ClusterRoles)
+# followed by a namespace-scoped chart (Operator + CR).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: install-wsl-helm
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "091"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      containers:
+        - name: helm-install
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              HELM_REPO=ibm-charts
+              HELM_REPO_URL=https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+              OPERATORS_NS={{ .Values.cpd_operators_namespace }}
+              INSTANCE_NS={{ .Values.cpd_instance_namespace }}
+              FILE_SC={{ .Values.cpd_service_storage_class }}
+              BLOCK_SC={{ .Values.cpd_service_block_storage_class }}
+              SCALE={{ .Values.cpd_service_scale_config }}
+              CPD_VERSION={{ .Values.cpd_product_version }}
+              PULL_SECRET=ibm-entitlement-key
+
+              echo "================================================================"
+              echo "Adding IBM Helm repository"
+              echo "================================================================"
+              helm repo add ${HELM_REPO} ${HELM_REPO_URL} || true
+              helm repo update
+
+              # Shared values file used by all components
+              printf 'global:\n  licenseAccept: true\n  releaseVersion: %s\n  operatorNamespace: %s\n  instanceNamespace: %s\n  fileStorageClass: %s\n  blockStorageClass: %s\n  imagePullSecret: %s\n  imagePullPrefix: cp.icr.io\n' \
+                "${CPD_VERSION}" "${OPERATORS_NS}" "${INSTANCE_NS}" "${FILE_SC}" "${BLOCK_SC}" "${PULL_SECRET}" \
+                > /tmp/cpd-global-values.yaml
+
+              install_component() {
+                local NAME=$1
+                local CHART=$2
+                local CLUSTER_CHART=$3
+                local VERSION=$4
+                local EXTRA_VALUES=$5
+
+                echo "================================================================"
+                echo "Installing ${NAME} (version ${VERSION})"
+                echo "================================================================"
+
+                # 1. Cluster-scoped chart (CRDs, ClusterRoles)
+                echo "  [${NAME}] Installing cluster-scoped chart..."
+                helm template ${NAME}-cluster ${HELM_REPO}/${CLUSTER_CHART} \
+                  --version ${VERSION} \
+                  -f /tmp/cpd-global-values.yaml \
+                  --namespace ${OPERATORS_NS} | oc apply -f -
+
+                # Wait for all CRDs from the cluster-scoped chart to be established
+                # before running the namespace-scoped chart that depends on them.
+                echo "  [${NAME}] Waiting for CRDs to be established..."
+                sleep 5
+                oc wait crd --all --for=condition=Established --timeout=120s 2>/dev/null || true
+
+                # 2. Namespace-scoped chart (Operator + CR)
+                echo "  [${NAME}] Installing namespace-scoped chart..."
+                helm upgrade --install ${NAME} ${HELM_REPO}/${CHART} \
+                  --version ${VERSION} \
+                  -f /tmp/cpd-global-values.yaml \
+                  ${EXTRA_VALUES} \
+                  --namespace ${INSTANCE_NS} \
+                  --create-namespace \
+                  --wait --timeout 60m
+              }
+
+              # ----------------------------------------------------------------
+              # Step 1: OpenSearch (dependency)
+              # ----------------------------------------------------------------
+              install_component \
+                "opencontent-opensearch" \
+                "opencontent-opensearch" \
+                "opencontent-opensearch-cluster-scoped" \
+                "1.2.0"
+
+              echo "Waiting for opensearchclusters.opensearch.cloudpackopen.ibm.com CRD to be established..."
+              wait_period=0
+              while true; do
+                wait_period=$((wait_period+10))
+                if [ $wait_period -gt 300 ]; then
+                  echo "CRD not established after 5 minutes. Exiting."
+                  exit 1
+                fi
+                STATUS=$(oc get crd opensearchclusters.opensearch.cloudpackopen.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
+                if [ "$STATUS" = "True" ]; then
+                  echo "CRD established."
+                  break
+                fi
+                sleep 10
+              done
+
+              # ----------------------------------------------------------------
+              # Step 2: CCS - Common Core Services (dependency)
+              # ----------------------------------------------------------------
+              install_component \
+                "ccs" \
+                "ccs" \
+                "ccs-cluster-scoped" \
+                "12.1.0" \
+                "--set ccs.scaleConfig=${SCALE}"
+
+              # Wait for CCS CR to be ready
+              echo "Waiting for CCS CR to be ready..."
+              oc wait ccs/ccs-cr -n ${INSTANCE_NS} \
+                --for=jsonpath='{.status.controlPlaneStatus}'=Completed \
+                --timeout=60m
+
+              # ----------------------------------------------------------------
+              # Step 3: DataRefinery (dependency)
+              # ----------------------------------------------------------------
+              install_component \
+                "datarefinery" \
+                "datarefinery" \
+                "datarefinery-cluster-scoped" \
+                "12.1.0"
+
+              echo "Waiting for datarefineries.datarefinery.cpd.ibm.com CRD to be established..."
+              wait_period=0
+              while true; do
+                wait_period=$((wait_period+10))
+                if [ $wait_period -gt 300 ]; then
+                  echo "CRD not established after 5 minutes. Exiting."
+                  exit 1
+                fi
+                STATUS=$(oc get crd datarefineries.datarefinery.cpd.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
+                if [ "$STATUS" = "True" ]; then
+                  echo "CRD established."
+                  break
+                fi
+                sleep 10
+              done
+
+              # ----------------------------------------------------------------
+              # Step 4: WS Runtimes (dependency)
+              # ----------------------------------------------------------------
+              install_component \
+                "ws-runtimes" \
+                "ws-runtimes" \
+                "ws-runtimes-cluster-scoped" \
+                "12.1.0"
+
+              echo "Waiting for wsruntimes.wsruntimes.cpd.ibm.com CRD to be established..."
+              wait_period=0
+              while true; do
+                wait_period=$((wait_period+10))
+                if [ $wait_period -gt 300 ]; then
+                  echo "CRD not established after 5 minutes. Exiting."
+                  exit 1
+                fi
+                STATUS=$(oc get crd wsruntimes.wsruntimes.cpd.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
+                if [ "$STATUS" = "True" ]; then
+                  echo "CRD established."
+                  break
+                fi
+                sleep 10
+              done
+
+              # ----------------------------------------------------------------
+              # Step 5: Watson Studio (main component)
+              # ----------------------------------------------------------------
+              install_component \
+                "wsl" \
+                "ws" \
+                "ws-cluster-scoped" \
+                "12.1.0" \
+                "--set ws.scaleConfig=${SCALE}"
+
+              echo "================================================================"
+              echo "WSL installation complete"
+              echo "================================================================"
+      restartPolicy: Never
+      serviceAccountName: cpd-sa
+  backoffLimit: 1
+{{- end }}

@@ -1,9 +1,9 @@
-{{- if and .Values.run_sync_hooks .Values.application_admin_role }}
+{{- if eq .Values.ibm_aiservice_tenant.is_gitops_fvt_env "true" }}
 
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
-{{- $_job_name_prefix := "postsync-ibm-sls-update-sm-job" }}
+{{- $_job_name_prefix := "presync-copy-sls-to-tenant-job" }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
@@ -57,10 +57,14 @@ are required here.
 */}}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
+{{- /*
+ICN and subscription_id will be extracted from the resolved slscfg_url at runtime.
+Deploy the Job in the tenant namespace (which already exists).
+The Job will access the SLS namespace to read ConfigMaps.
+*/}}
 
-
-{{ $ns := printf "mas-%s-%s-sls" (.Values.ibm_customer_number | lower) .Values.subscription_id }}
-{{ $instance := printf "%s-%s" (.Values.ibm_customer_number | lower) .Values.subscription_id }}
+{{ $ns := .Values.tenantNamespace }}
+{{ $instance := .Values.tenant_id }}
 
 {{ $aws_secret := "aws"}}
 {{ $np_name :=    "postsync-ibm-sls-update-sm-np" }}
@@ -80,7 +84,7 @@ metadata:
   name: {{ $np_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "110"
+    argocd.argoproj.io/sync-wave: "98"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -102,14 +106,14 @@ metadata:
   name: {{ $aws_secret }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "110"
+    argocd.argoproj.io/sync-wave: "98"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 data:
-  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
-  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | default "" | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | default "" | b64enc }}
 type: Opaque
 
 ---
@@ -119,20 +123,19 @@ metadata:
   name: {{ $sa_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "110"
+    argocd.argoproj.io/sync-wave: "98"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 
 ---
-kind: Role
+kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ $role_name }}
-  namespace: {{ $ns }}
+  name: {{ $role_name }}-{{ $instance }}
   annotations:
-    argocd.argoproj.io/sync-wave: "110"
+    argocd.argoproj.io/sync-wave: "98"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -140,10 +143,12 @@ metadata:
 rules:
   - verbs:
       - get
+      - list
     apiGroups:
       - ""
     resources:
       - configmaps
+      - namespaces
   - verbs:
       - get
       - list
@@ -154,13 +159,12 @@ rules:
       - routes
 
 ---
-kind: RoleBinding
+kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ $rb_name }}
-  namespace: {{ $ns }}
+  name: {{ $rb_name }}-{{ $instance }}
   annotations:
-    argocd.argoproj.io/sync-wave: "111"
+    argocd.argoproj.io/sync-wave: "98"
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -171,8 +175,8 @@ subjects:
     namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: {{ $role_name }}
+  kind: ClusterRole
+  name: {{ $role_name }}-{{ $instance }}
 
 ---
 apiVersion: batch/v1
@@ -181,7 +185,7 @@ metadata:
   name: {{ $_job_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/sync-wave: "112"
+    argocd.argoproj.io/sync-wave: "98"
     argocd.argoproj.io/sync-options: Prune=true
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
@@ -213,12 +217,24 @@ spec:
               value: {{ .Values.account_id }}
             - name: REGION_ID
               value: {{ .Values.region_id }}
+            {{- if .Values.cluster_url }}
+            - name: CLUSTER_URL
+              value: {{ .Values.cluster_url }}
+            {{- end }}
+            - name: SLSCFG_URL
+              value: '{{ .Values.slscfg_url }}'
+            {{- if .Values.ibm_customer_number }}
             - name: ICN
               value: '{{ .Values.ibm_customer_number }}'
+            {{- end }}
+            {{- if .Values.aiservice_sls_subscription_id }}
             - name: SUBSCRIPTION_ID
-              value: '{{ .Values.subscription_id }}'
-            - name: DOMAIN
-              value: '{{ .Values.sls_domain }}'
+              value: '{{ .Values.aiservice_sls_subscription_id }}'
+            {{- end }}
+            - name: TENANT
+              value: '{{ .Values.tenant_id }}'
+            - name: TENANT_NAMESPACE
+              value: '{{ .Values.tenantNamespace }}'
 
             # Hard-coded for now:
             - name: AVP_TYPE
@@ -226,8 +242,6 @@ spec:
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
-            - name: sls-suite-registration
-              mountPath: /etc/mas/creds/sls-suite-registration
           command:
             - /bin/sh
             - -c
@@ -235,31 +249,56 @@ spec:
 
               set -e
 
+              # Extract ICN, SUBSCRIPTION_ID, and DOMAIN from SLSCFG_URL if not provided
+              # SLSCFG_URL format: https://sls.mas-87654350-bedd3ceac250-sls.apps.fvtsaasai.2rdp.p1.openshiftapps.com
+              if [[ -z "${ICN}" || -z "${SUBSCRIPTION_ID}" ]]; then
+                echo "Extracting ICN and SUBSCRIPTION_ID from SLSCFG_URL: ${SLSCFG_URL}"
+                # Extract the namespace part: mas-87654350-bedd3ceac250-sls
+                SLS_NAMESPACE=$(echo "${SLSCFG_URL}" | sed -n 's|https://sls\.\(mas-[^.]*-sls\)\..*|\1|p')
+                if [[ -z "${SLS_NAMESPACE}" ]]; then
+                  echo "ERROR: Failed to extract SLS namespace from SLSCFG_URL"
+                  exit 1
+                fi
+                echo "Extracted SLS namespace: ${SLS_NAMESPACE}"
+                
+                # Extract ICN and SUBSCRIPTION_ID from namespace: mas-ICN-SUBID-sls
+                ICN=$(echo "${SLS_NAMESPACE}" | cut -d'-' -f2)
+                SUBSCRIPTION_ID=$(echo "${SLS_NAMESPACE}" | cut -d'-' -f3)
+                echo "Extracted ICN: ${ICN}, SUBSCRIPTION_ID: ${SUBSCRIPTION_ID}"
+              fi
+
+              # Extract DOMAIN from CLUSTER_URL or SLSCFG_URL
+              if [[ -n "${CLUSTER_URL}" ]]; then
+                DOMAIN=$(echo "${CLUSTER_URL}" | sed -n 's|https://api\.[^.]*\.\(.*\):.*|\1|p')
+              else
+                DOMAIN=$(echo "${SLSCFG_URL}" | sed -n 's|https://[^.]*\.\(.*\)|\1|p')
+              fi
+              echo "Using DOMAIN: ${DOMAIN}"
+
               # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
               # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
               # mount the secret on the jobs filesystem, and read them in here
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
-              # Namespace names must be lowercase; ICN in the license file may be mixed-case
-              ICN_LOWER="${ICN,,}"
-
-              echo "Fetching registrationKey from sls-suite-registration ConfigMap in mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls"
-              SLS_REGISTRATION_KEY=$(cat /etc/mas/creds/sls-suite-registration/registrationKey)
+              # Fetch SLS data from ConfigMap in the SLS namespace using kubectl
+              SLS_NAMESPACE="mas-${ICN}-${SUBSCRIPTION_ID}-sls"
+              echo "Fetching registrationKey from sls-suite-registration ConfigMap in ${SLS_NAMESPACE}"
+              SLS_REGISTRATION_KEY=$(kubectl get configmap sls-suite-registration -n ${SLS_NAMESPACE} -o jsonpath='{.data.registrationKey}' 2>/dev/null)
               if [[ -z "${SLS_REGISTRATION_KEY}" ]]; then
-                echo "Failed to fetch registrationKey"
+                echo "Failed to fetch registrationKey from ${SLS_NAMESPACE}"
                 exit 1
               fi
 
-              echo "Fetching ca from sls-suite-registration ConfigMap in mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls"
-              SLS_CA=$(cat /etc/mas/creds/sls-suite-registration/ca | base64 -w0)
+              echo "Fetching ca from sls-suite-registration ConfigMap in ${SLS_NAMESPACE}"
+              SLS_CA=$(kubectl get configmap sls-suite-registration -n ${SLS_NAMESPACE} -o jsonpath='{.data.ca}' 2>/dev/null | base64 -w0)
               if [[ -z "${SLS_CA}" ]]; then
-                echo "Failed to fetch ca"
+                echo "Failed to fetch ca from ${SLS_NAMESPACE}"
                 exit 1
               fi
 
               echo "Setting SLS URL"
-              SLS_URL="https://sls.mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls.${DOMAIN}"
+              SLS_URL="https://sls.mas-${ICN}-${SUBSCRIPTION_ID}-sls.${DOMAIN}"
 
               # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
               source /mascli/functions/gitops_utils
@@ -274,11 +313,38 @@ spec:
               # aws secretsmanager create-secret --name ${SECRET_NAME} --secret-string "${SECRET_VALUE}"
               ## Why is the secreet name here sls and not license as it is in gitops_license function
               SECRET_NAME_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/sls
-              TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
-              sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\":\"$SLS_URL\" }" "${TAGS}"
+              # TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
+              # sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\":\"$SLS_URL\" }" "${TAGS}"
+              
+              # Fetch the instance-level SLS secret and create tenant-level copy
+              echo ""
+              echo "Fetching instance-level SLS secret from AWS Secrets Manager"
+              RAW_SLS_SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME_SLS" --output json 2>/dev/null | jq -r .SecretString)
+              
+              if [[ -n "$RAW_SLS_SECRET" && "$RAW_SLS_SECRET" != "null" ]]; then
+                echo "Successfully fetched instance-level SLS secret"
+                
+                # Create tenant-level secret using TENANT variable (contains tenant ID)
+                if [[ -n "${TENANT:-}" ]]; then
+                  # Create tenant-level secret path
+                  SECRET_NAME_TENANT_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/${TENANT}/sls
+                  echo "Creating tenant-level SLS secret at: ${SECRET_NAME_TENANT_SLS}"
+                  
+                  TENANT_TAGS="[{\"Key\": \"source\", \"Value\": \"presync-copy-sls-to-tenant-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}, {\"Key\": \"tenant_id\", \"Value\": \"${TENANT}\"}]"
+                  
+                  # Use sm_update_secret to create/update tenant-level secret with same content
+                  sm_update_secret $SECRET_NAME_TENANT_SLS "$RAW_SLS_SECRET" "${TENANT_TAGS}"
+                  
+                  echo "Successfully created/updated tenant-level SLS secret"
+                else
+                  echo "TENANT variable not set, skipping tenant-level secret creation"
+                fi
+              else
+                echo "Failed to fetch instance-level SLS secret, skipping tenant-level secret creation"
+              fi
     
               # 1. Define the namespace using the environment variables passed to the container
-              namespace="mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls"
+              namespace="mas-${ICN}-${SUBSCRIPTION_ID}-sls"
 
               echo "Fetching routes from ${namespace}"
 
@@ -307,11 +373,6 @@ spec:
             secretName: {{ $aws_secret }}
             defaultMode: 420
             optional: false
-        - name: sls-suite-registration
-          configMap:
-            name: sls-suite-registration
-            optional: false
 
   backoffLimit: 4
 {{- end }}
-

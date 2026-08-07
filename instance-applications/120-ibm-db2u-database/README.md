@@ -128,11 +128,6 @@ db2_backup_icd_auth_key: string (secret reference, optional, when backup enabled
 
 allow_list: string (optional)
 
-# Production Database Access (optional)
-production_database_access:
-  type: string
-
-
 # Private NLB for customer TGW connectivity (optional)
 private_nlb:
   enabled: boolean         # default: false

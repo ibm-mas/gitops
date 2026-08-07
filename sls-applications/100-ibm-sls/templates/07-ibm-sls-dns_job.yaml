@@ -1,5 +1,5 @@
 
-{{- $_cli_image_digest := "sha256:14c852062a8c6149820d9aa7b8315d83f25bb29172b0f318e4fe10af613533f3" }}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 {{ $aws_secret := "aws"}}
 {{- $_job_name_prefix := "ibm-sls-dns" }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
@@ -14,7 +14,7 @@ kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
   name: ibm-sls-dns-netpol
-  namespace: mas-{{ .Values.ibm_customer_number }}-{{ .Values.subscription_id }}-sls
+  namespace: mas-{{ .Values.ibm_customer_number | lower }}-{{ .Values.subscription_id }}-sls
   annotations:
     argocd.argoproj.io/sync-wave: "112"
 spec:
@@ -26,13 +26,13 @@ spec:
   policyTypes:
     - Egress
 
-{{- if and (not (empty .Values.dns_provider)) (not (empty .Values.cis_domain)) (not (empty .Values.cis_crn)) }}
+{{- if and (not (empty .Values.cis_domain)) (not (empty .Values.cis_crn)) }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ $_job_name  }}
-  namespace: mas-{{ .Values.ibm_customer_number }}-{{ .Values.subscription_id }}-sls
+  namespace: mas-{{ .Values.ibm_customer_number | lower }}-{{ .Values.subscription_id }}-sls
   annotations:
     argocd.argoproj.io/sync-wave: "113"
   labels:
@@ -82,6 +82,9 @@ spec:
               echo "Reading AWS credentials..."
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              # Namespace and DNS record names must be lowercase; ICN in the license file may be mixed-case
+              ICN_LOWER="${ICN,,}"
 
               export SM_AWS_REGION=${REGION_ID}
 
@@ -161,7 +164,7 @@ spec:
               exit 1
               fi
 
-              Name="sls.mas-${ICN}-${SUBSCRIPTION_ID}-sls"
+              Name="sls.mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls"
 
               echo "Name: ${Name}"
               echo "CIS_DOMAIN: ${CIS_DOMAIN}"
@@ -241,4 +244,4 @@ spec:
             secret:
               secretName: aws       # make sure this Secret exists in the same namespace
               defaultMode: 420
-{{- end }}         
+{{- end }}

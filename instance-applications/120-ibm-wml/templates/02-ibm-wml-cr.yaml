@@ -29,7 +29,7 @@ spec:
 {{- $_job_name_prefix := "install-wml-helm" }}
 {{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
 apiVersion: batch/v1
@@ -74,7 +74,7 @@ spec:
                 --set global.instanceNamespace={{ .Values.cpd_instance_namespace }} \
                 --set global.imagePullSecret=ibm-entitlement-key
 
-              echo "Waiting for redicps.redis.ibm.com CRD to be established..."
+              echo "Waiting for rediscps.redis.ibm.com CRD to be established..."
               wait_period=0
               while true; do
                 wait_period=$((wait_period+10))
@@ -82,7 +82,7 @@ spec:
                   echo "Rediscp CRD not established after 5 minutes. Exiting."
                   exit 1
                 fi
-                STATUS=$(oc get crd redicps.redis.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
+                STATUS=$(oc get crd rediscps.redis.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
                 if [ "$STATUS" = "True" ]; then
                   echo "Rediscp CRD established."
                   break

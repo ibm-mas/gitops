@@ -29,7 +29,7 @@ spec:
 {{- $_job_name_prefix := "install-spss-helm" }}
 {{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v3" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
@@ -68,7 +68,7 @@ spec:
                 --set global.instanceNamespace={{ .Values.cpd_instance_namespace }} \
                 --set global.imagePullSecret=ibm-entitlement-key | oc apply -f -
 
-              echo "Waiting for spssmodelerbases.spssmodeler.cpd.ibm.com CRD to be established..."
+              echo "Waiting for spss.spssmodeler.cpd.ibm.com CRD to be established..."
               wait_period=0
               while true; do
                 wait_period=$((wait_period+10))
@@ -76,7 +76,7 @@ spec:
                   echo "CRD not established after 5 minutes. Exiting."
                   exit 1
                 fi
-                STATUS=$(oc get crd spssmodelerbases.spssmodeler.cpd.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
+                STATUS=$(oc get crd spss.spssmodeler.cpd.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
                 if [ "$STATUS" = "True" ]; then
                   echo "CRD established."
                   break

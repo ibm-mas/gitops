@@ -1,15 +1,19 @@
-{{- if .Values.use_postdelete_hooks }}
+{{- if and (.Values.use_postdelete_hooks) (.Values.application_admin_role) }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:55b5d6dd185503f14c112836a9a4899347d28e7b6545e0b9cf21d87f9526fb40" }}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 
 {{ $cr_name := .Values.mas_config_name }}
 {{ $cr_kind := .Values.mas_config_kind }}
 {{ $cr_api_version := .Values.mas_config_api_version }}
 
-{{ $job_name := printf "postdelete-delete-cr-job-%s" $cr_name }}
+{{- /* Truncate job name to stay under 63 character limit for labels */ -}}
+{{- /* postdelete-cr-job- (18) + name (38) + - (1) + hash (6) = 63 chars */ -}}
+{{ $name_hash := $cr_name | sha256sum | trunc 6 }}
+{{ $truncated_name := trunc 38 $cr_name }}
+{{ $job_name := printf "postdelete-cr-job-%s-%s" $truncated_name $name_hash }}
 
 # NOTE: depends on resources created in ibm-mas-suite chart (01-postdelete-crs-resources)
 # The values below must align with the values in that file

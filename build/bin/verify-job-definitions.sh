@@ -60,8 +60,8 @@ shift $((OPTIND - 1))
 if [[ $# == 1 ]]; then
     path=$1
     if [[ -d $path ]]; then
-        files=$(grep -Erl --include '*.yaml' 'quay.io/ibmmas/cli' ${path})
-        echo "Checking all YAML files with quay.io/ibmmas/cli references under directory ${path}"
+        files=$(grep -Erl --include '*.yaml' --include '*.tpl' 'quay.io/ibmmas/cli' ${path})
+        echo "Checking all YAML and TPL files with quay.io/ibmmas/cli references under directory ${path}"
         echo "---------"
         shift
     fi
@@ -194,7 +194,7 @@ for file in ${files}; do
         if [[ $rc == 0 ]]; then
             # check $_job_hash has correct value
             while IFS= read -r job_hash_value; do
-                grep -Eq '^[[:space:]]*print[[:space:]]+\([[:space:]]*\$_job_config_values[[:space:]]*\|[[:space:]]*toYaml[[:space:]]*\)[[:space:]]+\$_cli_image_digest[[:space:]]+\$_job_version[[:space:]]*\|[[:space:]]*adler32sum' <<< "$job_hash_value"
+                grep -Eq '^[[:space:]]*print[[:space:]]+\([[:space:]]*\$_job_config_values[[:space:]]*\|[[:space:]]*toYaml[[:space:]]*\)[[:space:]]+\$_cli_image_digest[[:space:]]+\$_job_version([[:space:]]+\([[:space:]]*now[[:space:]]*\|[[:space:]]*unixEpoch[[:space:]]*\))?[[:space:]]*\|[[:space:]]*adler32sum' <<< "$job_hash_value"
                 rc=$?
                 if [[ $rc != 0 ]]; then
                     problems=${problems}'    Invalid $_job_hash value found: "'${job_hash_value}'" (should be "print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum")\n'

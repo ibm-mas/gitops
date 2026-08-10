@@ -4,11 +4,14 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: sls.{{ .Values.ibm_sls_standalone.ibm_customer_number }}.{{ .Values.ibm_sls_standalone.subscription_id }}
+  name: sls.{{ .Values.ibm_sls_standalone.ibm_customer_number | lower }}.{{ .Values.ibm_sls_standalone.subscription_id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "100"
     {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
@@ -26,7 +29,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: mas-{{ .Values.ibm_sls_standalone.ibm_customer_number }}-{{ .Values.ibm_sls_standalone.subscription_id }}-sls
+    namespace: mas-{{ .Values.ibm_sls_standalone.ibm_customer_number | lower }}-{{ .Values.ibm_sls_standalone.subscription_id }}-sls
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: sls-applications/100-ibm-sls
@@ -42,7 +45,16 @@ spec:
             ibm_customer_number: "{{ .Values.ibm_sls_standalone.ibm_customer_number }}"
             subscription_id: "{{ .Values.ibm_sls_standalone.subscription_id }}"
             sls_domain: "{{ .Values.ibm_sls_standalone.sls_domain }}"
+            {{- if .Values.ibm_sls_standalone.dns_provider }}
+            {{- if eq (lower .Values.ibm_sls_standalone.dns_provider) "cis" }}
+            dns_provider: "{{ .Values.ibm_sls_standalone.dns_provider }}"
+            cis_domain: "{{ .Values.ibm_sls_standalone.cis_domain | default .Values.ibm_sls_standalone.cis_service_name }}"
+            cis_crn: "{{ .Values.ibm_sls_standalone.cis_crn  }}"
+            {{- end }}
+            {{- end }}
             argo_namespace: "{{ .Values.argo.namespace }}"
+            cluster_admin_role: {{ .Values.cluster_admin_role }}
+            application_admin_role: {{ .Values.application_admin_role }}
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             run_sync_hooks: {{.Values.ibm_sls_standalone.run_sync_hooks }}
@@ -59,7 +71,7 @@ spec:
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}
             junitreporter:
-              reporter_name: "ibm-sls-{{ .Values.ibm_sls_standalone.ibm_customer_number }}-{{ .Values.ibm_sls_standalone.subscription_id}}"
+              reporter_name: "ibm-sls-{{ .Values.ibm_sls_standalone.ibm_customer_number | lower }}-{{ .Values.ibm_sls_standalone.subscription_id}}"
               cluster_id: "{{ .Values.cluster.id }}"
               customer_id: "{{ .Values.ibm_sls_standalone.ibm_customer_number }}"
               subscription_id: "{{ .Values.ibm_sls_standalone.subscription_id }}"
@@ -84,11 +96,13 @@ spec:
     retry:
       limit: 20
     syncOptions:
+      {{- if .Values.cluster_admin_role }}
       - CreateNamespace=true
+      {{- end }}
       - RespectIgnoreDifferences=true
+{{- if .Values.custom_labels }}
     managedNamespaceMetadata:
       labels:
-{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
 {{- end }}

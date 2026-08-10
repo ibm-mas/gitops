@@ -1,4 +1,4 @@
-{{- if not (empty .Values.group_sync_operator) }}
+{{- if and (not (empty .Values.group_sync_operator)) (.Values.cluster_admin_role) }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -9,6 +9,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "052"
     healthCheckTimeout: "1800"
@@ -63,9 +66,9 @@ spec:
       limit: 20
     syncOptions:
       - CreateNamespace=true
+{{- if .Values.custom_labels }}
     managedNamespaceMetadata:
       labels:
-{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
 {{- end }}

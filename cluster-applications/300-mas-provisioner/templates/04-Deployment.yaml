@@ -28,16 +28,14 @@ spec:
         runAsNonRoot: true
       containers:
         - name: mas-provisioner-operator
-          image: "docker-na-public.artifactory.swg-devops.com/wiotp-docker-local/maximoappsuite/ibm-mas-mcsp-provisioner:{{ .Values.provisioner_version }}"
+          image: '{{ .Values.provisioner_image_repo | default "docker-na-public.artifactory.swg-devops.com/wiotp-docker-local" }}/maximoappsuite/ibm-mas-mcsp-provisioner:{{ .Values.provisioner_version }}'
           imagePullPolicy: Always
           ports:
             - containerPort: {{ .Values.service_port }}
           env:
+            {{- if not (empty .Values.provisioner_storage_class) }}
             - name: LOG_STORAGE_DIR
               value: /opt/automation/mas-provisioner/logs
-            {{- if not (empty .Values.pd_key) }}
-            - name: PD_ROUTING_KEY
-              value: /opt/automation/mas-provisioner/pdkey/key
             {{- end }}
             - name: MTLS_ENABLED
               value: "{{ .Values.enable_mtls }}"
@@ -67,11 +65,9 @@ spec:
               value: "{{ .Values.account_alias }}"
             - name: BASE_BRANCH
               value: "{{ .Values.base_branch }}"
-            - name: ENABLE_PD_ALERT
-              value: "{{ .Values.enable_pd_alert }}"
             - name: ENABLE_OCM_ALERT
               value: "{{ .Values.enable_ocm_alert }}"
-            {{- if not (empty .Values.ocm_api_key) }}
+            {{- if and .Values.enable_ocm_alert (not (empty .Values.ocm_api_key))}}
             - name: OCM_API_KEY
               value: /opt/automation/mas-provisioner/ocm/key
             {{- end }}
@@ -80,10 +76,6 @@ spec:
               value: /opt/automation/mas-provisioner/instana/token
             - name: INSTANA_URL_PREFIX
               value: /opt/automation/mas-provisioner/instana/url_prefix
-            {{- end }}
-            {{- if not (empty .Values.git_root_ca) }}
-            - name: GIT_ROOTCACERT_PATH
-              value: /opt/automation/mas-provisioner/git/ca.crt
             {{- end }}
             {{- if not (empty .Values.git_root_ca) }}
             - name: GIT_ROOTCACERT_PATH
@@ -114,8 +106,10 @@ spec:
             periodSeconds: 60
             failureThreshold: 1
           volumeMounts:
+            {{- if not (empty .Values.provisioner_storage_class) }}
             - name: log-storage
               mountPath: /opt/automation/mas-provisioner/logs
+            {{- end }}
             - name: tls-certs
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/tls
@@ -123,11 +117,6 @@ spec:
             - name: git
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/git
-            {{- end }}
-            {{- if and .Values.enable_pd_alert (.Values.pd_key) }}
-            - name: pd-key
-              readOnly: true
-              mountPath: /opt/automation/mas-provisioner/pdkey
             {{- end }}
             {{- if .Values.enable_mtls }}
             - name: csb-client-ca
@@ -153,9 +142,11 @@ spec:
       imagePullSecrets:
         - name: ibm-entitlement
       volumes:
+        {{- if not (empty .Values.provisioner_storage_class) }}
         - name: log-storage
           persistentVolumeClaim:
             claimName: mas-provisioner-logs
+        {{- end }}
         - name: tls-certs
           secret:
             secretName: mas-provisioner-server-tls
@@ -163,11 +154,6 @@ spec:
         - name: git
           secret:
             secretName: git-secret
-        {{- end }}
-        {{- if and .Values.enable_pd_alert (.Values.pd_key) }}
-        - name: pd-key
-          secret:
-            secretName: pd-routing-key-secret
         {{- end }}
         {{- if and .Values.enable_mtls (not (empty .Values.csb_client_ca)) }}
         - name: csb-client-ca

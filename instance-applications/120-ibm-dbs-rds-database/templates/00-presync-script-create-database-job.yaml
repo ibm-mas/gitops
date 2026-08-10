@@ -1,0 +1,182 @@
+{{- if .Values.application_admin_role }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.db2_rds_instance_name }}-create-db-script
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+  {{- if .Values.custom_labels }}
+  labels:
+    {{ .Values.custom_labels | toYaml | indent 4 }}
+  {{- end }}
+data:
+  db2_create_database.py: |
+    #!/usr/bin/env python3
+    import ibm_db as db2
+    import os, sys, re, time, json
+
+    def log(msg):
+        print(json.dumps(msg))
+
+    def validate_db_name(db_name):
+        """Validate database name to prevent SQL injection."""
+        if not re.fullmatch(r"[A-Za-z0-9_]+", db_name):
+            raise ValueError(f"Invalid DB name: {db_name}")
+
+    def database_exists(db_name, db_host, db_port, username, password, ssl_cert_path, ssl_version):
+        try:
+            conn_str = (
+                f"DATABASE={db_name};"
+                f"HOSTNAME={db_host};"
+                f"PORT={db_port};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={username};"
+                f"PWD={password};"
+                f"Security=SSL;"
+                f"SSLServerCertificate={ssl_cert_path};"
+                f"SSLVersion={ssl_version};"
+            )
+            conn = db2.connect(conn_str, "", "")
+            db2.close(conn)
+            return True
+
+        except Exception as e:
+            msg = str(e)
+
+            if any(code in msg for code in ["SQL1013N","SQLSTATE=42705","SQL30061N","SQLSTATE=08004"]):
+                return False
+
+            # Auth failure - may indicate DB exists but credentials changed
+            # Only assume exists if explicitly enabled via env var
+            if "SQL30082N" in msg:
+                assume_exists = os.getenv("ASSUME_EXISTS_ON_AUTH_FAILURE", "false").lower() == "true"
+                log({"event":"auth_failure","db":db_name,"assume_exists":assume_exists})
+                return assume_exists
+
+            raise RuntimeError(f"Unknown error determining DB existence: {msg}")
+
+    def wait_for_db(db_name, timeout, interval, *args):
+        # Ensure at least one retry even if timeout < interval
+        retries = max(1, timeout // interval)
+
+        for i in range(retries):
+            time.sleep(interval)
+            try:
+                if database_exists(db_name, *args):
+                    return True
+            except RuntimeError as e:
+                msg = str(e)
+
+                if any(x in msg for x in ["SQLSTATE=57019","SQL1035N","SQL30081N"]):
+                    log({"event":"retry","attempt":i+1})
+                    continue
+                raise
+
+        return False
+
+    def main():
+        conn = None
+        try:
+            # Read credentials
+            username = open("/etc/mas/dbs-rds-creds/username").read().strip()
+            password = open("/etc/mas/dbs-rds-creds/password").read().strip()
+
+            # Get environment variables
+            db_name = os.getenv("DB_NAME")
+            db_host = os.getenv("DB_HOST")
+            db_port = os.getenv("DB_PORT","50000")
+            rds_admin_db = os.getenv("RDS_ADMIN_DB","rdsadmin")
+            jdbc_url = os.getenv("JDBC_CONNECTION_URL","")
+            ssl_cert_path = os.getenv("SSL_CERT_PATH","/etc/mas/rds-ssl/global-bundle.pem")
+
+            # Validate required environment variables
+            required = {
+                "DB_NAME": db_name,
+                "DB_HOST": db_host,
+            }
+            missing = [k for k, v in required.items() if not v]
+            if missing:
+                log({"event":"missing_env","vars":missing})
+                sys.exit(1)
+
+            # Validate database name (SQL injection prevention)
+            validate_db_name(db_name)
+
+            timeout = int(os.getenv("DB_CREATE_TIMEOUT_SECONDS","600"))
+            interval = int(os.getenv("DB_POLL_INTERVAL_SECONDS","10"))
+
+            ssl_version = "TLSv1.2"
+            if jdbc_url:
+                m = re.search(r'sslVersion=([^;]+)', jdbc_url, re.IGNORECASE)
+                if m:
+                    ssl_version = m.group(1)
+
+            log({"event":"start","db":db_name})
+
+            admin_conn_str = (
+                f"DATABASE={rds_admin_db};"
+                f"HOSTNAME={db_host};"
+                f"PORT={db_port};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={username};"
+                f"PWD={password};"
+                f"Security=SSL;"
+                f"SSLServerCertificate={ssl_cert_path};"
+                f"SSLVersion={ssl_version};"
+            )
+
+            try:
+                conn = db2.connect(admin_conn_str,"","")
+            except Exception as e:
+                log({"event":"connect_failed","error":str(e)})
+                sys.exit(1)
+
+            # 🔁 ALWAYS check real state
+            exists = database_exists(db_name, db_host, db_port, username, password, ssl_cert_path, ssl_version)
+
+            if exists:
+                log({"event":"db_exists","db":db_name})
+                log({"event":"complete","db":db_name,"action":"none"})
+                sys.exit(0)  # Exit code 0: database already exists
+            else:
+                log({"event":"create_start","db":db_name})
+
+                try:
+                    # Safe: db_name validated with regex above
+                    db2.exec_immediate(conn, f"CALL rdsadmin.create_database('{db_name}')")
+                except Exception as e:
+                    msg = str(e)
+                    # Handle race condition (another job created it)
+                    # SQLSTATE=42710: Duplicate object (semantic duplicate-object condition)
+                    # SQLCODE=-601: Commonly paired with duplicate object creation
+                    if any(x in msg for x in ["SQLSTATE=42710", "SQLCODE=-601"]):
+                        log({"event":"race_condition_detected","db":db_name})
+                        log({"event":"complete","db":db_name,"action":"none"})
+                        sys.exit(0)  # Exit code 0: database exists (race condition)
+                    
+                    log({"event":"create_failed","error":msg})
+                    sys.exit(1)  # Exit code 1: error
+
+                if not wait_for_db(db_name, timeout, interval, db_host, db_port, username, password, ssl_cert_path, ssl_version):
+                    log({"event":"timeout","db":db_name})
+                    sys.exit(1)  # Exit code 1: timeout
+
+                log({"event":"create_complete","db":db_name})
+                log({"event":"complete","db":db_name,"action":"created"})
+                sys.exit(10)  # Exit code 10: database was created
+
+        finally:
+            # Always close connection on exit
+            if conn:
+                try:
+                    db2.close(conn)
+                except:
+                    pass
+
+    if __name__ == "__main__":
+        main()
+
+
+{{- end }}

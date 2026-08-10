@@ -1,4 +1,4 @@
-{{- if not (empty .Values.mas_provisioner) }}
+{{- if and (not (empty .Values.mas_provisioner)) (.Values.cluster_admin_role) }}
 ---
 # Cluster Promotion
 apiVersion: argoproj.io/v1alpha1
@@ -11,6 +11,9 @@ metadata:
     environment: '{{ .Values.account.id }}'
     region: '{{ .Values.region.id }}'
     cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
   annotations:
     argocd.argoproj.io/sync-wave: "300"
     healthCheckTimeout: "1800"
@@ -38,11 +41,11 @@ spec:
             provisioner_domain: "{{ .Values.mas_provisioner.provisioner_domain }}"
             ibm_entitlement_key: "{{ .Values.mas_provisioner.ibm_entitlement }}"
             provisioner_namespace: "{{ .Values.mas_provisioner.provisioner_namespace }}"
+            provisioner_image_repo: "{{ .Values.mas_provisioner.provisioner_image_repo}}"
             provisioner_version: "{{ .Values.mas_provisioner.provisioner_version }}"
             enable_mtls: "{{ .Values.mas_provisioner.enable_mtls }}"
             github_token: "{{ .Values.mas_provisioner.github_token }}"
             csb_client_ca: "{{ .Values.mas_provisioner.csb_client_ca }}"
-            pd_key: "{{ .Values.mas_provisioner.pagerduty_integration }}"
             service_port: "{{ .Values.mas_provisioner.service_port }}"
             status_repo_url: "{{ .Values.mas_provisioner.status_repo_url }}"
             mas_annotations_repo_url: "{{ .Values.mas_provisioner.mas_annotations_repo_url }}"
@@ -51,7 +54,6 @@ spec:
             async_poll_max: "{{ .Values.mas_provisioner.async_poll_max }}"
             instana_url_prefix: "{{ .Values.mas_provisioner.instana_url_prefix }}"
             instana_api_token: "{{ .Values.mas_provisioner.instana_api_token }}"
-            enable_pd_alert: "{{ .Values.mas_provisioner.enable_pd_alert }}"
             enable_ocm_alert: "{{ .Values.mas_provisioner.enable_ocm_alert }}"
             ocm_api_key: "{{ .Values.mas_provisioner.ocm_api_token }}"
             git_root_ca: "{{ .Values.mas_provisioner.git_root_ca }}"
@@ -92,9 +94,9 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - RespectIgnoreDifferences=true
+{{- if .Values.custom_labels }}
     managedNamespaceMetadata:
       labels:
-{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
 {{- end }}

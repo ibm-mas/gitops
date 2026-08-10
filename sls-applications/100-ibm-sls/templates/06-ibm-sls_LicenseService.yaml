@@ -1,9 +1,10 @@
+{{- if .Values.application_admin_role }}
 ---
 apiVersion: sls.ibm.com/v1
 kind: LicenseService
 metadata:
   name: sls
-  namespace: mas-{{ .Values.ibm_customer_number }}-{{ .Values.subscription_id }}-sls
+  namespace: mas-{{ .Values.ibm_customer_number | lower }}-{{ .Values.subscription_id }}-sls
   annotations:
     argocd.argoproj.io/sync-wave: "105"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
@@ -22,9 +23,12 @@ spec:
       enforce: true
     registration:
       open: true
+    compliance:
+      enforce: false
     {{- if .Values.icr_cp_open }}
     registry: "{{ .Values.icr_cp_open }}"
     {{ end }}
 {{- if .Values.internal_certificate_authority }}
   internalCertificateAuthority: "{{ .Values.internal_certificate_authority }}"
+{{- end }}
 {{- end }}

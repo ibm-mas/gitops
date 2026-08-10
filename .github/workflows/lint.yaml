@@ -2,7 +2,7 @@ name: Lint and Check Helm Templates
 
 on:
   pull_request:
-    branches: [ "poc", "main", "dev"]
+    branches: [ "main", "dev"]
 
 jobs:
   lint:
@@ -33,9 +33,17 @@ jobs:
             $GITHUB_WORKSPACE/build/bin/helm-lint.sh -p $DIR || exit 1
           done
 
+      - name: Verify chart README tables
+        run: |
+          python3 $GITHUB_WORKSPACE/build/bin/verify_chart_readme_tables.py || exit 1
+
       - name: Verify Job Definitions
         run: |
           $GITHUB_WORKSPACE/build/bin/verify-job-definitions.sh $GITHUB_WORKSPACE || exit 1
+
+      - name: Verify all CLI image digests are the same
+        run: |
+          $GITHUB_WORKSPACE/build/bin/verify-all-cli-digests-the-same.sh $GITHUB_WORKSPACE || exit 1
   
   # Uncomment when namespaces are removed
   # kind-check:

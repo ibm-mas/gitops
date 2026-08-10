@@ -1,0 +1,37 @@
+name: Run Tests
+
+on:
+  pull_request:
+    branches: [ "main", "dev"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r $GITHUB_WORKSPACE/build/bin/tests/requirements.txt
+
+      - name: Run pytest with coverage
+        run: |
+          pytest $GITHUB_WORKSPACE/build/bin/tests -v --cov=build/bin --cov=rbac --cov-report=term --cov-report=xml || exit 1
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+

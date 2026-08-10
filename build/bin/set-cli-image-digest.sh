@@ -5,7 +5,7 @@
 function print_help() {
   cat << EOM
 Usage: set-cli-image-digest.sh [OPTION]
-Replace value of the \$_cli_image_digest constant with a given hash for all .yaml and .yml files in a given directory (and its sub-directories).
+Replace value of the \$_cli_image_digest constant with a given hash for all .yaml, .yml, and .tpl files in a given directory (and its sub-directories).
 
     -d, --root-dir   Directory to (recursively) search for .yml and .yaml files
     -g, --digest     The new value for \$_cli_image_digest
@@ -47,7 +47,7 @@ done
 
 scanned_count=0
 updated_count=0
-for file in $(find ${ROOT_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \)); do
+for file in $(find ${ROOT_DIR} -type f \( -name "*.yaml" -o -name "*.yml" -o -name "*.tpl" \)); do
     (( scanned_count++ ))
     before_cksum=$(cksum "$file")
     if [[ "$OSTYPE" == "darwin"* ]]; then

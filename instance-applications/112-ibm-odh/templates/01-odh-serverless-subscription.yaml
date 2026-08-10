@@ -1,3 +1,4 @@
+{{- if .Values.cluster_admin_role }}
 ---
 apiVersion: v1
 kind: Namespace
@@ -5,6 +6,9 @@ metadata:
     name:  {{ .Values.serverless_namespace}}
     annotations:
       argocd.argoproj.io/sync-wave: "117"
+      # Prevent ArgoCD from deleting this namespace during ODH to RHOAI migration
+      # This namespace is shared between ODH and RHOAI
+      argocd.argoproj.io/sync-options: Prune=false,Delete=false
 
 ---
 apiVersion: operators.coreos.com/v1
@@ -23,14 +27,13 @@ metadata:
     namespace: {{ .Values.serverless_namespace}}
     annotations:
       argocd.argoproj.io/sync-wave: "118"
+      # Prevent ArgoCD from deleting this subscription during ODH to RHOAI migration
+      # This subscription is shared between ODH and RHOAI
+      argocd.argoproj.io/sync-options: Prune=false,Delete=false
 spec:
     channel: stable
     installPlanApproval: Automatic
     name: {{ .Values.serverless_operator_name}}
     source: {{ .Values.serverless_operator_source}}
     sourceNamespace: {{ .Values.serverless_operator_sourceNamespace}}
-
-
-
-
-
+{{- end }}

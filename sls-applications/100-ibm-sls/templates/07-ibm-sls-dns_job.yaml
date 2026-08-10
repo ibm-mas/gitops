@@ -1,0 +1,247 @@
+
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+{{ $aws_secret := "aws"}}
+{{- $_job_name_prefix := "ibm-sls-dns" }}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v8" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+---
+# NetworkPolicy to allow egress traffic for AWS Secrets Manager and IBM Cloud API
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: ibm-sls-dns-netpol
+  namespace: mas-{{ .Values.ibm_customer_number | lower }}-{{ .Values.subscription_id }}-sls
+  annotations:
+    argocd.argoproj.io/sync-wave: "112"
+spec:
+  podSelector:
+    matchLabels:
+      app: "postsync-ibm-sls-dns-job"
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+{{- if and (not (empty .Values.cis_domain)) (not (empty .Values.cis_crn)) }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name  }}
+  namespace: mas-{{ .Values.ibm_customer_number | lower }}-{{ .Values.subscription_id }}-sls
+  annotations:
+    argocd.argoproj.io/sync-wave: "113"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: "postsync-ibm-sls-dns-job"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id}}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: ICN
+              value: '{{ .Values.ibm_customer_number }}'
+            - name: SUBSCRIPTION_ID
+              value: '{{ .Values.subscription_id }}'
+            - name: DOMAIN
+              value: '{{ .Values.sls_domain }}'
+            - name: CIS_DOMAIN
+              value: '{{ .Values.cis_domain }}'
+            - name: CIS_CRN
+              value: '{{ .Values.cis_crn }}'
+            - name: AVP_TYPE
+              value: "aws"
+            - name: IBMCLOUD_HOME
+              value: /tmp/bluemix
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+              readOnly: true
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+
+              set -e
+
+              echo "Reading AWS credentials..."
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+
+              # Namespace and DNS record names must be lowercase; ICN in the license file may be mixed-case
+              ICN_LOWER="${ICN,,}"
+
+              export SM_AWS_REGION=${REGION_ID}
+
+              echo $SM_AWS_REGION
+
+              source /mascli/functions/gitops_utils
+
+              sm_login
+
+              echo "Fetching IBM API key from AWS Secrets Manager"
+
+              SECRET_NAME_CIS="${ACCOUNT_ID}/${CLUSTER_ID}/cis"
+
+              SECRET_JSON=$(sm_get_secret "${SECRET_NAME_CIS}")
+              echo ${SECRET_JSON}
+
+              echo "Fetching OCP_INGRESS from AWS Secrets Manager"
+
+              export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"
+              
+              # Try to get public-elb secret, but don't fail if it doesn't exist
+              if sm_get_secret_file ${ACCOUNT_ID}/${CLUSTER_ID}/public-elb ${PUBLIC_ELB_DNS_NAME_FILE} 2>/dev/null; then
+                export OCP_INGRESS=$(jq -r .dns $PUBLIC_ELB_DNS_NAME_FILE)
+                echo "Using OCP_INGRESS from public-elb secret: ${OCP_INGRESS}"
+              else
+                echo "public-elb secret not found, will use cis-proxy-route fallback"
+                export OCP_INGRESS=""
+              fi
+
+              # If OCP_INGRESS is not set or null, use cis-proxy-route fallback
+              if [[ -z "${OCP_INGRESS}" || "${OCP_INGRESS}" == "null" ]]; then
+                echo "Using cis-proxy-route fallback with DOMAIN: ${DOMAIN}"
+                export OCP_INGRESS="cis-proxy-route.${DOMAIN}"
+                echo "OCP_INGRESS set to: ${OCP_INGRESS}"
+              fi
+
+              IBM_APIKEY=$(echo ${SECRET_JSON} | jq -r '.ibm_apikey')
+
+              if [[ -z "${IBM_APIKEY}" || "${IBM_APIKEY}" == "null" ]]; then
+                echo "Failed to fetch ibm_apikey from ${SECRET_NAME_CIS}"
+                exit 1
+              fi
+
+              echo "Setting IBM CLI home to writable location.."
+              export IBMCLOUD_HOME=/tmp/bluemix
+              mkdir -p $IBMCLOUD_HOME
+
+              # 1. Disable the interactive update check to prevent the [y/N] prompt
+              ibmcloud config --check-version=false
+
+              echo "Logging into IBM Cloud..."
+              ibmcloud login --apikey ${IBM_APIKEY} -r us-east
+           
+              # 2. Install the Cloud Internet Services (CIS) plug-in
+              # The -f flag forces installation without a confirmation prompt
+              echo "Installing CIS plugin..."
+              ibmcloud plugin install cis -f
+
+
+              echo "Setting CIS instance..."
+              ibmcloud cis instance-set ${CIS_CRN}
+
+              # Parse CIS_DOMAIN in case it has "CIS - " prefix (for backwards compatibility)
+              if [[ "${CIS_DOMAIN}" == CIS\ -\ * ]]; then
+                echo "Detected old CIS_DOMAIN format with 'CIS - ' prefix, parsing..."
+                CIS_DOMAIN=$(echo "${CIS_DOMAIN}" | sed 's/^CIS - //')
+                echo "Parsed CIS_DOMAIN: ${CIS_DOMAIN}"
+              fi
+
+              echo "Fetching DOMAIN_ID..."
+              DOMAIN_ID=$(ibmcloud cis domains --output json | jq -r ".[] | select(.name==\"$CIS_DOMAIN\") | .id")
+
+              echo "domain id : $DOMAIN_ID"
+
+              if [ -z "$DOMAIN_ID" ] || [ "$DOMAIN_ID" == "null" ]; then
+              echo "ERROR: Could not find Domain ID for name: $CIS_DOMAIN"
+              exit 1
+              fi
+
+              Name="sls.mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls"
+
+              echo "Name: ${Name}"
+              echo "CIS_DOMAIN: ${CIS_DOMAIN}"
+              echo "Value: ${OCP_INGRESS}"
+
+              FULL_Name="${Name}.${CIS_DOMAIN}"
+
+              echo "Checking if DNS record already exists..."
+
+              EXISTING_RECORD=$(ibmcloud cis dns-records "${DOMAIN_ID}" \
+                --name "${FULL_Name}" \
+                --output json)
+
+              RECORD_COUNT=$(echo "${EXISTING_RECORD}" | jq 'length')
+
+              if [[ "${RECORD_COUNT}" -gt 0 ]]; then
+
+                EXISTING_CONTENT=$(echo "${EXISTING_RECORD}" | jq -r '.[0].content')
+                EXISTING_NAME=$(echo "${EXISTING_RECORD}" | jq -r '.[0].name')
+
+                echo "DNS record found!"
+                RECORD_ID=$(echo "${EXISTING_RECORD}" | jq -r '.[0].id')
+                echo "  Record Name: ${EXISTING_NAME}"
+                echo "  Existing Value: ${EXISTING_CONTENT}"
+
+                if [[ "${EXISTING_CONTENT}" != "${OCP_INGRESS}" ]]; then
+
+                  echo "Value has changed. Updating DNS record..."
+
+                  UPDATE_OUTPUT=$(ibmcloud cis dns-record-update "${DOMAIN_ID}" "${RECORD_ID}" \
+                    --type CNAME \
+                    --name "${Name}" \
+                    --content "${OCP_INGRESS}" \
+                    --proxied false 2>&1)
+
+                  UPDATE_RC=$?
+
+                  echo "${UPDATE_OUTPUT}"
+
+                  if [[ ${UPDATE_RC} -eq 0 ]]; then
+                    echo "DNS record updated successfully!"
+                  else
+                    echo "ERROR: DNS record update failed"
+                    exit 1
+                  fi
+
+                else
+                  echo "DNS record value is already correct. No update needed."
+                fi
+
+              else
+
+                echo "DNS record does not exist. Creating new record..."
+
+                CREATE_OUTPUT=$(ibmcloud cis dns-record-create "${DOMAIN_ID}" \
+                  --type CNAME \
+                  --name "${Name}" \
+                  --content "${OCP_INGRESS}" \
+                  --proxied false 2>&1)
+
+                CREATE_RC=$?
+
+                echo "Create output:"
+                echo "${CREATE_OUTPUT}"
+
+                if [[ ${CREATE_RC} -eq 0 ]]; then
+                  echo "DNS record created successfully!"
+                else
+                  echo "ERROR: DNS record creation failed"
+                  exit 1
+                fi
+
+              fi
+
+      volumes:
+          - name: aws
+            secret:
+              secretName: aws       # make sure this Secret exists in the same namespace
+              defaultMode: 420
+{{- end }}

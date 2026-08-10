@@ -26,22 +26,28 @@ spec:
 {{- else }}
 ---
 # Helm-based installation for CPD 5.3.1+
+{{- $_job_name_prefix := "install-wml-helm" }}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v1" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: install-wml-helm
+  name: {{ $_job_name }}
   namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "092"
     argocd.argoproj.io/hook: Sync
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed
 
 spec:
   template:
     spec:
       containers:
         - name: helm-install
-          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
           command:
             - /bin/sh
             - -c

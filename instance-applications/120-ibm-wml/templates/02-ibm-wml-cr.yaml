@@ -51,6 +51,40 @@ spec:
               helm repo add ibm-charts https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
               helm repo update
 
+              echo "Installing ibm-redis-cp cluster-scoped chart (CRDs + ClusterRoles)..."
+              helm template ibm-redis-cp-cluster ibm-charts/ibm-redis-cp-cluster-scoped \
+                --version 1.6.11 \
+                --namespace {{ .Values.cpd_operators_namespace }} \
+                --set global.licenseAccept=true \
+                --set global.operatorNamespace={{ .Values.cpd_operators_namespace }} \
+                --set global.instanceNamespace={{ .Values.cpd_instance_namespace }} \
+                --set global.imagePullSecret=ibm-entitlement-key | oc apply -f -
+
+              echo "Installing ibm-redis-cp namespace-scoped chart (operator)..."
+              helm upgrade --install ibm-redis-cp ibm-charts/ibm-redis-cp \
+                --version 1.6.11 \
+                --namespace {{ .Values.cpd_operators_namespace }} \
+                --set global.licenseAccept=true \
+                --set global.operatorNamespace={{ .Values.cpd_operators_namespace }} \
+                --set global.instanceNamespace={{ .Values.cpd_instance_namespace }} \
+                --set global.imagePullSecret=ibm-entitlement-key
+
+              echo "Waiting for redicps.redis.ibm.com CRD to be established..."
+              wait_period=0
+              while true; do
+                wait_period=$((wait_period+10))
+                if [ $wait_period -gt 300 ]; then
+                  echo "Rediscp CRD not established after 5 minutes. Exiting."
+                  exit 1
+                fi
+                STATUS=$(oc get crd redicps.redis.ibm.com -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' --ignore-not-found 2>/dev/null)
+                if [ "$STATUS" = "True" ]; then
+                  echo "Rediscp CRD established."
+                  break
+                fi
+                sleep 10
+              done
+
               echo "Installing wml cluster-scoped chart (CRDs + ClusterRoles)..."
               helm template wml-cluster ibm-charts/wml-cluster-scoped \
                 --version 12.1.0 \

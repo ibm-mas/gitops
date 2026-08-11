@@ -88,7 +88,9 @@ spec:
             mas_app_ws_apiversion: "{{ $value.mas_app_ws_apiversion }}"
             mas_app_ws_kind: "{{ $value.mas_app_ws_kind }}"
             mas_appws_spec: {{ $value.mas_appws_spec | toYaml | nindent 14 }}
-
+            {{- if (eq $value.mas_app_id "manage") }}
+            mas_app_channel: "{{ $.Values.ibm_suite_app_manage_install.mas_app_channel }}"
+            {{- end }}
             mas_manual_cert_mgmt: {{ $value.mas_manual_cert_mgmt }}
             run_sanity_test: {{ $value.run_sanity_test }}
             {{- if $value.mas_manual_cert_mgmt  }}
@@ -242,5 +244,14 @@ spec:
     kind: ManageWorkspace
     jsonPointers:
     - /spec/settings/deployment/mode
+  - group: apps.mas.ibm.com
+    kind: FacilitiesWorkspace
+    jqPathExpressions:
+    - '.spec.podTemplates[] | select(.name) | .replicas'
+  - group: apps.mas.ibm.com
+    kind: ManageWorkspace
+    jsonPointers:
+    - /spec/settings/deployment/replicas
+
 {{- end }}
 {{- end }}

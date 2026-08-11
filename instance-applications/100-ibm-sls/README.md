@@ -1,9 +1,11 @@
 IBM Suite License Service
 ===============================================================================
+
+## Overview
+
 Installs the `ibm-sls` operator and creates an instance of the `LicenseService`.
 
 <!--docs-include-start-->
-
 
 Contains a job that runs last (`07-postsync-update-sm_Job.yaml`). This registers the `${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/sls` secret in the **Secrets Vault** used to share some information that is generated at runtime with other ArgoCD Applications.
 
@@ -106,3 +108,31 @@ sm:                             # Secrets Manager configuration
 ```
 
 For complete documentation of all base instance values including optional fields like `custom_labels`, `argocluster_instance`, `application_admin_service_account`, `mas_wipe_mongo_data`, `allow_list`, `additional_vpn`, `application_configuration`, `use_postdelete_hooks`, `additional_resources`, `extensions`, `enhanced_dr`, and `cli_image_repo`, see the [Instance Base Values Reference](../../docs/reference/instance-base-values.md).
+
+## Examples
+
+Standard SLS deployment using IBM Customer Number (ICN):
+```yaml
+ibm_sls:
+  sls_channel: "3.x"
+  sls_entitlement_file: "<path:arn:aws:secretsmanager:us-east-1:xxxx:secret:account/cluster/instance/license#license_file>"
+  ibm_entitlement_key: "<path:arn:aws:secretsmanager:us-east-1:xxxx:secret:account/cluster/ibm_entitlement#image_pull_secret_b64>"
+  sls_install_plan: Automatic
+  sls_mongo_secret_name: sls-mongo-credentials
+  sls_mongo_username: "<path:arn:aws:secretsmanager:us-east-1:xxxx:secret:account/cluster/instance/mongo#username>"
+  sls_mongo_password: "<path:arn:aws:secretsmanager:us-east-1:xxxx:secret:account/cluster/instance/mongo#password>"
+  icr_cp_open: "icr.io/cpopen"
+  run_sync_hooks: true
+  mongo_spec:
+    authMechanism: DEFAULT
+    configDb: admin
+    secretName: sls-mongo-credentials
+    retryWrites: false
+    nodes:
+      hosts:
+        - host: mongo.example.com
+          port: 27017
+  sls_pod_templates:
+    nodeSelector:
+      kubernetes.io/os: linux
+```

@@ -29,9 +29,24 @@ spec:
     - drop:
         - test:
             - field: .level
-              matches: info|Info|INFO|DEBUG|Debug|debug
+              matches: info|Info|INFO|DEBUG|Debug|debug|warn|warning
+        - test:
+            - field: .message
+              matches: 'BMX[A-Z0-9]+I'
       name: noise
       type: drop
+    - name: msg-noise
+      type: drop
+      drop:
+        - test:
+            - field: .message
+              matches: info|Info|INFO|DEBUG|Debug|debug|warn|warning
+    - name: drop-ns
+      type: drop
+      drop:
+        - test:
+            - field: .kubernetes.namespace_name
+              matches: "^(instana-agent|openshift-console.*)$"
     - kubeAPIAudit:
         omitStages: []
         rules:
@@ -66,12 +81,18 @@ spec:
       detectMultilineErrors: true
       filterRefs:
         - noise
+        - msg-noise
+        - drop-ns
       inputRefs:
         - application-logs
       outputRefs:
         - cloudwatch-1
     - name: infra-logs
       detectMultilineErrors: true
+      filterRefs:
+        - noise
+        - msg-noise
+        - drop-ns
       inputRefs:
         - infrastructure
       outputRefs:
@@ -122,9 +143,24 @@ spec:
     - drop:
         - test:
             - field: .level
-              matches: info|Info|INFO|DEBUG|Debug|debug
+              matches: info|Info|INFO|DEBUG|Debug|debug|warn|warning
+        - test:
+            - field: .message
+              matches: 'BMX[A-Z0-9]+I'
       name: noise
       type: drop
+    - name: msg-noise
+      type: drop
+      drop:
+        - test:
+            - field: .message
+              matches: info|Info|INFO|DEBUG|Debug|debug|warn|warning
+    - name: drop-ns
+      type: drop
+      drop:
+        - test:
+            - field: .kubernetes.namespace_name
+              matches: "^(instana-agent|openshift-console.*)$"
     - kubeAPIAudit:
         omitStages: []
         rules:
@@ -164,11 +200,17 @@ spec:
     - name: app-logs
       filterRefs:
         - noise
+        - msg-noise
+        - drop-ns
       inputRefs:
         - application-logs
       outputRefs:
         - cloudwatch-1
     - name: infra-logs
+      filterRefs:
+        - noise
+        - msg-noise
+        - drop-ns
       inputRefs:
         - infrastructure
       outputRefs:

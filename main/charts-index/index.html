@@ -5865,7 +5865,8 @@ sm:                             # Secrets Manager configuration
 <hr>
 <h3 id="ibm-mas-app-config">IBM MAS App Config<a class="headerlink" href="#ibm-mas-app-config" title="Permanent link">¤</a></h3>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/130-ibm-mas-app-config">130-ibm-mas-app-config</a></p>
-<p>Contains a post-delete hook (<code>postdelete-delete-cr.yaml</code>) that will ensure the config CR is deleted when the ArgoCD application managing this chart is deleted (this will not happen by default as the config CR is asserted to be owned by the <code>Suite</code> CR by the MAS entity managers).</p>
+<h5 id="overview_3">Overview<a class="headerlink" href="#overview_3" title="Permanent link">¤</a></h5>
+<p>This chart provisions an <code>AppCfg</code> CR for a MAS application, enabling persistent volume configuration and Mobile Application Framework (MAF) settings. It also contains a post-delete hook (<code>postdelete-delete-cr.yaml</code>) that will ensure the config CR is deleted when the ArgoCD application managing this chart is deleted (this will not happen by default as the config CR is asserted to be owned by the <code>Suite</code> CR by the MAS entity managers).</p>
 <h5 id="resources-created_39">Resources Created<a class="headerlink" href="#resources-created_39" title="Permanent link">¤</a></h5>
 <table>
 <thead>
@@ -5944,6 +5945,70 @@ sm:                             # Secrets Manager configuration
   aws_secret_access_key: string (secret reference)
 </code></pre>
 <p>For complete documentation of all base instance values including optional fields like <code>custom_labels</code>, <code>argocluster_instance</code>, <code>application_admin_service_account</code>, <code>mas_wipe_mongo_data</code>, <code>allow_list</code>, <code>additional_vpn</code>, <code>application_configuration</code>, <code>use_postdelete_hooks</code>, <code>additional_resources</code>, <code>extensions</code>, <code>enhanced_dr</code>, and <code>cli_image_repo</code>, see the <a href="../reference/instance-base-values/">Instance Base Values Reference</a>.</p>
+<h5 id="examples_3">Examples<a class="headerlink" href="#examples_3" title="Permanent link">¤</a></h5>
+<h6 id="system-scoped-appcfg-with-persistent-volume">System-scoped AppCfg with Persistent Volume<a class="headerlink" href="#system-scoped-appcfg-with-persistent-volume" title="Permanent link">¤</a></h6>
+<pre><code class="language-yaml"># appcfg-params.yaml
+merge-key: "production/us-east-1/inst1"
+mas_config_name: "inst1-appconfig"
+mas_config_chart: "ibm-mas-app-config"
+mas_config_scope: "system"
+mas_config_kind: "AppCfg"
+mas_config_api_version: "config.mas.ibm.com/v1"
+use_postdelete_hooks: true
+
+system_appcfg_labels:
+  mas.ibm.com/configScope: "system"
+  mas.ibm.com/instanceId: "inst1"
+
+maf_enabled: true
+
+persistentVolume:
+  name: "appconfig-pv"
+  size: "20Gi"
+  storageClassName: "ocs-storagecluster-cephfs"
+</code></pre>
+<h6 id="workspace-scoped-appcfg">Workspace-scoped AppCfg<a class="headerlink" href="#workspace-scoped-appcfg" title="Permanent link">¤</a></h6>
+<pre><code class="language-yaml">merge-key: "production/us-east-1/inst1"
+mas_config_name: "inst1-ws1-appconfig"
+mas_config_chart: "ibm-mas-app-config"
+mas_config_scope: "workspace"
+mas_workspace_id: "ws1"
+mas_application_id: "manage"
+mas_config_kind: "AppCfg"
+mas_config_api_version: "config.mas.ibm.com/v1"
+use_postdelete_hooks: false
+
+maf_enabled: false
+
+persistentVolume:
+  name: "appconfig-ws1-pv"
+  size: "10Gi"
+  storageClassName: "ocs-storagecluster-cephfs"
+</code></pre>
+<h5 id="prerequisites_9">Prerequisites<a class="headerlink" href="#prerequisites_9" title="Permanent link">¤</a></h5>
+<ul>
+<li>MAS Suite CR deployed and healthy in the target namespace</li>
+<li>Persistent storage class available in the cluster (e.g., <code>ocs-storagecluster-cephfs</code>)</li>
+<li><code>application_admin_role</code> service account with sufficient RBAC permissions</li>
+</ul>
+<h5 id="troubleshooting_2">Troubleshooting<a class="headerlink" href="#troubleshooting_2" title="Permanent link">¤</a></h5>
+<h6 id="appcfg-cr-not-reconciling">AppCfg CR Not Reconciling<a class="headerlink" href="#appcfg-cr-not-reconciling" title="Permanent link">¤</a></h6>
+<p>Check the CR status and MAS entity manager logs:</p>
+<pre><code class="language-bash">oc get appcfg -n mas-&lt;instance_id&gt;-core
+oc describe appcfg &lt;mas_config_name&gt; -n mas-&lt;instance_id&gt;-core
+oc logs -n mas-&lt;instance_id&gt;-core -l app.kubernetes.io/component=entitymgr --tail=100
+</code></pre>
+<h6 id="post-delete-job-failing">Post-delete Job Failing<a class="headerlink" href="#post-delete-job-failing" title="Permanent link">¤</a></h6>
+<p>Verify the service account and role bindings used by the post-delete hook exist:</p>
+<pre><code class="language-bash">oc get sa postdelete-delete-cr-sa -n mas-&lt;instance_id&gt;-core
+oc get rolebinding postdelete-delete-cr-rb -n mas-&lt;instance_id&gt;-core
+</code></pre>
+<h5 id="related-documentation_2">Related Documentation<a class="headerlink" href="#related-documentation_2" title="Permanent link">¤</a></h5>
+<ul>
+<li><a href="../instance-applications/130-ibm-mas-suite/README.md">MAS Suite Chart</a></li>
+<li><a href="../reference/instance-base-values/">Instance Base Values Reference</a></li>
+<li><a href="../configrepo/">Configuration Repository</a></li>
+</ul>
 <hr>
 <h3 id="ibm-mas-bas-config">IBM MAS BAS Config<a class="headerlink" href="#ibm-mas-bas-config" title="Permanent link">¤</a></h3>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/130-ibm-mas-bas-config">130-ibm-mas-bas-config</a></p>

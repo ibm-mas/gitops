@@ -234,11 +234,21 @@
     <cds-select id="breadcrumbs-toc" inline="" placeholder="..." oninput="changeAnchor(this.value)">
     
     
+      <cds-select-item value="#overview">Overview</cds-select-item>
+    
       <cds-select-item value="#resources-created">Resources Created</cds-select-item>
     
       <cds-select-item value="#configuration">Configuration</cds-select-item>
     
       <cds-select-item value="#base-instance-values">Base Instance Values</cds-select-item>
+    
+      <cds-select-item value="#examples">Examples</cds-select-item>
+    
+      <cds-select-item value="#prerequisites">Prerequisites</cds-select-item>
+    
+      <cds-select-item value="#troubleshooting">Troubleshooting</cds-select-item>
+    
+      <cds-select-item value="#related-documentation">Related Documentation</cds-select-item>
     
     </cds-select>
   </cds-breadcrumb-item>
@@ -250,7 +260,8 @@
             
             <h1 id="ibm-mas-app-config">IBM MAS App Config<a class="headerlink" href="#ibm-mas-app-config" title="Permanent link">¤</a></h1>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/130-ibm-mas-app-config">130-ibm-mas-app-config</a></p>
-<p>Contains a post-delete hook (<code>postdelete-delete-cr.yaml</code>) that will ensure the config CR is deleted when the ArgoCD application managing this chart is deleted (this will not happen by default as the config CR is asserted to be owned by the <code>Suite</code> CR by the MAS entity managers).</p>
+<h3 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">¤</a></h3>
+<p>This chart provisions an <code>AppCfg</code> CR for a MAS application, enabling persistent volume configuration and Mobile Application Framework (MAF) settings. It also contains a post-delete hook (<code>postdelete-delete-cr.yaml</code>) that will ensure the config CR is deleted when the ArgoCD application managing this chart is deleted (this will not happen by default as the config CR is asserted to be owned by the <code>Suite</code> CR by the MAS entity managers).</p>
 <h3 id="resources-created">Resources Created<a class="headerlink" href="#resources-created" title="Permanent link">¤</a></h3>
 <table>
 <thead>
@@ -329,6 +340,70 @@ sm:                             # Secrets Manager configuration
   aws_secret_access_key: string (secret reference)
 </code></pre>
 <p>For complete documentation of all base instance values including optional fields like <code>custom_labels</code>, <code>argocluster_instance</code>, <code>application_admin_service_account</code>, <code>mas_wipe_mongo_data</code>, <code>allow_list</code>, <code>additional_vpn</code>, <code>application_configuration</code>, <code>use_postdelete_hooks</code>, <code>additional_resources</code>, <code>extensions</code>, <code>enhanced_dr</code>, and <code>cli_image_repo</code>, see the <a href="../../reference/instance-base-values/">Instance Base Values Reference</a>.</p>
+<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">¤</a></h3>
+<h4 id="system-scoped-appcfg-with-persistent-volume">System-scoped AppCfg with Persistent Volume<a class="headerlink" href="#system-scoped-appcfg-with-persistent-volume" title="Permanent link">¤</a></h4>
+<pre><code class="language-yaml"># appcfg-params.yaml
+merge-key: "production/us-east-1/inst1"
+mas_config_name: "inst1-appconfig"
+mas_config_chart: "ibm-mas-app-config"
+mas_config_scope: "system"
+mas_config_kind: "AppCfg"
+mas_config_api_version: "config.mas.ibm.com/v1"
+use_postdelete_hooks: true
+
+system_appcfg_labels:
+  mas.ibm.com/configScope: "system"
+  mas.ibm.com/instanceId: "inst1"
+
+maf_enabled: true
+
+persistentVolume:
+  name: "appconfig-pv"
+  size: "20Gi"
+  storageClassName: "ocs-storagecluster-cephfs"
+</code></pre>
+<h4 id="workspace-scoped-appcfg">Workspace-scoped AppCfg<a class="headerlink" href="#workspace-scoped-appcfg" title="Permanent link">¤</a></h4>
+<pre><code class="language-yaml">merge-key: "production/us-east-1/inst1"
+mas_config_name: "inst1-ws1-appconfig"
+mas_config_chart: "ibm-mas-app-config"
+mas_config_scope: "workspace"
+mas_workspace_id: "ws1"
+mas_application_id: "manage"
+mas_config_kind: "AppCfg"
+mas_config_api_version: "config.mas.ibm.com/v1"
+use_postdelete_hooks: false
+
+maf_enabled: false
+
+persistentVolume:
+  name: "appconfig-ws1-pv"
+  size: "10Gi"
+  storageClassName: "ocs-storagecluster-cephfs"
+</code></pre>
+<h3 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">¤</a></h3>
+<ul>
+<li>MAS Suite CR deployed and healthy in the target namespace</li>
+<li>Persistent storage class available in the cluster (e.g., <code>ocs-storagecluster-cephfs</code>)</li>
+<li><code>application_admin_role</code> service account with sufficient RBAC permissions</li>
+</ul>
+<h3 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¤</a></h3>
+<h4 id="appcfg-cr-not-reconciling">AppCfg CR Not Reconciling<a class="headerlink" href="#appcfg-cr-not-reconciling" title="Permanent link">¤</a></h4>
+<p>Check the CR status and MAS entity manager logs:</p>
+<pre><code class="language-bash">oc get appcfg -n mas-&lt;instance_id&gt;-core
+oc describe appcfg &lt;mas_config_name&gt; -n mas-&lt;instance_id&gt;-core
+oc logs -n mas-&lt;instance_id&gt;-core -l app.kubernetes.io/component=entitymgr --tail=100
+</code></pre>
+<h4 id="post-delete-job-failing">Post-delete Job Failing<a class="headerlink" href="#post-delete-job-failing" title="Permanent link">¤</a></h4>
+<p>Verify the service account and role bindings used by the post-delete hook exist:</p>
+<pre><code class="language-bash">oc get sa postdelete-delete-cr-sa -n mas-&lt;instance_id&gt;-core
+oc get rolebinding postdelete-delete-cr-rb -n mas-&lt;instance_id&gt;-core
+</code></pre>
+<h3 id="related-documentation">Related Documentation<a class="headerlink" href="#related-documentation" title="Permanent link">¤</a></h3>
+<ul>
+<li><a href="../../instance-applications/130-ibm-mas-suite/README.md">MAS Suite Chart</a></li>
+<li><a href="../../reference/instance-base-values/">Instance Base Values Reference</a></li>
+<li><a href="../../configrepo/">Configuration Repository</a></li>
+</ul>
             
           </div>
 
@@ -349,6 +424,11 @@ sm:                             # Secrets Manager configuration
         <div class="md-toc__title">On this page</div>
         <ul class="md-toc__list">
               <li class="md-toc__item">
+                <a href="#overview" class="md-toc__link" data-md-level="1">
+                  Overview
+                </a>
+              </li>
+              <li class="md-toc__item">
                 <a href="#resources-created" class="md-toc__link" data-md-level="1">
                   Resources Created
                 </a>
@@ -361,6 +441,50 @@ sm:                             # Secrets Manager configuration
               <li class="md-toc__item">
                 <a href="#base-instance-values" class="md-toc__link" data-md-level="1">
                   Base Instance Values
+                </a>
+              </li>
+              <li class="md-toc__item">
+                <a href="#examples" class="md-toc__link" data-md-level="1">
+                  Examples
+                </a>
+                  <ul class="md-toc__list">
+                      <li class="md-toc__item">
+                        <a href="#system-scoped-appcfg-with-persistent-volume" class="md-toc__link" data-md-level="2">
+                          System-scoped AppCfg with Persistent Volume
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#workspace-scoped-appcfg" class="md-toc__link" data-md-level="2">
+                          Workspace-scoped AppCfg
+                        </a>
+                      </li>
+                  </ul>
+              </li>
+              <li class="md-toc__item">
+                <a href="#prerequisites" class="md-toc__link" data-md-level="1">
+                  Prerequisites
+                </a>
+              </li>
+              <li class="md-toc__item">
+                <a href="#troubleshooting" class="md-toc__link" data-md-level="1">
+                  Troubleshooting
+                </a>
+                  <ul class="md-toc__list">
+                      <li class="md-toc__item">
+                        <a href="#appcfg-cr-not-reconciling" class="md-toc__link" data-md-level="2">
+                          AppCfg CR Not Reconciling
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#post-delete-job-failing" class="md-toc__link" data-md-level="2">
+                          Post-delete Job Failing
+                        </a>
+                      </li>
+                  </ul>
+              </li>
+              <li class="md-toc__item">
+                <a href="#related-documentation" class="md-toc__link" data-md-level="1">
+                  Related Documentation
                 </a>
               </li>
         </ul>

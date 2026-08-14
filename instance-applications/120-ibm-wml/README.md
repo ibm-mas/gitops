@@ -12,6 +12,7 @@ Deploys and configures the CP4D Service, Watson Machine Learning (WML) needed fo
 |--------------|---------------|-----------|-----------|--------------|
 | `Subscription` | WML operator subscription | CP4D operators namespace | CPD < 5.3.1 | `application_admin_role` |
 | `WmlBase` | Watson Machine Learning service CR | CP4D instance namespace | CPD < 5.3.1 | `application_admin_role` |
+| `ConfigMap` | Helm install state tracking | CP4D operators namespace | CPD >= 5.3.1 | `application_admin_role` |
 | `Job` | Helm install job (ibm-redis-cp + wml) | CP4D operators namespace | CPD >= 5.3.1 | `application_admin_role` |
 
 ## Configuration

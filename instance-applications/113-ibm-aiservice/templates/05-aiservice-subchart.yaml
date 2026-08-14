@@ -2,7 +2,7 @@
 {{- $_job_name_prefix := "aiservice-subchart" }}
 {{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v5" }}
+{{- $_job_version := "v1" }}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
@@ -11,18 +11,55 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: aiservice-subchart-job-{{ .Values.aiservice_namespace  }}
+  name: aiservice-subchart-job
   namespace: {{ .Values.aiservice_namespace }}
   annotations:
-    argocd.argoproj.io/sync-wave: "137"
+    argocd.argoproj.io/hook: PreSync
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aiservice-subchart-job
+  namespace: "{{ .Values.aiservice_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps", "serviceaccounts"]
+    verbs: ["get", "list", "patch", "delete"]
+  - apiGroups: ["operators.coreos.com"]
+    resources: ["subscriptions", "clusterserviceversions"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aiservice-subchart-job
+  namespace: "{{ .Values.aiservice_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+subjects:
+  - kind: ServiceAccount
+    name: postsync-aiservice-migration
+    namespace: "{{ .Values.aiservice_namespace }}"
+roleRef:
+  kind: Role
+  name: postsync-aiservice-migration
+  apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: aiservice-subchart-job-{{ .Values.aiservice_namespace  }}
+  name: aiservice-subchart-job
   namespace: "{{ .Values.aiservice_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "138"
+    argocd.argoproj.io/hook: PreSync
 spec:
   podSelector:
     matchLabels:
@@ -38,7 +75,7 @@ metadata:
   name: {{ $_job_name }}
   namespace: {{ .Values.aiservice_namespace }}
   annotations:
-    argocd.argoproj.io/sync-wave: "139"
+    argocd.argoproj.io/hook: PreSync
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}

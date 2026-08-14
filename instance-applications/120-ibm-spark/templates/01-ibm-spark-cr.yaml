@@ -25,6 +25,19 @@ spec:
   ccs_operand_version: "{{ .Values.ccs_version }}"
 {{- else }}
 ---
+# Persistent resource so ArgoCD has a stable non-hook object to track.
+# Without this the app shows OutOfSync/Progressing after the Hook Job deletes itself.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ibm-spark-helm-install-config
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "091"
+data:
+  cpd_product_version: "{{ .Values.cpd_product_version }}"
+  install_method: "helm"
+---
 # Helm-based installation for CPD 5.3.1+
 {{- $_job_name_prefix := "install-spark-helm" }}
 {{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}

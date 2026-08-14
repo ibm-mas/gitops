@@ -1,4 +1,17 @@
 ---
+# Persistent resource so ArgoCD has a stable non-hook object to track.
+# Without this the app shows OutOfSync/Progressing after the Hook Job deletes itself.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ibm-cognos-helm-install-config
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "091"
+data:
+  cpd_product_version: "{{ .Values.cpd_product_version }}"
+  install_method: "helm"
+---
 # Helm-based installation for CPD 5.3.1+
 # Cognos Analytics is an optional analytics and reporting service
 {{- $_job_name_prefix := "install-cognos-helm" }}

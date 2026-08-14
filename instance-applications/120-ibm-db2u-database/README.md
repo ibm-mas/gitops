@@ -4,10 +4,9 @@ Create a Db2u database for a MAS app.
 
 <!--docs-include-start-->
 
+## Overview
 
-Contains a presync hook (`00-presync-await-crd_Job.yaml`) that ensures we wait for the db2uclusters CRD to be installed before attempting to sync.
-
-Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers the `${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config` secret in the **Secrets Vault** used to share some information that is generated at runtime with other ArgoCD Applications. This job also performs some special configuration steps that are required if the Db2u database is intended for use by the Manage MAS Application.
+Creates a Db2u database instance for a MAS application. Includes a presync hook (`00-presync-await-crd_Job.yaml`) that ensures the `db2uclusters` CRD is installed before syncing, and a postsync job (`05-postsync-setup-db2_Job.yaml`) that registers the `${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config` secret in the **Secrets Vault** and performs any Manage-specific database configuration steps.
 
 ## Resources Created
 
@@ -20,7 +19,8 @@ Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers
 | `Issuer` | DB2 TLS issuers | DB2 application namespace | Always | `application_admin_role` |
 | `Certificate` | DB2 TLS certificates | DB2 application namespace | Always | `application_admin_role` |
 | `Db2uInstance` | Db2u instance CR | DB2 application namespace | Always | `application_admin_role` |
-| `CronJob` | Db2 backup cron job | DB2 application namespace | When backups are enabled | `application_admin_role` |
+| `CronJob` | Db2 backup cron job | DB2 application namespace | When backups are enabled (`db2_backup_bucket_name` set) | `application_admin_role` |
+| `CronJob` | Db2 audit extract cron job | DB2 application namespace | When audit bucket is enabled (`db2_audit_bucket_name` set) | `application_admin_role` |
 | `ConfigMap` | Db2 script/config maps | DB2 application namespace | Always | `application_admin_role` |
 | `Route` | Db2 TLS route | DB2 application namespace | When route exposure is enabled | `application_admin_role` |
 | `Service` | Db2 services, including HADR services | DB2 application namespace | Always | `application_admin_role` |
@@ -126,6 +126,12 @@ db2_backup_bucket_secret_key: string (secret reference, when backup enabled)
 db2_backup_notify_slack_url: string (optional, when backup enabled)
 db2_backup_icd_auth_key: string (secret reference, optional, when backup enabled)
 
+# Audit Extraction Configuration (optional)
+# When db2_audit_bucket_name is set, a daily CronJob is created in the db2 namespace
+# that archives and extracts DB2 audit logs as DEL/ASC files and uploads them to the
+# specified S3 bucket, then removes all local copies.
+db2_audit_bucket_name: string (secret reference, when audit extraction enabled)
+
 allow_list: string (optional)
 
 # Private NLB for customer TGW connectivity (optional)
@@ -208,3 +214,25 @@ The NLB is created independently for each instance (e.g. facilities, manage) usi
 If `private_nlb.enabled: true` and either `subnet_ids` or `allowed_cidrs` is
 empty, Helm will fail immediately with a clear error message before rendering
 any resources. This prevents a broken or unrestricted NLB from being deployed..
+
+## Examples
+
+### Minimal — Manage database with backup and audit extraction enabled
+
+```yaml
+db2_namespace: mas-inst1-manage-db2u
+db2_instance_name: db2wh-manage
+db2_dbname: BLUDB
+db2_instance_home_path: /mnt/blumeta0/home/db2inst1
+mas_application_id: manage
+instance_id: inst1
+
+# Backup
+db2_backup_bucket_name: "<path:secret/path#db2_backup_bucket_name>"
+db2_backup_bucket_endpoint: "<path:secret/path#db2_backup_bucket_endpoint>"
+db2_backup_bucket_access_key: "<path:secret/path#db2_backup_bucket_access_key>"
+db2_backup_bucket_secret_key: "<path:secret/path#db2_backup_bucket_secret_key>"
+
+# Audit extraction — daily CronJob uploads delasc files to audit-log-manage/<YYYYMMDD>/
+db2_audit_bucket_name: "<path:secret/path#db2_audit_bucket_name>"
+```

@@ -1,0 +1,65 @@
+{{- if .Values.application_admin_role }}
+{{- $_job_name_prefix := "aiservice-subchart" }}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v5" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash ) }}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aiservice-subchart-job-{{ .Values.tenantNamespace }}
+  namespace: {{ .Values.aiservice_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "305"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ .Values.aiservice_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "307"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: sync-job
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: aiservice-subchart-job-{{ .Values.tenantNamespace }}
+      restartPolicy: OnFailure
+      containers:
+        - name: aiservice-subchart
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SOURCE_NAMESPACE
+              value: "{{ .Values.aiservice_namespace }}"
+            - name: TARGET_NAMESPACE
+              value: "{{ .Values.tenantNamespace }}"
+            - name: ARTIFACTORY_TOKEN
+              value: "{{ .Values.artifactory_token }}"
+            
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              
+              helm install ./aiservice --set .Values.app_artifactory_token=$ARTIFACTORY_TOKEN
+              argocd app get ibm-entitlement --hard-refresh
+
+              done
+              echo "All secrets copied successfully"
+{{- end }}

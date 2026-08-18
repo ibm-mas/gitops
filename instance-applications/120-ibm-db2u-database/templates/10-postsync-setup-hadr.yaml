@@ -28,7 +28,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v10" }}
+{{- $_job_version := "v11" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -416,7 +416,7 @@ spec:
                     echo "Timestamp of backup is $timestamp"
                   fi
 
-                  if [[ $(( `date +%Y%m%d` - ${timestamp:0:8} )) -lt 2 || -z ${timestamp} ]]; then
+                  if [[ -n ${timestamp} && $(( `date +%Y%m%d` - ${timestamp:0:8} )) -lt 2 ]]; then
                     # check if it is a full backup
                     BACKUP_TYPE_SCRIPT='/tmp/backup_type_script.sh'
 
@@ -520,8 +520,14 @@ spec:
 
                   aws_is_installed=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "/mnt/backup/aws/dist/aws --version 2>&1 || true" db2inst1`
                   if [[ $aws_is_installed =~ 'not found' ]]; then
-                    # Setup AWS CLI
-                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd /mnt/backup; curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'; unzip awscliv2.zip -d /mnt/backup/;" db2inst1 || exit $?
+                    # Setup AWS CLI on standby
+                    oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd /mnt/backup; curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'; unzip -q awscliv2.zip -d /mnt/backup/;" db2inst1 || exit $?
+                  fi
+
+                  aws_is_installed_primary=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "/mnt/backup/aws/dist/aws --version 2>&1 || true" db2inst1`
+                  if [[ $aws_is_installed_primary =~ 'not found' ]]; then
+                    # Setup AWS CLI on primary
+                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd /mnt/backup; curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'; unzip -q awscliv2.zip -d /mnt/backup/;" db2inst1 || exit $?
                   fi
                 fi
 
@@ -543,11 +549,11 @@ spec:
                       SOURCE=backups-${MAS_APP_ID}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0/${backup_filename}
                       if [[ ${copy_to_cos} == 'true' ]]; then
                         SOURCE1=/mnt/backup/standby/${backup_filename}
-                        oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS;db2RemStgManager ALIAS PUT source=${SOURCE1} target=DB2REMOTE://AWSCOS//${SOURCE} | tee /tmp/backupupload_${backup_filename}.log" db2inst1 || exit $?
+                        oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc ". /mnt/backup/bin/.PROPS; export AWS_ACCESS_KEY_ID=${PARM1}; export AWS_SECRET_ACCESS_KEY=${PARM2}; /mnt/backup/aws/dist/aws s3 cp ${SOURCE1} s3://${CONTAINER}/${SOURCE} --endpoint-url=${SERVER} | tee /tmp/backupupload_${backup_filename}.log" db2inst1 || exit $?
                       fi
 
                       # copy backup from cos bucket to standby
-                      oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "export AWS_ACCESS_KEY_ID=${PARM1}; export AWS_SECRET_ACCESS_KEY=${PARM2}; mkdir -p /mnt/backup/primary-backup; /mnt/backup/aws/dist/aws s3 cp s3://${CONTAINER}/${SOURCE} /mnt/backup/primary-backup/${backup_filename} | tee /tmp/backupdownload_${backup_filename}.log" db2inst1 || exit $?
+                      oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "export AWS_ACCESS_KEY_ID=${PARM1}; export AWS_SECRET_ACCESS_KEY=${PARM2}; mkdir -p /mnt/backup/primary-backup; /mnt/backup/aws/dist/aws s3 cp s3://${CONTAINER}/${SOURCE} /mnt/backup/primary-backup/${backup_filename} --endpoint-url=${SERVER} | tee /tmp/backupdownload_${backup_filename}.log" db2inst1 || exit $?
 
                     else
                       oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cp /mnt/backup/standby/${backup_filename} /tmp; chmod 777 /tmp/${backup_filename}" db2inst1 || exit $?

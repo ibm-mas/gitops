@@ -1,29 +1,16 @@
-{{- if lt (semver "5.3.1" | (semver (.Values.cpd_product_version | toString)).Compare) 0 }}
 ---
-apiVersion: cognosanalytics.cpd.ibm.com/v1
-kind: CognosAnalytics
+# Persistent resource so ArgoCD has a stable non-hook object to track.
+# Without this the app shows OutOfSync/Progressing after the Hook Job deletes itself.
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: "cognos-analytics-sample"
-  namespace: "{{ .Values.cpd_instance_namespace }}"
+  name: ibm-cognos-helm-install-config
+  namespace: "{{ .Values.cpd_operators_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "092"
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  imagePullSecret: ibm-entitlement-key
-  ignoreForMaintenance: false
-  license:
-    accept: true
-    license: Standard
-  fileStorageClass: "{{ .Values.cpd_service_storage_class }}"
-  blockStorageClass: "{{ .Values.cpd_service_block_storage_class }}"
-  scaleConfig: "{{ .Values.cpd_service_scale_config }}"
-  version: "{{ .Values.cognos_analytics_version }}"
-  ccs_operand_version: "{{ .Values.ccs_version }}"
-{{- else }}
+    argocd.argoproj.io/sync-wave: "091"
+data:
+  cpd_product_version: "{{ .Values.cpd_product_version }}"
+  install_method: "helm"
 ---
 # Helm-based installation for CPD 5.3.1+
 # Cognos Analytics is an optional analytics and reporting service
@@ -102,4 +89,3 @@ spec:
       restartPolicy: Never
       serviceAccountName: cpd-sa
   backoffLimit: 4
-{{- end }}

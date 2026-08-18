@@ -10,12 +10,13 @@ Spark extends jupyter notebooks features inside Watson Studio notebooks which ca
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
-| `Subscription` | Spark operator subscription | CP4D instance namespace | Always | `application_admin_role` |
-| `AnalyticsEngine` | Spark service CR | CP4D instance namespace | Always | `application_admin_role` |
+| `Subscription` | Spark operator subscription | CP4D operators namespace | CPD < 5.3.1 | `application_admin_role` |
+| `AnalyticsEngine` | Spark service CR | CP4D instance namespace | CPD < 5.3.1 | `application_admin_role` |
 | `ServiceAccount` | Spark control-plane service account | CP4D instance namespace | When control-plane job is enabled | `application_admin_role` |
 | `ClusterRole` | Spark control-plane cluster roles | N/A (cluster-scoped) | When control-plane job is enabled | `application_admin_role` |
 | `ClusterRoleBinding` | Spark control-plane cluster role binding | N/A (cluster-scoped) | When control-plane job is enabled | `application_admin_role` |
-| `Job` | Spark control-plane job | CP4D instance namespace | When control-plane job is enabled | `application_admin_role` |
+| `ConfigMap` | Helm install state tracking | CP4D operators namespace | CPD >= 5.3.1 | `application_admin_role` |
+| `Job` | Spark Helm install job | CP4D operators namespace | CPD >= 5.3.1 | `application_admin_role` |
 
 ## Configuration
 

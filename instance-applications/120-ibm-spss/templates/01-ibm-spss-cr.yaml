@@ -1,4 +1,4 @@
-{{- if lt (semver "5.3.1" | (semver (.Values.cpd_product_version | toString)).Compare) 0 }}
+{{- if lt (semver "5.3.1" | (semver (.Values.cpd_product_version | default "0.0.0" | toString)).Compare) 0 }}
 ---
 apiVersion: spssmodeler.cpd.ibm.com/v1
 kind: SPSSModeler
@@ -24,6 +24,19 @@ spec:
   version: "{{ .Values.spss_version }}"
   ccs_operand_version: "{{ .Values.ccs_version }}"
 {{- else }}
+---
+# Persistent resource so ArgoCD has a stable non-hook object to track.
+# Without this the app shows OutOfSync/Progressing after the Hook Job deletes itself.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ibm-spss-helm-install-config
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "091"
+data:
+  cpd_product_version: "{{ .Values.cpd_product_version }}"
+  install_method: "helm"
 ---
 # Helm-based installation for CPD 5.3.1+
 {{- $_job_name_prefix := "install-spss-helm" }}

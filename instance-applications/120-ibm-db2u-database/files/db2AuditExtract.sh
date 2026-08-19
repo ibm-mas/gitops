@@ -23,7 +23,7 @@
 #%   6.  db2audit extract delasc ... from files db2audit.instance.log.0.*
 #%   7.  zip all *.del into audit_logs_<app>_<YYYYMMDD>_<timestamp>.zip
 #%   8.  cp zip to /mnt/blumeta0/audit/<YYYYMMDD>/  (local persistent copy)
-#%   9.  Upload zip to S3 via db2RemStgManager alias put  (same as auditExtractUpload.sh)
+#%   9.  Upload zip to S3 via AWS CLI: /mnt/backup/aws/dist/aws s3 cp
 #%  10.  Delete zip from source ONLY after S3 upload confirmed
 #%  11.  Clean up auditarchive directory
 # ----------------------------------------------------------------------------
@@ -89,7 +89,7 @@ log "INFO  :: Database      : ${DBNAME}"
 log "INFO  :: Work dir      : ${ARCHIVE_DIR}"
 log "INFO  :: Local dest    : ${AUDIT_BASE}/${DATE}/"
 log "INFO  :: S3 bucket     : ${CONTAINER}"
-log "INFO  :: S3 target     : audit_logs/${APP_NAME}_${DATE}_<timestamp>.zip"
+log "INFO  :: S3 target     : s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/<timestamp>.zip"
 log "INFO  :: ============================================================"
 
 # ============================================================================
@@ -216,28 +216,39 @@ fi
 log "INFO  ::       Local copy succeeded: ${DEST_DIR}/${ZIP_NAME}"
 
 # ============================================================================
-# 9. Upload zip to S3 — identical pattern to auditExtractUpload.sh
-#    Source file is on persistent mount (/mnt/blumeta0) not /tmp
-#    ONLY delete after confirmed upload
+# 9. Upload zip to S3 using AWS CLI (same tool used by HADR setup scripts)
+#    AWS CLI is installed at /mnt/backup/aws/dist/aws by the postsync job.
+#    Credentials come from PARM1/PARM2 in .PROPS (same source as backup scripts).
+#    ONLY delete source after upload is confirmed.
 # ============================================================================
-COS_TARGET="DB2REMOTE://AWSCOS//audit_logs/${APP_NAME}_${DATE}_${ZIP_NAME}"
-log "INFO  :: [9/9] Uploading to S3"
-log "INFO  ::       Source : ${ZIP_FILE}"
-log "INFO  ::       Target : ${COS_TARGET}"
+AWS_CLI="/mnt/backup/aws/dist/aws"
+S3_TARGET="s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/${ZIP_NAME}"
 
-db2RemStgManager alias put \
-  source="${ZIP_FILE}" \
-  target="${COS_TARGET}" > /dev/null 2>&1
+log "INFO  :: [9/9] Uploading to S3 using AWS CLI"
+log "INFO  ::       Source : ${ZIP_FILE}"
+log "INFO  ::       Target : ${S3_TARGET}"
+
+# Verify AWS CLI is available
+if [ ! -x "${AWS_CLI}" ]; then
+  log "ERROR :: AWS CLI not found at ${AWS_CLI}. Ensure HADR postsync job has run to install it."
+  exit 1
+fi
+
+export AWS_ACCESS_KEY_ID="${PARM1}"
+export AWS_SECRET_ACCESS_KEY="${PARM2}"
+export AWS_DEFAULT_REGION=$(echo "${SERVER}" | grep -oP '(?<=s3\.)[\w-]+(?=\.amazonaws)')
+
+"${AWS_CLI}" s3 cp "${ZIP_FILE}" "${S3_TARGET}"
 RC=$?
 if [ $RC -ne 0 ]; then
-  log "ERROR :: S3 upload failed (RC=0x$(printf '%08X' ${RC}))"
+  log "ERROR :: S3 upload failed (RC=${RC})"
   log "ERROR :: Source file ${ZIP_FILE} has NOT been deleted — safe to retry"
   exit 1
 fi
-log "INFO  ::       S3 upload confirmed: ${COS_TARGET}"
+log "INFO  ::       S3 upload confirmed: ${S3_TARGET}"
 
 # Delete zip from working dir ONLY after S3 upload is confirmed
-log "INFO  ::       Deleting source zip (S3 upload confirmed): ${ZIP_FILE}"
+log "INFO  ::       Deleting source zip (upload confirmed): ${ZIP_FILE}"
 rm -f "${ZIP_FILE}"
 log "INFO  ::       Deleted"
 
@@ -252,7 +263,7 @@ log "INFO  :: Archive directory removed"
 log "INFO  :: ============================================================"
 log "INFO  :: Audit extraction completed successfully"
 log "INFO  :: Local : ${DEST_DIR}/${ZIP_NAME}"
-log "INFO  :: S3    : ${COS_TARGET}"
+log "INFO  :: S3    : ${S3_TARGET}"
 log "INFO  :: ============================================================"
 exit 0
 

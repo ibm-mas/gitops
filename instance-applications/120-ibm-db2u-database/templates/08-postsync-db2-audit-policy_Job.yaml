@@ -92,122 +92,43 @@ spec:
                 echo "Setting up DB2 audit policy for Manage"
                 echo "================================================================================"
 
-                # ----------------------------------------------------------------
-                # Connect to database
-                # ----------------------------------------------------------------
-                echo ""
-                echo "Connecting to database ${DB2_DBNAME}"
-                echo "--------------------------------------------------------------------------------"
+                # All DB2 commands run in a single oc exec so the database
+                # connection established by 'db2 connect' is shared across
+                # every subsequent statement in the same session.
+                oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- su -lc "
+                  set -e
 
-                oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- \
-                  su -lc "db2 connect to ${DB2_DBNAME}" db2inst1
+                  echo 'Connecting to database ${DB2_DBNAME}'
+                  db2 connect to ${DB2_DBNAME}
 
-                # ----------------------------------------------------------------
-                # Create audit policy
-                # ----------------------------------------------------------------
-                echo ""
-                echo "Creating audit policy USER_AUDIT"
-                echo "--------------------------------------------------------------------------------"
+                  echo 'Creating audit policy USER_AUDIT (instance-level)'
+                  db2 \"CREATE AUDIT POLICY USER_AUDIT CATEGORIES VALIDATE STATUS BOTH, EXECUTE WITHOUT DATA STATUS BOTH ERROR TYPE NORMAL\" || echo 'Audit policy USER_AUDIT already exists, continuing'
 
-                if oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- \
-                  su -lc 'db2 "CREATE AUDIT POLICY USER_AUDIT CATEGORIES VALIDATE STATUS BOTH, EXECUTE WITHOUT DATA STATUS BOTH ERROR TYPE NORMAL"' db2inst1
-                then
-                  echo "Audit policy USER_AUDIT created successfully."
-                else
-                  echo "Audit policy USER_AUDIT may already exist. Continuing."
-                fi
+                  echo 'Creating MAXIMO_READ and MAXIMO_WRITE roles'
+                  db2 \"CREATE ROLE MAXIMO_READ\" || echo 'Role MAXIMO_READ already exists, continuing'
+                  db2 \"CREATE ROLE MAXIMO_WRITE\" || echo 'Role MAXIMO_WRITE already exists, continuing'
 
-                # ----------------------------------------------------------------
-                # Create MAXIMO_READ role
-                # ----------------------------------------------------------------
-                echo ""
-                echo "Creating MAXIMO_READ role"
-                echo "--------------------------------------------------------------------------------"
+                  echo 'Applying USER_AUDIT policy to MAXIMO_READ and MAXIMO_WRITE roles'
+                  db2 \"AUDIT ROLE MAXIMO_READ USING POLICY USER_AUDIT\"
+                  db2 \"AUDIT ROLE MAXIMO_WRITE USING POLICY USER_AUDIT\"
 
-                if oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- \
-                  su -lc 'db2 "CREATE ROLE MAXIMO_READ"' db2inst1
-                then
-                  echo "Role MAXIMO_READ created successfully."
-                else
-                  echo "Role MAXIMO_READ may already exist. Continuing."
-                fi
+                  echo 'Applying USER_AUDIT policy to db2inst1 user'
+                  db2 \"AUDIT USER db2inst1 USING POLICY USER_AUDIT\"
 
-                # ----------------------------------------------------------------
-                # Create MAXIMO_WRITE role
-                # ----------------------------------------------------------------
-                echo ""
-                echo "Creating MAXIMO_WRITE role"
-                echo "--------------------------------------------------------------------------------"
+                  echo ''
+                  echo '========================================'
+                  echo 'Verifying audit policy setup'
+                  echo '========================================'
 
-                if oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- \
-                  su -lc 'db2 "CREATE ROLE MAXIMO_WRITE"' db2inst1
-                then
-                  echo "Role MAXIMO_WRITE created successfully."
-                else
-                  echo "Role MAXIMO_WRITE may already exist. Continuing."
-                fi
+                  echo 'Users and roles assigned to USER_AUDIT:'
+                  db2 \"SELECT * FROM SYSCAT.AUDITUSE WHERE AUDITPOLICYNAME='USER_AUDIT'\"
 
-                # ----------------------------------------------------------------
-                # Assign audit policy to MAXIMO_READ
-                # ----------------------------------------------------------------
-                echo ""
-                echo "Applying USER_AUDIT to MAXIMO_READ"
-                echo "--------------------------------------------------------------------------------"
+                  echo 'Audit policy categories for USER_AUDIT:'
+                  db2 \"SELECT AUDITPOLICYNAME, VALIDATESTATUS, EXECUTESTATUS FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME='USER_AUDIT'\"
 
-                oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- \
-                  su -lc 'db2 "AUDIT ROLE MAXIMO_READ USING POLICY USER_AUDIT"' db2inst1
-
-                # ----------------------------------------------------------------
-                # Assign audit policy to MAXIMO_WRITE
-                # ----------------------------------------------------------------
-                echo ""
-                echo "Applying USER_AUDIT to MAXIMO_WRITE"
-                echo "--------------------------------------------------------------------------------"
-
-                oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- \
-                  su -lc 'db2 "AUDIT ROLE MAXIMO_WRITE USING POLICY USER_AUDIT"' db2inst1
-
-                # ----------------------------------------------------------------
-                # Assign audit policy to db2inst1
-                # ----------------------------------------------------------------
-                echo ""
-                echo "Applying USER_AUDIT to db2inst1"
-                echo "--------------------------------------------------------------------------------"
-
-                oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- \
-                  su -lc 'db2 "AUDIT USER db2inst1 USING POLICY USER_AUDIT"' db2inst1
-
-                # ----------------------------------------------------------------
-                # Verify audit policy assignments
-                # ----------------------------------------------------------------
-                echo ""
-                echo "================================================================================"
-                echo "Verifying audit policy setup"
-                echo "================================================================================"
-
-                echo ""
-                echo "Audit policy assignments:"
-                echo "--------------------------------------------------------------------------------"
-
-                oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- \
-                  su -lc 'db2 "SELECT AUDITPOLICYNAME, OBJECTTYPE, OBJECTNAME FROM SYSCAT.AUDITUSE WHERE AUDITPOLICYNAME='\''USER_AUDIT'\''"' db2inst1
-
-                echo ""
-                echo "Audit policy configuration:"
-                echo "--------------------------------------------------------------------------------"
-
-                oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- \
-                  su -lc 'db2 "SELECT AUDITPOLICYNAME, VALIDATESTATUS, EXECUTESTATUS, EXECUTEWITHDATA, ERRORTYPE FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME='\''USER_AUDIT'\''"' db2inst1
-
-                # ----------------------------------------------------------------
-                # Disconnect
-                # ----------------------------------------------------------------
-                echo ""
-                echo "Disconnecting from database"
-                echo "--------------------------------------------------------------------------------"
-
-                oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- \
-                  su -lc "db2 connect reset" db2inst1
+                  db2 connect reset
+                  echo 'Audit policy setup complete'
+                " db2inst1 || exit $?
 
                 echo ""
                 echo "================================================================================"

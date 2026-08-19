@@ -579,57 +579,6 @@ spec:
                   oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd ${DB2_INSTANCE_HOME_PATH}/bin; ${CREATE_ROLES_SH_PATH} | tee /tmp/createroles.log" db2inst1 || exit $?
                 fi
 
-                # Path to the audit policy setup script, on both this pod and on the db2u pod
-                AUDITPOLICY_SH_PATH="/tmp/auditpolicy.sh"
-
-                echo ""
-                echo "================================================================================"
-                echo "Setting up DB2 audit policy for Manage"
-                echo "================================================================================"
-
-                echo ""
-                echo "Create ${AUDITPOLICY_SH_PATH}"
-                echo "--------------------------------------------------------------------------------"
-
-                # Generate the audit policy script to copy and run on the db2u pod
-                cat > ${AUDITPOLICY_SH_PATH} << EOF
-                  #!/bin/bash
-                  set -e
-
-                  echo "Creating audit policy USER_AUDIT (instance-level)"
-                  db2 "CREATE AUDIT POLICY USER_AUDIT CATEGORIES VALIDATION STATUS BOTH, EXECUTE WITHOUT DATA STATUS BOTH ERROR TYPE NORMAL" || true
-
-                  echo "Connecting to database ${DB2_DBNAME}"
-                  db2 connect to ${DB2_DBNAME}
-                  if [ \$? != 0 ]; then
-                    echo "Failed to connect to database!"
-                    exit 1
-                  fi
-
-                  echo "Applying audit policy to MAXIMO_READ and MAXIMO_WRITE roles"
-                  db2 "AUDIT ROLE MAXIMO_READ, ROLE MAXIMO_WRITE USING POLICY USER_AUDIT"
-
-                  echo "Applying audit policy to db2inst1 user"
-                  db2 "AUDIT USER db2inst1 USING POLICY USER_AUDIT"
-
-                  db2 connect reset
-                  echo "Audit policy setup complete"
-              EOF
-                # IMPORTANT: Do not make any changes to the "EOF" line above (including its indentation)
-
-                chmod +x ${AUDITPOLICY_SH_PATH}
-
-                echo ""
-                echo "Copy ${AUDITPOLICY_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc cp ${AUDITPOLICY_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${AUDITPOLICY_SH_PATH} -c db2u || exit $?
-
-                echo ""
-                echo "Executing ${AUDITPOLICY_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${AUDITPOLICY_SH_PATH} | tee /tmp/auditpolicy.log" db2inst1 || exit $?
-
-                  
               fi # [[ "$MAS_APP_ID" == "manage" ]]
 
               if [[ "$MAS_APP_ID" == "facilities" ]]; then

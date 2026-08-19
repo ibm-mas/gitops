@@ -8,7 +8,11 @@
 #%
 #%  **************  THIS NEEDS TO BE RUN AS INSTANCE OWNER (db2inst1).  ******
 #%  USAGE:
-#%          db2AuditExtract.sh <audit_bucket_name> <application_name>
+#%          db2AuditExtract.sh <application_name>
+#%
+#%  The backup bucket and alias are read from /mnt/backup/bin/.PROPS (CONTAINER,
+#%  SERVER, PARM1, PARM2) — the same credentials file used by the backup scripts.
+#%  Audit logs are uploaded to: s3://<CONTAINER>/audit-log-<application_name>/<YYYYMMDD>/
 #%
 #% Steps performed:
 #%   1. Flush active audit buffers
@@ -16,8 +20,8 @@
 #%   3. Archive the instance audit log
 #%   4. Extract archived database log to delasc format
 #%   5. Extract archived instance log to delasc format
-#%   6. Upload all *.del files to s3://<bucket>/audit-log-<application_name>/<YYYYMMDD>/
-#%      and delete each file from source immediately after a successful upload
+#%   6. Upload all *.del files to audit-log-<application_name>/<YYYYMMDD>/ in the
+#%      backup bucket and delete each file from source after a successful upload
 #%   7. Remove /tmp/auditarchive and all its contents
 # ----------------------------------------------------------------------------
 
@@ -26,11 +30,10 @@ set -eo pipefail
 # ============================================================================
 # Parameters / Inputs
 # ============================================================================
-AUDIT_BUCKET="${1:-}"
-APP_NAME="${2:-}"
+APP_NAME="${1:-}"
 
-if [ -z "${AUDIT_BUCKET}" ] || [ -z "${APP_NAME}" ]; then
-  echo "ERROR :: Usage: $0 <audit_bucket_name> <application_name>"
+if [ -z "${APP_NAME}" ]; then
+  echo "ERROR :: Usage: $0 <application_name>"
   exit 1
 fi
 
@@ -159,20 +162,33 @@ DEL_FILES=$(ls "${ARCHIVE_DIR}"/*.del 2>/dev/null || true)
 if [ -z "${DEL_FILES}" ]; then
   log "WARN  :: No .del files found in ${ARCHIVE_DIR} — nothing to upload"
 else
-  BUCKET_ALIAS=$(db2 list storage access | grep "${AUDIT_BUCKET}" -B4 | grep ALIAS | awk -F '=' '{print $2}')
+  # CONTAINER and SERVER are loaded from .PROPS (same values used by backup scripts)
+  # Resolve the DB2 storage alias registered for this bucket by Set_DB_COS_Storage.sh
+  BUCKET_ALIAS=$(db2 list storage access | grep "${CONTAINER}" -B4 | grep ALIAS | awk -F '=' '{print $2}' | tr -d ' ')
+
+  log "INFO  :: Bucket     : ${CONTAINER}"
+  log "INFO  :: Server     : ${SERVER}"
+  log "INFO  :: Alias      : ${BUCKET_ALIAS}"
+
+  if [ -z "${BUCKET_ALIAS}" ]; then
+    log "ERROR :: Could not resolve DB2 storage alias for bucket '${CONTAINER}'. Run Set_DB_COS_Storage.sh to register it."
+    exit 1
+  fi
+
   # S3 path: audit-log-<application_name>/<YYYYMMDD>/
   TARGET_PREFIX="audit-log-${APP_NAME}/${DATE}"
+  log "INFO  :: Target prefix: ${TARGET_PREFIX}"
 
   for DEL_FILE in ${DEL_FILES}; do
     FILE_NAME=$(basename "${DEL_FILE}")
     COS_TARGET="DB2REMOTE://${BUCKET_ALIAS}//${TARGET_PREFIX}/${FILE_NAME}"
-    log "INFO  :: Uploading ${DEL_FILE} to ${COS_TARGET}"
+    log "INFO  :: Uploading ${DEL_FILE} -> ${COS_TARGET}"
     db2RemStgManager alias put \
       source="${DEL_FILE}" \
       target="${COS_TARGET}"
     RC=$?
     if [ $RC -ne 0 ]; then
-      log "ERROR :: Upload of ${FILE_NAME} failed (RC=${RC})"
+      log "ERROR :: Upload of ${FILE_NAME} failed (RC=0x$(printf '%08X' ${RC}))"
       exit 1
     fi
     log "INFO  :: Upload completed: ${FILE_NAME} — removing from source"

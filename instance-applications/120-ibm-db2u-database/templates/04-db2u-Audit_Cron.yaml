@@ -1,5 +1,5 @@
 {{- if .Values.application_admin_role }}
-{{- if and .Values.db2_audit_bucket_name (not (contains "sdb" .Values.db2_instance_name)) }}
+{{- if and .Values.db2_backup_bucket_name (not (contains "sdb" .Values.db2_instance_name)) }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
@@ -8,8 +8,9 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 
 #
 # CronJob for DB2 Audit Log Extraction
-# Runs daily to archive and extract DB2 audit logs as DEL/ASC files and
-# upload them to the configured S3 audit bucket, then removes local copies.
+# Runs every minute to archive and extract DB2 audit logs as DEL/ASC files and
+# upload them to the audit-log-<app>/<YYYYMMDD>/ folder inside the backup bucket,
+# then removes local copies.
 #
 ---
 kind: CronJob
@@ -19,7 +20,7 @@ metadata:
   namespace: "{{ .Values.db2_namespace }}"
   labels:
     parent: cronjob
-    auditBucket: "{{ .Values.db2_audit_bucket_name }}"
+    cosBucket: "{{ .Values.db2_backup_bucket_name }}"
     db2pod: "c-{{ .Values.db2_instance_name }}-db2u-0"
     mas.ibm.com/instanceId: "{{ .Values.instance_id }}"
   annotations:
@@ -44,7 +45,7 @@ spec:
                 - "c-{{ .Values.db2_instance_name }}-db2u-0"
                 - su
                 - -lc
-                - "{{ .Values.db2_instance_home_path }}/bin/db2AuditExtract.sh {{ .Values.db2_audit_bucket_name }} {{ .Values.mas_application_id }}"
+                - "{{ .Values.db2_instance_home_path }}/bin/db2AuditExtract.sh {{ .Values.db2_backup_bucket_name }} {{ .Values.mas_application_id }}"
                 - db2inst1
               imagePullPolicy: IfNotPresent
           restartPolicy: OnFailure

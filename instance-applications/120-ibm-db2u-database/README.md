@@ -20,7 +20,7 @@ Creates a Db2u database instance for a MAS application. Includes a presync hook 
 | `Certificate` | DB2 TLS certificates | DB2 application namespace | Always | `application_admin_role` |
 | `Db2uInstance` | Db2u instance CR | DB2 application namespace | Always | `application_admin_role` |
 | `CronJob` | Db2 backup cron job | DB2 application namespace | When backups are enabled (`db2_backup_bucket_name` set) | `application_admin_role` |
-| `CronJob` | Db2 audit extract cron job | DB2 application namespace | When audit bucket is enabled (`db2_audit_bucket_name` set) | `application_admin_role` |
+| `CronJob` | Db2 audit extract cron job | DB2 application namespace | When backups are enabled (`db2_backup_bucket_name` set) | `application_admin_role` |
 | `ConfigMap` | Db2 script/config maps | DB2 application namespace | Always | `application_admin_role` |
 | `Route` | Db2 TLS route | DB2 application namespace | When route exposure is enabled | `application_admin_role` |
 | `Service` | Db2 services, including HADR services | DB2 application namespace | Always | `application_admin_role` |
@@ -126,11 +126,11 @@ db2_backup_bucket_secret_key: string (secret reference, when backup enabled)
 db2_backup_notify_slack_url: string (optional, when backup enabled)
 db2_backup_icd_auth_key: string (secret reference, optional, when backup enabled)
 
-# Audit Extraction Configuration (optional)
-# When db2_audit_bucket_name is set, a daily CronJob is created in the db2 namespace
-# that archives and extracts DB2 audit logs as DEL/ASC files and uploads them to the
-# specified S3 bucket, then removes all local copies.
-db2_audit_bucket_name: string (secret reference, when audit extraction enabled)
+# Audit Extraction
+# When db2_backup_bucket_name is set, a daily CronJob is also created that archives
+# and extracts DB2 audit logs as DEL/ASC files, uploading them to the
+# audit-log-<app>/<YYYYMMDD>/ folder inside the same backup bucket.
+# No additional configuration is required.
 
 allow_list: string (optional)
 
@@ -233,6 +233,6 @@ db2_backup_bucket_endpoint: "<path:secret/path#db2_backup_bucket_endpoint>"
 db2_backup_bucket_access_key: "<path:secret/path#db2_backup_bucket_access_key>"
 db2_backup_bucket_secret_key: "<path:secret/path#db2_backup_bucket_secret_key>"
 
-# Audit extraction — daily CronJob uploads delasc files to audit-log-manage/<YYYYMMDD>/
-db2_audit_bucket_name: "<path:secret/path#db2_audit_bucket_name>"
+# Audit extraction CronJob is created automatically alongside the backup CronJob.
+# Audit logs are uploaded to: s3://<db2_backup_bucket_name>/audit-log-manage/<YYYYMMDD>/
 ```

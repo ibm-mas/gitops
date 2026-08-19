@@ -1526,3 +1526,144 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: admin
+
+{{- if not (lt (semver "5.3.1" | (semver (.Values.cpd_product_version | default "0.0.0" | toString)).Compare) 0) }}
+---
+# For CPD 5.3.1+, cpd-sa needs cluster-level permissions to apply CRDs and
+# ClusterRoles from the Helm cluster-scoped charts during service installation.
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "cpd-sa-helm-cluster-role-{{ .Values.instance_id }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  # CRD management (needed to apply cluster-scoped Helm charts)
+  - verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+      - delete
+    apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+  # ClusterRole/Binding management with escalate (allows granting permissions not yet held)
+  - verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+      - delete
+      - bind
+      - escalate
+    apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterroles
+      - clusterrolebindings
+  # Namespaced roles/rolebindings (needed by Helm namespace-scoped charts)
+  - verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+      - delete
+      - watch
+    apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+  # Namespace/node read
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - ""
+    resources:
+      - namespaces
+      - nodes
+  # OpenShift infra
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - config.openshift.io
+    resources:
+      - clusterversions
+      - infrastructures
+  # SCCs
+  - verbs:
+      - use
+    apiGroups:
+      - security.openshift.io
+    resources:
+      - securitycontextconstraints
+    resourceNames:
+      - anyuid
+      - restricted
+      - nonroot
+      - privileged
+  # CPD service API groups (needed to grant these permissions in cluster-scoped ClusterRoles)
+  - verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+      - delete
+      - watch
+    apiGroups:
+      - ae.cpd.ibm.com
+      - wml.cpd.ibm.com
+      - spssmodeler.cpd.ibm.com
+      - ws.cpd.ibm.com
+      - ccs.cpd.ibm.com
+      - opensearch.cloudpackopen.ibm.com
+      - datarefinery.cpd.ibm.com
+      - wsruntimes.cpd.ibm.com
+    resources:
+      - "*"
+  # Webhook configs (needed by some Helm charts)
+  - verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+      - delete
+    apiGroups:
+      - admissionregistration.k8s.io
+    resources:
+      - mutatingwebhookconfigurations
+      - validatingwebhookconfigurations
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "cpd-sa-helm-cluster-rb-{{ .Values.instance_id }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "085"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: cpd-sa
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: "cpd-sa-helm-cluster-role-{{ .Values.instance_id }}"
+{{- end }}

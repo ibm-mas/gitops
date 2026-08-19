@@ -1,7 +1,7 @@
 {{- if and (not (empty .Values.ibm_spss)) (not (empty .Values.ibm_cp4d)) (.Values.cluster_admin_role) }}
 {{ $cpd_operators_ns := .Values.ibm_cp4d.cpd_operators_namespace }}
 ---
-# IBM Maximo Operator Catalog
+# IBM SPSS Modeler Application
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -33,7 +33,7 @@ spec:
     path: instance-applications/120-ibm-spss
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
-      name: {{ .Values.avp.name }} 
+      name: {{ .Values.avp.name }}
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
@@ -41,21 +41,20 @@ spec:
             region_id: "{{ .Values.region.id }}"
             cluster_id: "{{ .Values.cluster.id }}"
             instance_id: "{{ .Values.instance.id }}"
+            cli_image_repo: {{ .Values.cli_image_repo }}
             cluster_admin_role: {{ .Values.cluster_admin_role }}
             application_admin_role: {{ .Values.application_admin_role }}
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
             cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
             cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+            cpd_product_version: "{{ .Values.ibm_cp4d.cpd_product_version }}"
             cpd_service_storage_class: "{{ .Values.ibm_spss.cpd_service_storage_class }}"
             cpd_service_block_storage_class: "{{ .Values.ibm_spss.cpd_service_block_storage_class }}"
             cpd_service_scale_config: "{{ .Values.ibm_spss.cpd_service_scale_config }}"
             spss_version: "{{ .Values.ibm_spss.spss_version }}"
             spss_channel: "{{ .Values.ibm_spss.spss_channel }}"
-            spss_install_plan: "{{ .Values.ibm_spss.spss_install_plan }}"
             ccs_version: "{{ .Values.ibm_spss.ccs_version }}"
-            canvasbase_channel: "{{ .Values.ibm_spss.canvasbase_channel }}"
-            canvasbase_install_plan: "{{ .Values.ibm_spss.canvasbase_install_plan }}"
             {{- if .Values.custom_labels }}
             custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
             {{- end }}

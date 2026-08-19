@@ -230,26 +230,12 @@ log "INFO  :: [9/9] Uploading to S3 using AWS CLI"
 log "INFO  ::       Source : ${ZIP_FILE}"
 log "INFO  ::       Target : ${S3_TARGET}"
 
-# Install AWS CLI if not already present (persisted on /mnt/backup PVC)
+# AWS CLI is installed by the postsync setup job (07-postsync-setup-db2_Job.yaml)
+# using the same method as the HADR setup job. Fail clearly if missing.
 if [ ! -x "${AWS_CLI}" ]; then
-  log "INFO  ::       AWS CLI not found — installing to /mnt/backup"
-  cd /mnt/backup
-  curl --silent --show-error \
-    'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' \
-    -o 'awscliv2.zip'
-  RC=$?
-  if [ $RC -ne 0 ]; then
-    log "ERROR :: Failed to download AWS CLI (RC=${RC})"
-    exit 1
-  fi
-  unzip -q awscliv2.zip -d /mnt/backup/
-  RC=$?
-  if [ $RC -ne 0 ]; then
-    log "ERROR :: Failed to unzip AWS CLI (RC=${RC})"
-    exit 1
-  fi
-  rm -f /mnt/backup/awscliv2.zip
-  log "INFO  ::       AWS CLI installed at ${AWS_CLI}"
+  log "ERROR :: AWS CLI not found at ${AWS_CLI}"
+  log "ERROR :: Trigger an ArgoCD sync to run the postsync job which installs it"
+  exit 1
 fi
 
 export AWS_ACCESS_KEY_ID="${PARM1}"

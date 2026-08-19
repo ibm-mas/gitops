@@ -21,7 +21,7 @@
 #%   7. Remove /tmp/auditarchive and all its contents
 # ----------------------------------------------------------------------------
 
-set -euo pipefail
+set -eo pipefail
 
 # ============================================================================
 # Parameters / Inputs
@@ -48,11 +48,12 @@ log() {
 
 # ============================================================================
 # Source DB2 environment (instance owner required)
+# DB2's own profile scripts reference variables that may not yet be set, so
+# we temporarily disable the nounset (-u) option while sourcing them.
 # ============================================================================
-INST=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | awk -F, '{print $4}')
-INSTHOME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${INST}" | awk -F ',' '{print $5}' | sed 's/\/sqllib//')
-
-. "${INSTHOME}/sqllib/db2profile"
+set +u
+. "${HOME}/sqllib/db2profile"
+set -u
 
 # ============================================================================
 # Load COS / S3 parameters (bucket alias etc.)

@@ -216,9 +216,11 @@ fi
 log "INFO  ::       Local copy succeeded: ${DEST_DIR}/${ZIP_NAME}"
 
 # ============================================================================
-# 9. Upload zip to S3 using AWS CLI (same tool used by HADR setup scripts)
-#    AWS CLI is installed at /mnt/backup/aws/dist/aws by the postsync job.
-#    Credentials come from PARM1/PARM2 in .PROPS (same source as backup scripts).
+# 9. Upload zip to S3 using AWS CLI
+#    Installs AWS CLI on-demand to /mnt/backup if not already present —
+#    same location and method used by the HADR postsync job (line 524 of
+#    10-postsync-setup-hadr.yaml).
+#    Credentials come from PARM1/PARM2 in .PROPS.
 #    ONLY delete source after upload is confirmed.
 # ============================================================================
 AWS_CLI="/mnt/backup/aws/dist/aws"
@@ -228,15 +230,31 @@ log "INFO  :: [9/9] Uploading to S3 using AWS CLI"
 log "INFO  ::       Source : ${ZIP_FILE}"
 log "INFO  ::       Target : ${S3_TARGET}"
 
-# Verify AWS CLI is available
+# Install AWS CLI if not already present (persisted on /mnt/backup PVC)
 if [ ! -x "${AWS_CLI}" ]; then
-  log "ERROR :: AWS CLI not found at ${AWS_CLI}. Ensure HADR postsync job has run to install it."
-  exit 1
+  log "INFO  ::       AWS CLI not found — installing to /mnt/backup"
+  cd /mnt/backup
+  curl --silent --show-error \
+    'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' \
+    -o 'awscliv2.zip'
+  RC=$?
+  if [ $RC -ne 0 ]; then
+    log "ERROR :: Failed to download AWS CLI (RC=${RC})"
+    exit 1
+  fi
+  unzip -q awscliv2.zip -d /mnt/backup/
+  RC=$?
+  if [ $RC -ne 0 ]; then
+    log "ERROR :: Failed to unzip AWS CLI (RC=${RC})"
+    exit 1
+  fi
+  rm -f /mnt/backup/awscliv2.zip
+  log "INFO  ::       AWS CLI installed at ${AWS_CLI}"
 fi
 
 export AWS_ACCESS_KEY_ID="${PARM1}"
 export AWS_SECRET_ACCESS_KEY="${PARM2}"
-export AWS_DEFAULT_REGION=$(echo "${SERVER}" | grep -oP '(?<=s3\.)[\w-]+(?=\.amazonaws)')
+export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
 
 "${AWS_CLI}" s3 cp "${ZIP_FILE}" "${S3_TARGET}"
 RC=$?

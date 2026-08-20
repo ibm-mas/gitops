@@ -1,7 +1,12 @@
 {{- if and (not (empty .Values.ibm_spark)) (not (empty .Values.ibm_cp4d)) (.Values.cluster_admin_role) }}
 {{ $cpd_operators_ns := .Values.ibm_cp4d.cpd_operators_namespace }}
+{{ $cpd_instance_ns := .Values.ibm_cp4d.cpd_instance_namespace }}
+{{ $cpd_version := .Values.ibm_cp4d.cpd_product_version | default "0.0.0" | toString }}
+{{ $is531 := not (lt (semver "5.3.1" | (semver $cpd_version).Compare) 0) }}
+{{- if not $is531 }}
 ---
-# IBM Maximo Operator Catalog
+# CPD < 5.3.1 — OLM path
+# IBM Spark Application
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -38,7 +43,7 @@ spec:
     path: instance-applications/120-ibm-spark
     targetRevision: "{{ .Values.source.revision }}"
     plugin:
-      name: {{ .Values.avp.name }} 
+      name: {{ .Values.avp.name }}
       env:
         - name: {{ .Values.avp.values_varname }}
           value: |
@@ -84,4 +89,114 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - RespectIgnoreDifferences=true
+{{- else }}
+{{- /*
+  Chart version resolution (highest priority first):
+    1. Explicit gitops config value (e.g. ibm_spark.spark_chart_version)
+    2. olm-utils-cm ConfigMap lookup (deployed by wave 110-ibm-cp4d)
+    3. Hardcoded default (safety net for helm template dry-runs)
+*/}}
+{{- $olmUtils := lookup "v1" "ConfigMap" $cpd_instance_ns "olm-utils-cm" }}
+{{- $meta := dict }}
+{{- if $olmUtils }}
+{{- $meta = $olmUtils.data.release_components_meta | fromYaml }}
+{{- end }}
+{{- $sparkVersion := .Values.ibm_spark.spark_chart_version | default ((index $meta "analyticsengine" | default dict).case_version | default "12.1.0") }}
+---
+# CPD >= 5.3.1 — native ArgoCD Helm Apps (no K8s Jobs)
+# Wave 119: analyticsengine cluster-scoped (CRDs + ClusterRoles)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spark-cluster.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "119"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_operators_ns }}
+  source:
+    chart: analyticsengine-cluster-scoped
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $sparkVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+      - SkipDryRunOnMissingResource=true
+---
+# Wave 120: analyticsengine namespace-scoped (operator + CR)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spark.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "120"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_instance_ns }}
+  source:
+    chart: analyticsengine
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $sparkVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          fileStorageClass: {{ .Values.ibm_spark.cpd_service_storage_class }}
+          blockStorageClass: {{ .Values.ibm_spark.cpd_service_block_storage_class }}
+          imagePullSecret: ibm-entitlement-key
+        analyticsengine:
+          scaleConfig: {{ .Values.ibm_spark.cpd_service_scale_config }}
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}
 {{- end }}

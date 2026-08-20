@@ -1,6 +1,11 @@
 {{- if and (not (empty .Values.ibm_wsl)) (not (empty .Values.ibm_cp4d)) (.Values.cluster_admin_role) }}
 {{ $cpd_operators_ns := .Values.ibm_cp4d.cpd_operators_namespace }}
+{{ $cpd_instance_ns := .Values.ibm_cp4d.cpd_instance_namespace }}
+{{ $cpd_version := .Values.ibm_cp4d.cpd_product_version | default "0.0.0" | toString }}
+{{ $is531 := not (lt (semver "5.3.1" | (semver $cpd_version).Compare) 0) }}
+{{- if not $is531 }}
 ---
+# CPD < 5.3.1 — OLM path
 # IBM Maximo Operator Catalog
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -85,4 +90,471 @@ spec:
       limit: 20
     syncOptions:
       - CreateNamespace=false
+{{- else }}
+{{- /*
+  Read chart versions from olm-utils-cm (created by 110-ibm-cp4d).
+  Falls back to known-good defaults if the ConfigMap is not yet present
+  (e.g. during a helm template dry-run).
+*/}}
+{{- $olmUtils := lookup "v1" "ConfigMap" $cpd_instance_ns "olm-utils-cm" }}
+{{- $meta := dict }}
+{{- if $olmUtils }}
+{{- $meta = $olmUtils.data.release_components_meta | fromYaml }}
+{{- end }}
+{{- $opensearchVersion   := (index $meta "opencontent_opensearch" | default dict).case_version | default "1.2.0" }}
+{{- $ccsVersion          := (index $meta "ccs"                    | default dict).case_version | default "12.1.0" }}
+{{- $datarefineryVersion := (index $meta "datarefinery"           | default dict).case_version | default "12.1.0" }}
+{{- $wsRuntimesVersion   := (index $meta "ws_runtimes"            | default dict).case_version | default "12.1.0" }}
+{{- $wsVersion           := (index $meta "ws"                     | default dict).case_version | default "12.1.0" }}
+---
+# CPD >= 5.3.1 — native ArgoCD Helm Apps (no K8s Jobs)
+# Wave 115: opencontent-opensearch cluster-scoped (CRDs + ClusterRoles)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl-opensearch-cluster.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "115"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_operators_ns }}
+  source:
+    chart: opencontent-opensearch-cluster-scoped
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $opensearchVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+      - SkipDryRunOnMissingResource=true
+---
+# Wave 116: opencontent-opensearch namespace-scoped (operator)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl-opensearch.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "116"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_operators_ns }}
+  source:
+    chart: opencontent-opensearch
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $opensearchVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+---
+# Wave 117: ccs cluster-scoped (CRDs + ClusterRoles)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl-ccs-cluster.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "117"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_operators_ns }}
+  source:
+    chart: ccs-cluster-scoped
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $ccsVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+      - SkipDryRunOnMissingResource=true
+---
+# Wave 118: ccs namespace-scoped (operator + CR)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl-ccs.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "118"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_instance_ns }}
+  source:
+    chart: ccs
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $ccsVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          fileStorageClass: {{ .Values.ibm_wsl.cpd_service_storage_class }}
+          blockStorageClass: {{ .Values.ibm_wsl.cpd_service_block_storage_class }}
+          imagePullSecret: ibm-entitlement-key
+        ccs:
+          scaleConfig: {{ .Values.ibm_wsl.cpd_service_scale_config }}
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+---
+# Wave 119: datarefinery cluster-scoped (CRDs + ClusterRoles)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl-datarefinery-cluster.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "119"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_operators_ns }}
+  source:
+    chart: datarefinery-cluster-scoped
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $datarefineryVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+      - SkipDryRunOnMissingResource=true
+---
+# Wave 120: datarefinery namespace-scoped (operator + CR)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl-datarefinery.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "120"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_instance_ns }}
+  source:
+    chart: datarefinery
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $datarefineryVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          fileStorageClass: {{ .Values.ibm_wsl.cpd_service_storage_class }}
+          blockStorageClass: {{ .Values.ibm_wsl.cpd_service_block_storage_class }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+---
+# Wave 121: ws-runtimes cluster-scoped (CRDs + ClusterRoles)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl-ws-runtimes-cluster.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "121"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_operators_ns }}
+  source:
+    chart: ws-runtimes-cluster-scoped
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $wsRuntimesVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+      - SkipDryRunOnMissingResource=true
+---
+# Wave 122: ws-runtimes namespace-scoped (operator + CR)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl-ws-runtimes.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "122"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_instance_ns }}
+  source:
+    chart: ws-runtimes
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $wsRuntimesVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          fileStorageClass: {{ .Values.ibm_wsl.cpd_service_storage_class }}
+          blockStorageClass: {{ .Values.ibm_wsl.cpd_service_block_storage_class }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+---
+# Wave 123: ws cluster-scoped (CRDs + ClusterRoles)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl-cluster.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "123"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_operators_ns }}
+  source:
+    chart: ws-cluster-scoped
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $wsVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+      - SkipDryRunOnMissingResource=true
+---
+# Wave 124: ws namespace-scoped (operator + CR)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wsl.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "124"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_instance_ns }}
+  source:
+    chart: ws
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $wsVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          fileStorageClass: {{ .Values.ibm_wsl.cpd_service_storage_class }}
+          blockStorageClass: {{ .Values.ibm_wsl.cpd_service_block_storage_class }}
+          imagePullSecret: ibm-entitlement-key
+        ws:
+          scaleConfig: {{ .Values.ibm_wsl.cpd_service_scale_config }}
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}
 {{- end }}

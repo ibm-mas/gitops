@@ -2,30 +2,28 @@
 
 # ----------------------------------------------------------------------------
 #% Script Name  : db2AuditExtract.sh
-#% Description  : Archive and extract DB2 audit logs as DEL/ASC (delasc) files,
-#%                zip them, upload the zip to S3, then remove ALL local copies
-#%                to keep the /mnt/blumeta0/audit filesystem free.
+#% Description  : Archive and extract DB2 audit logs as DEL/ASC files, upload
+#%                each *.del file to S3, then remove /tmp/auditarchive entirely.
 #% Created On   : 2026
 #%
 #%  **************  THIS NEEDS TO BE RUN AS INSTANCE OWNER (db2inst1).  ******
 #%  USAGE:
 #%          db2AuditExtract.sh <application_name>
 #%
-#%  Working directory : /mnt/blumeta0/audit/auditarchive  (persistent volume)
-#%  S3 target         : s3://<bucket>/audit_logs/<app>/<YYYYMMDD>/<timestamp>.zip
+#%  S3 target : s3://<bucket>/audit_logs/<app>/<YYYYMMDD>/<file>.del
 #%
-#%  Steps:
-#%   1.  Prepare /mnt/blumeta0/audit/auditarchive (clear old *.del files)
-#%   2.  db2audit flush
-#%   3.  db2audit archive database BLUDB to auditarchive
-#%   4.  db2audit archive (instance) to auditarchive
-#%   5.  db2audit extract delasc ... from files db2audit.db.BLUDB.log.0.*
-#%   6.  db2audit extract delasc ... from files db2audit.instance.log.0.*
-#%   7.  zip all *.del into <app>_<timestamp>.zip
-#%   8.  Upload zip to S3 via AWS CLI (s3 cp)
-#%   9.  Delete zip from source ONLY after S3 upload confirmed
-#%  10.  Clean up auditarchive directory (rm -rf)
-#%  11.  Delete previous day folders from /mnt/blumeta0/audit/ older than 1 day
+#%  Steps (matching work description exactly):
+#%   1.  mkdir /tmp/auditarchive
+#%   2.  rm /tmp/auditarchive/*.del
+#%   3.  db2audit flush
+#%   4.  db2audit archive database BLUDB to /tmp/auditarchive
+#%   5.  db2audit archive to /tmp/auditarchive
+#%   6.  db2audit extract delasc to /tmp/auditarchive from files db2audit.db.BLUDB.log.0.*
+#%   7.  db2audit extract delasc to /tmp/auditarchive from files db2audit.instance.log.0.*
+#%   8.  Upload each *.del to s3://<bucket>/audit_logs/<app>/<YYYYMMDD>/<file>.del
+#%       Delete each *.del from source ONLY after its upload is confirmed
+#%   9.  rm -rf /tmp/auditarchive
+#%  10.  Purge /mnt/blumeta0/audit/<YYYYMMDD> folders older than 1 day
 # ----------------------------------------------------------------------------
 
 set -eo pipefail
@@ -40,10 +38,8 @@ if [ -z "${APP_NAME}" ]; then
   exit 1
 fi
 
-# Use persistent mount as working dir — db2RemStgManager requires source on
-# a mounted filesystem, not /tmp (ephemeral, may be rejected as source path)
+ARCHIVE_DIR="/tmp/auditarchive"
 AUDIT_BASE="/mnt/blumeta0/audit"
-ARCHIVE_DIR="${AUDIT_BASE}/auditarchive"
 DBNAME="BLUDB"
 HOSTNAME=$(hostname)
 DATE=$(date +"%Y%m%d")
@@ -88,178 +84,164 @@ log "INFO  :: Application   : ${APP_NAME}"
 log "INFO  :: Database      : ${DBNAME}"
 log "INFO  :: Work dir      : ${ARCHIVE_DIR}"
 log "INFO  :: S3 bucket     : ${CONTAINER}"
-log "INFO  :: S3 target     : s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/<timestamp>.zip"
+log "INFO  :: S3 target     : s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
 log "INFO  :: ============================================================"
 
 # ============================================================================
-# 1. Prepare working directory on persistent volume
+# 1. mkdir /tmp/auditarchive
 # ============================================================================
-log "INFO  :: [1/9] Preparing archive directory ${ARCHIVE_DIR}"
+log "INFO  :: [1] mkdir ${ARCHIVE_DIR}"
 mkdir -p "${ARCHIVE_DIR}"
 
-log "INFO  ::       Removing any leftover .del files from previous run"
+# ============================================================================
+# 2. rm /tmp/auditarchive/*.del
+# ============================================================================
+log "INFO  :: [2] rm ${ARCHIVE_DIR}/*.del"
 rm -f "${ARCHIVE_DIR}"/*.del 2>/dev/null || true
 
 # ============================================================================
-# 2. Flush active audit buffers
+# 3. db2audit flush
 # ============================================================================
-log "INFO  :: [2/9] Flushing db2audit buffers"
+log "INFO  :: [3] db2audit flush"
 db2audit flush
 RC=$?
 if [ $RC -ne 0 ]; then
   log "ERROR :: db2audit flush failed (RC=${RC})"
   exit 1
 fi
-log "INFO  ::       Flush succeeded"
+log "INFO  ::     Flush succeeded"
 
 # ============================================================================
-# 3. Archive the database audit log
+# 4. db2audit archive database BLUDB to /tmp/auditarchive
 # ============================================================================
-log "INFO  :: [3/9] Archiving database audit log for ${DBNAME}"
+log "INFO  :: [4] db2audit archive database ${DBNAME} to ${ARCHIVE_DIR}"
 db2audit archive database "${DBNAME}" to "${ARCHIVE_DIR}"
 RC=$?
 if [ $RC -ne 0 ]; then
   log "ERROR :: db2audit archive database failed (RC=${RC})"
   exit 1
 fi
-log "INFO  ::       Database archive succeeded"
+log "INFO  ::     Database archive succeeded"
 
 # ============================================================================
-# 4. Archive the instance audit log
+# 5. db2audit archive to /tmp/auditarchive  (instance log)
 # ============================================================================
-log "INFO  :: [4/9] Archiving instance audit log"
+log "INFO  :: [5] db2audit archive to ${ARCHIVE_DIR}"
 db2audit archive to "${ARCHIVE_DIR}"
 RC=$?
 if [ $RC -ne 0 ]; then
   log "ERROR :: db2audit archive instance failed (RC=${RC})"
   exit 1
 fi
-log "INFO  ::       Instance archive succeeded"
+log "INFO  ::     Instance archive succeeded"
 
 # ============================================================================
-# 5. Extract database archived log to DEL/ASC format
+# 6. db2audit extract delasc ... from files db2audit.db.BLUDB.log.0.*
 # ============================================================================
-log "INFO  :: [5/9] Extracting database audit archive to delasc"
+log "INFO  :: [6] db2audit extract delasc (database)"
 DB_LOG_PATTERN="${ARCHIVE_DIR}/db2audit.db.${DBNAME}.log.0.*"
 DB_LOG_FILES=$(ls ${DB_LOG_PATTERN} 2>/dev/null || true)
 
 if [ -z "${DB_LOG_FILES}" ]; then
-  log "WARN  ::       No database audit archive files found — skipping"
+  log "WARN  ::     No database audit archive files found — skipping"
 else
-  log "INFO  ::       Files: $(echo ${DB_LOG_FILES} | wc -w) archive file(s) found"
+  log "INFO  ::     Found $(echo ${DB_LOG_FILES} | wc -w) file(s): $(echo ${DB_LOG_FILES} | tr '\n' ' ')"
   db2audit extract delasc to "${ARCHIVE_DIR}" from files ${DB_LOG_PATTERN}
   RC=$?
   if [ $RC -ne 0 ]; then
     log "ERROR :: db2audit extract (database) failed (RC=${RC})"
     exit 1
   fi
-  log "INFO  ::       Database audit extract completed"
+  log "INFO  ::     Database extract completed"
 fi
 
 # ============================================================================
-# 6. Extract instance archived log to DEL/ASC format
+# 7. db2audit extract delasc ... from files db2audit.instance.log.0.*
 # ============================================================================
-log "INFO  :: [6/9] Extracting instance audit archive to delasc"
+log "INFO  :: [7] db2audit extract delasc (instance)"
 INST_LOG_PATTERN="${ARCHIVE_DIR}/db2audit.instance.log.0.*"
 INST_LOG_FILES=$(ls ${INST_LOG_PATTERN} 2>/dev/null || true)
 
 if [ -z "${INST_LOG_FILES}" ]; then
-  log "WARN  ::       No instance audit archive files found — skipping"
+  log "WARN  ::     No instance audit archive files found — skipping"
 else
-  log "INFO  ::       Files: $(echo ${INST_LOG_FILES} | wc -w) archive file(s) found"
+  log "INFO  ::     Found $(echo ${INST_LOG_FILES} | wc -w) file(s): $(echo ${INST_LOG_FILES} | tr '\n' ' ')"
   db2audit extract delasc to "${ARCHIVE_DIR}" from files ${INST_LOG_PATTERN}
   RC=$?
   if [ $RC -ne 0 ]; then
     log "ERROR :: db2audit extract (instance) failed (RC=${RC})"
     exit 1
   fi
-  log "INFO  ::       Instance audit extract completed"
+  log "INFO  ::     Instance extract completed"
 fi
 
 # ============================================================================
-# 7. Zip all *.del files — same approach as auditExtractUpload.sh which works
+# 8. Upload each *.del to S3, delete from source after confirmed upload
+#    AWS CLI installed by postsync job (07-postsync-setup-db2_Job.yaml)
+#    using same method as HADR setup job.
 # ============================================================================
 DEL_FILES=$(ls "${ARCHIVE_DIR}"/*.del 2>/dev/null || true)
 
 if [ -z "${DEL_FILES}" ]; then
-  log "WARN  :: No .del files produced — nothing to upload"
-  log "INFO  :: Cleaning up ${ARCHIVE_DIR}"
-  rm -rf "${ARCHIVE_DIR}"
-  exit 0
+  log "WARN  :: [8] No .del files found in ${ARCHIVE_DIR} — nothing to upload"
+else
+  AWS_CLI="/mnt/backup/aws/dist/aws"
+
+  if [ ! -x "${AWS_CLI}" ]; then
+    log "ERROR :: AWS CLI not found at ${AWS_CLI}"
+    log "ERROR :: Trigger an ArgoCD sync to run the postsync job which installs it"
+    exit 1
+  fi
+
+  export AWS_ACCESS_KEY_ID="${PARM1}"
+  export AWS_SECRET_ACCESS_KEY="${PARM2}"
+  export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
+
+  log "INFO  :: [8] Uploading *.del files to s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
+
+  for DEL_FILE in ${DEL_FILES}; do
+    FILE_NAME=$(basename "${DEL_FILE}")
+    S3_TARGET="s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/${FILE_NAME}"
+
+    log "INFO  ::     Uploading ${FILE_NAME} -> ${S3_TARGET}"
+    "${AWS_CLI}" s3 cp "${DEL_FILE}" "${S3_TARGET}"
+    RC=$?
+    if [ $RC -ne 0 ]; then
+      log "ERROR :: Upload of ${FILE_NAME} failed (RC=${RC})"
+      log "ERROR :: ${DEL_FILE} has NOT been deleted — safe to retry"
+      exit 1
+    fi
+    log "INFO  ::     Upload confirmed — deleting source ${DEL_FILE}"
+    rm -f "${DEL_FILE}"
+  done
+
+  log "INFO  ::     All .del files uploaded and removed from source"
 fi
 
-ZIP_NAME="${APP_NAME}_${DT}.zip"
-ZIP_FILE="${ARCHIVE_DIR}/${ZIP_NAME}"
-
-log "INFO  :: [7/9] Zipping .del files into ${ZIP_FILE}"
-zip -j "${ZIP_FILE}" ${DEL_FILES} > /dev/null 2>&1
-RC=$?
-if [ $RC -ne 0 ]; then
-  log "ERROR :: zip failed (RC=${RC})"
-  exit 1
-fi
-log "INFO  ::       Zip created: ${ZIP_FILE}"
-
 # ============================================================================
-# 8. Upload zip to S3 using AWS CLI
-#    Installed by the postsync setup job (same method as HADR setup).
-#    Credentials come from PARM1/PARM2 in .PROPS.
-#    ONLY delete source after upload is confirmed.
+# 9. rm -rf /tmp/auditarchive
 # ============================================================================
-AWS_CLI="/mnt/backup/aws/dist/aws"
-S3_TARGET="s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/${ZIP_NAME}"
-
-log "INFO  :: [8/9] Uploading to S3 using AWS CLI"
-log "INFO  ::       Source : ${ZIP_FILE}"
-log "INFO  ::       Target : ${S3_TARGET}"
-
-if [ ! -x "${AWS_CLI}" ]; then
-  log "ERROR :: AWS CLI not found at ${AWS_CLI}"
-  log "ERROR :: Trigger an ArgoCD sync to run the postsync job which installs it"
-  exit 1
-fi
-
-export AWS_ACCESS_KEY_ID="${PARM1}"
-export AWS_SECRET_ACCESS_KEY="${PARM2}"
-export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
-
-"${AWS_CLI}" s3 cp "${ZIP_FILE}" "${S3_TARGET}"
-RC=$?
-if [ $RC -ne 0 ]; then
-  log "ERROR :: S3 upload failed (RC=${RC})"
-  log "ERROR :: Source file ${ZIP_FILE} has NOT been deleted — safe to retry"
-  exit 1
-fi
-log "INFO  ::       S3 upload confirmed: ${S3_TARGET}"
-
-# Delete zip from working dir ONLY after S3 upload is confirmed
-log "INFO  ::       Deleting source zip (upload confirmed): ${ZIP_FILE}"
-rm -f "${ZIP_FILE}"
-
-# ============================================================================
-# 9. Clean up auditarchive working directory
-#    Removes raw archived logs and .del files — only reached after upload succeeds
-# ============================================================================
-log "INFO  :: [9/9] Cleaning up archive directory ${ARCHIVE_DIR}"
+log "INFO  :: [9] rm -rf ${ARCHIVE_DIR}"
 rm -rf "${ARCHIVE_DIR}"
-log "INFO  ::       Archive directory removed"
+log "INFO  ::     Done"
 
 # ============================================================================
-# 10. Delete previous day folders from /mnt/blumeta0/audit/ older than 1 day
-#     This keeps the 100GB filesystem free — S3 is the permanent store.
-#     Only date-named folders (YYYYMMDD) are removed; other dirs are left alone.
+# 10. Purge /mnt/blumeta0/audit/<YYYYMMDD> folders older than 1 day
+#     Keeps the 100GB filesystem free — S3 is the permanent store.
+#     Only removes YYYYMMDD-named dirs; leaves all other content untouched.
 # ============================================================================
-log "INFO  :: Purging local audit folders older than 1 day from ${AUDIT_BASE}"
-find "${AUDIT_BASE}" -mindepth 1 -maxdepth 1 -type d -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' -mtime +1 | \
+log "INFO  :: [10] Purging ${AUDIT_BASE}/<YYYYMMDD> folders older than 1 day"
+find "${AUDIT_BASE}" -mindepth 1 -maxdepth 1 -type d \
+  -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' -mtime +1 | \
   while read OLD_DIR; do
-    log "INFO  ::   Removing ${OLD_DIR}"
+    log "INFO  ::      Removing ${OLD_DIR}"
     rm -rf "${OLD_DIR}"
   done
-log "INFO  ::   Purge complete"
+log "INFO  ::      Purge complete"
 
 log "INFO  :: ============================================================"
 log "INFO  :: Audit extraction completed successfully"
-log "INFO  :: S3 : ${S3_TARGET}"
+log "INFO  :: S3 : s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
 log "INFO  :: ============================================================"
 exit 0
 

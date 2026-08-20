@@ -42,8 +42,8 @@ ARCHIVE_DIR="/tmp/auditarchive"
 AUDIT_BASE="/mnt/blumeta0/audit"
 DBNAME="BLUDB"
 HOSTNAME=$(hostname)
-DATE=$(date +"%Y%m%d")
-DT=$(date +"%Y%m%d_%H%M%S")
+DATE=$(date +"%Y-%m-%d")
+DT=$(date +"%Y-%m-%d_%H%M%S")
 
 # ============================================================================
 # Logging helper

@@ -3,7 +3,8 @@
 # ----------------------------------------------------------------------------
 #% Script Name  : db2AuditExtract.sh
 #% Description  : Archive and extract DB2 audit logs as DEL/ASC (delasc) files,
-#%                zip them, upload the zip to S3, then remove working files.
+#%                zip them, upload the zip to S3, then remove ALL local copies
+#%                to keep the /mnt/blumeta0/audit filesystem free.
 #% Created On   : 2026
 #%
 #%  **************  THIS NEEDS TO BE RUN AS INSTANCE OWNER (db2inst1).  ******
@@ -11,8 +12,7 @@
 #%          db2AuditExtract.sh <application_name>
 #%
 #%  Working directory : /mnt/blumeta0/audit/auditarchive  (persistent volume)
-#%  Local audit dest  : /mnt/blumeta0/audit/<YYYYMMDD>/
-#%  S3 target         : DB2REMOTE://AWSCOS//audit_logs/<app>_<YYYYMMDD>.zip
+#%  S3 target         : s3://<bucket>/audit_logs/<app>/<YYYYMMDD>/<timestamp>.zip
 #%
 #%  Steps:
 #%   1.  Prepare /mnt/blumeta0/audit/auditarchive (clear old *.del files)
@@ -21,11 +21,11 @@
 #%   4.  db2audit archive (instance) to auditarchive
 #%   5.  db2audit extract delasc ... from files db2audit.db.BLUDB.log.0.*
 #%   6.  db2audit extract delasc ... from files db2audit.instance.log.0.*
-#%   7.  zip all *.del into audit_logs_<app>_<YYYYMMDD>_<timestamp>.zip
-#%   8.  cp zip to /mnt/blumeta0/audit/<YYYYMMDD>/  (local persistent copy)
-#%   9.  Upload zip to S3 via db2RemStgManager alias put  (same as auditExtractUpload.sh)
-#%  10.  Delete zip from source ONLY after S3 upload confirmed
-#%  11.  Clean up auditarchive directory
+#%   7.  zip all *.del into <app>_<timestamp>.zip
+#%   8.  Upload zip to S3 via AWS CLI (s3 cp)
+#%   9.  Delete zip from source ONLY after S3 upload confirmed
+#%  10.  Clean up auditarchive directory (rm -rf)
+#%  11.  Delete previous day folders from /mnt/blumeta0/audit/ older than 1 day
 # ----------------------------------------------------------------------------
 
 set -eo pipefail
@@ -87,9 +87,8 @@ log "INFO  :: Host          : ${HOSTNAME}"
 log "INFO  :: Application   : ${APP_NAME}"
 log "INFO  :: Database      : ${DBNAME}"
 log "INFO  :: Work dir      : ${ARCHIVE_DIR}"
-log "INFO  :: Local dest    : ${AUDIT_BASE}/${DATE}/"
 log "INFO  :: S3 bucket     : ${CONTAINER}"
-log "INFO  :: S3 target     : audit_logs/${APP_NAME}_${DATE}_<timestamp>.zip"
+log "INFO  :: S3 target     : s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/<timestamp>.zip"
 log "INFO  :: ============================================================"
 
 # ============================================================================
@@ -202,57 +201,65 @@ fi
 log "INFO  ::       Zip created: ${ZIP_FILE}"
 
 # ============================================================================
-# 8. Copy zip to local persistent audit folder
+# 8. Upload zip to S3 using AWS CLI
+#    Installed by the postsync setup job (same method as HADR setup).
+#    Credentials come from PARM1/PARM2 in .PROPS.
+#    ONLY delete source after upload is confirmed.
 # ============================================================================
-DEST_DIR="${AUDIT_BASE}/${DATE}"
-log "INFO  :: [8/9] Copying zip to local audit folder ${DEST_DIR}"
-mkdir -p "${DEST_DIR}"
-cp "${ZIP_FILE}" "${DEST_DIR}/${ZIP_NAME}"
-RC=$?
-if [ $RC -ne 0 ]; then
-  log "ERROR :: Failed to copy zip to ${DEST_DIR} (RC=${RC})"
+AWS_CLI="/mnt/backup/aws/dist/aws"
+S3_TARGET="s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/${ZIP_NAME}"
+
+log "INFO  :: [8/9] Uploading to S3 using AWS CLI"
+log "INFO  ::       Source : ${ZIP_FILE}"
+log "INFO  ::       Target : ${S3_TARGET}"
+
+if [ ! -x "${AWS_CLI}" ]; then
+  log "ERROR :: AWS CLI not found at ${AWS_CLI}"
+  log "ERROR :: Trigger an ArgoCD sync to run the postsync job which installs it"
   exit 1
 fi
-log "INFO  ::       Local copy succeeded: ${DEST_DIR}/${ZIP_NAME}"
 
-# ============================================================================
-# 9. Upload zip to S3 — identical pattern to auditExtractUpload.sh
-#    Source file is on persistent mount (/mnt/blumeta0) not /tmp
-#    ONLY delete after confirmed upload
-# ============================================================================
-COS_TARGET="DB2REMOTE://AWSCOS//audit_logs/${APP_NAME}_${DATE}_${ZIP_NAME}"
-log "INFO  :: [9/9] Uploading to S3"
-log "INFO  ::       Source : ${ZIP_FILE}"
-log "INFO  ::       Target : ${COS_TARGET}"
+export AWS_ACCESS_KEY_ID="${PARM1}"
+export AWS_SECRET_ACCESS_KEY="${PARM2}"
+export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
 
-db2RemStgManager alias put \
-  source="${ZIP_FILE}" \
-  target="${COS_TARGET}" > /dev/null 2>&1
+"${AWS_CLI}" s3 cp "${ZIP_FILE}" "${S3_TARGET}"
 RC=$?
 if [ $RC -ne 0 ]; then
-  log "ERROR :: S3 upload failed (RC=0x$(printf '%08X' ${RC}))"
+  log "ERROR :: S3 upload failed (RC=${RC})"
   log "ERROR :: Source file ${ZIP_FILE} has NOT been deleted — safe to retry"
   exit 1
 fi
-log "INFO  ::       S3 upload confirmed: ${COS_TARGET}"
+log "INFO  ::       S3 upload confirmed: ${S3_TARGET}"
 
 # Delete zip from working dir ONLY after S3 upload is confirmed
-log "INFO  ::       Deleting source zip (S3 upload confirmed): ${ZIP_FILE}"
+log "INFO  ::       Deleting source zip (upload confirmed): ${ZIP_FILE}"
 rm -f "${ZIP_FILE}"
-log "INFO  ::       Deleted"
 
 # ============================================================================
-# Clean up — remove raw archived logs and .del files from working dir
-# Reached ONLY if S3 upload succeeded
+# 9. Clean up auditarchive working directory
+#    Removes raw archived logs and .del files — only reached after upload succeeds
 # ============================================================================
-log "INFO  :: Cleaning up archive directory ${ARCHIVE_DIR}"
+log "INFO  :: [9/9] Cleaning up archive directory ${ARCHIVE_DIR}"
 rm -rf "${ARCHIVE_DIR}"
-log "INFO  :: Archive directory removed"
+log "INFO  ::       Archive directory removed"
+
+# ============================================================================
+# 10. Delete previous day folders from /mnt/blumeta0/audit/ older than 1 day
+#     This keeps the 100GB filesystem free — S3 is the permanent store.
+#     Only date-named folders (YYYYMMDD) are removed; other dirs are left alone.
+# ============================================================================
+log "INFO  :: Purging local audit folders older than 1 day from ${AUDIT_BASE}"
+find "${AUDIT_BASE}" -mindepth 1 -maxdepth 1 -type d -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' -mtime +1 | \
+  while read OLD_DIR; do
+    log "INFO  ::   Removing ${OLD_DIR}"
+    rm -rf "${OLD_DIR}"
+  done
+log "INFO  ::   Purge complete"
 
 log "INFO  :: ============================================================"
 log "INFO  :: Audit extraction completed successfully"
-log "INFO  :: Local : ${DEST_DIR}/${ZIP_NAME}"
-log "INFO  :: S3    : ${COS_TARGET}"
+log "INFO  :: S3 : ${S3_TARGET}"
 log "INFO  :: ============================================================"
 exit 0
 

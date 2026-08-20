@@ -92,20 +92,21 @@ spec:
       - CreateNamespace=false
 {{- else }}
 {{- /*
-  Read chart versions from olm-utils-cm (created by 110-ibm-cp4d).
-  Falls back to known-good defaults if the ConfigMap is not yet present
-  (e.g. during a helm template dry-run).
+  Chart version resolution (highest priority first):
+    1. Explicit gitops config value (e.g. ibm_wsl.ws_chart_version)
+    2. olm-utils-cm ConfigMap lookup (deployed by wave 110-ibm-cp4d)
+    3. Hardcoded default (safety net for helm template dry-runs)
 */}}
 {{- $olmUtils := lookup "v1" "ConfigMap" $cpd_instance_ns "olm-utils-cm" }}
 {{- $meta := dict }}
 {{- if $olmUtils }}
 {{- $meta = $olmUtils.data.release_components_meta | fromYaml }}
 {{- end }}
-{{- $opensearchVersion   := (index $meta "opencontent_opensearch" | default dict).case_version | default "1.2.0" }}
-{{- $ccsVersion          := (index $meta "ccs"                    | default dict).case_version | default "12.1.0" }}
-{{- $datarefineryVersion := (index $meta "datarefinery"           | default dict).case_version | default "12.1.0" }}
-{{- $wsRuntimesVersion   := (index $meta "ws_runtimes"            | default dict).case_version | default "12.1.0" }}
-{{- $wsVersion           := (index $meta "ws"                     | default dict).case_version | default "12.1.0" }}
+{{- $opensearchVersion   := .Values.ibm_wsl.opensearch_chart_version   | default ((index $meta "opencontent_opensearch" | default dict).case_version | default "1.2.0") }}
+{{- $ccsVersion          := .Values.ibm_wsl.ccs_chart_version          | default ((index $meta "ccs"                    | default dict).case_version | default "12.1.0") }}
+{{- $datarefineryVersion := .Values.ibm_wsl.datarefinery_chart_version | default ((index $meta "datarefinery"           | default dict).case_version | default "12.1.0") }}
+{{- $wsRuntimesVersion   := .Values.ibm_wsl.ws_runtimes_chart_version  | default ((index $meta "ws_runtimes"            | default dict).case_version | default "12.1.0") }}
+{{- $wsVersion           := .Values.ibm_wsl.ws_chart_version           | default ((index $meta "ws"                     | default dict).case_version | default "12.1.0") }}
 ---
 # CPD >= 5.3.1 — native ArgoCD Helm Apps (no K8s Jobs)
 # Wave 115: opencontent-opensearch cluster-scoped (CRDs + ClusterRoles)

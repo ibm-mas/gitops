@@ -91,16 +91,17 @@ spec:
       - RespectIgnoreDifferences=true
 {{- else }}
 {{- /*
-  Read chart versions from olm-utils-cm (created by 110-ibm-cp4d).
-  Falls back to known-good defaults if the ConfigMap is not yet present
-  (e.g. during a helm template dry-run).
+  Chart version resolution (highest priority first):
+    1. Explicit gitops config value (e.g. ibm_spark.spark_chart_version)
+    2. olm-utils-cm ConfigMap lookup (deployed by wave 110-ibm-cp4d)
+    3. Hardcoded default (safety net for helm template dry-runs)
 */}}
 {{- $olmUtils := lookup "v1" "ConfigMap" $cpd_instance_ns "olm-utils-cm" }}
 {{- $meta := dict }}
 {{- if $olmUtils }}
 {{- $meta = $olmUtils.data.release_components_meta | fromYaml }}
 {{- end }}
-{{- $sparkVersion := (index $meta "analyticsengine" | default dict).case_version | default "12.1.0" }}
+{{- $sparkVersion := .Values.ibm_spark.spark_chart_version | default ((index $meta "analyticsengine" | default dict).case_version | default "12.1.0") }}
 ---
 # CPD >= 5.3.1 — native ArgoCD Helm Apps (no K8s Jobs)
 # Wave 119: analyticsengine cluster-scoped (CRDs + ClusterRoles)

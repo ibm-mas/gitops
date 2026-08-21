@@ -22,7 +22,7 @@
 #%  10.  Upload ALL files from /tmp/auditarchive to S3
 #%  11.  rm -rf /tmp/auditarchive
 #%  12.  Delete the *.log.0.20* source files from /mnt/blumeta0/audit
-#%  13.  (Optional) Delete pre-existing *.del files from /mnt/blumeta0/audit
+#%  13.  (Conditional) Delete pre-existing *.del files from /mnt/blumeta0/audit
 #%       (prints list before deleting)
 # ----------------------------------------------------------------------------
 
@@ -54,11 +54,17 @@ set -u
 # ── Load COS/S3 credentials (CONTAINER, SERVER, PARM1, PARM2) ─────────────
 . /mnt/backup/bin/.PROPS
 
-# ── Configure AWS CLI ──────────────────────────────────────────────────────
+# ── Install AWS CLI if not already present ────────────────────────────────
 AWS_CLI="/mnt/backup/aws/dist/aws"
-if [ ! -x "${AWS_CLI}" ]; then
-  log "ERROR :: AWS CLI not found at ${AWS_CLI} — trigger an ArgoCD sync to install it"
-  exit 1
+log "INFO  :: Checking AWS CLI at ${AWS_CLI}"
+if ! "${AWS_CLI}" --version >/dev/null 2>&1; then
+  log "INFO  ::   Not found — installing AWS CLI to /mnt/backup/"
+  cd /mnt/backup
+  curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+  unzip awscliv2.zip -d /mnt/backup/
+  log "INFO  ::   AWS CLI installed at ${AWS_CLI}"
+else
+  log "INFO  ::   AWS CLI already present: $(${AWS_CLI} --version 2>&1)"
 fi
 export AWS_ACCESS_KEY_ID="${PARM1}"
 export AWS_SECRET_ACCESS_KEY="${PARM2}"

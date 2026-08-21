@@ -28,6 +28,7 @@ Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers
 | `Secret` | Post-sync DB2 generated secret | DB2 application namespace | Always | `application_admin_role` |
 | `NetworkPolicy` | HADR network policy | DB2 application namespace | When HADR is enabled | `application_admin_role` |
 | `Job` | Pre/post-sync DB2 setup jobs | DB2 application namespace | Always | `application_admin_role` |
+| `Job` | DB2 audit policy setup job | DB2 application namespace | When `mas_application_id` is `manage`, `facilities`, `monitor`, or `iot` | `application_admin_role` |
 
 ## Configuration
 
@@ -202,6 +203,47 @@ application is deployed separately per instance with its own `db2_instance_name`
 Both can use port 50001 without conflict since they are separate AWS NLB resources.
 
 The NLB is created independently for each instance (e.g. facilities, manage) using the instance-specific selector.
+
+## DB2 Audit Policy
+
+### When It Is Applied
+
+The audit policy Job ([`08-postsync-db2-audit-policy_Job.yaml`](templates/08-postsync-db2-audit-policy_Job.yaml)) runs at sync-wave `130` (after the main DB2 setup job at wave `129`) and is **only created** when all of the following conditions are met:
+
+1. `application_admin_role: true`
+2. `mas_application_id` is one of: `manage`, `facilities`, `monitor`, `iot`
+3. `should_execute: true`
+4. `db2_instance_name` does not contain `sdb` (shared instances are excluded)
+
+For any other `mas_application_id` (e.g. `health`, `visualinspection`, `predict`), no Job resource is rendered.
+
+### What Gets Audited per Application
+
+The job creates a single `USER_AUDIT` policy (idempotent — skipped if already exists) and assigns it to roles and/or users depending on the application:
+
+| Application | Audit Policy | Roles Audited | User Audited |
+|---|---|---|---|
+| `manage` | `USER_AUDIT` | `MAXIMO_READ`, `MAXIMO_WRITE` (only if roles exist) | `db2inst1` |
+| `facilities` | `USER_AUDIT` | `TRIRIGA_READ`, `TRIRIGA_WRITE` (only if roles exist) | `db2inst1` |
+| `monitor` | `USER_AUDIT` | None | `db2inst1` |
+| `iot` | `USER_AUDIT` | None | `db2inst1` |
+
+### Audit Policy Definition
+
+```sql
+CREATE AUDIT POLICY USER_AUDIT
+  CATEGORIES VALIDATE STATUS BOTH,
+             EXECUTE WITHOUT DATA STATUS BOTH
+  ERROR TYPE NORMAL
+```
+
+### Execution Steps
+
+1. **Connect** to the database (`db2 connect to <DB2_DBNAME>`)
+2. **Create** `USER_AUDIT` policy if it does not already exist
+3. **Assign policy to roles** — per-app role audit (skipped if roles do not yet exist)
+4. **Assign policy to user** — `AUDIT USER db2inst1 USING POLICY USER_AUDIT` (all 4 apps)
+5. **Disconnect** (`db2 connect reset`)
 
 ### Validation
 

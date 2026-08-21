@@ -4,327 +4,203 @@
 #% Script Name  : db2AuditExtract.sh
 #% Description  : Archive and extract DB2 audit logs as DEL/ASC files, upload
 #%                each *.del file to S3, then remove source files.
-#% Created On   : 2026
 #%
-#%  **************  THIS NEEDS TO BE RUN AS INSTANCE OWNER (db2inst1).  ******
-#%  USAGE:
-#%          db2AuditExtract.sh <application_name>
+#%  **  THIS MUST BE RUN AS THE DB2 INSTANCE OWNER (db2inst1)  **
 #%
-#%  S3 target : s3://<bucket>/audit_logs/<app>/<YYYY-MM-DD>/<file>.del
+#%  USAGE:  db2AuditExtract.sh <application_name>
 #%
 #%  Steps:
 #%   1.  mkdir /tmp/auditarchive
 #%   2.  rm /tmp/auditarchive/*.del
 #%   3.  db2audit flush
 #%   4.  db2audit archive database BLUDB to /tmp/auditarchive
-#%   5.  db2audit archive to /tmp/auditarchive
-#%   6.  db2audit extract delasc to /tmp/auditarchive from files db2audit.db.BLUDB.log.0.*
-#%   7.  db2audit extract delasc to /tmp/auditarchive from files db2audit.instance.log.0.*
-#%   8.  Upload each *.del to S3; copy to /mnt/blumeta0/audit/; delete source after upload
-#%   9.  rm -rf /tmp/auditarchive
-#%  10.  Process /mnt/blumeta0/audit/ (flat):
-#%       a. Convert any *.log files → *.del via db2audit extract delasc
-#%       b. Upload ALL *.del (pre-existing + newly converted) to S3
-#%       c. Delete each *.del from source after confirmed S3 upload
-#%       d. Delete *.log files after all uploads succeed
+#%   5.  db2audit archive to /tmp/auditarchive  (instance log)
+#%   6.  db2audit extract delasc to /tmp/auditarchive  (database log)
+#%   7.  db2audit extract delasc to /tmp/auditarchive  (instance log)
+#%   8.  Copy db2audit.db.BLUDB.log.0.20*   from /mnt/blumeta0/audit → /tmp/auditarchive
+#%   9.  Copy db2audit.instance.log.0.20*   from /mnt/blumeta0/audit → /tmp/auditarchive
+#%  10.  Upload ALL files from /tmp/auditarchive to S3
+#%  11.  rm -rf /tmp/auditarchive
+#%  12.  Delete the *.log.0.20* source files from /mnt/blumeta0/audit
+#%  13.  (Optional) Delete pre-existing *.del files from /mnt/blumeta0/audit
+#%       (prints list before deleting)
 # ----------------------------------------------------------------------------
 
 set -eo pipefail
 
-# ============================================================================
-# Parameters / Inputs
-# ============================================================================
-APP_NAME="${1:-}"
+# ── Logging helper ─────────────────────────────────────────────────────────
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
+# ── Validate input ─────────────────────────────────────────────────────────
+APP_NAME="${1:-}"
 if [ -z "${APP_NAME}" ]; then
   echo "ERROR :: Usage: $0 <application_name>"
   exit 1
 fi
 
+# ── Constants ──────────────────────────────────────────────────────────────
 ARCHIVE_DIR="/tmp/auditarchive"
 AUDIT_BASE="/mnt/blumeta0/audit"
 DBNAME="BLUDB"
-HOSTNAME=$(hostname)
 DATE=$(date +"%Y-%m-%d")
 DT=$(date +"%Y-%m-%d_%H%M%S")
+DELETE_AUDIT_BASE_DEL="false"   # Set to "true" to delete *.del files from ${AUDIT_BASE} (step 13)
 
-# ============================================================================
-# Logging helper
-# ============================================================================
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
-
-# ============================================================================
-# Source DB2 environment — disable nounset temporarily (DB2 profile uses
-# unbound variables internally)
-# ============================================================================
+# ── Source DB2 environment (DB2 profile uses unbound vars — disable nounset) ─
 set +u
 . "${HOME}/sqllib/db2profile"
 set -u
 
-# ============================================================================
-# Load COS / S3 parameters (CONTAINER, SERVER, PARM1, PARM2)
-# ============================================================================
+# ── Load COS/S3 credentials (CONTAINER, SERVER, PARM1, PARM2) ─────────────
 . /mnt/backup/bin/.PROPS
 
-# ============================================================================
-# Configure AWS CLI (used in both step 8 and step 10)
-# ============================================================================
+# ── Configure AWS CLI ──────────────────────────────────────────────────────
 AWS_CLI="/mnt/backup/aws/dist/aws"
-
 if [ ! -x "${AWS_CLI}" ]; then
-  echo "ERROR :: AWS CLI not found at ${AWS_CLI}"
-  echo "ERROR :: Trigger an ArgoCD sync to run the postsync job which installs it"
+  log "ERROR :: AWS CLI not found at ${AWS_CLI} — trigger an ArgoCD sync to install it"
   exit 1
 fi
-
 export AWS_ACCESS_KEY_ID="${PARM1}"
 export AWS_SECRET_ACCESS_KEY="${PARM2}"
 export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
 
-# ============================================================================
-# Ensure audit is re-started on exit (even on failure)
-# ============================================================================
-cleanup_exit() {
-  log "INFO  :: Ensuring db2audit is running after job completion"
-  db2audit start >/dev/null 2>&1 || true
-}
-trap cleanup_exit EXIT
+S3_TARGET="s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
 
-# ============================================================================
-# Print runtime context
-# ============================================================================
+# ── Ensure db2audit is always restarted on exit ────────────────────────────
+trap 'log "INFO  :: Restarting db2audit after job"; db2audit start >/dev/null 2>&1 || true' EXIT
+
+# ── Banner ─────────────────────────────────────────────────────────────────
 log "INFO  :: ============================================================"
 log "INFO  :: DB2 Audit Extract — ${DT}"
-log "INFO  :: Host          : ${HOSTNAME}"
-log "INFO  :: Application   : ${APP_NAME}"
-log "INFO  :: Database      : ${DBNAME}"
-log "INFO  :: Work dir      : ${ARCHIVE_DIR}"
-log "INFO  :: S3 bucket     : ${CONTAINER}"
-log "INFO  :: S3 target     : s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
+log "INFO  :: Application : ${APP_NAME} | Database : ${DBNAME}"
+log "INFO  :: Work dir    : ${ARCHIVE_DIR}"
+log "INFO  :: S3 target   : ${S3_TARGET}"
 log "INFO  :: ============================================================"
 
 # ============================================================================
-# 1. mkdir /tmp/auditarchive
+# 1–2.  Prepare working directory
 # ============================================================================
 log "INFO  :: [1] mkdir ${ARCHIVE_DIR}"
 mkdir -p "${ARCHIVE_DIR}"
 
-# ============================================================================
-# 2. rm /tmp/auditarchive/*.del
-# ============================================================================
-log "INFO  :: [2] rm ${ARCHIVE_DIR}/*.del"
+log "INFO  :: [2] Removing any stale .del files from ${ARCHIVE_DIR}"
 rm -f "${ARCHIVE_DIR}"/*.del 2>/dev/null || true
 
 # ============================================================================
-# 3. db2audit flush
+# 3.  Flush in-memory audit buffer to disk
 # ============================================================================
 log "INFO  :: [3] db2audit flush"
 db2audit flush
-RC=$?
-if [ $RC -ne 0 ]; then
-  log "ERROR :: db2audit flush failed (RC=${RC})"
-  exit 1
-fi
-log "INFO  ::     Flush succeeded"
 
 # ============================================================================
-# 4. db2audit archive database BLUDB to /tmp/auditarchive
+# 4.  Archive the database audit log to /tmp/auditarchive
 # ============================================================================
 log "INFO  :: [4] db2audit archive database ${DBNAME} to ${ARCHIVE_DIR}"
 db2audit archive database "${DBNAME}" to "${ARCHIVE_DIR}"
-RC=$?
-if [ $RC -ne 0 ]; then
-  log "ERROR :: db2audit archive database failed (RC=${RC})"
-  exit 1
-fi
-log "INFO  ::     Database archive succeeded"
 
 # ============================================================================
-# 5. db2audit archive to /tmp/auditarchive  (instance log)
+# 5.  Archive the instance audit log to /tmp/auditarchive
 # ============================================================================
-log "INFO  :: [5] db2audit archive to ${ARCHIVE_DIR}"
+log "INFO  :: [5] db2audit archive to ${ARCHIVE_DIR}  (instance log)"
 db2audit archive to "${ARCHIVE_DIR}"
-RC=$?
-if [ $RC -ne 0 ]; then
-  log "ERROR :: db2audit archive instance failed (RC=${RC})"
-  exit 1
-fi
-log "INFO  ::     Instance archive succeeded"
 
 # ============================================================================
-# 6. db2audit extract delasc ... from files db2audit.db.BLUDB.log.0.*
+# 6.  Extract archived database log → *.del
 # ============================================================================
-log "INFO  :: [6] db2audit extract delasc (database)"
-DB_LOG_PATTERN="${ARCHIVE_DIR}/db2audit.db.${DBNAME}.log.0.*"
-DB_LOG_FILES=$(ls ${DB_LOG_PATTERN} 2>/dev/null || true)
+log "INFO  :: [6] db2audit extract delasc (database log)"
+db2audit extract delasc to "${ARCHIVE_DIR}" \
+  from files "${ARCHIVE_DIR}/db2audit.db.${DBNAME}.log.0."*
 
-if [ -z "${DB_LOG_FILES}" ]; then
-  log "WARN  ::     No database audit archive files found — skipping"
+# ============================================================================
+# 7.  Extract archived instance log → *.del
+# ============================================================================
+log "INFO  :: [7] db2audit extract delasc (instance log)"
+db2audit extract delasc to "${ARCHIVE_DIR}" \
+  from files "${ARCHIVE_DIR}/db2audit.instance.log.0."*
+
+# ============================================================================
+# 8–9.  Copy historical log files from /mnt/blumeta0/audit to /tmp/auditarchive
+# ============================================================================
+log "INFO  :: [8] Copying db2audit.db.${DBNAME}.log.0.20* from ${AUDIT_BASE}"
+cp "${AUDIT_BASE}"/db2audit.db."${DBNAME}".log.0.20* "${ARCHIVE_DIR}/" 2>/dev/null \
+  && log "INFO  ::     Database logs copied" \
+  || log "WARN  ::     No matching db2audit.db.${DBNAME}.log.0.20* files found — skipping"
+
+log "INFO  :: [9] Copying db2audit.instance.log.0.20* from ${AUDIT_BASE}"
+cp "${AUDIT_BASE}"/db2audit.instance.log.0.20* "${ARCHIVE_DIR}/" 2>/dev/null \
+  && log "INFO  ::     Instance logs copied" \
+  || log "WARN  ::     No matching db2audit.instance.log.0.20* files found — skipping"
+
+# ============================================================================
+# 10.  Upload ALL files from /tmp/auditarchive to S3
+# ============================================================================
+log "INFO  :: [10] Uploading all files from ${ARCHIVE_DIR} to ${S3_TARGET}"
+
+ALL_FILES=$(ls "${ARCHIVE_DIR}"/* 2>/dev/null || true)
+if [ -z "${ALL_FILES}" ]; then
+  log "WARN  ::      No files found in ${ARCHIVE_DIR} — nothing to upload"
 else
-  log "INFO  ::     Found $(echo ${DB_LOG_FILES} | wc -w) file(s): $(echo ${DB_LOG_FILES} | tr '\n' ' ')"
-  db2audit extract delasc to "${ARCHIVE_DIR}" from files ${DB_LOG_PATTERN}
-  RC=$?
-  if [ $RC -ne 0 ]; then
-    log "ERROR :: db2audit extract (database) failed (RC=${RC})"
-    exit 1
-  fi
-  log "INFO  ::     Database extract completed"
-fi
-
-# ============================================================================
-# 7. db2audit extract delasc ... from files db2audit.instance.log.0.*
-# ============================================================================
-log "INFO  :: [7] db2audit extract delasc (instance)"
-INST_LOG_PATTERN="${ARCHIVE_DIR}/db2audit.instance.log.0.*"
-INST_LOG_FILES=$(ls ${INST_LOG_PATTERN} 2>/dev/null || true)
-
-if [ -z "${INST_LOG_FILES}" ]; then
-  log "WARN  ::     No instance audit archive files found — skipping"
-else
-  log "INFO  ::     Found $(echo ${INST_LOG_FILES} | wc -w) file(s): $(echo ${INST_LOG_FILES} | tr '\n' ' ')"
-  db2audit extract delasc to "${ARCHIVE_DIR}" from files ${INST_LOG_PATTERN}
-  RC=$?
-  if [ $RC -ne 0 ]; then
-    log "ERROR :: db2audit extract (instance) failed (RC=${RC})"
-    exit 1
-  fi
-  log "INFO  ::     Instance extract completed"
-fi
-
-# ============================================================================
-# 8. Upload each *.del to S3, delete from source after confirmed upload
-#    AWS CLI installed by postsync job (07-postsync-setup-db2_Job.yaml)
-#    using same method as HADR setup job.
-# ============================================================================
-DEL_FILES=$(ls "${ARCHIVE_DIR}"/*.del 2>/dev/null || true)
-
-if [ -z "${DEL_FILES}" ]; then
-  log "WARN  :: [8] No .del files found in ${ARCHIVE_DIR} — nothing to upload"
-else
-  # Create local audit destination directory
-  LOCAL_DEST="${AUDIT_BASE}/${DATE}"
-  log "INFO  :: [8] Copying *.del to local audit folder ${LOCAL_DEST}"
-  mkdir -p "${LOCAL_DEST}"
-
-  log "INFO  ::     Uploading *.del files to s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
-
-  for DEL_FILE in ${DEL_FILES}; do
-    FILE_NAME=$(basename "${DEL_FILE}")
-
-    # Step A: copy to /mnt/blumeta0/audit/<YYYY-MM-DD>/
-    log "INFO  ::     [local]  ${FILE_NAME} -> ${LOCAL_DEST}/${FILE_NAME}"
-    cp "${DEL_FILE}" "${LOCAL_DEST}/${FILE_NAME}"
-    RC=$?
-    if [ $RC -ne 0 ]; then
-      log "ERROR :: Failed to copy ${FILE_NAME} to ${LOCAL_DEST} (RC=${RC})"
-      exit 1
-    fi
-
-    # Step B: upload to S3
-    S3_TARGET="s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/${FILE_NAME}"
-    log "INFO  ::     [s3]     ${FILE_NAME} -> ${S3_TARGET}"
-    "${AWS_CLI}" s3 cp "${DEL_FILE}" "${S3_TARGET}"
-    RC=$?
-    if [ $RC -ne 0 ]; then
-      log "ERROR :: Upload of ${FILE_NAME} failed (RC=${RC})"
-      log "ERROR :: ${DEL_FILE} has NOT been deleted — safe to retry"
-      exit 1
-    fi
-
-    # Step C: delete from /tmp/auditarchive ONLY after S3 upload confirmed
-    log "INFO  ::     [clean]  S3 upload confirmed — deleting source ${DEL_FILE}"
-    rm -f "${DEL_FILE}"
+  ERRORS=0
+  for F in ${ALL_FILES}; do
+    FILE_NAME=$(basename "${F}")
+    log "INFO  ::      [s3] ${FILE_NAME} → ${S3_TARGET}${FILE_NAME}"
+    "${AWS_CLI}" s3 cp "${F}" "${S3_TARGET}${FILE_NAME}" \
+      && log "INFO  ::           Upload confirmed" \
+      || { log "ERROR ::           Upload FAILED for ${FILE_NAME}"; ERRORS=$((ERRORS + 1)); }
   done
-
-  log "INFO  ::     All .del files copied to ${LOCAL_DEST} and uploaded to S3"
+  [ ${ERRORS} -gt 0 ] && { log "ERROR :: ${ERRORS} upload(s) failed"; exit 1; }
+  log "INFO  ::      All files uploaded successfully"
 fi
 
 # ============================================================================
-# 9. rm -rf /tmp/auditarchive
+# 11.  Remove /tmp/auditarchive and all its contents
 # ============================================================================
-log "INFO  :: [9] rm -rf ${ARCHIVE_DIR}"
+log "INFO  :: [11] rm -rf ${ARCHIVE_DIR}"
 rm -rf "${ARCHIVE_DIR}"
-log "INFO  ::     Done"
+log "INFO  ::      Working directory removed"
 
 # ============================================================================
-# 10. Process /mnt/blumeta0/audit/ (flat directory — no subfolders):
-#     a. Convert any *.log files to *.del via db2audit extract delasc
-#     b. Upload ALL *.del files (pre-existing + newly converted) to S3
-#     c. Delete each *.del from source ONLY after confirmed S3 upload
-#     d. Delete *.log files after all uploads succeed
+# 12.  Delete the historical *.log.0.20* source files from /mnt/blumeta0/audit
 # ============================================================================
-log "INFO  :: [10] Processing ${AUDIT_BASE}/ → S3"
+log "INFO  :: [12] Removing historical log files from ${AUDIT_BASE}"
 
-if [ ! -d "${AUDIT_BASE}" ]; then
-  log "WARN  ::      ${AUDIT_BASE} does not exist — skipping"
+for PATTERN in \
+  "${AUDIT_BASE}/db2audit.db.${DBNAME}.log.0.20"* \
+  "${AUDIT_BASE}/db2audit.instance.log.0.20"*
+do
+  for F in ${PATTERN}; do
+    [ -f "${F}" ] || continue
+    log "INFO  ::      [delete] $(basename "${F}")"
+    rm -f "${F}"
+  done
+done
+log "INFO  ::      Historical log files removed"
+
+# ============================================================================
+# 13.  (Optional) Delete pre-existing *.del files from /mnt/blumeta0/audit
+#       — controlled by DELETE_AUDIT_BASE_DEL; prints list before deleting
+# ============================================================================
+log "INFO  :: [13] DELETE_AUDIT_BASE_DEL=${DELETE_AUDIT_BASE_DEL}"
+
+if [ "${DELETE_AUDIT_BASE_DEL}" != "true" ]; then
+  log "INFO  ::      Skipping .del cleanup in ${AUDIT_BASE} (DELETE_AUDIT_BASE_DEL is not true)"
 else
-
-  # a. Convert any *.log files to *.del
-  AUDIT_LOG_FILES=$(ls "${AUDIT_BASE}"/*.log 2>/dev/null || true)
-  if [ -n "${AUDIT_LOG_FILES}" ]; then
-    log "INFO  ::      [a] Found raw .log files — running db2audit extract"
-    for AUDIT_LOG in ${AUDIT_LOG_FILES}; do
-      AUDIT_LOG_NAME=$(basename "${AUDIT_LOG}")
-      log "INFO  ::          [extract] ${AUDIT_LOG_NAME} -> .del"
-      db2audit extract delasc to "${AUDIT_BASE}" from files "${AUDIT_LOG}"
-      RC=$?
-      if [ $RC -ne 0 ]; then
-        log "ERROR ::          db2audit extract failed for ${AUDIT_LOG_NAME} (RC=${RC}) — skipping"
-      fi
-    done
-    log "INFO  ::      [a] Extraction complete"
-  else
-    log "INFO  ::      [a] No raw .log files found in ${AUDIT_BASE}"
-  fi
-
-  # b+c. Upload ALL *.del files, delete each from source after confirmed upload
   AUDIT_DEL_FILES=$(ls "${AUDIT_BASE}"/*.del 2>/dev/null || true)
   if [ -z "${AUDIT_DEL_FILES}" ]; then
-    log "WARN  ::      [b] No .del files found in ${AUDIT_BASE} — nothing to upload"
+    log "INFO  ::      No .del files found in ${AUDIT_BASE} — nothing to clean"
   else
-    AUDIT_UPLOAD_ERRORS=0
-    log "INFO  ::      [b] Uploading all .del files to s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
-    for AUDIT_DEL in ${AUDIT_DEL_FILES}; do
-      AUDIT_DEL_NAME=$(basename "${AUDIT_DEL}")
-      AUDIT_S3_TARGET="s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/${AUDIT_DEL_NAME}"
-      log "INFO  ::          [s3]    ${AUDIT_DEL_NAME} -> ${AUDIT_S3_TARGET}"
-      "${AWS_CLI}" s3 cp "${AUDIT_DEL}" "${AUDIT_S3_TARGET}"
-      RC=$?
-      if [ $RC -ne 0 ]; then
-        log "ERROR ::          Upload of ${AUDIT_DEL_NAME} failed (RC=${RC}) — source NOT deleted"
-        AUDIT_UPLOAD_ERRORS=$((AUDIT_UPLOAD_ERRORS + 1))
-        continue
-      fi
-      log "INFO  ::          [clean] Upload confirmed — removing ${AUDIT_DEL}"
-      rm -f "${AUDIT_DEL}"
+    log "INFO  ::      The following .del files will be deleted from ${AUDIT_BASE}:"
+    for F in ${AUDIT_DEL_FILES}; do
+      log "INFO  ::        $(basename "${F}")"
     done
-
-    if [ ${AUDIT_UPLOAD_ERRORS} -gt 0 ]; then
-      log "ERROR ::      ${AUDIT_UPLOAD_ERRORS} upload(s) failed — failed files left in ${AUDIT_BASE} for retry"
-      exit 1
-    fi
-    log "INFO  ::      [b] All .del files uploaded and removed from source"
+    rm -f ${AUDIT_DEL_FILES}
+    log "INFO  ::      .del files deleted"
   fi
-
-  # d. Delete *.log files now that all uploads succeeded
-  AUDIT_LOG_REMAINING=$(ls "${AUDIT_BASE}"/*.log 2>/dev/null || true)
-  if [ -n "${AUDIT_LOG_REMAINING}" ]; then
-    log "INFO  ::      [d] Removing source .log files"
-    for AUDIT_LOG in ${AUDIT_LOG_REMAINING}; do
-      log "INFO  ::          [clean] Removing $(basename "${AUDIT_LOG}")"
-      rm -f "${AUDIT_LOG}"
-    done
-    log "INFO  ::      [d] Source .log files removed"
-  fi
-
 fi
 
+# ── Done ───────────────────────────────────────────────────────────────────
 log "INFO  :: ============================================================"
 log "INFO  :: Audit extraction completed successfully"
-log "INFO  :: S3 : s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
+log "INFO  :: S3 target : ${S3_TARGET}"
 log "INFO  :: ============================================================"
 exit 0
-
-# -- End of Script

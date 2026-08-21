@@ -98,12 +98,15 @@ spec:
 
               echo ""
               echo "================================================================================"
-              echo "DB2 Audit Policy Setup"
+              echo "                         DB2 AUDIT POLICY SETUP"
               echo "================================================================================"
-              echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
-              echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
-              echo "DB2_DBNAME .......................... ${DB2_DBNAME}"
-              echo "MAS_APP_ID .......................... ${MAS_APP_ID}"
+              echo ""
+              echo "Configuration"
+              echo "--------------------------------------------------------------------------------"
+              echo "DB2 Namespace        : ${DB2_NAMESPACE}"
+              echo "DB2 Instance         : ${DB2_INSTANCE_NAME}"
+              echo "Database             : ${DB2_DBNAME}"
+              echo "MAS Application      : ${MAS_APP_ID}"
 
               # All DB2 commands run in a single oc exec so the database
               # connection established by 'db2 connect' is shared across
@@ -111,63 +114,123 @@ spec:
               oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- su -lc "
                 set -e
 
-                echo 'Connecting to database ${DB2_DBNAME}'
+                echo ''
+                echo '--------------------------------------------------------------------------------'
+                echo '[1/4] Database Connection'
+                echo '--------------------------------------------------------------------------------'
+                echo \"Connecting to database '${DB2_DBNAME}'...\"
                 db2 connect to ${DB2_DBNAME}
+                echo '[OK] Database connection successful.'
 
-                # ----------------------------------------------------------------
-                # Create USER_AUDIT policy if it does not already exist (common)
-                # ----------------------------------------------------------------
-                echo 'Checking USER_AUDIT policy...'
+                echo ''
+                echo '--------------------------------------------------------------------------------'
+                echo '[2/4] USER_AUDIT Policy'
+                echo '--------------------------------------------------------------------------------'
+                echo \"Checking whether audit policy 'USER_AUDIT' exists...\"
+                echo ''
                 POLICY_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME='USER_AUDIT'\" | tr -d ' ')
                 if [ \"\$POLICY_EXISTS\" -eq \"0\" ]; then
-                  echo 'Creating USER_AUDIT policy...'
+                  echo \"[CREATE] USER_AUDIT policy does not exist - creating...\"
                   db2 \"CREATE AUDIT POLICY USER_AUDIT CATEGORIES VALIDATE STATUS BOTH, EXECUTE WITHOUT DATA STATUS BOTH ERROR TYPE NORMAL\"
-                  echo 'USER_AUDIT policy created successfully'
+                  echo '[OK] USER_AUDIT policy created.'
                 else
-                  echo 'USER_AUDIT policy already exists, skipping'
+                  echo '[SKIP] USER_AUDIT policy already exists.'
+                  echo '       No changes required.'
                 fi
 
-                # ----------------------------------------------------------------
-                # Per-application role audit (manage and facilities only)
-                # ----------------------------------------------------------------
+                echo ''
+                echo '--------------------------------------------------------------------------------'
+                echo '[3/4] USER_AUDIT Role Assignments'
+                echo '--------------------------------------------------------------------------------'
+                echo 'Checking USER_AUDIT assignment to roles:'
+                echo ''
                 if [ \"${MAS_APP_ID}\" = \"manage\" ]; then
-                  echo 'Applying USER_AUDIT policy to MAXIMO_READ and MAXIMO_WRITE roles...'
                   ROLE_READ_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='MAXIMO_READ'\" | tr -d ' ')
                   ROLE_WRITE_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='MAXIMO_WRITE'\" | tr -d ' ')
                   if [ \"\$ROLE_READ_EXISTS\" -gt \"0\" ] && [ \"\$ROLE_WRITE_EXISTS\" -gt \"0\" ]; then
-                    db2 \"AUDIT ROLE MAXIMO_READ, ROLE MAXIMO_WRITE USING POLICY USER_AUDIT\" || echo 'Audit policy already applied to MAXIMO roles, skipping'
-                    echo 'Audit policy USER_AUDIT applied to MAXIMO_READ and MAXIMO_WRITE'
+                    ROLE_READ_AUDIT_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE OBJECTTYPE='R' AND OBJECTNAME='MAXIMO_READ'\" | tr -d ' ')
+                    echo '  - MAXIMO_READ'
+                    if [ \"\$ROLE_READ_AUDIT_EXISTS\" -eq \"0\" ]; then
+                      db2 \"AUDIT ROLE MAXIMO_READ USING POLICY USER_AUDIT\"
+                      echo '    [OK] USER_AUDIT assigned.'
+                    else
+                      echo '    [SKIP] Already assigned.'
+                    fi
+                    ROLE_WRITE_AUDIT_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE OBJECTTYPE='R' AND OBJECTNAME='MAXIMO_WRITE'\" | tr -d ' ')
+                    echo '  - MAXIMO_WRITE'
+                    if [ \"\$ROLE_WRITE_AUDIT_EXISTS\" -eq \"0\" ]; then
+                      db2 \"AUDIT ROLE MAXIMO_WRITE USING POLICY USER_AUDIT\"
+                      echo '    [OK] USER_AUDIT assigned.'
+                    else
+                      echo '    [SKIP] Already assigned.'
+                    fi
                   else
-                    echo 'MAXIMO_READ/MAXIMO_WRITE roles not found, skipping role audit policy assignment'
+                    echo '  [SKIP] MAXIMO_READ/MAXIMO_WRITE roles not found - skipping role audit.'
                   fi
-                fi
-
-                if [ \"${MAS_APP_ID}\" = \"facilities\" ]; then
-                  echo 'Applying USER_AUDIT policy to TRIRIGA_READ and TRIRIGA_WRITE roles...'
+                  ROLE_LABEL='MAXIMO_READ, MAXIMO_WRITE'
+                elif [ \"${MAS_APP_ID}\" = \"facilities\" ]; then
                   ROLE_READ_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='TRIRIGA_READ'\" | tr -d ' ')
                   ROLE_WRITE_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='TRIRIGA_WRITE'\" | tr -d ' ')
                   if [ \"\$ROLE_READ_EXISTS\" -gt \"0\" ] && [ \"\$ROLE_WRITE_EXISTS\" -gt \"0\" ]; then
-                    db2 \"AUDIT ROLE TRIRIGA_READ, ROLE TRIRIGA_WRITE USING POLICY USER_AUDIT\" || echo 'Audit policy already applied to TRIRIGA roles, skipping'
-                    echo 'Audit policy USER_AUDIT applied to TRIRIGA_READ and TRIRIGA_WRITE'
+                    ROLE_READ_AUDIT_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE OBJECTTYPE='R' AND OBJECTNAME='TRIRIGA_READ'\" | tr -d ' ')
+                    echo '  - TRIRIGA_READ'
+                    if [ \"\$ROLE_READ_AUDIT_EXISTS\" -eq \"0\" ]; then
+                      db2 \"AUDIT ROLE TRIRIGA_READ USING POLICY USER_AUDIT\"
+                      echo '    [OK] USER_AUDIT assigned.'
+                    else
+                      echo '    [SKIP] Already assigned.'
+                    fi
+                    ROLE_WRITE_AUDIT_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE OBJECTTYPE='R' AND OBJECTNAME='TRIRIGA_WRITE'\" | tr -d ' ')
+                    echo '  - TRIRIGA_WRITE'
+                    if [ \"\$ROLE_WRITE_AUDIT_EXISTS\" -eq \"0\" ]; then
+                      db2 \"AUDIT ROLE TRIRIGA_WRITE USING POLICY USER_AUDIT\"
+                      echo '    [OK] USER_AUDIT assigned.'
+                    else
+                      echo '    [SKIP] Already assigned.'
+                    fi
                   else
-                    echo 'TRIRIGA_READ/TRIRIGA_WRITE roles not found, skipping role audit policy assignment'
+                    echo '  [SKIP] TRIRIGA_READ/TRIRIGA_WRITE roles not found - skipping role audit.'
                   fi
+                  ROLE_LABEL='TRIRIGA_READ, TRIRIGA_WRITE'
+                else
+                  ROLE_LABEL='N/A'
+                  echo '  [SKIP] No role audit configured for this application.'
                 fi
+                echo ''
+                echo '[OK] USER_AUDIT role assignments verified.'
 
-                # ----------------------------------------------------------------
-                # Assign USER_AUDIT policy to db2inst1 user (common)
-                # ----------------------------------------------------------------
-                echo 'Applying USER_AUDIT policy to db2inst1 user...'
-                db2 \"AUDIT USER db2inst1 USING POLICY USER_AUDIT\" || echo 'Audit policy already applied to db2inst1, skipping'
-                echo 'Audit policy USER_AUDIT applied to db2inst1'
+                echo ''
+                echo '--------------------------------------------------------------------------------'
+                echo '[4/4] USER_AUDIT User Assignment'
+                echo '--------------------------------------------------------------------------------'
+                echo 'Checking USER_AUDIT assignment to user:'
+                echo ''
+                USER_AUDIT_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE OBJECTTYPE='U' AND OBJECTNAME='DB2INST1'\" | tr -d ' ')
+                echo '  - DB2INST1'
+                if [ \"\$USER_AUDIT_EXISTS\" -eq \"0\" ]; then
+                  db2 \"AUDIT USER db2inst1 USING POLICY USER_AUDIT\"
+                  echo '    [OK] USER_AUDIT assigned.'
+                else
+                  echo '    [SKIP] Already assigned.'
+                fi
+                echo ''
+                echo '[OK] USER_AUDIT user assignment verified.'
 
                 db2 connect reset
-                echo 'Audit policy setup complete'
+
+                echo ''
+                echo '--------------------------------------------------------------------------------'
+                echo '                         AUDIT CONFIGURATION SUMMARY'
+                echo '--------------------------------------------------------------------------------'
+                echo \"Audit Policy         : USER_AUDIT\"
+                echo \"Roles                : \${ROLE_LABEL}\"
+                echo \"User                 : DB2INST1\"
+                echo ''
               " db2inst1 || exit $?
 
               echo ""
               echo "================================================================================"
-              echo "DB2 audit policy setup completed successfully"
+              echo "                    DB2 AUDIT POLICY SETUP COMPLETE"
               echo "================================================================================"
 
       restartPolicy: Never

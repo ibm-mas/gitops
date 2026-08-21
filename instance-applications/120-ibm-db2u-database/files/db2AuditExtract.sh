@@ -7,7 +7,7 @@
 #%
 #%  **  THIS MUST BE RUN AS THE DB2 INSTANCE OWNER (db2inst1)  **
 #%
-#%  USAGE:  db2AuditExtract.sh <application_name>
+#%  USAGE:  db2AuditExtract.sh <application_name> [dbname]
 #%
 #%  Steps:
 #%   1.  mkdir /tmp/auditarchive
@@ -41,7 +41,7 @@ fi
 # ── Constants ──────────────────────────────────────────────────────────────
 ARCHIVE_DIR="/tmp/auditarchive"
 AUDIT_BASE="/mnt/blumeta0/audit"
-DBNAME="BLUDB"
+DBNAME="${2:-BLUDB}"  # Passed as 2nd arg from CronJob; falls back to BLUDB
 DATE=$(date +"%Y-%m-%d")
 DT=$(date +"%Y-%m-%d_%H%M%S")
 DELETE_AUDIT_BASE_DEL="false"   # Set to "true" to delete *.del files from ${AUDIT_BASE} (step 13)

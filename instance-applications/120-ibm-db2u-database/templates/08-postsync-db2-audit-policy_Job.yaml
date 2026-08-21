@@ -4,14 +4,18 @@ Audit policy setup job for DB2.
 Runs per-application audit policy commands on the db2u pod after the main
 postsync setup job (sync-wave 129) has completed.
 
-Common to all applications:
-  - Create USER_AUDIT policy if not exists
-  - AUDIT USER db2inst1 USING POLICY USER_AUDIT
-
-Per-application role audit (only if roles already exist):
+Only executed for applications that use DB2 audit policy:
   - manage    : AUDIT ROLE MAXIMO_READ, ROLE MAXIMO_WRITE USING POLICY USER_AUDIT
   - facilities: AUDIT ROLE TRIRIGA_READ, ROLE TRIRIGA_WRITE USING POLICY USER_AUDIT
+  - monitor   : no role audit - db2inst1 user audit only
+  - iot       : no role audit - db2inst1 user audit only
+
+Common to all supported applications:
+  - Create USER_AUDIT policy if not exists
+  - AUDIT USER db2inst1 USING POLICY USER_AUDIT
 */}}
+{{- $supported_apps := list "manage" "facilities" "monitor" "iot" }}
+{{- if has .Values.mas_application_id $supported_apps }}
 {{- if .Values.should_execute }}
 
 {{- if not (contains "sdb" .Values.db2_instance_name) }}
@@ -176,9 +180,12 @@ spec:
                     echo '  [SKIP] TRIRIGA_READ/TRIRIGA_WRITE roles not found - skipping role audit.'
                   fi
                   ROLE_LABEL='TRIRIGA_READ, TRIRIGA_WRITE'
+                elif [ \"${MAS_APP_ID}\" = \"monitor\" ] || [ \"${MAS_APP_ID}\" = \"iot\" ]; then
+                  ROLE_LABEL='N/A - user audit only'
+                  echo '  [SKIP] No role audit required for ${MAS_APP_ID} - db2inst1 user audit only.'
                 else
                   ROLE_LABEL='N/A'
-                  echo '  [SKIP] No role audit configured for this application.'
+                  echo '  [SKIP] No role audit configured for ${MAS_APP_ID}.'
                 fi
                 echo ''
                 echo '[OK] USER_AUDIT role assignments verified.'
@@ -217,6 +224,7 @@ spec:
       serviceAccountName: "postsync-sa-{{ .Values.db2_instance_name }}"
   backoffLimit: 4
 
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

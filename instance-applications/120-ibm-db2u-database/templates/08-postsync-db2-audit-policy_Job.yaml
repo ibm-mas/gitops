@@ -39,7 +39,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -148,22 +148,14 @@ spec:
                   ROLE_READ_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='MAXIMO_READ'\" | tr -d ' ')
                   ROLE_WRITE_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='MAXIMO_WRITE'\" | tr -d ' ')
                   if [ \"\$ROLE_READ_EXISTS\" -gt \"0\" ] && [ \"\$ROLE_WRITE_EXISTS\" -gt \"0\" ]; then
-                    ROLE_READ_AUDIT_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE OBJECTTYPE='R' AND OBJECTNAME='MAXIMO_READ'\" | tr -d ' ')
                     echo '  - MAXIMO_READ'
-                    if [ \"\$ROLE_READ_AUDIT_EXISTS\" -eq \"0\" ]; then
-                      db2 \"AUDIT ROLE MAXIMO_READ USING POLICY USER_AUDIT\"
-                      echo '    [OK] USER_AUDIT assigned.'
-                    else
-                      echo '    [SKIP] Already assigned.'
-                    fi
-                    ROLE_WRITE_AUDIT_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE OBJECTTYPE='R' AND OBJECTNAME='MAXIMO_WRITE'\" | tr -d ' ')
+                    db2 \"AUDIT ROLE MAXIMO_READ USING POLICY USER_AUDIT\" \
+                      && echo '    [OK] USER_AUDIT assigned.' \
+                      || echo '    [SKIP] Already assigned.'
                     echo '  - MAXIMO_WRITE'
-                    if [ \"\$ROLE_WRITE_AUDIT_EXISTS\" -eq \"0\" ]; then
-                      db2 \"AUDIT ROLE MAXIMO_WRITE USING POLICY USER_AUDIT\"
-                      echo '    [OK] USER_AUDIT assigned.'
-                    else
-                      echo '    [SKIP] Already assigned.'
-                    fi
+                    db2 \"AUDIT ROLE MAXIMO_WRITE USING POLICY USER_AUDIT\" \
+                      && echo '    [OK] USER_AUDIT assigned.' \
+                      || echo '    [SKIP] Already assigned.'
                   else
                     echo '  [SKIP] MAXIMO_READ/MAXIMO_WRITE roles not found - skipping role audit.'
                   fi
@@ -172,22 +164,14 @@ spec:
                   ROLE_READ_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='TRIRIGA_READ'\" | tr -d ' ')
                   ROLE_WRITE_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='TRIRIGA_WRITE'\" | tr -d ' ')
                   if [ \"\$ROLE_READ_EXISTS\" -gt \"0\" ] && [ \"\$ROLE_WRITE_EXISTS\" -gt \"0\" ]; then
-                    ROLE_READ_AUDIT_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE OBJECTTYPE='R' AND OBJECTNAME='TRIRIGA_READ'\" | tr -d ' ')
                     echo '  - TRIRIGA_READ'
-                    if [ \"\$ROLE_READ_AUDIT_EXISTS\" -eq \"0\" ]; then
-                      db2 \"AUDIT ROLE TRIRIGA_READ USING POLICY USER_AUDIT\"
-                      echo '    [OK] USER_AUDIT assigned.'
-                    else
-                      echo '    [SKIP] Already assigned.'
-                    fi
-                    ROLE_WRITE_AUDIT_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE OBJECTTYPE='R' AND OBJECTNAME='TRIRIGA_WRITE'\" | tr -d ' ')
+                    db2 \"AUDIT ROLE TRIRIGA_READ USING POLICY USER_AUDIT\" \
+                      && echo '    [OK] USER_AUDIT assigned.' \
+                      || echo '    [SKIP] Already assigned.'
                     echo '  - TRIRIGA_WRITE'
-                    if [ \"\$ROLE_WRITE_AUDIT_EXISTS\" -eq \"0\" ]; then
-                      db2 \"AUDIT ROLE TRIRIGA_WRITE USING POLICY USER_AUDIT\"
-                      echo '    [OK] USER_AUDIT assigned.'
-                    else
-                      echo '    [SKIP] Already assigned.'
-                    fi
+                    db2 \"AUDIT ROLE TRIRIGA_WRITE USING POLICY USER_AUDIT\" \
+                      && echo '    [OK] USER_AUDIT assigned.' \
+                      || echo '    [SKIP] Already assigned.'
                   else
                     echo '  [SKIP] TRIRIGA_READ/TRIRIGA_WRITE roles not found - skipping role audit.'
                   fi
@@ -205,14 +189,10 @@ spec:
                 echo '--------------------------------------------------------------------------------'
                 echo 'Checking USER_AUDIT assignment to user:'
                 echo ''
-                USER_AUDIT_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE OBJECTTYPE='U' AND OBJECTNAME='DB2INST1'\" | tr -d ' ')
                 echo '  - DB2INST1'
-                if [ \"\$USER_AUDIT_EXISTS\" -eq \"0\" ]; then
-                  db2 \"AUDIT USER db2inst1 USING POLICY USER_AUDIT\"
-                  echo '    [OK] USER_AUDIT assigned.'
-                else
-                  echo '    [SKIP] Already assigned.'
-                fi
+                db2 \"AUDIT USER db2inst1 USING POLICY USER_AUDIT\" \
+                  && echo '    [OK] USER_AUDIT assigned.' \
+                  || echo '    [SKIP] Already assigned.'
                 echo ''
                 echo '[OK] USER_AUDIT user assignment verified.'
 

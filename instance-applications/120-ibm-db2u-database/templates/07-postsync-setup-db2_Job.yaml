@@ -35,7 +35,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v37" }}
+{{- $_job_version := "v24" }}
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
 This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
@@ -888,17 +888,6 @@ spec:
                 echo "Executing ${SET_COS_STORAGE_SH_PATH} file on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${SET_COS_STORAGE_SH_PATH} | tee /tmp/setcosstorage.log" db2inst1 || exit $?
-
-                echo ""
-                echo "Installing AWS CLI on c-${DB2_INSTANCE_NAME}-db2u-0 if not already present"
-                echo "--------------------------------------------------------------------------------"
-                aws_is_installed=`oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "/mnt/backup/aws/dist/aws --version 2>&1 || true" db2inst1`
-                if [[ $aws_is_installed =~ 'not found' ]] || [[ -z $aws_is_installed ]]; then
-                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd /mnt/backup; curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'; unzip awscliv2.zip -d /mnt/backup/;" db2inst1 || exit $?
-                  echo "AWS CLI installed at /mnt/backup/aws/dist/aws"
-                else
-                  echo "AWS CLI already present: ${aws_is_installed}"
-                fi
 
                 CHECK_COS_STORAGE_SH_PATH="CheckCOS.sh"
                 echo ""

@@ -4,25 +4,42 @@ Audit policy setup job for DB2.
 Runs per-application audit policy commands on the db2u pod after the main
 postsync setup job (sync-wave 129) has completed.
 
-Currently supported: manage
+Common to all applications:
+  - Create USER_AUDIT policy if not exists
+  - AUDIT USER db2inst1 USING POLICY USER_AUDIT
+
+Per-application role audit (only if roles already exist):
+  - manage    : AUDIT ROLE MAXIMO_READ, ROLE MAXIMO_WRITE USING POLICY USER_AUDIT
+  - facilities: AUDIT ROLE TRIRIGA_READ, ROLE TRIRIGA_WRITE USING POLICY USER_AUDIT
 */}}
 {{- if .Values.should_execute }}
 
 {{- if not (contains "sdb" .Values.db2_instance_name) }}
 
-{{- $_job_name_prefix := "postsync-db2-audit-policy" }}
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "postsync-audit-policy" }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+Included in $_job_hash (see below).
 */}}
 {{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Included in $_job_hash (see below).
+*/}}
 {{- $_job_config_values := omit .Values "junitreporter" }}
 
 {{- /*
 Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v1" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -54,7 +71,6 @@ spec:
         - name: run
           image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
-
           resources:
             limits:
               cpu: 200m
@@ -62,17 +78,15 @@ spec:
             requests:
               cpu: 10m
               memory: 64Mi
-
           env:
-            - name: MAS_APP_ID
-              value: {{ .Values.mas_application_id }}
             - name: DB2_NAMESPACE
               value: "{{ .Values.db2_namespace }}"
             - name: DB2_INSTANCE_NAME
               value: "{{ .Values.db2_instance_name }}"
             - name: DB2_DBNAME
               value: "{{ .Values.db2_dbname }}"
-
+            - name: MAS_APP_ID
+              value: "{{ .Values.mas_application_id }}"
           command:
             - /bin/sh
             - -c
@@ -82,74 +96,82 @@ spec:
 
               DB2_POD="c-${DB2_INSTANCE_NAME}-db2u-0"
 
-              # ============================================================
-              # Audit policy: manage
-              # ============================================================
-              if [ "$MAS_APP_ID" = "manage" ]; then
+              echo ""
+              echo "================================================================================"
+              echo "DB2 Audit Policy Setup"
+              echo "================================================================================"
+              echo "DB2_NAMESPACE ....................... ${DB2_NAMESPACE}"
+              echo "DB2_INSTANCE_NAME ................... ${DB2_INSTANCE_NAME}"
+              echo "DB2_DBNAME .......................... ${DB2_DBNAME}"
+              echo "MAS_APP_ID .......................... ${MAS_APP_ID}"
 
-                echo ""
-                echo "================================================================================"
-                echo "Setting up DB2 audit policy for Manage"
-                echo "================================================================================"
+              # All DB2 commands run in a single oc exec so the database
+              # connection established by 'db2 connect' is shared across
+              # every subsequent statement in the same session.
+              oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- su -lc "
+                set -e
 
-                # All DB2 commands run in a single oc exec so the database
-                # connection established by 'db2 connect' is shared across
-                # every subsequent statement in the same session.
-                oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- su -lc "
-                  set -e
+                echo 'Connecting to database ${DB2_DBNAME}'
+                db2 connect to ${DB2_DBNAME}
 
-                  echo 'Connecting to database ${DB2_DBNAME}'
-                  db2 connect to ${DB2_DBNAME}
+                # ----------------------------------------------------------------
+                # Create USER_AUDIT policy if it does not already exist (common)
+                # ----------------------------------------------------------------
+                echo 'Checking USER_AUDIT policy...'
+                POLICY_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME='USER_AUDIT'\" | tr -d ' ')
+                if [ \"\$POLICY_EXISTS\" -eq \"0\" ]; then
+                  echo 'Creating USER_AUDIT policy...'
+                  db2 \"CREATE AUDIT POLICY USER_AUDIT CATEGORIES VALIDATE STATUS BOTH, EXECUTE WITHOUT DATA STATUS BOTH ERROR TYPE NORMAL\"
+                  echo 'USER_AUDIT policy created successfully'
+                else
+                  echo 'USER_AUDIT policy already exists, skipping'
+                fi
 
-                  echo 'Checking if USER_AUDIT policy already exists'
-                  POLICY_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME='USER_AUDIT'\" | tr -d ' ')
-                  if [ \"\$POLICY_EXISTS\" -eq \"0\" ]; then
-                    echo 'Creating USER_AUDIT policy...'
-                    db2 \"CREATE AUDIT POLICY USER_AUDIT CATEGORIES VALIDATE STATUS BOTH, EXECUTE WITHOUT DATA STATUS BOTH ERROR TYPE NORMAL\"
-                    echo 'USER_AUDIT policy created successfully'
-                  else
-                    echo 'USER_AUDIT policy already exists, skipping'
-                  fi
-
-                  echo 'Applying USER_AUDIT policy to MAXIMO_READ and MAXIMO_WRITE roles'
+                # ----------------------------------------------------------------
+                # Per-application role audit (manage and facilities only)
+                # ----------------------------------------------------------------
+                if [ \"${MAS_APP_ID}\" = \"manage\" ]; then
+                  echo 'Applying USER_AUDIT policy to MAXIMO_READ and MAXIMO_WRITE roles...'
                   ROLE_READ_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='MAXIMO_READ'\" | tr -d ' ')
                   ROLE_WRITE_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='MAXIMO_WRITE'\" | tr -d ' ')
                   if [ \"\$ROLE_READ_EXISTS\" -gt \"0\" ] && [ \"\$ROLE_WRITE_EXISTS\" -gt \"0\" ]; then
                     db2 \"AUDIT ROLE MAXIMO_READ, ROLE MAXIMO_WRITE USING POLICY USER_AUDIT\" || echo 'Audit policy already applied to MAXIMO roles, skipping'
                     echo 'Audit policy USER_AUDIT applied to MAXIMO_READ and MAXIMO_WRITE'
                   else
-                    echo 'MAXIMO roles not found, skipping role audit policy assignment'
+                    echo 'MAXIMO_READ/MAXIMO_WRITE roles not found, skipping role audit policy assignment'
                   fi
+                fi
 
-                  echo 'Applying USER_AUDIT policy to db2inst1 user'
-                  db2 \"AUDIT USER db2inst1 USING POLICY USER_AUDIT\" || echo 'Audit policy already applied to db2inst1, skipping'
-                  echo 'Audit policy USER_AUDIT applied to db2inst1'
+                if [ \"${MAS_APP_ID}\" = \"facilities\" ]; then
+                  echo 'Applying USER_AUDIT policy to TRIRIGA_READ and TRIRIGA_WRITE roles...'
+                  ROLE_READ_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='TRIRIGA_READ'\" | tr -d ' ')
+                  ROLE_WRITE_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='TRIRIGA_WRITE'\" | tr -d ' ')
+                  if [ \"\$ROLE_READ_EXISTS\" -gt \"0\" ] && [ \"\$ROLE_WRITE_EXISTS\" -gt \"0\" ]; then
+                    db2 \"AUDIT ROLE TRIRIGA_READ, ROLE TRIRIGA_WRITE USING POLICY USER_AUDIT\" || echo 'Audit policy already applied to TRIRIGA roles, skipping'
+                    echo 'Audit policy USER_AUDIT applied to TRIRIGA_READ and TRIRIGA_WRITE'
+                  else
+                    echo 'TRIRIGA_READ/TRIRIGA_WRITE roles not found, skipping role audit policy assignment'
+                  fi
+                fi
 
-                  echo ''
-                  echo '========================================'
-                  echo 'Verifying audit policy setup'
-                  echo '========================================'
+                # ----------------------------------------------------------------
+                # Assign USER_AUDIT policy to db2inst1 user (common)
+                # ----------------------------------------------------------------
+                echo 'Applying USER_AUDIT policy to db2inst1 user...'
+                db2 \"AUDIT USER db2inst1 USING POLICY USER_AUDIT\" || echo 'Audit policy already applied to db2inst1, skipping'
+                echo 'Audit policy USER_AUDIT applied to db2inst1'
 
-                  echo 'Users and roles assigned to USER_AUDIT:'
-                  db2 \"SELECT * FROM SYSCAT.AUDITUSE WHERE AUDITPOLICYNAME='USER_AUDIT'\"
+                db2 connect reset
+                echo 'Audit policy setup complete'
+              " db2inst1 || exit $?
 
-                  echo 'Audit policy categories for USER_AUDIT:'
-                  db2 \"SELECT AUDITPOLICYNAME, VALIDATESTATUS, EXECUTESTATUS FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME='USER_AUDIT'\"
-
-                  db2 connect reset
-                  echo 'Audit policy setup complete'
-                " db2inst1 || exit $?
-
-                echo ""
-                echo "================================================================================"
-                echo "DB2 audit policy setup completed successfully for Manage"
-                echo "================================================================================"
-
-              fi
+              echo ""
+              echo "================================================================================"
+              echo "DB2 audit policy setup completed successfully"
+              echo "================================================================================"
 
       restartPolicy: Never
       serviceAccountName: "postsync-sa-{{ .Values.db2_instance_name }}"
-
   backoffLimit: 4
 
 {{- end }}

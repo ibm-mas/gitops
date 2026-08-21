@@ -6,7 +6,11 @@ Create a Db2u database for a MAS app.
 
 ## Overview
 
-Creates a Db2u database instance for a MAS application. Includes a presync hook (`00-presync-await-crd_Job.yaml`) that ensures the `db2uclusters` CRD is installed before syncing, and a postsync job (`05-postsync-setup-db2_Job.yaml`) that registers the `${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config` secret in the **Secrets Vault** and performs any Manage-specific database configuration steps.
+This chart deploys and configures a Db2u database instance for use by a MAS application. It manages the full lifecycle of the database including TLS certificates, storage, backup, audit log extraction, and HADR services.
+
+Contains a presync hook (`00-presync-await-crd_Job.yaml`) that ensures we wait for the `db2uclusters` CRD to be installed before attempting to sync.
+
+Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers the `${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config` secret in the **Secrets Vault** used to share some information that is generated at runtime with other ArgoCD Applications. This job also performs some special configuration steps that are required if the Db2u database is intended for use by the Manage MAS Application.
 
 ## Resources Created
 
@@ -255,26 +259,52 @@ CREATE AUDIT POLICY USER_AUDIT
 
 If `private_nlb.enabled: true` and either `subnet_ids` or `allowed_cidrs` is
 empty, Helm will fail immediately with a clear error message before rendering
-any resources. This prevents a broken or unrestricted NLB from being deployed..
+any resources. This prevents a broken or unrestricted NLB from being deployed.
+
+## Prerequisites
+
+- The `db2uclusters` CRD must be available on the cluster (ensured by the presync hook).
+- An S3-compatible backup bucket must be provisioned when backup or audit log upload is enabled.
+- Secrets for S3 credentials, cluster domain, and Secrets Manager access must be pre-populated in the Secrets Vault before sync.
 
 ## Examples
 
-### Minimal — Manage database with backup and audit extraction enabled
+### Minimal deployment
 
 ```yaml
-db2_namespace: mas-inst1-manage-db2u
-db2_instance_name: db2wh-manage
+db2_namespace: db2u-manage
+db2_instance_name: db2u-manage
 db2_dbname: BLUDB
-db2_instance_home_path: /mnt/blumeta0/home/db2inst1
+db2_version: "11.5.9.0"
+db2_tls_version: "1.2"
+db2_table_org: ROW
 mas_application_id: manage
-instance_id: inst1
-
-# Backup
-db2_backup_bucket_name: "<path:secret/path#db2_backup_bucket_name>"
-db2_backup_bucket_endpoint: "<path:secret/path#db2_backup_bucket_endpoint>"
-db2_backup_bucket_access_key: "<path:secret/path#db2_backup_bucket_access_key>"
-db2_backup_bucket_secret_key: "<path:secret/path#db2_backup_bucket_secret_key>"
-
-# Audit extraction — daily CronJob uploads delasc files to audit-log-manage/<YYYYMMDD>/
-db2_audit_bucket_name: "<path:secret/path#db2_audit_bucket_name>"
+cluster_domain: "<path:secrets/path:cluster_domain>"
 ```
+
+### With backup and audit log upload enabled
+
+```yaml
+db2_namespace: db2u-manage
+db2_instance_name: db2u-manage
+db2_dbname: BLUDB
+db2_backup_bucket_name: "<path:secrets/path:bucket_name>"
+db2_backup_bucket_endpoint: "<path:secrets/path:bucket_endpoint>"
+db2_backup_bucket_access_key: "<path:secrets/path:access_key>"
+db2_backup_bucket_secret_key: "<path:secrets/path:secret_key>"
+auto_backup: true
+mas_application_id: manage
+cluster_domain: "<path:secrets/path:cluster_domain>"
+```
+
+## Troubleshooting
+
+- **Presync job stuck** — verify the `db2uclusters` CRD is installed by the DB2U operator before the ArgoCD sync wave reaches this chart.
+- **Postsync job failing** — check the job logs in the DB2 namespace; common causes are missing S3 credentials or an unreachable backup bucket.
+- **Audit CronJob not running** — confirm `db2_backup_bucket_name` is set and the instance name does not contain `sdb` (audit cron is disabled for SDB instances).
+- **AWS CLI missing** — `db2AuditExtract.sh` will install the AWS CLI automatically on first run via `curl`/`unzip` into `/mnt/backup/`.
+
+## Related Documentation
+
+- [Instance Base Values Reference](../../docs/reference/instance-base-values.md)
+- [IBM Db2u Operator Documentation](https://www.ibm.com/docs/en/db2/11.5)

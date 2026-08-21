@@ -1,0 +1,157 @@
+{{- if .Values.application_admin_role }}
+{{- /*
+Audit policy setup job for DB2.
+Runs per-application audit policy commands on the db2u pod after the main
+postsync setup job (sync-wave 129) has completed.
+
+Currently supported: manage
+*/}}
+{{- if .Values.should_execute }}
+
+{{- if not (contains "sdb" .Values.db2_instance_name) }}
+
+{{- $_job_name_prefix := "postsync-db2-audit-policy" }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+*/}}
+{{- $_job_version := "v3" }}
+
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
+
+{{- $_job_cleanup_group := cat $_job_name_prefix .Values.db2_instance_name | sha1sum }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "130"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+
+          env:
+            - name: MAS_APP_ID
+              value: {{ .Values.mas_application_id }}
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+            - name: DB2_DBNAME
+              value: "{{ .Values.db2_dbname }}"
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              DB2_POD="c-${DB2_INSTANCE_NAME}-db2u-0"
+
+              # ============================================================
+              # Audit policy: manage
+              # ============================================================
+              if [ "$MAS_APP_ID" = "manage" ]; then
+
+                echo ""
+                echo "================================================================================"
+                echo "Setting up DB2 audit policy for Manage"
+                echo "================================================================================"
+
+                # All DB2 commands run in a single oc exec so the database
+                # connection established by 'db2 connect' is shared across
+                # every subsequent statement in the same session.
+                oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- su -lc "
+                  set -e
+
+                  echo 'Connecting to database ${DB2_DBNAME}'
+                  db2 connect to ${DB2_DBNAME}
+
+                  echo 'Checking if USER_AUDIT policy already exists'
+                  POLICY_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME='USER_AUDIT'\" | tr -d ' ')
+                  if [ \"\$POLICY_EXISTS\" -eq \"0\" ]; then
+                    echo 'Creating USER_AUDIT policy...'
+                    db2 \"CREATE AUDIT POLICY USER_AUDIT CATEGORIES VALIDATE STATUS BOTH, EXECUTE WITHOUT DATA STATUS BOTH ERROR TYPE NORMAL\"
+                    echo 'USER_AUDIT policy created successfully'
+                  else
+                    echo 'USER_AUDIT policy already exists, skipping'
+                  fi
+
+                  echo 'Applying USER_AUDIT policy to MAXIMO_READ and MAXIMO_WRITE roles'
+                  ROLE_READ_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='MAXIMO_READ'\" | tr -d ' ')
+                  ROLE_WRITE_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='MAXIMO_WRITE'\" | tr -d ' ')
+                  if [ \"\$ROLE_READ_EXISTS\" -gt \"0\" ] && [ \"\$ROLE_WRITE_EXISTS\" -gt \"0\" ]; then
+                    db2 \"AUDIT ROLE MAXIMO_READ, ROLE MAXIMO_WRITE USING POLICY USER_AUDIT\" || echo 'Audit policy already applied to MAXIMO roles, skipping'
+                    echo 'Audit policy USER_AUDIT applied to MAXIMO_READ and MAXIMO_WRITE'
+                  else
+                    echo 'MAXIMO roles not found, skipping role audit policy assignment'
+                  fi
+
+                  echo 'Applying USER_AUDIT policy to db2inst1 user'
+                  db2 \"AUDIT USER db2inst1 USING POLICY USER_AUDIT\" || echo 'Audit policy already applied to db2inst1, skipping'
+                  echo 'Audit policy USER_AUDIT applied to db2inst1'
+
+                  echo ''
+                  echo '========================================'
+                  echo 'Verifying audit policy setup'
+                  echo '========================================'
+
+                  echo 'Users and roles assigned to USER_AUDIT:'
+                  db2 \"SELECT * FROM SYSCAT.AUDITUSE WHERE AUDITPOLICYNAME='USER_AUDIT'\"
+
+                  echo 'Audit policy categories for USER_AUDIT:'
+                  db2 \"SELECT AUDITPOLICYNAME, VALIDATESTATUS, EXECUTESTATUS FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME='USER_AUDIT'\"
+
+                  db2 connect reset
+                  echo 'Audit policy setup complete'
+                " db2inst1 || exit $?
+
+                echo ""
+                echo "================================================================================"
+                echo "DB2 audit policy setup completed successfully for Manage"
+                echo "================================================================================"
+
+              fi
+
+      restartPolicy: Never
+      serviceAccountName: "postsync-sa-{{ .Values.db2_instance_name }}"
+
+  backoffLimit: 4
+
+{{- end }}
+{{- end }}
+{{- end }}

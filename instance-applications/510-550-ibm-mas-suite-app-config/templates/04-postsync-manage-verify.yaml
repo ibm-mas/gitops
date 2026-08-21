@@ -4,7 +4,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+{{- $_cli_image_digest := "sha256:db6dba0d58592a1bbed459bbe8285316c36d0d8c0bf8b39e1d0f910b3400f441" }}
 
 # A verify test is one that is non disruptive i.e. it won't create new users, i won't call authenticated apis, and it won't creates resources 
 # in the application. This type of test is run on every environment and allows a layer of verification of the app
@@ -363,6 +363,16 @@ data:
         status_serverbundles = [{k: v for k, v in bundle.items() if k != 'isUserSyncTarget'} for bundle in status_serverbundles]
 
       if status_serverbundles and spec_serverbundles:
+        import re
+
+        def remove_user_sync_target(bundles):
+            return [{k: v for k, v in b.items() if k != 'isUserSyncTarget'} for b in bundles]
+
+        mas_app_channel = os.getenv("MAS_APP_CHANNEL", "")
+        match = re.match(r'^(\d+)\.(\d+)', mas_app_channel)
+        if match and (int(match.group(1)), int(match.group(2))) >= (9, 1):
+            spec_serverbundles = remove_user_sync_target(spec_serverbundles)
+            status_serverbundles = remove_user_sync_target(status_serverbundles)
         assert spec_serverbundles == status_serverbundles, f"Expected serverbundles set in the spec: {spec_serverbundles} to be equal to the serverbundles in the status: {status_serverbundles}"
 
     #This is actual Test case method to ping AI service from Manage with retryable attempts
@@ -511,6 +521,8 @@ spec:
               value: "{{ .Values.instance_id }}"
             - name: MAS_WORKSPACE_ID
               value: "{{ .Values.mas_workspace_id }}"
+            - name: MAS_APP_CHANNEL
+              value: "{{ .Values.mas_app_channel }}"
             - name: TEST_RECORD_CM
               value: "{{ $record_cm_name }}"
 {{- if and (hasKey .Values "global_secrets") (hasKey .Values.global_secrets "mxe.int.aibrokerapikey") }}

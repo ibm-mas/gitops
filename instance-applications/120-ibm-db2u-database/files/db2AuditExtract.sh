@@ -7,7 +7,10 @@
 #%
 #%  **  THIS MUST BE RUN AS THE DB2 INSTANCE OWNER (db2inst1)  **
 #%
-#%  USAGE:  db2AuditExtract.sh <application_name> [dbname]
+#%  USAGE:  db2AuditExtract.sh <application_name> [dbname] [--use-irsa]
+#%
+#%  Options:
+#%    --use-irsa    Use IAM Role for Service Account (IRSA) instead of credentials
 #%
 #%  Steps:
 #%   1.  mkdir /tmp/auditarchive
@@ -31,12 +34,21 @@ set -eo pipefail
 # ── Logging helper ─────────────────────────────────────────────────────────
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
-# ── Validate input ─────────────────────────────────────────────────────────
+# ── Parse arguments ────────────────────────────────────────────────────────
 APP_NAME="${1:-}"
+USE_IRSA=false
+
 if [ -z "${APP_NAME}" ]; then
-  echo "ERROR :: Usage: $0 <application_name>"
+  echo "ERROR :: Usage: $0 <application_name> [dbname] [--use-irsa]"
   exit 1
 fi
+
+# Check for --use-irsa flag in any position
+for arg in "$@"; do
+  if [ "$arg" = "--use-irsa" ]; then
+    USE_IRSA=true
+  fi
+done
 
 # ── Constants ──────────────────────────────────────────────────────────────
 ARCHIVE_DIR="/tmp/auditarchive"
@@ -66,9 +78,20 @@ if ! "${AWS_CLI}" --version >/dev/null 2>&1; then
 else
   log "INFO  ::   AWS CLI already present: $(${AWS_CLI} --version 2>&1)"
 fi
-export AWS_ACCESS_KEY_ID="${PARM1}"
-export AWS_SECRET_ACCESS_KEY="${PARM2}"
-export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
+
+# ── Configure AWS authentication ───────────────────────────────────────────
+if [ "${USE_IRSA}" = true ]; then
+  log "INFO  :: Using IRSA (IAM Role for Service Account) for AWS authentication"
+  # IRSA: AWS SDK/CLI automatically uses the pod's service account token
+  # mounted at /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+  # No need to set AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY
+  export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
+else
+  log "INFO  :: Using IAM User credentials for AWS authentication (legacy mode)"
+  export AWS_ACCESS_KEY_ID="${PARM1}"
+  export AWS_SECRET_ACCESS_KEY="${PARM2}"
+  export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
+fi
 
 S3_TARGET="s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
 

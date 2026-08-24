@@ -130,6 +130,9 @@ db2_backup_bucket_secret_key: string (secret reference, when backup enabled)
 db2_backup_notify_slack_url: string (optional, when backup enabled)
 db2_backup_icd_auth_key: string (secret reference, optional, when backup enabled)
 
+# Audit Log Configuration (IRSA - Recommended)
+db2_audit_irsa_role_arn: string (optional, IAM Role ARN for IRSA)
+
 allow_list: string (optional)
 
 # Private NLB for customer TGW connectivity (optional)
@@ -244,6 +247,76 @@ db2_backup_bucket_name: "<path:secrets/path:bucket_name>"
 db2_backup_bucket_endpoint: "<path:secrets/path:bucket_endpoint>"
 db2_backup_bucket_access_key: "<path:secrets/path:access_key>"
 db2_backup_bucket_secret_key: "<path:secrets/path:secret_key>"
+### With IRSA (IAM Role for Service Account) - Recommended
+
+Using IRSA eliminates the need for IAM User credentials and improves security posture for AWS AccessHub (ITSS) compliance:
+
+```yaml
+db2_namespace: db2u-manage
+db2_instance_name: db2u-manage
+db2_dbname: BLUDB
+db2_backup_bucket_name: "<path:secrets/path:bucket_name>"
+db2_backup_bucket_endpoint: "<path:secrets/path:bucket_endpoint>"
+auto_backup: true
+mas_application_id: manage
+cluster_domain: "<path:secrets/path:cluster_domain>"
+
+# IRSA Configuration - replaces access_key/secret_key
+db2_audit_irsa_role_arn: "arn:aws:iam::123456789012:role/db2-audit-s3-access"
+```
+
+#### IRSA Setup Requirements
+
+1. **Create IAM Role** with trust policy allowing the ServiceAccount:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Principal": {
+           "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/oidc.eks.REGION.amazonaws.com/id/OIDC_ID"
+         },
+         "Action": "sts:AssumeRoleWithWebIdentity",
+         "Condition": {
+           "StringEquals": {
+             "oidc.eks.REGION.amazonaws.com/id/OIDC_ID:sub": "system:serviceaccount:NAMESPACE:account-NAMESPACE-INSTANCE_NAME"
+           }
+         }
+       }
+     ]
+   }
+   ```
+
+2. **Attach S3 Policy** to the IAM Role:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": [
+           "s3:PutObject",
+           "s3:GetObject",
+           "s3:ListBucket"
+         ],
+         "Resource": [
+           "arn:aws:s3:::BUCKET_NAME",
+           "arn:aws:s3:::BUCKET_NAME/*"
+         ]
+       }
+     ]
+   }
+   ```
+
+3. **Configure the chart** with `db2_audit_irsa_role_arn` as shown above.
+
+**Benefits of IRSA:**
+- No credential rotation required
+- Improved ITSS (AWS AccessHub) security score
+- Automatic credential management by AWS
+- Follows AWS security best practices
+
 auto_backup: true
 mas_application_id: manage
 cluster_domain: "<path:secrets/path:cluster_domain>"

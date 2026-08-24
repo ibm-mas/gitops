@@ -114,15 +114,23 @@ db2audit archive to "${ARCHIVE_DIR}"
 # 6.  Extract archived database log → *.del
 # ============================================================================
 log "INFO  :: [6] db2audit extract delasc (database log)"
-db2audit extract delasc to "${ARCHIVE_DIR}" \
-  from files "${ARCHIVE_DIR}/db2audit.db.${DBNAME}.log.0."*
+DB_LOGS=$(ls "${ARCHIVE_DIR}"/db2audit.db."${DBNAME}".log.0.* 2>/dev/null || true)
+if [ -z "${DB_LOGS}" ]; then
+  log "WARN  ::     No database archive log found in ${ARCHIVE_DIR} — skipping extract"
+else
+  db2audit extract delasc to "${ARCHIVE_DIR}" from files ${DB_LOGS}
+fi
 
 # ============================================================================
 # 7.  Extract archived instance log → *.del
 # ============================================================================
 log "INFO  :: [7] db2audit extract delasc (instance log)"
-db2audit extract delasc to "${ARCHIVE_DIR}" \
-  from files "${ARCHIVE_DIR}/db2audit.instance.log.0."*
+INST_LOGS=$(ls "${ARCHIVE_DIR}"/db2audit.instance.log.0.* 2>/dev/null || true)
+if [ -z "${INST_LOGS}" ]; then
+  log "WARN  ::     No instance archive log found in ${ARCHIVE_DIR} — skipping extract"
+else
+  db2audit extract delasc to "${ARCHIVE_DIR}" from files ${INST_LOGS}
+fi
 
 # ============================================================================
 # 8–9.  Copy historical log files from /mnt/blumeta0/audit to /tmp/auditarchive

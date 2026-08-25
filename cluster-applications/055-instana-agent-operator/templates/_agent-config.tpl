@@ -12,7 +12,7 @@ com.instana.ignore:
 com.instana.plugin.argocd:
   enabled: true
   poll_rate: 10
-  url: {{ .Values.argocd_api_url }}
+  url: {{ .Values.argocd_server_url }}
   username:
     configuration_from:
       type: file

@@ -1,0 +1,29 @@
+{{- if .Values.argocd_plugin_enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-plugin
+  namespace: instana-agent
+  annotations:
+    argocd.argoproj.io/sync-wave: "055"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  argocd.yaml: |
+    com.instana.plugin.argocd:
+      enabled: true
+      poll_rate: 10
+      url: {{ .Values.argocd_server_url }}
+      username:
+        configuration_from:
+          type: file
+          file_path: /mnt/secrets/argocdUsername
+      password:
+        configuration_from:
+          type: file
+          file_path: /mnt/secrets/argocdPassword
+      clusters:
+{{ .Values.argocd_clusters | toYaml | indent 8 }}
+{{- end }}

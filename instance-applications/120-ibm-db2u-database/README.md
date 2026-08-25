@@ -265,9 +265,48 @@ cluster_domain: "<path:secrets/path:cluster_domain>"
 db2_audit_irsa_role_arn: "arn:aws:iam::123456789012:role/db2-audit-s3-access"
 ```
 
+#### IRSA Architecture
+
+**Important:** The AWS CLI runs **inside the DB2 pod**, not the CronJob pod. The CronJob only executes `oc rsh` to run commands in the DB2 pod.
+
+```
+CronJob SA
+    │
+    │ Kubernetes RBAC
+    │ pods/get,list
+    │ pods/exec
+    ▼
+DB2U Pod
+    │
+    │ DB2U ServiceAccount (db2u-{instance_name})
+    │ eks.amazonaws.com/role-arn annotation
+    │
+    │ OIDC Token
+    ▼
+AWS STS
+    │
+    ▼
+IAM Role: db2-audit-log-writer
+    │
+    │ s3:PutObject, s3:GetObject, s3:ListBucket
+    ▼
+S3 Bucket (with Object Lock)
+    │
+    ▼
+Immutable Audit Logs
+```
+
+**Key Points:**
+- **CronJob ServiceAccount:** Only needs Kubernetes RBAC to exec into DB2 pod
+- **DB2 Pod ServiceAccount:** Has IRSA annotation, provides AWS credentials
+- **IAM Role:** Assumed by DB2 pod via OIDC, grants S3 access
+- **S3 Object Lock:** Optional, ensures audit logs are immutable
+
+The IRSA annotation is applied to the **DB2 pod's ServiceAccount** (`db2u-{instance_name}`), not the CronJob's ServiceAccount.
+
 #### IRSA Setup Requirements
 
-1. **Create IAM Role** with trust policy allowing the ServiceAccount:
+1. **Create IAM Role** with trust policy allowing the DB2 pod's ServiceAccount:
    ```json
    {
      "Version": "2012-10-17",
@@ -280,12 +319,17 @@ db2_audit_irsa_role_arn: "arn:aws:iam::123456789012:role/db2-audit-s3-access"
          "Action": "sts:AssumeRoleWithWebIdentity",
          "Condition": {
            "StringEquals": {
-             "oidc.eks.REGION.amazonaws.com/id/OIDC_ID:sub": "system:serviceaccount:NAMESPACE:account-NAMESPACE-INSTANCE_NAME"
+             "oidc.eks.REGION.amazonaws.com/id/OIDC_ID:sub": "system:serviceaccount:NAMESPACE:db2u-INSTANCE_NAME"
            }
          }
        }
      ]
    }
+   ```
+
+   **Example for db2u-manage:**
+   ```json
+   "oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539:sub": "system:serviceaccount:db2u-manage:db2u-db2u-manage"
    ```
 
 2. **Attach S3 Policy** to the IAM Role:

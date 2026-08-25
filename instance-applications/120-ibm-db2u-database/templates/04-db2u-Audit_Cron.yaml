@@ -26,8 +26,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "132"
 spec:
-  # Run once a day at midnight (00:00 UTC)
-  schedule: '0 0 * * *'
+  # Run every minute
+  schedule: '* * * * *'
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
@@ -45,7 +45,7 @@ spec:
                 - "c-{{ .Values.db2_instance_name }}-db2u-0"
                 - su
                 - -lc
-                - "{{ .Values.db2_instance_home_path }}/bin/db2AuditExtract.sh {{ .Values.mas_application_id }} {{ .Values.db2_dbname }}"
+                - "{{ .Values.db2_instance_home_path }}/bin/db2AuditExtract.sh {{ .Values.mas_application_id }} {{ .Values.db2_dbname }} {{ .Values.db2_audit_retention_days | default 365 }}"
                 - db2inst1
               imagePullPolicy: IfNotPresent
           restartPolicy: OnFailure

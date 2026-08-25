@@ -292,15 +292,17 @@ AWS STS (AssumeRoleWithWebIdentity)
     ▼
 IAM Role: db2-audit-log-writer
     │
-    │ S3 Policy:
-    │ - s3:PutObject
-    │ - s3:GetObject
-    │ - s3:ListBucket
+    │ S3 Policy (Minimal):
+    │ - s3:PutObject (REQUIRED - upload audit logs)
+    │
+    │ Optional (for troubleshooting):
+    │ - s3:GetObject (verify uploads)
+    │ - s3:ListBucket (list files)
     ▼
 S3 Bucket: audit-logs-bucket
     │
     │ Path: audit_logs/{app}/{YYYY-MM-DD}/
-    │ Optional: Object Lock (WORM)
+    │ Optional: Object Lock (WORM - prevents deletion/modification)
     ▼
 Immutable Audit Logs
 ```
@@ -357,6 +359,26 @@ The IRSA annotation is applied to the **DB2 pod's ServiceAccount** (`db2u-{insta
    ```
 
 2. **Attach S3 Policy** to the IAM Role:
+   
+   **Minimal policy (recommended):**
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": [
+           "s3:PutObject"
+         ],
+         "Resource": [
+           "arn:aws:s3:::BUCKET_NAME/audit_logs/*"
+         ]
+       }
+     ]
+   }
+   ```
+   
+   **With troubleshooting permissions (optional):**
    ```json
    {
      "Version": "2012-10-17",
@@ -376,6 +398,8 @@ The IRSA annotation is applied to the **DB2 pod's ServiceAccount** (`db2u-{insta
      ]
    }
    ```
+   
+   **Note:** The audit script only uploads files (`aws s3 cp`), so `s3:PutObject` is the only required permission. Additional permissions are optional for verification and troubleshooting.
 
 3. **Configure the chart** with `db2_audit_irsa_role_arn` as shown above.
 

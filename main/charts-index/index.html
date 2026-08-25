@@ -4988,6 +4988,13 @@ oc logs -n &lt;tenant-namespace&gt; -l control-plane=ibm-aiservice --tail=100
 <td>Always</td>
 <td><code>application_admin_role</code></td>
 </tr>
+<tr>
+<td><code>Job</code></td>
+<td>DB2 audit policy setup job</td>
+<td>DB2 application namespace</td>
+<td>When <code>mas_application_id</code> is <code>manage</code>, <code>facilities</code>, <code>monitor</code>, or <code>iot</code></td>
+<td><code>application_admin_role</code></td>
+</tr>
 </tbody>
 </table>
 <h5 id="configuration_29">Configuration<a class="headerlink" href="#configuration_29" title="Permanent link">¤</a></h5>
@@ -5170,6 +5177,68 @@ No manual security group changes are needed.</p>
 application is deployed separately per instance with its own <code>db2_instance_name</code>.
 Both can use port 50001 without conflict since they are separate AWS NLB resources.</p>
 <p>The NLB is created independently for each instance (e.g. facilities, manage) using the instance-specific selector.</p>
+<h5 id="db2-audit-policy">DB2 Audit Policy<a class="headerlink" href="#db2-audit-policy" title="Permanent link">¤</a></h5>
+<h6 id="when-it-is-applied">When It Is Applied<a class="headerlink" href="#when-it-is-applied" title="Permanent link">¤</a></h6>
+<p>The audit policy Job (<a href="../instance-applications/120-ibm-db2u-database/templates/08-postsync-db2-audit-policy_Job.yaml"><code>08-postsync-db2-audit-policy_Job.yaml</code></a>) runs at sync-wave <code>130</code> (after the main DB2 setup job at wave <code>129</code>) and is <strong>only created</strong> when all of the following conditions are met:</p>
+<ol>
+<li><code>application_admin_role: true</code></li>
+<li><code>mas_application_id</code> is one of: <code>manage</code>, <code>facilities</code>, <code>monitor</code>, <code>iot</code></li>
+<li><code>should_execute: true</code></li>
+<li><code>db2_instance_name</code> does not contain <code>sdb</code> (shared instances are excluded)</li>
+</ol>
+<p>For any other <code>mas_application_id</code> (e.g. <code>health</code>, <code>visualinspection</code>, <code>predict</code>), no Job resource is rendered.</p>
+<h6 id="what-gets-audited-per-application">What Gets Audited per Application<a class="headerlink" href="#what-gets-audited-per-application" title="Permanent link">¤</a></h6>
+<p>The job creates a single <code>USER_AUDIT</code> policy (idempotent — skipped if already exists) and assigns it to roles and/or users depending on the application:</p>
+<table>
+<thead>
+<tr>
+<th>Application</th>
+<th>Audit Policy</th>
+<th>Roles Audited</th>
+<th>User Audited</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>manage</code></td>
+<td><code>USER_AUDIT</code></td>
+<td><code>MAXIMO_READ</code>, <code>MAXIMO_WRITE</code> (only if roles exist)</td>
+<td><code>db2inst1</code></td>
+</tr>
+<tr>
+<td><code>facilities</code></td>
+<td><code>USER_AUDIT</code></td>
+<td><code>TRIRIGA_READ</code>, <code>TRIRIGA_WRITE</code> (only if roles exist)</td>
+<td><code>db2inst1</code></td>
+</tr>
+<tr>
+<td><code>monitor</code></td>
+<td><code>USER_AUDIT</code></td>
+<td>None</td>
+<td><code>db2inst1</code></td>
+</tr>
+<tr>
+<td><code>iot</code></td>
+<td><code>USER_AUDIT</code></td>
+<td>None</td>
+<td><code>db2inst1</code></td>
+</tr>
+</tbody>
+</table>
+<h6 id="audit-policy-definition">Audit Policy Definition<a class="headerlink" href="#audit-policy-definition" title="Permanent link">¤</a></h6>
+<pre><code class="language-sql">CREATE AUDIT POLICY USER_AUDIT
+  CATEGORIES VALIDATE STATUS BOTH,
+             EXECUTE WITHOUT DATA STATUS BOTH
+  ERROR TYPE NORMAL
+</code></pre>
+<h6 id="execution-steps">Execution Steps<a class="headerlink" href="#execution-steps" title="Permanent link">¤</a></h6>
+<ol>
+<li><strong>Connect</strong> to the database (<code>db2 connect to &lt;DB2_DBNAME&gt;</code>)</li>
+<li><strong>Create</strong> <code>USER_AUDIT</code> policy if it does not already exist</li>
+<li><strong>Assign policy to roles</strong> — per-app role audit (skipped if roles do not yet exist)</li>
+<li><strong>Assign policy to user</strong> — <code>AUDIT USER db2inst1 USING POLICY USER_AUDIT</code> (all 4 apps)</li>
+<li><strong>Disconnect</strong> (<code>db2 connect reset</code>)</li>
+</ol>
 <h6 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">¤</a></h6>
 <p>If <code>private_nlb.enabled: true</code> and either <code>subnet_ids</code> or <code>allowed_cidrs</code> is
 empty, Helm will fail immediately with a clear error message before rendering

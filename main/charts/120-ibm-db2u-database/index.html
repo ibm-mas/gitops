@@ -242,6 +242,8 @@
     
       <cds-select-item value="#private-nlb-for-customer-tgw-connectivity">Private NLB for Customer TGW Connectivity</cds-select-item>
     
+      <cds-select-item value="#db2-audit-policy">DB2 Audit Policy</cds-select-item>
+    
     </cds-select>
   </cds-breadcrumb-item>
 </cds-breadcrumb>
@@ -369,6 +371,13 @@
 <td>Pre/post-sync DB2 setup jobs</td>
 <td>DB2 application namespace</td>
 <td>Always</td>
+<td><code>application_admin_role</code></td>
+</tr>
+<tr>
+<td><code>Job</code></td>
+<td>DB2 audit policy setup job</td>
+<td>DB2 application namespace</td>
+<td>When <code>mas_application_id</code> is <code>manage</code>, <code>facilities</code>, <code>monitor</code>, or <code>iot</code></td>
 <td><code>application_admin_role</code></td>
 </tr>
 </tbody>
@@ -553,6 +562,68 @@ No manual security group changes are needed.</p>
 application is deployed separately per instance with its own <code>db2_instance_name</code>.
 Both can use port 50001 without conflict since they are separate AWS NLB resources.</p>
 <p>The NLB is created independently for each instance (e.g. facilities, manage) using the instance-specific selector.</p>
+<h3 id="db2-audit-policy">DB2 Audit Policy<a class="headerlink" href="#db2-audit-policy" title="Permanent link">¤</a></h3>
+<h4 id="when-it-is-applied">When It Is Applied<a class="headerlink" href="#when-it-is-applied" title="Permanent link">¤</a></h4>
+<p>The audit policy Job (<a href="../../instance-applications/120-ibm-db2u-database/templates/08-postsync-db2-audit-policy_Job.yaml"><code>08-postsync-db2-audit-policy_Job.yaml</code></a>) runs at sync-wave <code>130</code> (after the main DB2 setup job at wave <code>129</code>) and is <strong>only created</strong> when all of the following conditions are met:</p>
+<ol>
+<li><code>application_admin_role: true</code></li>
+<li><code>mas_application_id</code> is one of: <code>manage</code>, <code>facilities</code>, <code>monitor</code>, <code>iot</code></li>
+<li><code>should_execute: true</code></li>
+<li><code>db2_instance_name</code> does not contain <code>sdb</code> (shared instances are excluded)</li>
+</ol>
+<p>For any other <code>mas_application_id</code> (e.g. <code>health</code>, <code>visualinspection</code>, <code>predict</code>), no Job resource is rendered.</p>
+<h4 id="what-gets-audited-per-application">What Gets Audited per Application<a class="headerlink" href="#what-gets-audited-per-application" title="Permanent link">¤</a></h4>
+<p>The job creates a single <code>USER_AUDIT</code> policy (idempotent — skipped if already exists) and assigns it to roles and/or users depending on the application:</p>
+<table>
+<thead>
+<tr>
+<th>Application</th>
+<th>Audit Policy</th>
+<th>Roles Audited</th>
+<th>User Audited</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>manage</code></td>
+<td><code>USER_AUDIT</code></td>
+<td><code>MAXIMO_READ</code>, <code>MAXIMO_WRITE</code> (only if roles exist)</td>
+<td><code>db2inst1</code></td>
+</tr>
+<tr>
+<td><code>facilities</code></td>
+<td><code>USER_AUDIT</code></td>
+<td><code>TRIRIGA_READ</code>, <code>TRIRIGA_WRITE</code> (only if roles exist)</td>
+<td><code>db2inst1</code></td>
+</tr>
+<tr>
+<td><code>monitor</code></td>
+<td><code>USER_AUDIT</code></td>
+<td>None</td>
+<td><code>db2inst1</code></td>
+</tr>
+<tr>
+<td><code>iot</code></td>
+<td><code>USER_AUDIT</code></td>
+<td>None</td>
+<td><code>db2inst1</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="audit-policy-definition">Audit Policy Definition<a class="headerlink" href="#audit-policy-definition" title="Permanent link">¤</a></h4>
+<pre><code class="language-sql">CREATE AUDIT POLICY USER_AUDIT
+  CATEGORIES VALIDATE STATUS BOTH,
+             EXECUTE WITHOUT DATA STATUS BOTH
+  ERROR TYPE NORMAL
+</code></pre>
+<h4 id="execution-steps">Execution Steps<a class="headerlink" href="#execution-steps" title="Permanent link">¤</a></h4>
+<ol>
+<li><strong>Connect</strong> to the database (<code>db2 connect to &lt;DB2_DBNAME&gt;</code>)</li>
+<li><strong>Create</strong> <code>USER_AUDIT</code> policy if it does not already exist</li>
+<li><strong>Assign policy to roles</strong> — per-app role audit (skipped if roles do not yet exist)</li>
+<li><strong>Assign policy to user</strong> — <code>AUDIT USER db2inst1 USING POLICY USER_AUDIT</code> (all 4 apps)</li>
+<li><strong>Disconnect</strong> (<code>db2 connect reset</code>)</li>
+</ol>
 <h4 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">¤</a></h4>
 <p>If <code>private_nlb.enabled: true</code> and either <code>subnet_ids</code> or <code>allowed_cidrs</code> is
 empty, Helm will fail immediately with a clear error message before rendering
@@ -599,6 +670,33 @@ any resources. This prevents a broken or unrestricted NLB from being deployed..<
                       <li class="md-toc__item">
                         <a href="#example-enabling-for-a-customer-connected-instance" class="md-toc__link" data-md-level="2">
                           Example — enabling for a customer-connected instance
+                        </a>
+                      </li>
+                  </ul>
+              </li>
+              <li class="md-toc__item">
+                <a href="#db2-audit-policy" class="md-toc__link" data-md-level="1">
+                  DB2 Audit Policy
+                </a>
+                  <ul class="md-toc__list">
+                      <li class="md-toc__item">
+                        <a href="#when-it-is-applied" class="md-toc__link" data-md-level="2">
+                          When It Is Applied
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#what-gets-audited-per-application" class="md-toc__link" data-md-level="2">
+                          What Gets Audited per Application
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#audit-policy-definition" class="md-toc__link" data-md-level="2">
+                          Audit Policy Definition
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#execution-steps" class="md-toc__link" data-md-level="2">
+                          Execution Steps
                         </a>
                       </li>
                       <li class="md-toc__item">

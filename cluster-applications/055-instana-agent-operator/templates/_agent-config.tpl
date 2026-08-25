@@ -1,4 +1,6 @@
 {{- define "instana-agent.configuration_yaml" -}}
+com.instana.plugin.mongodb:
+  enabled: false
 com.instana.ignore:
   arguments:
     - io.strimzi.operator.cluster.Main

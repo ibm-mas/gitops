@@ -1,0 +1,331 @@
+{{- if not (lt (semver "5.3.1" | (semver (.Values.cpd_product_version | default "0.0.0" | toString)).Compare) 0) }}
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "cpd-wml-post-verify" }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Since jobs must be idemopotent, it's generally safe to pass in values here that are not
+strictly necessary (i.e. including some values that don't actually influence job behaviour).
+We may want to refine this further though for jobs that can take a long time to complete.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
+This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
+immutable field of any existing Job resource.
+*/}}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
+
+{{- /*
+Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+
+When the auto_delete flag is not set on the root application, a CronJob in the cluster uses this label 
+to identify old Job resources that should be pruned on behalf of ArgoCD.
+
+Any Job resources in the same namespace that have the mas.ibm.com/job-cleanup-group with this value
+will be considered to belong to the same cleanup group. All but the most recent (i.e. with the latest "creation_timestamp")
+Jobs will be automatically deleted.
+
+$_job_cleanup_group can usually just be based on $_job_name_prefix. There are some special cases
+where multiple Jobs are created in our templates using a Helm loop. In those cases, additional descriminators
+must be added to $_job_cleanup_group.
+
+By convention, we sha1sum this value to guarantee we never exceed the 63 char limit regardless of which discriminators
+are required here.
+
+*/}}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: wml-postverify-sa
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "092"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: wml-postverify-role-{{ .Values.instance_id }}
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "092"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - ''
+    resources:
+      - secrets
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: wml-postverify-rb-{{ .Values.instance_id }}
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "093"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: wml-postverify-sa
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: wml-postverify-role-{{ .Values.instance_id }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: wml-postverify-role-instance-{{ .Values.instance_id }}
+  namespace: "{{ .Values.cpd_instance_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "092"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - ''
+    resources:
+      - secrets
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - zen.cpd.ibm.com
+    resources:
+      - zenservices
+  - verbs:
+      - get
+    apiGroups:
+      - wml.cpd.ibm.com
+    resources:
+      - wmlbases
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: wml-postverify-rb-instance-{{ .Values.instance_id }}
+  namespace: "{{ .Values.cpd_instance_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "093"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: wml-postverify-sa
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: wml-postverify-role-instance-{{ .Values.instance_id }}
+
+
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: aws
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "093"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key }}
+type: Opaque
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "094"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "WML Post-Verify: Waiting for WmlBase CR to reach Completed status"
+              echo "================================================================================"
+
+              POLL_INTERVAL=30
+              MAX_WAIT=3600  # 60 minutes
+
+              elapsed=0
+              while true; do
+                STATUS=$(oc get wmlbase wml-cr -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found \
+                  -o jsonpath='{.status.wmlStatus}' 2>/dev/null || true)
+                echo "  WmlBase wml-cr status: '${STATUS}' (${elapsed}s elapsed)"
+
+                if [[ "${STATUS}" == "Completed" ]]; then
+                  echo "  WmlBase is Completed."
+                  break
+                fi
+
+                if [[ ${elapsed} -ge ${MAX_WAIT} ]]; then
+                  echo "  ERROR: Timed out after ${MAX_WAIT}s waiting for WmlBase to reach Completed."
+                  exit 1
+                fi
+
+                sleep ${POLL_INTERVAL}
+                elapsed=$((elapsed + POLL_INTERVAL))
+              done
+
+              echo
+              echo "================================================================================"
+              echo "WML Post-Verify: Writing WML credentials to Secrets Manager"
+              echo "================================================================================"
+
+              echo "Lookup Cloud Pak for Data admin username"
+              USERNAME=$(oc get secret ibm-iam-bindinfo-platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -o json | jq -r '.data.admin_username' | base64 -d)
+
+              if [[ -z ${USERNAME} ]]; then
+                export CPD_ADMIN_USERNAME="admin"
+                export SECRET_NAME="admin-user-details"
+                export ADMIN_PASSWORD_PROPERTY="initial_admin_password"
+              else
+                export CPD_ADMIN_USERNAME="cpadmin"
+                export SECRET_NAME="ibm-iam-bindinfo-platform-auth-idp-credentials"
+                export ADMIN_PASSWORD_PROPERTY="admin_password"
+              fi
+
+              echo "Lookup Cloud Pak for Data admin password"
+              CPD_ADMIN_PASSWORD=$(oc get secret $SECRET_NAME -n ${CPD_INSTANCE_NAMESPACE} -o json | jq -r ".data.${ADMIN_PASSWORD_PROPERTY}" | base64 -d)
+
+              echo "Lookup Cloud Pak for Data admin url"
+              URL=$(oc get ZenService lite-cr -o jsonpath="{.status.url}{'\n'}" -n ${CPD_INSTANCE_NAMESPACE})
+
+              if [[ -z ${URL} || -z ${CPD_ADMIN_USERNAME} || -z ${CPD_ADMIN_PASSWORD} ]]; then
+                echo "CPD admin username/password/url details are missing, please check your Cloud Pak For Data instance health!"
+                exit 1
+              fi
+
+              CPD_ADMIN_URL="https://${URL}"
+
+              echo
+              echo "================================================================================"
+              echo "Debug Cloud Pak for Data Admin details"
+              echo "================================================================================"
+              echo "- CP4D Dashboard ......................... ${CPD_ADMIN_URL}"
+              echo "- CP4D Admin Username .................... ${CPD_ADMIN_USERNAME}"
+              echo "- CP4D Admin Password .................... ${CPD_ADMIN_PASSWORD:0:2}<snip>"
+
+              source /mascli/functions/gitops_utils
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+              SECRET_NAME_WML=${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/wml-cp4d
+              TAGS="[{\"Key\": \"source\", \"Value\": \"cpd-wml-post-verify\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
+              sm_update_secret $SECRET_NAME_WML "{\"url\": \"$CPD_ADMIN_URL\", \"username\": \"$CPD_ADMIN_USERNAME\", \"password\": \"$CPD_ADMIN_PASSWORD\" }" "${TAGS}"
+
+              echo "Done"
+
+      restartPolicy: Never
+      serviceAccountName: wml-postverify-sa
+      volumes:
+        - name: aws
+          secret:
+            secretName: aws
+            defaultMode: 420
+            optional: false
+  backoffLimit: 4
+{{- end }}

@@ -1,0 +1,124 @@
+{{- if and (not (empty .Values.ibm_cp4d)) (.Values.cluster_admin_role) (not (lt (semver "5.3.1" | (semver (.Values.ibm_cp4d.cpd_product_version | default "0.0.0" | toString)).Compare) 0)) }}
+{{ $cpd_operators_ns := .Values.ibm_cp4d.cpd_operators_namespace }}
+{{ $cpd_instance_ns := .Values.ibm_cp4d.cpd_instance_namespace }}
+{{ $cpd_version := .Values.ibm_cp4d.cpd_product_version | default "0.0.0" | toString }}
+{{- /*
+  Chart version resolution (highest priority first):
+    1. Explicit gitops config value (ibm_cp4d.cognos_chart_version)
+    2. olm-utils-cm ConfigMap lookup (deployed by wave 110-ibm-cp4d)
+    3. Hardcoded default (safety net for helm template dry-runs)
+*/}}
+{{- $olmUtils := lookup "v1" "ConfigMap" $cpd_instance_ns "olm-utils-cm" }}
+{{- $meta := dict }}
+{{- if $olmUtils }}
+{{- $meta = $olmUtils.data.release_components_meta | fromYaml }}
+{{- end }}
+{{- $cognosVersion := .Values.ibm_cp4d.cognos_chart_version | default ((index $meta "cognos_analytics" | default dict).case_version | default "29.1.0") }}
+---
+# CPD >= 5.3.1 — native ArgoCD Helm Apps (no K8s Jobs)
+# Wave 119: cognos-analytics cluster-scoped (CRDs + ClusterRoles)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cognos-cluster.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "119"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_operators_ns }}
+  source:
+    chart: cognos-analytics-cluster-scoped
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $cognosVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+      - SkipDryRunOnMissingResource=true
+---
+# Wave 120: cognos-analytics namespace-scoped (operator + CR)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cognos.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "120"
+    {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+    {{- end }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  - group: ca.cpd.ibm.com
+    kind: CAService
+    jsonPointers:
+    - /spec/license/license
+    - /spec/enableInstanaMetricCollection
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_instance_ns }}
+  source:
+    chart: cognos-analytics
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $cognosVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          releaseVersion: {{ $cpd_version }}
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          fileStorageClass: {{ .Values.ibm_cp4d.cpd_service_storage_class | default "nfs-client" }}
+          blockStorageClass: {{ .Values.ibm_cp4d.cpd_service_block_storage_class | default "nfs-client" }}
+          imagePullSecret: ibm-entitlement-key
+        cognos-analytics:
+          scaleConfig: {{ .Values.ibm_cp4d.cpd_service_scale_config | default "small" }}
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+{{- end }}

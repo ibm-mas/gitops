@@ -25,7 +25,9 @@ spec:
     endpointHost: "{{ .Values.instana_agent_operator_endpoint_host }}"
     endpointPort: "{{ .Values.instana_agent_operator_endpoint_port }}"
     env:
+      {{- if .Values.instana_agent_operator_env }}
 {{ .Values.instana_agent_operator_env | toYaml | indent 6 }}
+      {{- end }}
     pod:
       tolerations:
         - effect: NoSchedule
@@ -39,19 +41,17 @@ spec:
           mountPath: /tmp
         - name: instana-db2-jks
           mountPath: /jks/
+        - name: agent-secrets
+          mountPath: /mnt/secrets
+          readOnly: true          
       volumes:
         - name: tmp-volume
           emptyDir: {}
         - name: instana-db2-jks
           persistentVolumeClaim:
             claimName: instana-db2-jks
+        - name: agent-secrets
+          secret:
+            secretName: instana-agent
     configuration_yaml: |
-      com.instana.ignore:
-        arguments:
-          - io.strimzi.operator.cluster.Main
-          - kafka.Kafka
-          - org.apache.zookeeper.server.quorum.QuorumPeerMain
-          - io.strimzi.operator.topic.Main
-          - io.strimzi.operator.user.Main
-        processes:
-          - stunnel
+{{ include "instana-agent.configuration_yaml" . | indent 6 }}

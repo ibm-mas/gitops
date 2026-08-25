@@ -270,37 +270,61 @@ db2_audit_irsa_role_arn: "arn:aws:iam::123456789012:role/db2-audit-s3-access"
 **Important:** The AWS CLI runs **inside the DB2 pod**, not the CronJob pod. The CronJob only executes `oc rsh` to run commands in the DB2 pod.
 
 ```
-CronJob SA
+CronJob SA (account-{namespace}-{instance})
     │
-    │ Kubernetes RBAC
-    │ pods/get,list
-    │ pods/exec
+    │ Kubernetes RBAC ONLY
+    │ - pods: get, list
+    │ - pods/exec: create
+    │ (NO secret access needed)
     ▼
-DB2U Pod
+DB2U Pod (c-{instance}-db2u-0)
     │
     │ DB2U ServiceAccount (db2u-{instance_name})
-    │ eks.amazonaws.com/role-arn annotation
+    │ eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/NAME
     │
-    │ OIDC Token
+    │ OIDC Web Identity Token
+    │ /var/run/secrets/eks.amazonaws.com/serviceaccount/token
     ▼
-AWS STS
+AWS STS (AssumeRoleWithWebIdentity)
     │
+    │ Validates OIDC token
+    │ Returns temporary credentials
     ▼
 IAM Role: db2-audit-log-writer
     │
-    │ s3:PutObject, s3:GetObject, s3:ListBucket
+    │ S3 Policy:
+    │ - s3:PutObject
+    │ - s3:GetObject
+    │ - s3:ListBucket
     ▼
-S3 Bucket (with Object Lock)
+S3 Bucket: audit-logs-bucket
     │
+    │ Path: audit_logs/{app}/{YYYY-MM-DD}/
+    │ Optional: Object Lock (WORM)
     ▼
 Immutable Audit Logs
 ```
 
 **Key Points:**
-- **CronJob ServiceAccount:** Only needs Kubernetes RBAC to exec into DB2 pod
-- **DB2 Pod ServiceAccount:** Has IRSA annotation, provides AWS credentials
-- **IAM Role:** Assumed by DB2 pod via OIDC, grants S3 access
-- **S3 Object Lock:** Optional, ensures audit logs are immutable
+- **CronJob ServiceAccount (`account-{namespace}-{instance}`):**
+  - Minimal Kubernetes RBAC only
+  - Can exec into DB2 pod
+  - NO AWS permissions
+  - NO secret access
+
+- **DB2 Pod ServiceAccount (`db2u-{instance_name}`):**
+  - Has IRSA annotation with IAM Role ARN
+  - Provides AWS credentials to DB2 pod
+  - Used by AWS CLI inside the pod
+
+- **IAM Role:**
+  - Assumed by DB2 pod via OIDC
+  - Grants S3 access
+  - No long-term credentials
+
+- **S3 Object Lock (Optional):**
+  - Ensures audit logs are immutable
+  - Prevents deletion/modification
 
 The IRSA annotation is applied to the **DB2 pod's ServiceAccount** (`db2u-{instance_name}`), not the CronJob's ServiceAccount.
 

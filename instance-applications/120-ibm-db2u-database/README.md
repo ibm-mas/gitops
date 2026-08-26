@@ -131,12 +131,6 @@ db2_backup_bucket_secret_key: string (secret reference, when backup enabled)
 db2_backup_notify_slack_url: string (optional, when backup enabled)
 db2_backup_icd_auth_key: string (secret reference, optional, when backup enabled)
 
-# Audit Extraction Configuration (optional)
-# When db2_audit_bucket_name is set, a daily CronJob is created in the db2 namespace
-# that archives and extracts DB2 audit logs as DEL/ASC files and uploads them to the
-# specified S3 bucket, then removes all local copies.
-db2_audit_bucket_name: string (secret reference, when audit extraction enabled)
-
 allow_list: string (optional)
 
 # Private NLB for customer TGW connectivity (optional)

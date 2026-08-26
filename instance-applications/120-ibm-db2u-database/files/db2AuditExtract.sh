@@ -82,7 +82,7 @@ export AWS_SECRET_ACCESS_KEY="${PARM2}"
 export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
 
 S3_BUCKET="${CONTAINER}"
-S3_PREFIX="audit_logs/${APP_NAME}/${DATE}"
+S3_PREFIX="audit-logs/${APP_NAME}/${DATE}"
 S3_TARGET="s3://${S3_BUCKET}/${S3_PREFIX}/"   # kept for banner/logging
 
 # ── Ensure db2audit is always restarted on exit ────────────────────────────

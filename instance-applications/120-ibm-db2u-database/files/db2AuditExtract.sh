@@ -7,8 +7,11 @@
 #%
 #%  **  THIS MUST BE RUN AS THE DB2 INSTANCE OWNER (db2inst1)  **
 #%
+#%  USAGE:  db2AuditExtract.sh <application_name> [dbname] [retention_days]
 #%  USAGE:  db2AuditExtract.sh <application_name> [dbname] [--use-irsa]
 #%
+#%  retention_days : Number of days to retain each S3 object under Object Lock
+#%                   COMPLIANCE mode. Must be a positive integer. Default: 365.
 #%  Options:
 #%    --use-irsa    Use IAM Role for Service Account (IRSA) instead of credentials
 #%
@@ -18,11 +21,10 @@
 #%   3.  db2audit flush
 #%   4.  db2audit archive database BLUDB to /tmp/auditarchive
 #%   5.  db2audit archive to /tmp/auditarchive  (instance log)
-#%   6.  db2audit extract delasc to /tmp/auditarchive  (database log)
-#%   7.  db2audit extract delasc to /tmp/auditarchive  (instance log)
 #%   8.  Copy db2audit.db.BLUDB.log.0.20*   from /mnt/blumeta0/audit → /tmp/auditarchive
 #%   9.  Copy db2audit.instance.log.0.20*   from /mnt/blumeta0/audit → /tmp/auditarchive
-#%  10.  Upload ALL files from /tmp/auditarchive to S3
+#%  10.  Upload ALL files from /tmp/auditarchive to S3 with Object Lock
+#%       (COMPLIANCE mode, retain for RETENTION_DAYS days)
 #%  11.  rm -rf /tmp/auditarchive
 #%  12.  Delete the *.log.0.20* source files from /mnt/blumeta0/audit
 #%  13.  (Conditional) Delete pre-existing *.del files from /mnt/blumeta0/audit
@@ -34,11 +36,19 @@ set -eo pipefail
 # ── Logging helper ─────────────────────────────────────────────────────────
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
-# ── Parse arguments ────────────────────────────────────────────────────────
+# ── Validate input ─────────────────────────────────────────────────────────
 APP_NAME="${1:-}"
 USE_IRSA=false
 
 if [ -z "${APP_NAME}" ]; then
+  echo "ERROR :: Usage: $0 <application_name> [dbname] [retention_days]"
+  exit 1
+fi
+
+RETENTION_DAYS="${3:-365}"  # 3rd arg from CronJob; defaults to 365 days
+if ! [[ "${RETENTION_DAYS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR :: retention_days must be a positive integer (got: '${RETENTION_DAYS}')"
+  echo "ERROR :: Usage: $0 <application_name> [dbname] [retention_days]"
   echo "ERROR :: Usage: $0 <application_name> [dbname] [--use-irsa]"
   exit 1
 fi
@@ -78,6 +88,9 @@ if ! "${AWS_CLI}" --version >/dev/null 2>&1; then
 else
   log "INFO  ::   AWS CLI already present: $(${AWS_CLI} --version 2>&1)"
 fi
+export AWS_ACCESS_KEY_ID="${PARM1}"
+export AWS_SECRET_ACCESS_KEY="${PARM2}"
+export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
 
 # ── Configure AWS authentication ───────────────────────────────────────────
 if [ "${USE_IRSA}" = true ]; then
@@ -93,6 +106,9 @@ else
   export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
 fi
 
+S3_BUCKET="${CONTAINER}"
+S3_PREFIX="audit-logs/${APP_NAME}/${DATE}"
+S3_TARGET="s3://${S3_BUCKET}/${S3_PREFIX}/"   # kept for banner/logging
 S3_TARGET="s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
 
 # ── Ensure db2audit is always restarted on exit ────────────────────────────
@@ -104,6 +120,7 @@ log "INFO  :: DB2 Audit Extract — ${DT}"
 log "INFO  :: Application : ${APP_NAME} | Database : ${DBNAME}"
 log "INFO  :: Work dir    : ${ARCHIVE_DIR}"
 log "INFO  :: S3 target   : ${S3_TARGET}"
+log "INFO  :: Retention   : ${RETENTION_DAYS} day(s) (Object Lock COMPLIANCE)"
 log "INFO  :: ============================================================"
 
 # ============================================================================
@@ -169,9 +186,14 @@ cp "${AUDIT_BASE}"/db2audit.instance.log.0.20* "${ARCHIVE_DIR}/" 2>/dev/null \
   || log "WARN  ::     No matching db2audit.instance.log.0.20* files found — skipping"
 
 # ============================================================================
+# 10.  Upload ALL files from /tmp/auditarchive to S3 with Object Lock
 # 10.  Upload ALL files from /tmp/auditarchive to S3
 # ============================================================================
 log "INFO  :: [10] Uploading all files from ${ARCHIVE_DIR} to ${S3_TARGET}"
+
+# Calculate retention date once for all objects in this run
+RETENTION_DATE=$(date -u -d "+${RETENTION_DAYS} days" +"%Y-%m-%dT%H:%M:%SZ")
+log "INFO  ::      Object Lock : COMPLIANCE | RetainUntilDate : ${RETENTION_DATE}"
 
 ALL_FILES=$(ls "${ARCHIVE_DIR}"/* 2>/dev/null || true)
 if [ -z "${ALL_FILES}" ]; then
@@ -182,6 +204,15 @@ else
     FILE_NAME=$(basename "${F}")
     log "INFO  ::      [s3] ${FILE_NAME} → ${S3_TARGET}${FILE_NAME}"
     "${AWS_CLI}" s3 cp "${F}" "${S3_TARGET}${FILE_NAME}" \
+    S3_KEY="${S3_PREFIX}/${FILE_NAME}"
+    log "INFO  ::      [s3] ${FILE_NAME} → s3://${S3_BUCKET}/${S3_KEY}"
+    log "INFO  ::           Retention : ${RETENTION_DAYS} day(s) until ${RETENTION_DATE}"
+    "${AWS_CLI}" s3api put-object \
+      --bucket  "${S3_BUCKET}" \
+      --key     "${S3_KEY}" \
+      --body    "${F}" \
+      --object-lock-mode COMPLIANCE \
+      --object-lock-retain-until-date "${RETENTION_DATE}" \
       && log "INFO  ::           Upload confirmed" \
       || { log "ERROR ::           Upload FAILED for ${FILE_NAME}"; ERRORS=$((ERRORS + 1)); }
   done

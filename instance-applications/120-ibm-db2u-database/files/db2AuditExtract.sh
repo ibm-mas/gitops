@@ -88,9 +88,6 @@ if ! "${AWS_CLI}" --version >/dev/null 2>&1; then
 else
   log "INFO  ::   AWS CLI already present: $(${AWS_CLI} --version 2>&1)"
 fi
-export AWS_ACCESS_KEY_ID="${PARM1}"
-export AWS_SECRET_ACCESS_KEY="${PARM2}"
-export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
 
 # ── Configure AWS authentication ───────────────────────────────────────────
 if [ "${USE_IRSA}" = true ]; then
@@ -107,9 +104,8 @@ else
 fi
 
 S3_BUCKET="${CONTAINER}"
-S3_PREFIX="audit-logs/${APP_NAME}/${DATE}"
-S3_TARGET="s3://${S3_BUCKET}/${S3_PREFIX}/"   # kept for banner/logging
-S3_TARGET="s3://${CONTAINER}/audit_logs/${APP_NAME}/${DATE}/"
+S3_PREFIX="audit_logs/${APP_NAME}/${DATE}"
+S3_TARGET="s3://${S3_BUCKET}/${S3_PREFIX}/"
 
 # ── Ensure db2audit is always restarted on exit ────────────────────────────
 trap 'log "INFO  :: Restarting db2audit after job"; db2audit start >/dev/null 2>&1 || true' EXIT

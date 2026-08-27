@@ -37,7 +37,6 @@ cp -rp HADRMON.sh ${INSTHOME}/bin
 cp -rp auditExtractUpload.sh ${INSTHOME}/bin/
 cp -rp db2AuditExtract.sh ${INSTHOME}/bin/
 
-
 echo -e "\nCopying the file to bin/ITCS104 directory under Instance Home . . ."
 cp -rp FixInvalidObjects.sh ${INSTHOME}/bin/ITCS104/
 

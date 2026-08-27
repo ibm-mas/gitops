@@ -18,8 +18,6 @@
 #%   3.  db2audit flush
 #%   4.  db2audit archive database BLUDB to /tmp/auditarchive
 #%   5.  db2audit archive to /tmp/auditarchive  (instance log)
-#%   6.  db2audit extract delasc to /tmp/auditarchive  (database log)
-#%   7.  db2audit extract delasc to /tmp/auditarchive  (instance log)
 #%   8.  Copy db2audit.db.BLUDB.log.0.20*   from /mnt/blumeta0/audit → /tmp/auditarchive
 #%   9.  Copy db2audit.instance.log.0.20*   from /mnt/blumeta0/audit → /tmp/auditarchive
 #%  10.  Upload ALL files from /tmp/auditarchive to S3 with Object Lock
@@ -82,7 +80,7 @@ export AWS_SECRET_ACCESS_KEY="${PARM2}"
 export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
 
 S3_BUCKET="${CONTAINER}"
-S3_PREFIX="audit_logs/${APP_NAME}/${DATE}"
+S3_PREFIX="audit-logs/${APP_NAME}/${DATE}"
 S3_TARGET="s3://${S3_BUCKET}/${S3_PREFIX}/"   # kept for banner/logging
 
 # ── Ensure db2audit is always restarted on exit ────────────────────────────
@@ -124,27 +122,6 @@ db2audit archive database "${DBNAME}" to "${ARCHIVE_DIR}"
 log "INFO  :: [5] db2audit archive to ${ARCHIVE_DIR}  (instance log)"
 db2audit archive to "${ARCHIVE_DIR}"
 
-# ============================================================================
-# 6.  Extract archived database log → *.del
-# ============================================================================
-log "INFO  :: [6] db2audit extract delasc (database log)"
-DB_LOGS=$(ls "${ARCHIVE_DIR}"/db2audit.db."${DBNAME}".log.0.* 2>/dev/null || true)
-if [ -z "${DB_LOGS}" ]; then
-  log "WARN  ::     No database archive log found in ${ARCHIVE_DIR} — skipping extract"
-else
-  db2audit extract delasc to "${ARCHIVE_DIR}" from files ${DB_LOGS}
-fi
-
-# ============================================================================
-# 7.  Extract archived instance log → *.del
-# ============================================================================
-log "INFO  :: [7] db2audit extract delasc (instance log)"
-INST_LOGS=$(ls "${ARCHIVE_DIR}"/db2audit.instance.log.0.* 2>/dev/null || true)
-if [ -z "${INST_LOGS}" ]; then
-  log "WARN  ::     No instance archive log found in ${ARCHIVE_DIR} — skipping extract"
-else
-  db2audit extract delasc to "${ARCHIVE_DIR}" from files ${INST_LOGS}
-fi
 
 # ============================================================================
 # 8–9.  Copy historical log files from /mnt/blumeta0/audit to /tmp/auditarchive

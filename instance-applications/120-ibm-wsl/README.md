@@ -15,7 +15,6 @@ Deploys and configures the CP4D Service, Watson Studio Local (WSL) needed for `M
 | `Role` | WSL post-verify roles | CP4D instance namespace | CPD < 5.3.1 | `application_admin_role` |
 | `RoleBinding` | WSL post-verify role binding | CP4D instance namespace | CPD < 5.3.1 | `application_admin_role` |
 | `Secret` | WSL post-verify runtime secret | CP4D instance namespace | CPD < 5.3.1 | `application_admin_role` |
-| `ConfigMap` | Helm install state tracking | CP4D operators namespace | CPD >= 5.3.1 | `application_admin_role` |
 | `Job` | WSL Helm install job | CP4D operators namespace | CPD >= 5.3.1 | `application_admin_role` |
 
 ## Configuration

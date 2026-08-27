@@ -4,8 +4,11 @@ Create a Db2u database for a MAS app.
 
 <!--docs-include-start-->
 
+## Overview
 
-Contains a presync hook (`00-presync-await-crd_Job.yaml`) that ensures we wait for the db2uclusters CRD to be installed before attempting to sync.
+This chart deploys and configures a Db2u database instance for use by a MAS application. It manages the full lifecycle of the database including TLS certificates, storage, backup, audit log extraction, and HADR services.
+
+Contains a presync hook (`00-presync-await-crd_Job.yaml`) that ensures we wait for the `db2uclusters` CRD to be installed before attempting to sync.
 
 Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers the `${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config` secret in the **Secrets Vault** used to share some information that is generated at runtime with other ArgoCD Applications. This job also performs some special configuration steps that are required if the Db2u database is intended for use by the Manage MAS Application.
 
@@ -21,6 +24,7 @@ Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers
 | `Certificate` | DB2 TLS certificates | DB2 application namespace | Always | `application_admin_role` |
 | `Db2uInstance` | Db2u instance CR | DB2 application namespace | Always | `application_admin_role` |
 | `CronJob` | Db2 backup cron job | DB2 application namespace | When backups are enabled | `application_admin_role` |
+| `CronJob` | Db2 audit extract cron job | DB2 application namespace | When audit bucket is enabled (`db2_audit_bucket_name` set) | `application_admin_role` |
 | `ConfigMap` | Db2 script/config maps | DB2 application namespace | Always | `application_admin_role` |
 | `Route` | Db2 TLS route | DB2 application namespace | When route exposure is enabled | `application_admin_role` |
 | `Service` | Db2 services, including HADR services | DB2 application namespace | Always | `application_admin_role` |
@@ -28,6 +32,7 @@ Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers
 | `Secret` | Post-sync DB2 generated secret | DB2 application namespace | Always | `application_admin_role` |
 | `NetworkPolicy` | HADR network policy | DB2 application namespace | When HADR is enabled | `application_admin_role` |
 | `Job` | Pre/post-sync DB2 setup jobs | DB2 application namespace | Always | `application_admin_role` |
+| `Job` | DB2 audit policy setup job | DB2 application namespace | When `mas_application_id` is `manage`, `facilities`, `monitor`, or `iot` | `application_admin_role` |
 
 ## Configuration
 
@@ -203,8 +208,97 @@ Both can use port 50001 without conflict since they are separate AWS NLB resourc
 
 The NLB is created independently for each instance (e.g. facilities, manage) using the instance-specific selector.
 
+## DB2 Audit Policy
+
+### When It Is Applied
+
+The audit policy Job ([`08-postsync-db2-audit-policy_Job.yaml`](templates/08-postsync-db2-audit-policy_Job.yaml)) runs at sync-wave `130` (after the main DB2 setup job at wave `129`) and is **only created** when all of the following conditions are met:
+
+1. `application_admin_role: true`
+2. `mas_application_id` is one of: `manage`, `facilities`, `monitor`, `iot`
+3. `should_execute: true`
+4. `db2_instance_name` does not contain `sdb` (shared instances are excluded)
+
+For any other `mas_application_id` (e.g. `health`, `visualinspection`, `predict`), no Job resource is rendered.
+
+### What Gets Audited per Application
+
+The job creates a single `USER_AUDIT` policy (idempotent — skipped if already exists) and assigns it to roles and/or users depending on the application:
+
+| Application | Audit Policy | Roles Audited | User Audited |
+|---|---|---|---|
+| `manage` | `USER_AUDIT` | `MAXIMO_READ`, `MAXIMO_WRITE` (only if roles exist) | `db2inst1` |
+| `facilities` | `USER_AUDIT` | `TRIRIGA_READ`, `TRIRIGA_WRITE` (only if roles exist) | `db2inst1` |
+| `monitor` | `USER_AUDIT` | None | `db2inst1` |
+| `iot` | `USER_AUDIT` | None | `db2inst1` |
+
+### Audit Policy Definition
+
+```sql
+CREATE AUDIT POLICY USER_AUDIT
+  CATEGORIES VALIDATE STATUS BOTH,
+             EXECUTE WITHOUT DATA STATUS BOTH
+  ERROR TYPE NORMAL
+```
+
+### Execution Steps
+
+1. **Connect** to the database (`db2 connect to <DB2_DBNAME>`)
+2. **Create** `USER_AUDIT` policy if it does not already exist
+3. **Assign policy to roles** — per-app role audit (skipped if roles do not yet exist)
+4. **Assign policy to user** — `AUDIT USER db2inst1 USING POLICY USER_AUDIT` (all 4 apps)
+5. **Disconnect** (`db2 connect reset`)
+
 ### Validation
 
 If `private_nlb.enabled: true` and either `subnet_ids` or `allowed_cidrs` is
 empty, Helm will fail immediately with a clear error message before rendering
 any resources. This prevents a broken or unrestricted NLB from being deployed..
+
+## Prerequisites
+
+- The `db2uclusters` CRD must be available on the cluster (ensured by the presync hook).
+- An S3-compatible backup bucket must be provisioned when backup or audit log upload is enabled.
+- Secrets for S3 credentials, cluster domain, and Secrets Manager access must be pre-populated in the Secrets Vault before sync.
+
+## Examples
+
+### Minimal deployment
+
+```yaml
+db2_namespace: db2u-manage
+db2_instance_name: db2u-manage
+db2_dbname: BLUDB
+db2_version: "11.5.9.0"
+db2_tls_version: "1.2"
+db2_table_org: ROW
+mas_application_id: manage
+cluster_domain: "<path:secrets/path:cluster_domain>"
+```
+
+### With backup and audit log upload enabled
+
+```yaml
+db2_namespace: db2u-manage
+db2_instance_name: db2u-manage
+db2_dbname: BLUDB
+db2_backup_bucket_name: "<path:secrets/path:bucket_name>"
+db2_backup_bucket_endpoint: "<path:secrets/path:bucket_endpoint>"
+db2_backup_bucket_access_key: "<path:secrets/path:access_key>"
+db2_backup_bucket_secret_key: "<path:secrets/path:secret_key>"
+auto_backup: true
+mas_application_id: manage
+cluster_domain: "<path:secrets/path:cluster_domain>"
+```
+
+## Troubleshooting
+
+- **Presync job stuck** — verify the `db2uclusters` CRD is installed by the DB2U operator before the ArgoCD sync wave reaches this chart.
+- **Postsync job failing** — check the job logs in the DB2 namespace; common causes are missing S3 credentials or an unreachable backup bucket.
+- **Audit CronJob not running** — confirm `db2_backup_bucket_name` is set and the instance name does not contain `sdb` (audit cron is disabled for SDB instances).
+- **AWS CLI missing** — `db2AuditExtract.sh` will install the AWS CLI automatically on first run via `curl`/`unzip` into `/mnt/backup/`.
+
+## Related Documentation
+
+- [Instance Base Values Reference](../../docs/reference/instance-base-values.md)
+- [IBM Db2u Operator Documentation](https://www.ibm.com/docs/en/db2/11.5)

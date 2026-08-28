@@ -1,10 +1,13 @@
 #!/bin/bash
 ##   CreateRoles.sh
-##########  ${SCHEMANAME}  ########
 ################################################################################
-# 
+#
 #   Usage:   ./CreateRoles.sh <SCHEMA NAME>
 #
+#   Arguments:
+#     $1 - Schema name to create roles for (required)
+#          e.g. ./CreateRoles.sh MAXIMO   (for Manage DB2)
+#               ./CreateRoles.sh TRIRIGA  (for Facilities DB2)
 #
 ################################################################################
 
@@ -17,12 +20,13 @@
 ##  db2 grant select on syscat.indexes to role maximo_read
 ##  db2 grant select on syscat.columns to role maximo_read
 
-#set -x 
+#set -x
+
 db2 connect to bludb
 
 DATETIME=`date +%Y%m%d_%H%M%S`;
 
-for SCHEMANAME in MAXIMO TRIRIGA
+for SCHEMANAME in $1
 do
 ROLES=`db2 -x "select char(ROLENAME,30) as ROLENAME from syscat.roles"`
 ROLE="${SCHEMANAME}_read"

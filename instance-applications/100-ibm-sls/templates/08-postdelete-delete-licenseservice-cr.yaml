@@ -1,0 +1,114 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+PostDelete job: force-deletes the SLS LicenseService CR (sls.ibm.com/v1 LicenseService)
+after the ArgoCD Application is removed.
+
+The SLS operator holds a finalizer on the LicenseService CR. If the operator is
+Degraded or not running at deprovisioning time, the finalizer blocks deletion.
+This job patches it out unconditionally so cleanup always completes.
+
+LicenseService CR name is always "sls" in namespace mas-<instance_id>-sls.
+
+Use the build/bin/set-cli-image-digest.sh script to update the image digest below.
+*/}}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+
+{{- $sls_ns  := printf "mas-%s-sls" .Values.instance_id }}
+{{- $core_ns := printf "mas-%s-core" .Values.instance_id }}
+{{- $job_name := "postdelete-sls-licenseservice-cr" }}
+
+{{ $sa_name   := "postdelete-delete-cr-sa" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: SLS_NAMESPACE
+              value: {{ $sls_ns }}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: LicenseService.sls.ibm.com/sls in ${SLS_NAMESPACE}"
+
+              set +e
+              RESOURCE_NAME=$(oc get licenseservice.sls.ibm.com/sls \
+                -n ${SLS_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -z "${RESOURCE_NAME}" ]]; then
+                echo "LicenseService CR not found — nothing to do"
+                exit 0
+              fi
+
+              echo "Current finalizers:"
+              oc get licenseservice.sls.ibm.com/sls -n ${SLS_NAMESPACE} \
+                -o=jsonpath="{.metadata.finalizers}" 2>/dev/null || true
+              echo ""
+
+              # Patch out operator finalizers — works even if SLS operator is not running
+              echo "Patching out finalizers..."
+              set +e
+              oc patch licenseservice.sls.ibm.com/sls -n ${SLS_NAMESPACE} \
+                --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
+              set -e
+
+              echo "Deleting LicenseService CR..."
+              set +e
+              oc delete licenseservice.sls.ibm.com/sls \
+                -n ${SLS_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
+              set -e
+
+              # Verify gone
+              set +e
+              RESOURCE_NAME=$(oc get licenseservice.sls.ibm.com/sls \
+                -n ${SLS_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -n "${RESOURCE_NAME}" ]]; then
+                echo "ERROR: LicenseService CR still present after delete attempt"
+                exit 1
+              fi
+              echo "LicenseService CR deleted successfully"
+      volumes: []
+  backoffLimit: 4
+{{- end }}
+{{- end }}

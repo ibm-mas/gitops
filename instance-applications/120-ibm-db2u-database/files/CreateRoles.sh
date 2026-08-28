@@ -22,7 +22,7 @@ db2 connect to bludb
 
 DATETIME=`date +%Y%m%d_%H%M%S`;
 
-for SCHEMANAME in MAXIMO TRIRIGA IOT
+for SCHEMANAME in MAXIMO TRIRIGA
 do
 ROLES=`db2 -x "select char(ROLENAME,30) as ROLENAME from syscat.roles"`
 ROLE="${SCHEMANAME}_read"

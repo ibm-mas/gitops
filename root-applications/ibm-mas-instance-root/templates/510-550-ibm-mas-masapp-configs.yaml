@@ -58,6 +58,8 @@ metadata:
     {{- end }}
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+    - post-delete-finalizer.argocd.argoproj.io
+    - post-delete-finalizer.argocd.argoproj.io/cleanup
   labels:
     environment: '{{ $.Values.account.id }}'
     region: '{{ $.Values.region.id }}'
@@ -88,7 +90,10 @@ spec:
             mas_app_ws_apiversion: "{{ $value.mas_app_ws_apiversion }}"
             mas_app_ws_kind: "{{ $value.mas_app_ws_kind }}"
             mas_appws_spec: {{ $value.mas_appws_spec | toYaml | nindent 14 }}
-
+            use_postdelete_hooks: {{ $.Values.use_postdelete_hooks | default true }}
+            {{- if (eq $value.mas_app_id "manage") }}
+            mas_app_channel: "{{ $.Values.ibm_suite_app_manage_install.mas_app_channel }}"
+            {{- end }}
             mas_manual_cert_mgmt: {{ $value.mas_manual_cert_mgmt }}
             run_sanity_test: {{ $value.run_sanity_test }}
             {{- if $value.mas_manual_cert_mgmt  }}

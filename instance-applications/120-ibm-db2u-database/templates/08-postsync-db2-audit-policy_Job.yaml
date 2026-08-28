@@ -43,7 +43,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v27" }}
+{{- $_job_version := "v32" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -112,9 +112,8 @@ spec:
               echo "Database             : ${DB2_DBNAME}"
               echo "MAS Application      : ${MAS_APP_ID}"
 
-              # All DB2 commands run in a single oc exec so the database
-              # connection established by 'db2 connect' is shared across
-              # every subsequent statement in the same session.
+              # Single oc exec session using su -lc (login shell, same as postsync-setup-db2).
+              # db2gcf -s checks the instance is Available before attempting db2 connect.
               oc exec -n "${DB2_NAMESPACE}" "${DB2_POD}" -- su -lc "
                 set -e
 
@@ -125,17 +124,34 @@ spec:
                 echo \"Connecting to database '${DB2_DBNAME}'...\"
 
                 if ! db2gcf -s | grep Available >/dev/null; then
-                    db2_kill
-                    ipclean -a
-                    db2start
-                    if ! db2gcf -s | grep Available >/dev/null; then
-                        echo 'Instance is not up. Please check.'
-                        exit 1
-                    fi
+                    echo 'Instance is not up. Please check.'
+                    exit 1
                 fi
 
-                db2 connect to ${DB2_DBNAME}
-                echo '[OK] Database connection successful.'
+                MAX_RETRIES=30
+                RETRY_INTERVAL=20
+                RETRY_COUNT=1
+
+                while [ \${RETRY_COUNT} -le \${MAX_RETRIES} ]; do
+                    echo \"Attempt \${RETRY_COUNT}/\${MAX_RETRIES}: Connecting to ${DB2_DBNAME}...\"
+
+                    if db2 connect to ${DB2_DBNAME}; then
+                        echo '[OK] Database connection successful.'
+                        break
+                    fi
+
+                    if [ \${RETRY_COUNT} -eq \${MAX_RETRIES} ]; then
+                        echo \"[ERROR] Unable to connect to database '${DB2_DBNAME}' after \${MAX_RETRIES} attempts.\"
+                        echo '[ERROR] Database may still be in BACKUP PENDING or not ready.'
+                        exit 1
+                    fi
+
+                    echo \"[WAIT] Database '${DB2_DBNAME}' is not ready yet. Retrying in \${RETRY_INTERVAL} seconds...\"
+                    db2 connect reset >/dev/null 2>&1 || true
+                    sleep \${RETRY_INTERVAL}
+
+                    RETRY_COUNT=\$((RETRY_COUNT + 1))
+                done
 
                 echo ''
                 echo '--------------------------------------------------------------------------------'

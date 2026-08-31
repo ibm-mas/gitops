@@ -580,6 +580,14 @@ spec:
 
               fi # [[ "$MAS_APP_ID" == "manage" ]]
 
+              if [[ -n $BUCKET_NAME ]] && [[ -n $DB2_SCHEMA ]]; then
+                CREATE_ROLES_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/CreateRoles.sh"
+                echo ""
+                echo "Executing ${CREATE_ROLES_SH_PATH} ${DB2_SCHEMA} on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+                echo "--------------------------------------------------------------------------------"
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd ${DB2_INSTANCE_HOME_PATH}/bin; ${CREATE_ROLES_SH_PATH} ${DB2_SCHEMA} | tee /tmp/createroles.log" db2inst1 || exit $?
+              fi
+
               if [[ "$MAS_APP_ID" == "facilities" ]]; then
                 echo ""
                 echo "================================================================================"
@@ -633,14 +641,6 @@ spec:
                 oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "/tmp/db2-scripts-facilities-updated/create-schema.sh" db2inst1 || exit $?
 
               fi # [[ "$MAS_APP_ID" == "facilities" ]]
-
-              if [[ -n $BUCKET_NAME ]] && [[ -n $DB2_SCHEMA ]]; then
-                CREATE_ROLES_SH_PATH="${DB2_INSTANCE_HOME_PATH}/bin/CreateRoles.sh"
-                echo ""
-                echo "Executing ${CREATE_ROLES_SH_PATH} ${DB2_SCHEMA} on ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
-                echo "--------------------------------------------------------------------------------"
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cd ${DB2_INSTANCE_HOME_PATH}/bin; ${CREATE_ROLES_SH_PATH} ${DB2_SCHEMA} | tee /tmp/createroles.log" db2inst1 || exit $?
-              fi
 
               if [[ -n $BUCKET_NAME ]]; then
                 POST_BACKFLOW_SH_PATH="${DB2_INSTANCE_HOME_PATH}/Managed/PostBackFlow.sh"

@@ -1,0 +1,119 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+PostDelete job: force-deletes the Workspace CR (core.mas.ibm.com/v1 Workspace) after the
+ArgoCD Application is removed.
+
+The MAS core operator holds a finalizer on the Workspace CR. If the operator is
+Degraded/Progressing at deprovisioning time the finalizer will never be released
+automatically — this job patches it out so Kubernetes can complete deletion regardless
+of operator health state.
+
+Depends on SA/Role created in the 130-ibm-mas-suite chart (01-postdelete-crs-resources.yaml).
+The Workspace CR lives in the same core namespace as those resources.
+
+Use the build/bin/set-cli-image-digest.sh script to update the image digest below.
+*/}}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+
+{{- $core_ns  := printf "mas-%s-core" .Values.instance_id }}
+{{- $cr_name  := printf "%s-%s" .Values.instance_id .Values.mas_workspace_id }}
+{{- $job_name := printf "postdelete-ws-cr-%s" ($cr_name | trunc 48) }}
+
+{{ $sa_name   := "postdelete-delete-cr-sa" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CR_NAMESPACE
+              value: {{ $core_ns }}
+            - name: CR_NAME
+              value: {{ $cr_name }}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: Workspace.core.mas.ibm.com/${CR_NAME} in ${CR_NAMESPACE}"
+
+              set +e
+              RESOURCE_NAME=$(oc get workspace.core.mas.ibm.com/${CR_NAME} \
+                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -z "${RESOURCE_NAME}" ]]; then
+                echo "Workspace CR not found — nothing to do"
+                exit 0
+              fi
+
+              echo "Current finalizers:"
+              oc get workspace.core.mas.ibm.com/${CR_NAME} -n ${CR_NAMESPACE} \
+                -o=jsonpath="{.metadata.finalizers}" 2>/dev/null || true
+              echo ""
+
+              # Force-clear operator finalizers so deletion completes
+              # even if the MAS core operator is Degraded or Progressing
+              echo "Patching out finalizers..."
+              set +e
+              oc patch workspace.core.mas.ibm.com/${CR_NAME} -n ${CR_NAMESPACE} \
+                --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
+              set -e
+
+              echo "Deleting Workspace CR..."
+              set +e
+              oc delete workspace.core.mas.ibm.com/${CR_NAME} \
+                -n ${CR_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
+              set -e
+
+              # Verify gone
+              set +e
+              RESOURCE_NAME=$(oc get workspace.core.mas.ibm.com/${CR_NAME} \
+                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -n "${RESOURCE_NAME}" ]]; then
+                echo "ERROR: Workspace CR still present after delete attempt"
+                exit 1
+              fi
+              echo "Workspace CR deleted successfully"
+      volumes: []
+  backoffLimit: 4
+{{- end }}
+{{- end }}

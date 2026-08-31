@@ -1,0 +1,205 @@
+{{- if .Values.enabled }}
+
+{{- $prefix    := printf "fvt-gitops-%s" .Values.test_suite }}
+{{- $secret    := printf "%s-devopsuri" $prefix }}
+{{- $sa        := printf "%s-sa" $prefix }}
+{{- $role      := printf "%s-role" $prefix }}
+{{- $rb        := printf "%s-rb" $prefix }}
+{{- $job       := printf "%s-job" $prefix }}
+{{- $np        := printf "%s-np" $prefix }}
+
+---
+# NetworkPolicy — allow egress from the test Job (MongoDB + cluster API)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1001"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+# Secret — MongoDB URI
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: {{ $secret }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1001"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
+
+---
+# ServiceAccount
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1001"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+# Role — read-only access to cluster resources needed by the tests
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1001"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  # Read MAS CRs
+  - apiGroups: ["core.mas.ibm.com", "apps.mas.ibm.com"]
+    resources: ["suites", "manageapps", "manageworkspaces"]
+    verbs: ["get", "list"]
+  # Read namespaces, pods, secrets, configmaps
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "secrets", "configmaps"]
+    verbs: ["get", "list"]
+  # Read ArgoCD applications
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
+  # Read CatalogSources
+  - apiGroups: ["operators.coreos.com"]
+    resources: ["catalogsources"]
+    verbs: ["get", "list"]
+  # Read DRO CRs
+  - apiGroups: ["datarouter.ibm.com"]
+    resources: ["datareporterconfigs"]
+    verbs: ["get", "list"]
+
+---
+# RoleBinding
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1002"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role }}
+
+---
+# Job — runs fvt-gitops PostSync
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1005"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: {{ $job }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $sa }}
+
+      volumes:
+        - name: devops-uri
+          secret:
+            secretName: {{ $secret }}
+            defaultMode: 0400
+            optional: true
+
+      containers:
+        - name: fvt-gitops
+          image: {{ .Values.fvt_gitops_image_repo }}:{{ .Values.fvt_gitops_image_tag }}
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+            - name: devops-uri
+              mountPath: /etc/mas/devops-uri
+          env:
+            - name: TEST_SUITE
+              value: "{{ .Values.test_suite }}"
+            - name: INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+            - name: NAMESPACE
+              value: "mas-{{ .Values.instance_id }}-core"
+            - name: WORKSPACE_ID
+              value: "{{ .Values.workspace_id }}"
+            - name: PRODUCT_ID
+              value: "ibm-mas-gitops"
+            - name: GITOPS_VERSION
+              value: "{{ .Values.gitops_version }}"
+            - name: BUILD_NUM
+              value: "{{ .Values.devops_build_number }}"
+            - name: DEVOPS_ENVIRONMENT
+              value: "{{ .Values.instance_id }}"
+            - name: DEVOPS_SUITE_NAME
+              value: "{{ .Values.test_suite }}"
+            - name: DEVOPS_BUILD_NUMBER
+              value: "{{ .Values.devops_build_number }}"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              trap 'echo "[ERROR] Error at line $LINENO, exit $?"; exit 1' ERR
+
+              # Inject MongoDB URI from secret mount (optional)
+              if [[ -f /etc/mas/devops-uri/devops_mongo_uri ]]; then
+                export DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri)
+              fi
+
+              exec /bin/bash /opt/ibm/test/src/pytest_runner.sh
+
+{{- end }}

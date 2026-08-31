@@ -1,0 +1,291 @@
+
+{{- /*
+  Only render when cpd_public_route_enabled is true.
+  Creates a public-facing CPD route at:
+    https://cpd-public.<cis_subdomain>.<cis_domain>
+  (e.g. https://cpd-public.inst1002.saasmax.ibmmasivt.com)
+
+  Prerequisites handled upstream (by suite_dns ansible role via gitops_suite_dns):
+    - CIS DNS CNAME: cpd-public.<cis_subdomain> → cluster public NLB
+    - CIS edge certificate (Let's Encrypt) for the hostname
+
+  This job:
+    1. Creates the cpd-public OCP Route (passthrough TLS, type=external label)
+    2. Patches ZenService zenCustomRoute so nginx accepts requests for the hostname
+    3. Restores the internal cpd route host (ZenService overwrites it as a side effect)
+    4. Restarts nginx pods to pick up the updated server_name whitelist
+*/}}
+{{- if .Values.cpd_public_route_enabled }}
+
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "cpd-public-route" }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
+This ensures ArgoCD creates a new job resource instead of attempting (and failing) to update an
+immutable field of any existing Job resource.
+*/}}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
+{{- /*
+Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+By convention, we sha1sum this value to guarantee we never exceed the 63 char limit.
+*/}}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+---
+# Extra RBAC — cpd-sa needs to manage routes and patch ZenService across namespaces
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cpd-public-route-role-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "089"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs: [get, list, create, update, patch, delete]
+    apiGroups: [route.openshift.io]
+    resources: [routes, routes/custom-host]
+  - verbs: [get, list, patch]
+    apiGroups: [zen.cpd.ibm.com]
+    resources: [zenservices]
+  - verbs: [get, list, delete]
+    apiGroups: [""]
+    resources: [pods]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cpd-public-route-rb-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "089"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: cpd-sa
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cpd-public-route-role-{{ .Values.instance_id }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: "{{ .Values.cpd_operators_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "090"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+            - name: CPD_INSTANCE_NAMESPACE
+              value: "{{ .Values.cpd_instance_namespace }}"
+            - name: CPD_OPERATORS_NAMESPACE
+              value: "{{ .Values.cpd_operators_namespace }}"
+            - name: CIS_SUBDOMAIN
+              value: "{{ .Values.cis_subdomain }}"
+            - name: CIS_DOMAIN
+              value: "{{ .Values.cis_domain }}"
+          command:
+            - /bin/bash
+            - -c
+            - |
+
+              set -e
+
+              CPD_PUBLIC_HOST="cpd-public.${CIS_SUBDOMAIN}.${CIS_DOMAIN}"
+              ROUTE_NAME="cpd-public"
+
+              echo
+              echo "================================================================================"
+              echo "CPD Public Route Setup"
+              echo "================================================================================"
+              echo "- CPD Instance Namespace ............ ${CPD_INSTANCE_NAMESPACE}"
+              echo "- Public Hostname ................... ${CPD_PUBLIC_HOST}"
+              echo "- Route Name ........................ ${ROUTE_NAME}"
+              echo
+
+              # -----------------------------------------------------------------------
+              # Step 1: Note the default cpd route host so we can restore it after
+              # ZenService patches it as a side effect of zenCustomRoute
+              # -----------------------------------------------------------------------
+              echo "Step 1: Reading internal cpd route host..."
+              INTERNAL_CPD_HOST=$(oc get route cpd -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.spec.host}')
+              if [[ -z "${INTERNAL_CPD_HOST}" ]]; then
+                echo "ERROR: Could not find internal cpd route in ${CPD_INSTANCE_NAMESPACE}"
+                exit 1
+              fi
+              echo "  Internal cpd route host: ${INTERNAL_CPD_HOST}"
+
+              # -----------------------------------------------------------------------
+              # Step 2: Create cpd-public OCP Route (idempotent)
+              # - passthrough TLS so nginx handles end-to-end TLS
+              # - labels type: external + route-type: external so the public ingress
+              #   controller (routeSelector: matchLabels: type: external) picks it up
+              # -----------------------------------------------------------------------
+              echo
+              echo "Step 2: Ensuring cpd-public Route exists..."
+              EXISTING_ROUTE=$(oc get route "${ROUTE_NAME}" -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.metadata.name}')
+              if [[ -n "${EXISTING_ROUTE}" ]]; then
+                echo "  Route '${ROUTE_NAME}' already exists, skipping creation."
+              else
+                echo "  Creating passthrough Route '${ROUTE_NAME}' for ${CPD_PUBLIC_HOST}..."
+                cat <<EOF | oc apply -f -
+              apiVersion: route.openshift.io/v1
+              kind: Route
+              metadata:
+                name: ${ROUTE_NAME}
+                namespace: ${CPD_INSTANCE_NAMESPACE}
+                labels:
+                  type: external
+                  route-type: external
+              spec:
+                host: ${CPD_PUBLIC_HOST}
+                to:
+                  kind: Service
+                  name: ibm-nginx-svc
+                  weight: 100
+                port:
+                  targetPort: ibm-nginx-https-port
+                tls:
+                  termination: passthrough
+                  insecureEdgeTerminationPolicy: None
+              EOF
+                echo "  Route created."
+              fi
+
+              # -----------------------------------------------------------------------
+              # Step 3: Patch ZenService zenCustomRoute (idempotent)
+              # This adds the hostname to nginx's server_name whitelist.
+              # NOTE: ZenService replaces the cpd route host as a side effect —
+              # we restore it immediately in Step 4.
+              # -----------------------------------------------------------------------
+              echo
+              echo "Step 3: Patching ZenService zenCustomRoute..."
+              CURRENT_CUSTOM_HOST=$(oc get ZenService lite-cr -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.spec.zenCustomRoute.route_host}')
+
+              if [[ "${CURRENT_CUSTOM_HOST}" == "${CPD_PUBLIC_HOST}" ]]; then
+                echo "  ZenService zenCustomRoute already set to ${CPD_PUBLIC_HOST}, skipping."
+              else
+                echo "  Patching ZenService lite-cr..."
+                oc patch ZenService lite-cr -n "${CPD_INSTANCE_NAMESPACE}" --type=merge \
+                  -p "{\"spec\":{\"zenCustomRoute\":{\"route_host\":\"${CPD_PUBLIC_HOST}\"}}}"
+                echo "  ZenService patched."
+
+                # -----------------------------------------------------------------------
+                # Step 4: Immediately restore the internal cpd route
+                # ZenService overwrites it as a side effect of zenCustomRoute patch.
+                # Removing zenCustomRoute later does NOT auto-revert it.
+                # -----------------------------------------------------------------------
+                echo
+                echo "Step 4: Restoring internal cpd route to ${INTERNAL_CPD_HOST}..."
+                oc patch route cpd -n "${CPD_INSTANCE_NAMESPACE}" --type=merge \
+                  -p "{\"spec\":{\"host\":\"${INTERNAL_CPD_HOST}\"}}"
+                echo "  Internal cpd route restored."
+
+                # -----------------------------------------------------------------------
+                # Step 5: Wait for ZenService to reconcile
+                # -----------------------------------------------------------------------
+                echo
+                echo "Step 5: Waiting for ZenService to reach Completed (up to 10 minutes)..."
+                WAIT=0
+                while true; do
+                  ZS_STATUS=$(oc get ZenService lite-cr -n "${CPD_INSTANCE_NAMESPACE}" \
+                    --ignore-not-found -o jsonpath='{.status.zenStatus}')
+                  echo "  ZenService status: ${ZS_STATUS}"
+                  if [[ "${ZS_STATUS}" == "Completed" ]]; then
+                    echo "  ZenService reconcile complete."
+                    break
+                  fi
+                  WAIT=$((WAIT + 30))
+                  if [[ ${WAIT} -gt 600 ]]; then
+                    echo "WARNING: ZenService did not reach Completed within 10 minutes. Proceeding anyway."
+                    break
+                  fi
+                  sleep 30
+                done
+
+                # -----------------------------------------------------------------------
+                # Step 6: Restart nginx pods so new server_name whitelist takes effect
+                # nginx reads /nginx_data/defaults.d/external-server.active.conf at startup
+                # -----------------------------------------------------------------------
+                echo
+                echo "Step 6: Restarting nginx pods to load updated server_name config..."
+                oc delete pods -n "${CPD_INSTANCE_NAMESPACE}" \
+                  -l component=ibm-nginx --ignore-not-found
+                echo "  Nginx pods deleted — Kubernetes will recreate them automatically."
+              fi
+
+              echo
+              echo "================================================================================"
+              echo "CPD Public Route setup complete!"
+              echo "  Route:    cpd-public (passthrough, type=external)"
+              echo "  URL:      https://${CPD_PUBLIC_HOST}"
+              echo "  Internal: https://${INTERNAL_CPD_HOST} (unchanged)"
+              echo "================================================================================"
+
+      restartPolicy: Never
+      serviceAccountName: cpd-sa
+  backoffLimit: 2
+
+{{- end }}

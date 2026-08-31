@@ -86,8 +86,8 @@ rm temp
 echo "GRANT CONNECT ON DATABASE TO ROLE ${WRITE};" >>${WRITE}.sql
 #echo "GRANT USE OF TABLESPACE MAXDATA TO ROLE ${WRITE};" >> ${WRITE}.sql
 
-# _SEQ role is only created for MAXIMO (Manage) - not required for TRIRIGA (Facilities)
-if [[ "${SCHEMANAME}" != "TRIRIGA" ]]; then
+# _SEQ role is only created for MAXIMO (Manage) - not required for TRIDATA (Facilities)
+if [[ "${SCHEMANAME}" != "TRIDATA" ]]; then
 echo "" > temp
 ROLE="${SCHEMANAME}_SEQ"
 if ! grep -iqw "${ROLE}" <<< "${ROLES}" ; then

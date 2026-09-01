@@ -146,13 +146,6 @@ spec:
       restartPolicy: Never
       serviceAccountName: {{ $sa }}
 
-      volumes:
-        - name: devops-uri
-          secret:
-            secretName: {{ $secret }}
-            defaultMode: 0400
-            optional: true
-
       containers:
         - name: fvt-gitops
           image: {{ .Values.fvt_gitops_image_repo }}:{{ .Values.fvt_gitops_image_tag }}
@@ -164,9 +157,6 @@ spec:
             requests:
               cpu: 100m
               memory: 256Mi
-          volumeMounts:
-            - name: devops-uri
-              mountPath: /etc/mas/devops-uri
           env:
             - name: TEST_SUITE
               value: "{{ .Values.test_suite }}"
@@ -178,28 +168,24 @@ spec:
               value: "{{ .Values.workspace_id }}"
             - name: PRODUCT_ID
               value: "ibm-mas-gitops"
+            - name: PRODUCT_CHANNEL
+              value: "{{ .Values.product_channel }}"
+            - name: CONTAINER_VERSION
+              value: "{{ .Values.fvt_gitops_image_tag }}"
             - name: GITOPS_VERSION
               value: "{{ .Values.gitops_version }}"
             - name: BUILD_NUM
               value: "{{ .Values.devops_build_number }}"
-            - name: DEVOPS_ENVIRONMENT
-              value: "{{ .Values.instance_id }}"
-            - name: DEVOPS_SUITE_NAME
-              value: "{{ .Values.test_suite }}"
-            - name: DEVOPS_BUILD_NUMBER
-              value: "{{ .Values.devops_build_number }}"
+            - name: DEVOPS_MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: devops_mongo_uri
+                  optional: true
           command:
             - /bin/bash
             - -c
             - |
-              set -e
-              trap 'echo "[ERROR] Error at line $LINENO, exit $?"; exit 1' ERR
-
-              # Inject MongoDB URI from secret mount (optional)
-              if [[ -f /etc/mas/devops-uri/devops_mongo_uri ]]; then
-                export DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri)
-              fi
-
               exec /bin/bash /opt/ibm/test/src/pytest_runner.sh
 
 {{- end }}

@@ -8,7 +8,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+{{- $_cli_image_digest := "sha256:1c5701a24c9796e02b33036f56babbe74032831e1db733ce9228a46dce4a870b" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -25,7 +25,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -186,6 +186,8 @@ spec:
           env:
             - name: SUITE_NAMESPACE
               value: mas-{{ .Values.instance_id }}-core
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
           command:
             - /bin/sh
             - -c
@@ -203,7 +205,7 @@ spec:
               while true; do
                 wait_period=$(($wait_period+60))
                 if [ $wait_period -gt 3600 ]; then
-                  echo "Suite Routes is not ready after 20 minutes of waiting. exiting..."
+                  echo "Suite Routes is not ready after 60 minutes of waiting. exiting..."
                   exit 1
                 else
                   sleep 60
@@ -222,13 +224,61 @@ spec:
                 fi
               done
 
+              # Get expected domain from Suite CR
+              echo
+              echo "Validating routes match expected domain from Suite CR..."
+              EXPECTED_DOMAIN=$(oc get Suite/${INSTANCE_ID} -n ${SUITE_NAMESPACE} -o jsonpath='{.spec.domain}')
+              echo "Expected domain: ${EXPECTED_DOMAIN}"
+
+              # Wait for routes to match expected domain
+              # This ensures routes have been recreated after a domain change
+              wait_period=0
+              while true; do
+                wait_period=$(($wait_period+30))
+                if [ $wait_period -gt 1800 ]; then
+                  echo "Routes do not match expected domain after 30 minutes. Exiting..."
+                  echo "This may indicate the Suite operator has not finished recreating routes."
+                  exit 1
+                fi
+
+                # Get all route hosts
+                ROUTE_HOSTS=$(oc get routes -n ${SUITE_NAMESPACE} -o jsonpath='{range .items[*]}{.spec.host}{"\n"}{end}')
+                
+                # Check if any routes exist
+                if [ -z "$ROUTE_HOSTS" ]; then
+                  echo "No routes found yet, waiting..."
+                  sleep 30
+                  continue
+                fi
+
+                # Check if all routes contain expected domain
+                MISMATCHED=$(echo "$ROUTE_HOSTS" | grep -v "$EXPECTED_DOMAIN" || true)
+                if [ -z "$MISMATCHED" ]; then
+                  echo "All routes match expected domain: ${EXPECTED_DOMAIN}"
+                  break
+                else
+                  echo "Some routes do not match expected domain yet:"
+                  echo "$MISMATCHED"
+                  echo "Waiting for routes to be recreated with correct domain..."
+                  sleep 30
+                fi
+              done
+
               export routes=$(oc get routes -n ${SUITE_NAMESPACE} -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
-              echo "Add label to routes updated ${routes}"
+              echo
+              echo "Adding type=external label to routes: ${routes}"
 
               for route in $routes; do
                 echo "Adding label to route - ${route}"
-                oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}'
+                oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}' || {
+                  echo "Warning: Failed to patch route ${route}, will retry..."
+                  sleep 5
+                  oc patch route/${route} -p '{"metadata":{"labels":{"type":"external"}}}'
+                }
               done
+
+              echo
+              echo "Successfully added type=external label to all routes"
       restartPolicy: Never
       serviceAccountName: "mas-route-sa"
   backoffLimit: 4

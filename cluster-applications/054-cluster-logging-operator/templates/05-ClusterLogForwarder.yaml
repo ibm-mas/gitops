@@ -27,7 +27,7 @@ spec:
             namespace: mas-*-core
           - container: instana-agent
             namespace: instana-agent
-{{- if ne .Values.environment_type "prod" }}
+{{- if eq .Values.environment_type "non-prod" }}
           - container: cron
             namespace: mas-*-manage
 {{- end }}
@@ -40,7 +40,7 @@ spec:
       name: application-logs
       type: application
   filters:
-{{- if ne .Values.environment_type "prod" }}
+{{- if eq .Values.environment_type "non-prod" }}
     - drop:
         - test:
             - field: .level
@@ -56,7 +56,7 @@ spec:
               matches: 'BMXAA8229W'
       name: noise
       type: drop
-{{- else }}
+{{- else if eq .Values.environment_type "prod" }}
     - drop:
         - test:
             - field: .level
@@ -64,6 +64,13 @@ spec:
         - test:
             - field: .message
               matches: 'BMX[A-Z0-9]+I'
+      name: noise
+      type: drop
+{{- else }}
+    - drop:
+        - test:
+            - field: .level
+              matches: info|Info|INFO|DEBUG|Debug|debug
       name: noise
       type: drop
 {{- end }}
@@ -153,7 +160,7 @@ spec:
             namespace: mas-*-core
           - container: instana-agent
             namespace: instana-agent
-{{- if ne .Values.environment_type "prod" }}
+{{- if eq .Values.environment_type "non-prod" }}
           - container: cron
             namespace: mas-*-manage
 {{- end }}
@@ -170,7 +177,7 @@ spec:
   filters:
     - name: detect-multiline-errors
       type: detectMultilineException
-{{- if ne .Values.environment_type "prod" }}
+{{- if eq .Values.environment_type "non-prod" }}
     - drop:
         - test:
             - field: .level
@@ -186,7 +193,7 @@ spec:
               matches: 'BMXAA8229W'
       name: noise
       type: drop
-{{- else }}
+{{- else if eq .Values.environment_type "prod" }}
     - drop:
         - test:
             - field: .level
@@ -194,6 +201,13 @@ spec:
         - test:
             - field: .message
               matches: 'BMX[A-Z0-9]+I'
+      name: noise
+      type: drop
+{{- else }}
+    - drop:
+        - test:
+            - field: .level
+              matches: info|Info|INFO|DEBUG|Debug|debug
       name: noise
       type: drop
 {{- end }}

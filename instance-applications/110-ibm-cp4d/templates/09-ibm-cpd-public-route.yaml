@@ -9,11 +9,11 @@
     - CIS DNS CNAME: cpd-public.<cis_subdomain> → cluster public NLB
     - CIS edge certificate (Let's Encrypt) for the hostname
 
-  This job:
-    1. Creates the cpd-public OCP Route (passthrough TLS, type=external label)
-    2. Patches ZenService zenCustomRoute so nginx accepts requests for the hostname
-    3. Restores the internal cpd route host (ZenService overwrites it as a side effect)
-    4. Restarts nginx pods to pick up the updated server_name whitelist
+  The Route itself is managed declaratively by ArgoCD (below).
+  The Job only handles what ArgoCD cannot do declaratively:
+    1. Patches ZenService zenCustomRoute so nginx accepts the new hostname
+    2. Restores the internal cpd route host (ZenService overwrites it as a side effect)
+    3. Restarts nginx pods to pick up the updated server_name whitelist
 */}}
 {{- if .Values.cpd_public_route_enabled }}
 
@@ -58,7 +58,39 @@ By convention, we sha1sum this value to guarantee we never exceed the 63 char li
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
 ---
-# Extra RBAC — cpd-sa needs to manage routes and patch ZenService across namespaces
+# Route managed by ArgoCD — passthrough TLS, picked up by the public ingress controller
+# via the type: external label (routeSelector: matchLabels: type: external)
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: cpd-public
+  namespace: "{{ .Values.cpd_instance_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "089"
+{{- if .Values.custom_labels }}
+  labels:
+    type: external
+    route-type: external
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- else }}
+  labels:
+    type: external
+    route-type: external
+{{- end }}
+spec:
+  host: "cpd-public.{{ .Values.cis_subdomain }}.{{ .Values.cis_domain }}"
+  to:
+    kind: Service
+    name: ibm-nginx-svc
+    weight: 100
+  port:
+    targetPort: ibm-nginx-https-port
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: None
+
+---
+# Extra RBAC — cpd-sa needs to patch ZenService and restart nginx pods
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -70,12 +102,12 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 rules:
-  - verbs: [get, list, create, update, patch, delete]
-    apiGroups: [route.openshift.io]
-    resources: [routes, routes/custom-host]
   - verbs: [get, list, patch]
     apiGroups: [zen.cpd.ibm.com]
     resources: [zenservices]
+  - verbs: [get, list, patch]
+    apiGroups: [route.openshift.io]
+    resources: [routes]
   - verbs: [get, list, delete]
     apiGroups: [""]
     resources: [pods]
@@ -151,15 +183,13 @@ spec:
               set -e
 
               CPD_PUBLIC_HOST="cpd-public.${CIS_SUBDOMAIN}.${CIS_DOMAIN}"
-              ROUTE_NAME="cpd-public"
 
               echo
               echo "================================================================================"
-              echo "CPD Public Route Setup"
+              echo "CPD Public Route — ZenService patch + nginx restart"
               echo "================================================================================"
               echo "- CPD Instance Namespace ............ ${CPD_INSTANCE_NAMESPACE}"
               echo "- Public Hostname ................... ${CPD_PUBLIC_HOST}"
-              echo "- Route Name ........................ ${ROUTE_NAME}"
               echo
 
               # -----------------------------------------------------------------------
@@ -176,56 +206,18 @@ spec:
               echo "  Internal cpd route host: ${INTERNAL_CPD_HOST}"
 
               # -----------------------------------------------------------------------
-              # Step 2: Create cpd-public OCP Route (idempotent)
-              # - passthrough TLS so nginx handles end-to-end TLS
-              # - labels type: external + route-type: external so the public ingress
-              #   controller (routeSelector: matchLabels: type: external) picks it up
-              # -----------------------------------------------------------------------
-              echo
-              echo "Step 2: Ensuring cpd-public Route exists..."
-              EXISTING_ROUTE=$(oc get route "${ROUTE_NAME}" -n "${CPD_INSTANCE_NAMESPACE}" \
-                --ignore-not-found -o jsonpath='{.metadata.name}')
-              if [[ -n "${EXISTING_ROUTE}" ]]; then
-                echo "  Route '${ROUTE_NAME}' already exists, skipping creation."
-              else
-                echo "  Creating passthrough Route '${ROUTE_NAME}' for ${CPD_PUBLIC_HOST}..."
-                cat <<EOF | oc apply -f -
-              apiVersion: route.openshift.io/v1
-              kind: Route
-              metadata:
-                name: ${ROUTE_NAME}
-                namespace: ${CPD_INSTANCE_NAMESPACE}
-                labels:
-                  type: external
-                  route-type: external
-              spec:
-                host: ${CPD_PUBLIC_HOST}
-                to:
-                  kind: Service
-                  name: ibm-nginx-svc
-                  weight: 100
-                port:
-                  targetPort: ibm-nginx-https-port
-                tls:
-                  termination: passthrough
-                  insecureEdgeTerminationPolicy: None
-              EOF
-                echo "  Route created."
-              fi
-
-              # -----------------------------------------------------------------------
-              # Step 3: Patch ZenService zenCustomRoute (idempotent)
+              # Step 2: Patch ZenService zenCustomRoute (idempotent)
               # This adds the hostname to nginx's server_name whitelist.
               # NOTE: ZenService replaces the cpd route host as a side effect —
-              # we restore it immediately in Step 4.
+              # the internal route is always restored unconditionally in Step 5 below.
               # -----------------------------------------------------------------------
               echo
-              echo "Step 3: Patching ZenService zenCustomRoute..."
+              echo "Step 2: Patching ZenService zenCustomRoute..."
               CURRENT_CUSTOM_HOST=$(oc get ZenService lite-cr -n "${CPD_INSTANCE_NAMESPACE}" \
                 --ignore-not-found -o jsonpath='{.spec.zenCustomRoute.route_host}')
 
               if [[ "${CURRENT_CUSTOM_HOST}" == "${CPD_PUBLIC_HOST}" ]]; then
-                echo "  ZenService zenCustomRoute already set to ${CPD_PUBLIC_HOST}, skipping."
+                echo "  ZenService zenCustomRoute already set to ${CPD_PUBLIC_HOST}, skipping patch."
               else
                 echo "  Patching ZenService lite-cr..."
                 oc patch ZenService lite-cr -n "${CPD_INSTANCE_NAMESPACE}" --type=merge \
@@ -233,21 +225,10 @@ spec:
                 echo "  ZenService patched."
 
                 # -----------------------------------------------------------------------
-                # Step 4: Immediately restore the internal cpd route
-                # ZenService overwrites it as a side effect of zenCustomRoute patch.
-                # Removing zenCustomRoute later does NOT auto-revert it.
+                # Step 3: Wait for ZenService to reconcile
                 # -----------------------------------------------------------------------
                 echo
-                echo "Step 4: Restoring internal cpd route to ${INTERNAL_CPD_HOST}..."
-                oc patch route cpd -n "${CPD_INSTANCE_NAMESPACE}" --type=merge \
-                  -p "{\"spec\":{\"host\":\"${INTERNAL_CPD_HOST}\"}}"
-                echo "  Internal cpd route restored."
-
-                # -----------------------------------------------------------------------
-                # Step 5: Wait for ZenService to reconcile
-                # -----------------------------------------------------------------------
-                echo
-                echo "Step 5: Waiting for ZenService to reach Completed (up to 10 minutes)..."
+                echo "Step 3: Waiting for ZenService to reach Completed (up to 10 minutes)..."
                 WAIT=0
                 while true; do
                   ZS_STATUS=$(oc get ZenService lite-cr -n "${CPD_INSTANCE_NAMESPACE}" \
@@ -266,26 +247,47 @@ spec:
                 done
 
                 # -----------------------------------------------------------------------
-                # Step 6: Restart nginx pods so new server_name whitelist takes effect
+                # Step 4: Restart nginx pods so new server_name whitelist takes effect
                 # nginx reads /nginx_data/defaults.d/external-server.active.conf at startup
                 # -----------------------------------------------------------------------
                 echo
-                echo "Step 6: Restarting nginx pods to load updated server_name config..."
+                echo "Step 4: Restarting nginx pods to load updated server_name config..."
                 oc delete pods -n "${CPD_INSTANCE_NAMESPACE}" \
                   -l component=ibm-nginx --ignore-not-found
                 echo "  Nginx pods deleted — Kubernetes will recreate them automatically."
               fi
 
+              # -----------------------------------------------------------------------
+              # Step 5: Always restore the internal cpd route unconditionally.
+              # ZenService overwrites spec.host on the cpd route as a side effect of
+              # zenCustomRoute — both on initial patch AND on subsequent reconciliations.
+              # Removing zenCustomRoute later does NOT auto-revert it.
+              # Running this unconditionally ensures the route is correct on every Job
+              # run, including re-runs triggered by ArgoCD after a values change.
+              # -----------------------------------------------------------------------
+              echo
+              echo "Step 5: Asserting internal cpd route host is ${INTERNAL_CPD_HOST}..."
+              CURRENT_CPD_HOST=$(oc get route cpd -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.spec.host}')
+              if [[ "${CURRENT_CPD_HOST}" == "${INTERNAL_CPD_HOST}" ]]; then
+                echo "  Internal cpd route host is already correct, no patch needed."
+              else
+                echo "  Patching cpd route (current: ${CURRENT_CPD_HOST})..."
+                oc patch route cpd -n "${CPD_INSTANCE_NAMESPACE}" --type=merge \
+                  -p "{\"spec\":{\"host\":\"${INTERNAL_CPD_HOST}\"}}"
+                echo "  Internal cpd route restored."
+              fi
+
               echo
               echo "================================================================================"
               echo "CPD Public Route setup complete!"
-              echo "  Route:    cpd-public (passthrough, type=external)"
+              echo "  Route:    cpd-public (passthrough, type=external) — managed by ArgoCD"
               echo "  URL:      https://${CPD_PUBLIC_HOST}"
               echo "  Internal: https://${INTERNAL_CPD_HOST} (unchanged)"
               echo "================================================================================"
 
       restartPolicy: Never
       serviceAccountName: cpd-sa
-  backoffLimit: 2
+  backoffLimit: 4
 
 {{- end }}

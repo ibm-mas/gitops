@@ -1,0 +1,295 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>MASCORE-15507 — Full Change Summary</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.6; color: #1f2328; background: #ffffff; padding: 32px 24px; }
+  .page { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: #57606a; font-size: 13px; margin-bottom: 32px; }
+  h2 { font-size: 16px; font-weight: 700; margin: 32px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #e5e7eb; }
+  h3 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; color: #1f2328; }
+  p { margin-bottom: 10px; color: #1f2328; }
+  ul { margin: 6px 0 10px 20px; }
+  li { margin-bottom: 4px; }
+  code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 3px; padding: 1px 5px; }
+  pre { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 14px 16px; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; overflow-x: auto; margin: 8px 0 14px; white-space: pre; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0 16px; }
+  th { background: #f7f8fa; border: 1px solid #e5e7eb; padding: 7px 10px; text-align: left; font-weight: 600; color: #57606a; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+  td { border: 1px solid #e5e7eb; padding: 7px 10px; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+  .tag-new  { background: #dafbe1; color: #1a7f37; }
+  .tag-fix  { background: #ddf4ff; color: #0969da; }
+  .tag-rm   { background: #ffeef0; color: #cf222e; }
+  .tag-mv   { background: #fff8c5; color: #7d4e00; }
+  .commit { font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; color: #57606a; background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 3px; padding: 1px 5px; }
+  .section-intro { background: #f7f8fa; border-left: 3px solid #3b82d4; padding: 10px 14px; border-radius: 0 6px 6px 0; margin-bottom: 16px; font-size: 13px; color: #57606a; }
+  .wave-box { display: inline-block; background: #e5e7eb; color: #1f2328; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 6px; font-family: "SFMono-Regular", Consolas, monospace; }
+  .priority-chain { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 8px 0 14px; }
+  .priority-chain ol { margin-left: 18px; }
+  .priority-chain li { margin-bottom: 3px; font-size: 13px; }
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>MASCORE-15507 — Full Change Summary</h1>
+  <div class="subtitle">Branch: <code>MASCORE-15507</code>  ·  4 commits in this session  ·  44 files changed total on branch</div>
+
+  
+  <h2>1. The Problem We Were Solving</h2>
+
+  <div class="section-intro">
+    CPD 5.3.1 changed how services (WML, WSL, Spark, SPSS, Cognos Analytics) are installed.
+    Previously every service was installed via OLM (Operator Lifecycle Manager) Subscriptions.
+    From 5.3.1 onward IBM ships native Helm charts and the OLM path is gone.
+    The original implementation used K8s <code>batch/v1 Job</code> objects inside the instance-applications
+    Helm charts to run <code>helm install</code> shell scripts — one per service.
+    The PR review asked us to replace those Jobs with native <strong>ArgoCD Applications</strong>
+    pointing directly at the IBM Helm chart registry, which is cleaner, observable, and retryable.
+  </div>
+
+  
+  <h2>2. Architecture: Before vs After</h2>
+
+  <table>
+    <tr><th>Concern</th><th>Before (K8s Job approach)</th><th>After (native ArgoCD Apps)</th></tr>
+    <tr>
+      <td><strong>Where install logic lives</strong></td>
+      <td><code>instance-applications/120-ibm-wml/templates/02-ibm-wml-cr.yaml</code> — a <code>batch/v1 Job</code> running shell scripts inside a CLI pod</td>
+      <td><code>root-applications/ibm-mas-instance-root/templates/120-ibm-wml-app.yaml</code> — ArgoCD <code>Application</code> objects pointing at IBM Helm chart registry</td>
+    </tr>
+    <tr>
+      <td><strong>Observability</strong></td>
+      <td>Must tail pod logs; ArgoCD just shows "Succeeded" once Job exits</td>
+      <td>Each sub-chart is a first-class ArgoCD Application — full sync status, health, resource tree in UI</td>
+    </tr>
+    <tr>
+      <td><strong>Retry behaviour</strong></td>
+      <td><code>backoffLimit: 4</code> on the Job; failures are opaque</td>
+      <td><code>retry: limit: 20</code> on each Application; ArgoCD auto-resyncs each wave independently</td>
+    </tr>
+    <tr>
+      <td><strong>Version control</strong></td>
+      <td>Versions hardcoded in Job shell script <code>helm install ... --version 12.1.0</code></td>
+      <td>3-level priority: gitops config → <code>olm-utils-cm</code> lookup → hardcoded default</td>
+    </tr>
+    <tr>
+      <td><strong>CRD establishment</strong></td>
+      <td>Job script polled <code>oc get crd</code> in a shell loop with manual timeouts</td>
+      <td>Cluster-scoped chart (wave N) establishes CRDs; namespace-scoped chart (wave N+1) runs after. <code>SkipDryRunOnMissingResource=true</code> on cluster-scoped only</td>
+    </tr>
+    <tr>
+      <td><strong>CPD &lt; 5.3.1</strong></td>
+      <td>Same file, different code path</td>
+      <td>OLM path entirely in instance-application templates, gated <code>{{- if lt ... 5.3.1 }}</code>. Unchanged</td>
+    </tr>
+  </table>
+
+  
+  <h2>3. Root Application Templates — What Was Added</h2>
+
+  <div class="section-intro">
+    Five files in <code>root-applications/ibm-mas-instance-root/templates/</code> were updated.
+    Each now has two branches: <code>CPD &lt; 5.3.1</code> (OLM, unchanged) and <code>CPD ≥ 5.3.1</code> (native ArgoCD Helm Apps, new).
+  </div>
+
+  <h3>WML — <code>120-ibm-wml-app.yaml</code></h3>
+  <p>4 Applications in sequence (Redis dependency first, then WML):</p>
+  <table>
+    <tr><th>Wave</th><th>App Name</th><th>Chart</th><th>Purpose</th><th>SkipDryRun?</th></tr>
+    <tr><td><span class="wave-box">119</span></td><td><code>wml-redis-cluster</code></td><td><code>ibm-redis-cp-cluster-scoped</code></td><td>Redis CRDs + ClusterRoles</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">120</span></td><td><code>wml-redis</code></td><td><code>ibm-redis-cp</code></td><td>Redis operator in operators NS</td><td>❌ no</td></tr>
+    <tr><td><span class="wave-box">121</span></td><td><code>wml-cluster</code></td><td><code>wml-cluster-scoped</code></td><td>WML CRDs + ClusterRoles</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">122</span></td><td><code>wml</code></td><td><code>wml</code></td><td>WML operator + <code>WmlBase</code> CR</td><td>❌ no</td></tr>
+  </table>
+
+  <h3>Spark — <code>120-ibm-spark-app.yaml</code></h3>
+  <table>
+    <tr><th>Wave</th><th>App Name</th><th>Chart</th><th>Purpose</th><th>SkipDryRun?</th></tr>
+    <tr><td><span class="wave-box">119</span></td><td><code>spark-cluster</code></td><td><code>analyticsengine-cluster-scoped</code></td><td>CRDs + ClusterRoles</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">120</span></td><td><code>spark</code></td><td><code>analyticsengine</code></td><td>Spark operator + CR</td><td>❌ no</td></tr>
+  </table>
+
+  <h3>SPSS — <code>120-ibm-spss-app.yaml</code></h3>
+  <p>Also restored missing OLM params (<code>spss_install_plan</code>, <code>canvasbase_channel</code>, <code>canvasbase_install_plan</code>) to the &lt; 5.3.1 branch.</p>
+  <table>
+    <tr><th>Wave</th><th>App Name</th><th>Chart</th><th>Purpose</th><th>SkipDryRun?</th></tr>
+    <tr><td><span class="wave-box">119</span></td><td><code>spss-canvasbase-cluster</code></td><td><code>canvasbase-cluster-scoped</code></td><td>Canvas Base CRDs</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">120</span></td><td><code>spss-canvasbase</code></td><td><code>canvasbase</code></td><td>Canvas Base operator + CR</td><td>❌ no</td></tr>
+    <tr><td><span class="wave-box">121</span></td><td><code>spss-cluster</code></td><td><code>spss-cluster-scoped</code></td><td>SPSS CRDs</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">122</span></td><td><code>spss</code></td><td><code>spss</code></td><td>SPSS operator + CR</td><td>❌ no</td></tr>
+  </table>
+
+  <h3>WSL — <code>120-ibm-wsl-app.yaml</code></h3>
+  <p>Most complex — 5 sub-charts, 10 Applications total:</p>
+  <table>
+    <tr><th>Wave</th><th>App Name</th><th>Chart</th><th>Purpose</th><th>SkipDryRun?</th></tr>
+    <tr><td><span class="wave-box">115</span></td><td><code>wsl-opensearch-cluster</code></td><td><code>opencontent-opensearch-cluster-scoped</code></td><td>OpenSearch CRDs</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">116</span></td><td><code>wsl-opensearch</code></td><td><code>opencontent-opensearch</code></td><td>OpenSearch operator</td><td>❌ no</td></tr>
+    <tr><td><span class="wave-box">117</span></td><td><code>wsl-ccs-cluster</code></td><td><code>ccs-cluster-scoped</code></td><td>CCS CRDs</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">118</span></td><td><code>wsl-ccs</code></td><td><code>ccs</code></td><td>CCS operator + CR</td><td>❌ no</td></tr>
+    <tr><td><span class="wave-box">119</span></td><td><code>wsl-datarefinery-cluster</code></td><td><code>datarefinery-cluster-scoped</code></td><td>DataRefinery CRDs</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">120</span></td><td><code>wsl-datarefinery</code></td><td><code>datarefinery</code></td><td>DataRefinery operator + CR</td><td>❌ no</td></tr>
+    <tr><td><span class="wave-box">121</span></td><td><code>wsl-ws-runtimes-cluster</code></td><td><code>ws-runtimes-cluster-scoped</code></td><td>WS Runtimes CRDs</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">122</span></td><td><code>wsl-ws-runtimes</code></td><td><code>ws-runtimes</code></td><td>WS Runtimes operator + CR</td><td>❌ no</td></tr>
+    <tr><td><span class="wave-box">123</span></td><td><code>wsl-cluster</code></td><td><code>ws-cluster-scoped</code></td><td>Watson Studio CRDs</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">124</span></td><td><code>wsl</code></td><td><code>ws</code></td><td>Watson Studio operator + CR</td><td>❌ no</td></tr>
+  </table>
+
+  <h3>Cognos Analytics — <code>120-ibm-cognos-analytics-app.yaml</code></h3>
+  <p>Cognos has no OLM path at all — 5.3.1+ only. The entire AVP plugin path was removed and replaced with 2 native Applications:</p>
+  <table>
+    <tr><th>Wave</th><th>App Name</th><th>Chart</th><th>Purpose</th><th>SkipDryRun?</th></tr>
+    <tr><td><span class="wave-box">119</span></td><td><code>cognos-cluster</code></td><td><code>cognos-analytics-cluster-scoped</code></td><td>Cognos CRDs</td><td>✅ yes</td></tr>
+    <tr><td><span class="wave-box">120</span></td><td><code>cognos</code></td><td><code>cognos-analytics</code></td><td>Cognos operator + CR</td><td>❌ no</td></tr>
+  </table>
+
+  
+  <h2>4. SkipDryRunOnMissingResource — Why Cluster-Scoped Only</h2>
+
+  <p>
+    <code>SkipDryRunOnMissingResource=true</code> tells ArgoCD to skip the dry-run validation for resources whose API type is not yet registered in the cluster. This is only needed on <strong>cluster-scoped charts</strong> because they install CRDs — on first deploy those CRDs don't exist yet, so ArgoCD's dry-run would fail.
+  </p>
+  <p>
+    By the time the namespace-scoped chart runs (next wave), the CRDs from the preceding wave are already established and dry-run works normally — no skip needed or wanted there.
+  </p>
+  <pre>Wave N   →  cluster-scoped chart  (SkipDryRunOnMissingResource=true)  installs CRDs
+Wave N+1 →  namespace-scoped chart (no skip)                            CRDs exist, dry-run OK</pre>
+
+  
+  <h2>5. Chart Version Resolution — 3-Level Priority</h2>
+
+  <p>Each <code>targetRevision</code> is resolved at ArgoCD render time using this chain:</p>
+  <div class="priority-chain">
+    <ol>
+      <li><strong>Gitops config value</strong> (e.g. <code>ibm_wml.wml_chart_version: "13.0.0"</code>) — operator explicitly pins a version in their config repo</li>
+      <li><strong><code>olm-utils-cm</code> ConfigMap lookup</strong> — deployed by wave 110, contains the canonical <code>case_version</code> for every CPD component for the installed CPD release</li>
+      <li><strong>Hardcoded default</strong> (e.g. <code>"12.1.0"</code>) — only used during <code>helm template</code> dry-runs where no cluster is reachable</li>
+    </ol>
+  </div>
+  <p>In Helm template syntax (WML example):</p>
+  <pre>{{- $olmUtils := lookup "v1" "ConfigMap" $cpd_instance_ns "olm-utils-cm" }}
+{{- $meta := dict }}
+{{- if $olmUtils }}
+{{- $meta = $olmUtils.data.release_components_meta | fromYaml }}
+{{- end }}
+{{- $wmlVersion := .Values.ibm_wml.wml_chart_version
+    | default ((index $meta "wml" | default dict).case_version | default "12.1.0") }}</pre>
+
+  <p>New optional values added to each service <code>values.yaml</code>:</p>
+  <table>
+    <tr><th>Service</th><th>New values.yaml keys</th></tr>
+    <tr><td>WML</td><td><code>wml_chart_version</code>, <code>redis_chart_version</code></td></tr>
+    <tr><td>Spark</td><td><code>spark_chart_version</code></td></tr>
+    <tr><td>SPSS</td><td><code>spss_chart_version</code>, <code>canvasbase_chart_version</code></td></tr>
+    <tr><td>WSL</td><td><code>ws_chart_version</code>, <code>ccs_chart_version</code>, <code>datarefinery_chart_version</code>, <code>ws_runtimes_chart_version</code>, <code>opensearch_chart_version</code></td></tr>
+    <tr><td>Cognos</td><td><code>cognos_chart_version</code> (under <code>ibm_cp4d</code>)</td></tr>
+  </table>
+  <p>All default to <code>""</code> — existing deployments are unaffected.</p>
+
+  
+  <h2>6. Instance Application Template Changes</h2>
+
+  <p>These charts now only render for CPD <strong>&lt; 5.3.1</strong>. For ≥ 5.3.1 the root-app Helm Applications handle everything. The Helm Job blocks were removed.</p>
+
+  <table>
+    <tr><th>File</th><th>What changed</th></tr>
+    <tr>
+      <td><code>120-ibm-wml/templates/02-ibm-wml-cr.yaml</code></td>
+      <td>Added <code>&lt; 5.3.1</code> gate. For ≥ 5.3.1: stub <code>ConfigMap</code> only (so ArgoCD has a persistent non-hook resource and doesn't loop OutOfSync after the old Job deleted itself)</td>
+    </tr>
+    <tr>
+      <td><code>120-ibm-spark/templates/01-ibm-spark-cr.yaml</code></td>
+      <td>Same — <code>&lt; 5.3.1</code> gate, ≥ 5.3.1 stub ConfigMap</td>
+    </tr>
+    <tr>
+      <td><code>120-ibm-spss/templates/01-ibm-spss-cr.yaml</code></td>
+      <td><code>&lt; 5.3.1</code> gate; fixed CR name <code>spss-sample</code> → <code>spssmodeler-cr</code>; removed incorrect <code>datarefinery_operand_version</code>/<code>wsrt_operand_version</code> fields (SPSS doesn't use them); stub ConfigMap for ≥ 5.3.1</td>
+    </tr>
+    <tr>
+      <td><code>120-ibm-spss/templates/00-ibm-spss_Subscription.yaml</code></td>
+      <td>Added <code>&lt; 5.3.1</code> gate. Restored full dual Subscription (canvasbase + SPSS) with <code>installPlanApproval</code></td>
+    </tr>
+    <tr>
+      <td><code>120-ibm-wsl/templates/01-ibm-wsl-cr.yaml</code></td>
+      <td>Added <code>&lt; 5.3.1</code> gate. Stub ConfigMap for ≥ 5.3.1</td>
+    </tr>
+    <tr>
+      <td><code>120-ibm-cognos-analytics/templates/01-ibm-cognos-analytics-cr.yaml</code></td>
+      <td>Entire file replaced with a single comment — Cognos has no OLM path at all; all logic moved to root app</td>
+    </tr>
+  </table>
+
+  
+  <h2>7. CP4D Platform Changes</h2>
+
+  <table>
+    <tr><th>File</th><th>What changed</th></tr>
+    <tr>
+      <td><code>110-ibm-cp4d/templates/00-ibm-cp4d-olm-531.yaml</code></td>
+      <td><span class="tag tag-new">new</span> The <code>olm-utils-cm</code> ConfigMap for CPD 5.3.1 containing <code>release_components_meta</code> with <code>case_version</code> for every component. This is the single source of truth for chart versions on the cluster</td>
+    </tr>
+    <tr>
+      <td><code>110-ibm-cp4d/templates/02-ibm-cp4d_rbac.yaml</code></td>
+      <td><span class="tag tag-new">new</span> <code>cpd-sa</code> ServiceAccount + ClusterRole with CRD/Helm/escalate permissions needed by the ≥ 5.3.1 Helm apps</td>
+    </tr>
+    <tr>
+      <td><code>110-ibm-cp4d/templates/07-ibm-cp4d_Ibmcpd.yaml</code></td>
+      <td><span class="tag tag-fix">fix</span> <code>imagePullSecret: ibm_entitlement_key</code> → <code>ibm-entitlement-key</code> (underscore→dash bug was causing the CP4D operator to fail pulling Common Services images)</td>
+    </tr>
+    <tr>
+      <td><code>110-ibm-cp4d/templates/09-ibm-cp4d_services_base.yaml</code></td>
+      <td><span class="tag tag-fix">fix</span> Added <code>&lt; 5.3.1</code> version gate — OLM Subscriptions for CCS/DataRefinery/WS-Runtimes are not needed for ≥ 5.3.1</td>
+    </tr>
+  </table>
+
+  
+  <h2>8. RBAC Regeneration</h2>
+
+  <p>After adding <code>ConfigMap</code> resources to the ≥ 5.3.1 branches, <code>generate_application_admin_rbac.py</code> was re-run to add <code>ConfigMap</code> to the auto-generated RBAC rules:</p>
+  <ul>
+    <li><code>instance-applications/600-application-admin-rbac/templates/per-namespace-rbac.yaml</code></li>
+    <li><code>rbac/kustomize/base/application-admin-role.yaml</code></li>
+  </ul>
+
+  
+  <h2>9. Commits in This Session</h2>
+
+  <table>
+    <tr><th>Commit</th><th>Summary</th></tr>
+    <tr>
+      <td><span class="commit">768133a1</span></td>
+      <td>
+        Added WSL (10 apps), Cognos (2 apps) native ArgoCD Helm Applications.<br />
+        Replaced all hardcoded <code>targetRevision</code> with <code>olm-utils-cm</code> lookup + fallback defaults.<br />
+        Moved <code>SkipDryRunOnMissingResource=true</code> from namespace-scoped apps to cluster-scoped apps only.
+      </td>
+    </tr>
+    <tr>
+      <td><span class="commit">34ea07b9</span></td>
+      <td>
+        Exposed chart versions as explicit gitops config values (<code>wml_chart_version</code>, <code>spark_chart_version</code>, etc.).<br />
+        3-level priority chain: gitops config → <code>olm-utils-cm</code> → hardcoded default.<br />
+        Added new optional keys to all 5 service <code>values.yaml</code> files.
+      </td>
+    </tr>
+  </table>
+
+  
+  <h2>10. Validation</h2>
+
+  <p>After every change set:</p>
+  <ul>
+    <li><code>./build/bin/helm-lint.sh -p root-applications/ibm-mas-instance-root</code> — <strong>1 chart linted, 0 failed</strong></li>
+    <li><code>./build/bin/verify-job-definitions.sh .</code> — <strong>77 files scanned, 77 valid, 0 invalid</strong></li>
+  </ul>
+
+  <footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>

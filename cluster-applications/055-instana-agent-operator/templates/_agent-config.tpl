@@ -1,4 +1,5 @@
 {{- define "instana-agent.configuration_yaml" -}}
+com.instana.loglevel: DEBUG
 com.instana.ignore:
   arguments:
     - io.strimzi.operator.cluster.Main

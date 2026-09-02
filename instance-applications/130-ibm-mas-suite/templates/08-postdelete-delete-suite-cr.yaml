@@ -10,8 +10,8 @@ core components. If the operator is Degraded/Progressing at deprovisioning time,
 finalizer will never be released automatically — this job patches it out so Kubernetes
 can complete deletion regardless of operator health state.
 
-Depends on SA/Role/NetworkPolicy created in this same chart (01-postdelete-crs-resources.yaml).
-The Suite CR lives in the same core namespace as those resources.
+The Suite CR lives in mas-<instance_id>-core — the same namespace as the SA and Role
+created in 01-postdelete-crs-resources.yaml. No ClusterRole is required.
 
 Use the build/bin/set-cli-image-digest.sh script to update the image digest below.
 */}}
@@ -88,8 +88,6 @@ spec:
                 -o=jsonpath="{.metadata.finalizers}" 2>/dev/null || true
               echo ""
 
-              # Force-clear operator finalizers so deletion completes
-              # even if the MAS core operator is Degraded or Progressing
               echo "Patching out finalizers..."
               set +e
               oc patch suite.core.mas.ibm.com/${CR_NAME} -n ${CR_NAMESPACE} \
@@ -102,7 +100,6 @@ spec:
                 -n ${CR_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
               set -e
 
-              # Verify gone
               set +e
               RESOURCE_NAME=$(oc get suite.core.mas.ibm.com/${CR_NAME} \
                 -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)

@@ -16,6 +16,7 @@ Deploys and configures CP4D needed for `MAS Assist` and `MAS Predict`. Deploys t
 | `ClusterRole` | CP4D cluster roles | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `ClusterRoleBinding` | CP4D cluster role bindings | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `Job` | CP4D install and verification jobs | CP4D operators namespace | Version-dependent and always for verification hooks as applicable | `cluster_admin_role` |
+| `Route` | `cpd-public` public route (passthrough TLS, type=external) | CP4D instance namespace | When `cpd_public_route_enabled` is true | `cluster_admin_role` |
 | `Ibmcpd` | CP4D platform custom resource | CP4D instance namespace | Always | `cluster_admin_role` |
 | `ConfigMap` | CP4D service dependency config maps | CP4D operators namespace | When optional services are enabled | `cluster_admin_role` |
 | `Subscription` | CP4D service subscriptions | CP4D operators namespace | When optional services are enabled | `cluster_admin_role` |
@@ -49,6 +50,10 @@ ibm_cp4d:
   cpd_iam_integration: string
   cpd_primary_storage_class: string
   cpd_metadata_storage_class: string
+  # Optional — public CPD route
+  cpd_public_route_enabled: bool    # default: false
+  cis_subdomain: string             # e.g. inst1002.saasmax (populated from dns.cis.subdomain)
+  cis_domain: string                # e.g. ibmmasivt.com   (populated from dns.cis.mas_domain)
 ```
 
 **Note**: Values marked with "(secret reference)" should use the format `<path:secrets/path:key>` to reference secrets stored in the Secrets Vault.

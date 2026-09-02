@@ -60,7 +60,7 @@ set +u
 . "${HOME}/sqllib/db2profile"
 set -u
 
-# ── Load COS/S3 credentials (CONTAINER, SERVER, PARM1, PARM2) ─────────────
+# ── Load COS/S3 config (CONTAINER, SERVER — no static keys; pod uses IRSA) ──
 . /mnt/backup/bin/.PROPS
 
 # ── Install AWS CLI if not already present ────────────────────────────────
@@ -75,9 +75,33 @@ if ! "${AWS_CLI}" --version >/dev/null 2>&1; then
 else
   log "INFO  ::   AWS CLI already present: $(${AWS_CLI} --version 2>&1)"
 fi
-export AWS_ACCESS_KEY_ID="${PARM1}"
-export AWS_SECRET_ACCESS_KEY="${PARM2}"
+
+# ── Credential resolution ──────────────────────────────────────────────────
+# Static keys from .PROPS take precedence if set; otherwise the pod relies on
+# IRSA (IAM Role for Service Account) injected via the mounted web identity token.
+if [ -n "${PARM1:-}" ] && [ -n "${PARM2:-}" ]; then
+  log "INFO  :: Credential mode : STATIC KEYS (AWS_ACCESS_KEY_ID from .PROPS)"
+  export AWS_ACCESS_KEY_ID="${PARM1}"
+  export AWS_SECRET_ACCESS_KEY="${PARM2}"
+else
+  log "INFO  :: Credential mode : IRSA / instance profile (no static keys in .PROPS)"
+  # Unset any accidentally inherited static-key vars so the SDK falls through to
+  # the web identity token / instance metadata credential chain.
+  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN 2>/dev/null || true
+fi
+
 export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
+
+# ── Show the effective AWS identity used for this run ─────────────────────
+log "INFO  :: Resolving effective AWS identity (sts:GetCallerIdentity) ..."
+CALLER_IDENTITY=$("${AWS_CLI}" sts get-caller-identity --output json 2>&1) && {
+  log "INFO  ::   UserId  : $(echo "${CALLER_IDENTITY}" | grep -o '"UserId"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | tr -d '"')"
+  log "INFO  ::   Account : $(echo "${CALLER_IDENTITY}" | grep -o '"Account"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | tr -d '"')"
+  log "INFO  ::   Arn     : $(echo "${CALLER_IDENTITY}" | grep -o '"Arn"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | tr -d '"')"
+} || {
+  log "WARN  ::   sts:GetCallerIdentity failed — ${CALLER_IDENTITY}"
+  log "WARN  ::   Proceeding; upload will fail if credentials are not valid"
+}
 
 S3_BUCKET="${CONTAINER}"
 S3_PREFIX="audit-logs/${APP_NAME}/${DATE}"

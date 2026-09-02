@@ -37,6 +37,15 @@ cluster_logging_operator:
   # Default: false
   use_syslog_forwarder: false
 
+  # Additional containers to exclude from log collection (optional)
+  # List of container/namespace pairs to filter out noisy logs
+  # Instana-agent logs are excluded by default
+  # Example:
+  # additional_exclude_containers:
+  #   - container: example-container
+  #     namespace: example-namespace
+  additional_exclude_containers: []
+
   # Setup log forwarding configuration (optional)
   # When true, configures additional log forwarding resources
   # Default: false

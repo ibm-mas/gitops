@@ -8,6 +8,8 @@ com.instana.ignore:
     - io.strimzi.operator.user.Main
   processes:
     - stunnel
+com.instana.plugin.mongodb:
+  enabled: false
 {{- if .Values.argocd_plugin_enabled }}
 com.instana.plugin.argocd:
   enabled: true

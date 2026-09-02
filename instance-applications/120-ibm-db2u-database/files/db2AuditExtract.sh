@@ -60,7 +60,7 @@ set +u
 . "${HOME}/sqllib/db2profile"
 set -u
 
-# ── Load COS/S3 config (CONTAINER, SERVER — no static keys; pod uses IRSA) ──
+# ── Load COS/S3 config (CONTAINER, SERVER, and fallback keys PARM1/PARM2) ──
 . /mnt/backup/bin/.PROPS
 
 # ── Install AWS CLI if not already present ────────────────────────────────
@@ -76,32 +76,39 @@ else
   log "INFO  ::   AWS CLI already present: $(${AWS_CLI} --version 2>&1)"
 fi
 
-# ── Credential resolution ──────────────────────────────────────────────────
-# Static keys from .PROPS take precedence if set; otherwise the pod relies on
-# IRSA (IAM Role for Service Account) injected via the mounted web identity token.
-if [ -n "${PARM1:-}" ] && [ -n "${PARM2:-}" ]; then
-  log "INFO  :: Credential mode : STATIC KEYS (AWS_ACCESS_KEY_ID from .PROPS)"
-  export AWS_ACCESS_KEY_ID="${PARM1}"
-  export AWS_SECRET_ACCESS_KEY="${PARM2}"
-else
-  log "INFO  :: Credential mode : IRSA / instance profile (no static keys in .PROPS)"
-  # Unset any accidentally inherited static-key vars so the SDK falls through to
-  # the web identity token / instance metadata credential chain.
-  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN 2>/dev/null || true
-fi
-
 export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
 
-# ── Show the effective AWS identity used for this run ─────────────────────
-log "INFO  :: Resolving effective AWS identity (sts:GetCallerIdentity) ..."
-CALLER_IDENTITY=$("${AWS_CLI}" sts get-caller-identity --output json 2>&1) && {
-  log "INFO  ::   UserId  : $(echo "${CALLER_IDENTITY}" | grep -o '"UserId"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | tr -d '"')"
-  log "INFO  ::   Account : $(echo "${CALLER_IDENTITY}" | grep -o '"Account"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | tr -d '"')"
-  log "INFO  ::   Arn     : $(echo "${CALLER_IDENTITY}" | grep -o '"Arn"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | tr -d '"')"
-} || {
-  log "WARN  ::   sts:GetCallerIdentity failed — ${CALLER_IDENTITY}"
-  log "WARN  ::   Proceeding; upload will fail if credentials are not valid"
-}
+# ── Credential resolution : IRSA first, static keys as fallback ───────────
+# Step 1: clear any static key vars so the AWS SDK uses the IRSA credential
+#         chain (web identity token → STS AssumeRoleWithWebIdentity).
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN 2>/dev/null || true
+
+log "INFO  :: Credential mode : trying IRSA / ServiceAccount role first ..."
+CALLER_IDENTITY=$("${AWS_CLI}" sts get-caller-identity --output json 2>&1)
+if [ $? -eq 0 ]; then
+  log "INFO  :: Credential mode : IRSA  ✓ (ServiceAccount assumed role)"
+else
+  # Step 2: IRSA failed — fall back to static keys from .PROPS
+  log "WARN  :: IRSA credential check failed: ${CALLER_IDENTITY}"
+  if [ -n "${PARM1:-}" ] && [ -n "${PARM2:-}" ]; then
+    log "INFO  :: Credential mode : FALLBACK — STATIC KEYS from .PROPS"
+    export AWS_ACCESS_KEY_ID="${PARM1}"
+    export AWS_SECRET_ACCESS_KEY="${PARM2}"
+    CALLER_IDENTITY=$("${AWS_CLI}" sts get-caller-identity --output json 2>&1) || {
+      log "ERROR :: Static key credential check also failed: ${CALLER_IDENTITY}"
+      log "ERROR :: Cannot authenticate to AWS — aborting"
+      exit 1
+    }
+  else
+    log "ERROR :: IRSA failed and no static keys found in .PROPS — aborting"
+    exit 1
+  fi
+fi
+
+# ── Log the effective identity for this run ───────────────────────────────
+log "INFO  ::   UserId  : $(echo "${CALLER_IDENTITY}" | grep -o '"UserId"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | tr -d '"')"
+log "INFO  ::   Account : $(echo "${CALLER_IDENTITY}" | grep -o '"Account"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | tr -d '"')"
+log "INFO  ::   Arn     : $(echo "${CALLER_IDENTITY}" | grep -o '"Arn"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | tr -d '"')"
 
 S3_BUCKET="${CONTAINER}"
 S3_PREFIX="audit-logs/${APP_NAME}/${DATE}"

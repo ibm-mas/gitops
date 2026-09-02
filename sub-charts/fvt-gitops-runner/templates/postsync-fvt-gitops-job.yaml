@@ -14,7 +14,12 @@
 {{- $job         := printf "%s-job" $prefix }}
 {{- $np          := printf "%s-np" $prefix }}
 {{- $coreNs      := printf "mas-%s-core" .Values.instance_id }}
+{{- $manageNs    := printf "mas-%s-manage" .Values.instance_id }}
 {{- $argoNs      := .Values.argo_namespace }}
+{{- $roleManage  := printf "%s-role-manage" $prefix }}
+{{- $rbManage    := printf "%s-rb-manage" $prefix }}
+{{- $roleConsole := printf "%s-role-console" $prefix }}
+{{- $rbConsole   := printf "%s-rb-console" $prefix }}
 
 ---
 # NetworkPolicy — allow egress from the test Job (MongoDB + cluster API)
@@ -145,7 +150,10 @@ rules:
     resources: ["suites", "manageapps", "manageworkspaces"]
     verbs: ["get", "list"]
   - apiGroups: [""]
-    resources: ["pods", "secrets", "configmaps"]
+    resources: ["pods", "secrets", "configmaps", "routes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
     verbs: ["get", "list"]
 
 ---
@@ -171,6 +179,94 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ $roleCore }}
+
+---
+# Role — read manageworkspaces in the manage namespace
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $roleManage }}
+  namespace: {{ $manageNs }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1001"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - apiGroups: ["apps.mas.ibm.com"]
+    resources: ["manageapps", "manageworkspaces"]
+    verbs: ["get", "list"]
+
+---
+# RoleBinding — bind SA to manage-namespace role
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rbManage }}
+  namespace: {{ $manageNs }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1002"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $roleManage }}
+
+---
+# Role — read routes in openshift-console namespace
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $roleConsole }}
+  namespace: openshift-console
+  annotations:
+    argocd.argoproj.io/sync-wave: "1001"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    verbs: ["get", "list"]
+
+---
+# RoleBinding — bind SA to openshift-console role
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rbConsole }}
+  namespace: openshift-console
+  annotations:
+    argocd.argoproj.io/sync-wave: "1002"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $roleConsole }}
 
 ---
 # Role — read ArgoCD Applications in argo namespace
@@ -319,6 +415,8 @@ spec:
               value: "{{ .Values.product_channel }}"
             - name: CONTAINER_VERSION
               value: "{{ .Values.fvt_gitops_image_tag }}"
+            - name: ARGOCD_APP_NAME
+              value: "suite.{{ .Values.cluster_id }}.{{ .Values.instance_id }}"
             - name: GITOPS_VERSION
               value: "{{ .Values.gitops_version }}"
             - name: BUILD_NUM

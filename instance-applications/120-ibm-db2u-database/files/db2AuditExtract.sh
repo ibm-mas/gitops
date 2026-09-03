@@ -8,9 +8,12 @@
 #%  **  THIS MUST BE RUN AS THE DB2 INSTANCE OWNER (db2inst1)  **
 #%
 #%  USAGE:  db2AuditExtract.sh <application_name> [dbname] [retention_days]
+#%  USAGE:  db2AuditExtract.sh <application_name> [dbname] [--use-irsa]
 #%
 #%  retention_days : Number of days to retain each S3 object under Object Lock
 #%                   COMPLIANCE mode. Must be a positive integer. Default: 365.
+#%  Options:
+#%    --use-irsa    Use IAM Role for Service Account (IRSA) instead of credentials
 #%
 #%  Steps:
 #%   1.  mkdir /tmp/auditarchive
@@ -35,6 +38,8 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 # ── Validate input ─────────────────────────────────────────────────────────
 APP_NAME="${1:-}"
+USE_IRSA=false
+
 if [ -z "${APP_NAME}" ]; then
   echo "ERROR :: Usage: $0 <application_name> [dbname] [retention_days]"
   exit 1
@@ -44,8 +49,16 @@ RETENTION_DAYS="${3:-365}"  # 3rd arg from CronJob; defaults to 365 days
 if ! [[ "${RETENTION_DAYS}" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR :: retention_days must be a positive integer (got: '${RETENTION_DAYS}')"
   echo "ERROR :: Usage: $0 <application_name> [dbname] [retention_days]"
+  echo "ERROR :: Usage: $0 <application_name> [dbname] [--use-irsa]"
   exit 1
 fi
+
+# Check for --use-irsa flag in any position
+for arg in "$@"; do
+  if [ "$arg" = "--use-irsa" ]; then
+    USE_IRSA=true
+  fi
+done
 
 # ── Constants ──────────────────────────────────────────────────────────────
 ARCHIVE_DIR="/tmp/auditarchive"
@@ -75,13 +88,24 @@ if ! "${AWS_CLI}" --version >/dev/null 2>&1; then
 else
   log "INFO  ::   AWS CLI already present: $(${AWS_CLI} --version 2>&1)"
 fi
-export AWS_ACCESS_KEY_ID="${PARM1}"
-export AWS_SECRET_ACCESS_KEY="${PARM2}"
-export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
+
+# ── Configure AWS authentication ───────────────────────────────────────────
+if [ "${USE_IRSA}" = true ]; then
+  log "INFO  :: Using IRSA (IAM Role for Service Account) for AWS authentication"
+  # IRSA: AWS SDK/CLI automatically uses the pod's service account token
+  # mounted at /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+  # No need to set AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY
+  export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
+else
+  log "INFO  :: Using IAM User credentials for AWS authentication (legacy mode)"
+  export AWS_ACCESS_KEY_ID="${PARM1}"
+  export AWS_SECRET_ACCESS_KEY="${PARM2}"
+  export AWS_DEFAULT_REGION=$(echo "${SERVER}" | sed 's|.*s3\.\([^.]*\)\.amazonaws.*|\1|')
+fi
 
 S3_BUCKET="${CONTAINER}"
-S3_PREFIX="audit-logs/${APP_NAME}/${DATE}"
-S3_TARGET="s3://${S3_BUCKET}/${S3_PREFIX}/"   # kept for banner/logging
+S3_PREFIX="audit_logs/${APP_NAME}/${DATE}"
+S3_TARGET="s3://${S3_BUCKET}/${S3_PREFIX}/"
 
 # ── Ensure db2audit is always restarted on exit ────────────────────────────
 trap 'log "INFO  :: Restarting db2audit after job"; db2audit start >/dev/null 2>&1 || true' EXIT
@@ -122,6 +146,27 @@ db2audit archive database "${DBNAME}" to "${ARCHIVE_DIR}"
 log "INFO  :: [5] db2audit archive to ${ARCHIVE_DIR}  (instance log)"
 db2audit archive to "${ARCHIVE_DIR}"
 
+# ============================================================================
+# 6.  Extract archived database log → *.del
+# ============================================================================
+log "INFO  :: [6] db2audit extract delasc (database log)"
+DB_LOGS=$(ls "${ARCHIVE_DIR}"/db2audit.db."${DBNAME}".log.0.* 2>/dev/null || true)
+if [ -z "${DB_LOGS}" ]; then
+  log "WARN  ::     No database archive log found in ${ARCHIVE_DIR} — skipping extract"
+else
+  db2audit extract delasc to "${ARCHIVE_DIR}" from files ${DB_LOGS}
+fi
+
+# ============================================================================
+# 7.  Extract archived instance log → *.del
+# ============================================================================
+log "INFO  :: [7] db2audit extract delasc (instance log)"
+INST_LOGS=$(ls "${ARCHIVE_DIR}"/db2audit.instance.log.0.* 2>/dev/null || true)
+if [ -z "${INST_LOGS}" ]; then
+  log "WARN  ::     No instance archive log found in ${ARCHIVE_DIR} — skipping extract"
+else
+  db2audit extract delasc to "${ARCHIVE_DIR}" from files ${INST_LOGS}
+fi
 
 # ============================================================================
 # 8–9.  Copy historical log files from /mnt/blumeta0/audit to /tmp/auditarchive
@@ -138,6 +183,7 @@ cp "${AUDIT_BASE}"/db2audit.instance.log.0.20* "${ARCHIVE_DIR}/" 2>/dev/null \
 
 # ============================================================================
 # 10.  Upload ALL files from /tmp/auditarchive to S3 with Object Lock
+# 10.  Upload ALL files from /tmp/auditarchive to S3
 # ============================================================================
 log "INFO  :: [10] Uploading all files from ${ARCHIVE_DIR} to ${S3_TARGET}"
 
@@ -152,6 +198,8 @@ else
   ERRORS=0
   for F in ${ALL_FILES}; do
     FILE_NAME=$(basename "${F}")
+    log "INFO  ::      [s3] ${FILE_NAME} → ${S3_TARGET}${FILE_NAME}"
+    "${AWS_CLI}" s3 cp "${F}" "${S3_TARGET}${FILE_NAME}" \
     S3_KEY="${S3_PREFIX}/${FILE_NAME}"
     log "INFO  ::      [s3] ${FILE_NAME} → s3://${S3_BUCKET}/${S3_KEY}"
     log "INFO  ::           Retention : ${RETENTION_DAYS} day(s) until ${RETENTION_DATE}"

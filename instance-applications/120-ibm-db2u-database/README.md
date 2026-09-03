@@ -131,6 +131,9 @@ db2_backup_bucket_secret_key: string (secret reference, when backup enabled)
 db2_backup_notify_slack_url: string (optional, when backup enabled)
 db2_backup_icd_auth_key: string (secret reference, optional, when backup enabled)
 
+# Audit Log Configuration (IRSA - Recommended)
+db2_audit_irsa_role_arn: string (optional, IAM Role ARN for IRSA)
+
 allow_list: string (optional)
 
 # Private NLB for customer TGW connectivity (optional)
@@ -253,7 +256,217 @@ CREATE AUDIT POLICY USER_AUDIT
 
 If `private_nlb.enabled: true` and either `subnet_ids` or `allowed_cidrs` is
 empty, Helm will fail immediately with a clear error message before rendering
-any resources. This prevents a broken or unrestricted NLB from being deployed..
+any resources. This prevents a broken or unrestricted NLB from being deployed.
+
+## Prerequisites
+
+- The `db2uclusters` CRD must be available on the cluster (ensured by the presync hook).
+- An S3-compatible backup bucket must be provisioned when backup or audit log upload is enabled.
+- Secrets for S3 credentials, cluster domain, and Secrets Manager access must be pre-populated in the Secrets Vault before sync.
+
+## Examples
+
+### Minimal deployment
+
+```yaml
+db2_namespace: db2u-manage
+db2_instance_name: db2u-manage
+db2_dbname: BLUDB
+db2_version: "11.5.9.0"
+db2_tls_version: "1.2"
+db2_table_org: ROW
+mas_application_id: manage
+cluster_domain: "<path:secrets/path:cluster_domain>"
+```
+
+### With backup and audit log upload enabled
+
+```yaml
+db2_namespace: db2u-manage
+db2_instance_name: db2u-manage
+db2_dbname: BLUDB
+db2_backup_bucket_name: "<path:secrets/path:bucket_name>"
+db2_backup_bucket_endpoint: "<path:secrets/path:bucket_endpoint>"
+db2_backup_bucket_access_key: "<path:secrets/path:access_key>"
+db2_backup_bucket_secret_key: "<path:secrets/path:secret_key>"
+### With IRSA (IAM Role for Service Account) - Recommended
+
+Using IRSA eliminates the need for IAM User credentials and improves security posture for AWS AccessHub (ITSS) compliance:
+
+```yaml
+db2_namespace: db2u-manage
+db2_instance_name: db2u-manage
+db2_dbname: BLUDB
+db2_backup_bucket_name: "<path:secrets/path:bucket_name>"
+db2_backup_bucket_endpoint: "<path:secrets/path:bucket_endpoint>"
+auto_backup: true
+mas_application_id: manage
+cluster_domain: "<path:secrets/path:cluster_domain>"
+
+# IRSA Configuration - replaces access_key/secret_key
+db2_audit_irsa_role_arn: "arn:aws:iam::123456789012:role/db2-audit-s3-access"
+```
+
+#### IRSA Architecture
+
+**Important:** The AWS CLI runs **inside the DB2 pod**, not the CronJob pod. The CronJob only executes `oc rsh` to run commands in the DB2 pod.
+
+```
+CronJob SA (account-{namespace}-{instance})
+    │
+    │ Kubernetes RBAC ONLY
+    │ - pods: get, list
+    │ - pods/exec: create
+    │ (NO secret access needed)
+    ▼
+DB2U Pod (c-{instance}-db2u-0)
+    │
+    │ DB2U ServiceAccount (db2u-{instance_name})
+    │ eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/NAME
+    │
+    │ OIDC Web Identity Token
+    │ /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+    ▼
+AWS STS (AssumeRoleWithWebIdentity)
+    │
+    │ Validates OIDC token
+    │ Returns temporary credentials
+    ▼
+IAM Role: db2-audit-log-writer
+    │
+    │ S3 Policy (Minimal):
+    │ - s3:PutObject (REQUIRED - upload audit logs)
+    │
+    │ Optional (for troubleshooting):
+    │ - s3:GetObject (verify uploads)
+    │ - s3:ListBucket (list files)
+    ▼
+S3 Bucket: audit-logs-bucket
+    │
+    │ Path: audit_logs/{app}/{YYYY-MM-DD}/
+    │ Optional: Object Lock (WORM - prevents deletion/modification)
+    ▼
+Immutable Audit Logs
+```
+
+**Key Points:**
+- **CronJob ServiceAccount (`account-{namespace}-{instance}`):**
+  - Minimal Kubernetes RBAC only
+  - Can exec into DB2 pod
+  - NO AWS permissions
+  - NO secret access
+
+- **DB2 Pod ServiceAccount (`db2u-{instance_name}`):**
+  - Has IRSA annotation with IAM Role ARN
+  - Provides AWS credentials to DB2 pod
+  - Used by AWS CLI inside the pod
+
+- **IAM Role:**
+  - Assumed by DB2 pod via OIDC
+  - Grants S3 access
+  - No long-term credentials
+
+- **S3 Object Lock (Optional):**
+  - Ensures audit logs are immutable
+  - Prevents deletion/modification
+
+The IRSA annotation is applied to the **DB2 pod's ServiceAccount** (`db2u-{instance_name}`), not the CronJob's ServiceAccount.
+
+#### IRSA Setup Requirements
+
+1. **Create IAM Role** with trust policy allowing the DB2 pod's ServiceAccount:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Principal": {
+           "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/oidc.eks.REGION.amazonaws.com/id/OIDC_ID"
+         },
+         "Action": "sts:AssumeRoleWithWebIdentity",
+         "Condition": {
+           "StringEquals": {
+             "oidc.eks.REGION.amazonaws.com/id/OIDC_ID:sub": "system:serviceaccount:NAMESPACE:db2u-INSTANCE_NAME"
+           }
+         }
+       }
+     ]
+   }
+   ```
+
+   **Example for db2u-manage:**
+   ```json
+   "oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539:sub": "system:serviceaccount:db2u-manage:db2u-db2u-manage"
+   ```
+
+2. **Attach S3 Policy** to the IAM Role:
+   
+   **Minimal policy (recommended):**
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": [
+           "s3:PutObject"
+         ],
+         "Resource": [
+           "arn:aws:s3:::BUCKET_NAME/audit_logs/*"
+         ]
+       }
+     ]
+   }
+   ```
+   
+   **With troubleshooting permissions (optional):**
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": [
+           "s3:PutObject",
+           "s3:GetObject",
+           "s3:ListBucket"
+         ],
+         "Resource": [
+           "arn:aws:s3:::BUCKET_NAME",
+           "arn:aws:s3:::BUCKET_NAME/*"
+         ]
+       }
+     ]
+   }
+   ```
+   
+   **Note:** The audit script only uploads files (`aws s3 cp`), so `s3:PutObject` is the only required permission. Additional permissions are optional for verification and troubleshooting.
+
+3. **Configure the chart** with `db2_audit_irsa_role_arn` as shown above.
+
+**Benefits of IRSA:**
+- No credential rotation required
+- Improved ITSS (AWS AccessHub) security score
+- Automatic credential management by AWS
+- Follows AWS security best practices
+
+auto_backup: true
+mas_application_id: manage
+cluster_domain: "<path:secrets/path:cluster_domain>"
+```
+
+## Troubleshooting
+
+- **Presync job stuck** — verify the `db2uclusters` CRD is installed by the DB2U operator before the ArgoCD sync wave reaches this chart.
+- **Postsync job failing** — check the job logs in the DB2 namespace; common causes are missing S3 credentials or an unreachable backup bucket.
+- **Audit CronJob not running** — confirm `db2_backup_bucket_name` is set and the instance name does not contain `sdb` (audit cron is disabled for SDB instances).
+- **AWS CLI missing** — `db2AuditExtract.sh` will install the AWS CLI automatically on first run via `curl`/`unzip` into `/mnt/backup/`.
+
+## Related Documentation
+
+- [Instance Base Values Reference](../../docs/reference/instance-base-values.md)
+- [IBM Db2u Operator Documentation](https://www.ibm.com/docs/en/db2/11.5)
 
 ## Prerequisites
 

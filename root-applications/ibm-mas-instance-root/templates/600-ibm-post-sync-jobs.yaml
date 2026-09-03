@@ -94,6 +94,11 @@ spec:
               cli_image_repo: {{ .Values.cli_image_repo }}
 
             {{- if and .Values.fvt_gitops .Values.fvt_gitops.enabled }}
+            {{- /* Build enabled_apps: always start with "suite", append "manage" if manage is installed */}}
+            {{- $enabled_apps := list "suite" }}
+            {{- if not (empty .Values.ibm_suite_app_manage_install) }}
+              {{- $enabled_apps = append $enabled_apps "manage" }}
+            {{- end }}
             fvt-gitops-runner:
               enabled: true
               instance_id: "{{ .Values.instance.id }}"
@@ -102,7 +107,7 @@ spec:
               devops_mongo_uri: "{{ .Values.devops.mongo_uri }}"
               devops_build_number: "{{ .Values.devops.build_number }}"
               gitops_version: "{{ .Values.source.revision }}"
-              test_suite: "{{ .Values.fvt_gitops.test_suite | default "suite" }}"
+              enabled_apps: "{{ join "," $enabled_apps }}"
               fvt_gitops_image_repo: "{{ .Values.fvt_gitops.image_repo | default "docker-na-public.artifactory.swg-devops.com/wiotp-docker-local/mas-devops/fvt-gitops" }}"
               fvt_gitops_image_tag: "{{ .Values.fvt_gitops.image_tag | default "latest" }}"
               {{- if .Values.custom_labels }}

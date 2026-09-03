@@ -228,7 +228,7 @@ The job creates a single `USER_AUDIT` policy (idempotent — skipped if already 
 | Application | Audit Policy | Roles Audited | User Audited |
 |---|---|---|---|
 | `manage` | `USER_AUDIT` | `MAXIMO_READ`, `MAXIMO_WRITE` (only if roles exist) | `db2inst1` |
-| `facilities` | `USER_AUDIT` | `TRIRIGA_READ`, `TRIRIGA_WRITE` (only if roles exist) | `db2inst1` |
+| `facilities` | `USER_AUDIT` | `TRIDATA_READ`, `TRIDATA_WRITE` (only if roles exist) | `db2inst1` |
 | `monitor` | `USER_AUDIT` | None | `db2inst1` |
 | `iot` | `USER_AUDIT` | None | `db2inst1` |
 

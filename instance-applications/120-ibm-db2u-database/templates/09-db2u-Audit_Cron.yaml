@@ -6,18 +6,28 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 */}}
 {{- $_cli_image_digest := "sha256:1c5701a24c9796e02b33036f56babbe74032831e1db733ce9228a46dce4a870b" }}
 
-#apiVersion: batch/v1beta1
+#
+# CronJob for DB2 Audit Log Extraction
+# Runs once a day at midnight to archive and extract DB2 audit logs as DEL/ASC
+# files, upload them to the audit-log-<app>/<YYYYMMDD>/ folder inside the
+# backup bucket, then removes local copies.
+#
+---
 kind: CronJob
 apiVersion: batch/v1
 metadata:
-  name: "db2-backup-job-v1-{{ .Values.db2_instance_name }}"
+  name: "db2-audit-extract-{{ .Values.db2_instance_name }}"
   namespace: "{{ .Values.db2_namespace }}"
   labels:
     parent: cronjob
     cosBucket: "{{ .Values.db2_backup_bucket_name }}"
     db2pod: "c-{{ .Values.db2_instance_name }}-db2u-0"
+    mas.ibm.com/instanceId: "{{ .Values.instance_id }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "132"
 spec:
-  schedule: '0 2 * * *'
+  # Run every day at 1 AM UTC
+  schedule: '0 1 * * *'
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
@@ -27,14 +37,16 @@ spec:
             parent: cronjob
         spec:
           containers:
-            - name: "db2-backup-job-v1-{{ .Values.db2_instance_name }}"
+            - name: "db2-audit-extract-{{ .Values.db2_instance_name }}"
               image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
               command:
                 - oc
                 - rsh
                 - "c-{{ .Values.db2_instance_name }}-db2u-0"
-                - /mnt/backup/bin/cronRunBKP.sh
-                - "{{ .Values.db2_backup_bucket_name }}"
+                - su
+                - -lc
+                - "{{ .Values.db2_instance_home_path }}/bin/db2AuditExtract.sh {{ .Values.mas_application_id }} {{ .Values.db2_dbname }} {{ .Values.db2_audit_retention_days | default 365 }}"
+                - db2inst1
               imagePullPolicy: IfNotPresent
           restartPolicy: OnFailure
           serviceAccountName: "account-{{ .Values.db2_namespace }}-{{ .Values.db2_instance_name }}"

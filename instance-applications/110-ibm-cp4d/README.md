@@ -17,7 +17,6 @@ Deploys and configures CP4D needed for `MAS Assist` and `MAS Predict`. Deploys t
 | `ClusterRoleBinding` | CP4D cluster role bindings | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `Job` | CP4D install and verification jobs | CP4D operators namespace | Version-dependent and always for verification hooks as applicable | `cluster_admin_role` |
 | `Route` | `cpd-public` public route (passthrough TLS, type=external) | CP4D instance namespace | When `cpd_public_route_enabled` is true | `cluster_admin_role` |
-| `Service` | `ibm-nginx-svc` backend reference (pre-existing CP4D service, referenced by the Route) | CP4D instance namespace | When `cpd_public_route_enabled` is true | `cluster_admin_role` |
 | `Ibmcpd` | CP4D platform custom resource | CP4D instance namespace | Always | `cluster_admin_role` |
 | `ConfigMap` | CP4D service dependency config maps | CP4D operators namespace | When optional services are enabled | `cluster_admin_role` |
 | `Subscription` | CP4D service subscriptions | CP4D operators namespace | When optional services are enabled | `cluster_admin_role` |

@@ -525,7 +525,8 @@ data:
             manageRouteObject = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
             manageRouteDetails = manageRouteObject.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=manageNamespace)
             manageUrl = manageRouteDetails.spec.host
-            manageRouteSvcName = manageRouteDetails.spec.to.name
+            if manageRouteDetails.spec.to and manageRouteDetails.spec.to.name:
+                manageRouteSvcName = manageRouteDetails.spec.to.name
         except Exception as e:
             if e.status == 404:
                 logger.info(f"Unable to find route {mas_instance_id}-manage-{mas_workspace_id} in {manageNamespace}")
@@ -533,15 +534,15 @@ data:
                 logger.info(f"Error retrieving route: {str(e)}")
 
         global MAS_ADMIN_USERNAME, MAS_ADMIN_PASSWORD, MANAGE_URL, MAS_URL, MAS_APIURL
-        mas_admin_svc = masUrl.spec.to.name if (masUrl and masUrl.spec.to and masUrl.spec.to.name) else f"{mas_instance_id}-admin"
-        mas_api_svc = masapiUrl.spec.to.name if (masapiUrl and masapiUrl.spec.to and masapiUrl.spec.to.name) else f"{mas_instance_id}-api"
-        MAS_URL=f"https://{mas_admin_svc}.mas-{mas_instance_id}-core.svc{masUrl.spec.path}"
-        MAS_APIURL=f"https://{mas_api_svc}.mas-{mas_instance_id}-core.svc"
+        mas_admin_host = f"{masUrl.spec.to.name}.mas-{mas_instance_id}-core.svc" if (masUrl.spec.to and masUrl.spec.to.name) else masUrl.spec.host
+        mas_api_host = f"{masapiUrl.spec.to.name}.mas-{mas_instance_id}-core.svc" if (masapiUrl.spec.to and masapiUrl.spec.to.name) else masapiUrl.spec.host
+        MAS_URL = f"https://{mas_admin_host}{masUrl.spec.path}"
+        MAS_APIURL = f"https://{mas_api_host}"
         if manageUrl:
             #MANAGE_URL = f"https://{manageUrl}"
             #MANAGE_URL="https://127.0.0.1:9080"    # Use when run from Local. Do port forwarding...
-            manage_svc = manageRouteSvcName if manageRouteSvcName else f"{mas_instance_id}-{mas_workspace_id}"
-            MANAGE_URL = f'https://{manage_svc}.mas-{mas_instance_id}-manage.svc'  # Use for cluster
+            manage_host = f"{manageRouteSvcName}.mas-{mas_instance_id}-manage.svc" if manageRouteSvcName else f"{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc"
+            MANAGE_URL = f'https://{manage_host}'  # Use for cluster
             
         global MANAGE_JDBC_URL, MANAGE_JDBC_USERNAME, MANAGE_JDBC_PASSWORD, MANAGE_JDBC_DRIVER, MANAGE_JDBC_SCHEMA, MANAGE_JDBC_CERT
 

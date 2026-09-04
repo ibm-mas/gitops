@@ -87,11 +87,12 @@ spec:
     insecureEdgeTerminationPolicy: None
 
 ---
-# Extra RBAC — cpd-sa needs to patch ZenService and restart nginx pods
-kind: ClusterRole
+# Role in cpd_instance_namespace — patch ZenService, routes, restart nginx pods
+kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: cpd-public-route-role-{{ .Values.instance_id }}
+  name: cpd-public-route-role
+  namespace: "{{ .Values.cpd_instance_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "089"
 {{- if .Values.custom_labels }}
@@ -110,10 +111,11 @@ rules:
     resources: [pods]
 
 ---
-kind: ClusterRoleBinding
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: cpd-public-route-rb-{{ .Values.instance_id }}
+  name: cpd-public-route-rb
+  namespace: "{{ .Values.cpd_instance_namespace }}"
   annotations:
     argocd.argoproj.io/sync-wave: "089"
 {{- if .Values.custom_labels }}
@@ -126,8 +128,8 @@ subjects:
     namespace: "{{ .Values.cpd_operators_namespace }}"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cpd-public-route-role-{{ .Values.instance_id }}
+  kind: Role
+  name: cpd-public-route-role
 
 ---
 apiVersion: batch/v1

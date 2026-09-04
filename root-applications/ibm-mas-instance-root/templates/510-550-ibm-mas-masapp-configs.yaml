@@ -58,6 +58,8 @@ metadata:
     {{- end }}
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+    - post-delete-finalizer.argocd.argoproj.io
+    - post-delete-finalizer.argocd.argoproj.io/cleanup
   labels:
     environment: '{{ $.Values.account.id }}'
     region: '{{ $.Values.region.id }}'
@@ -88,6 +90,7 @@ spec:
             mas_app_ws_apiversion: "{{ $value.mas_app_ws_apiversion }}"
             mas_app_ws_kind: "{{ $value.mas_app_ws_kind }}"
             mas_appws_spec: {{ $value.mas_appws_spec | toYaml | nindent 14 }}
+            use_postdelete_hooks: {{ $.Values.use_postdelete_hooks | default true }}
             {{- if (eq $value.mas_app_id "manage") }}
             mas_app_channel: "{{ $.Values.ibm_suite_app_manage_install.mas_app_channel }}"
             {{- end }}
@@ -176,9 +179,12 @@ spec:
                   {{- end }}
                 {{- end }}
               {{- else }}
+
+
             debug_mas_rds_databases: "EMPTY - No RDS databases configured for manage"
               {{- end }}
             {{- end }}
+            
 
             {{- if (eq $value.mas_app_id "facilities") }}
               {{- if not (empty $.Values.ibm_dbs_rds_databases) }}
@@ -196,6 +202,9 @@ spec:
                   {{- end }}
                 {{- end }}
               {{- end }}
+            {{- if $value.tririga_db_schema }}
+            tririga_db_schema: {{ $value.tririga_db_schema }}
+            {{- end }}
             {{- end }}
 
             {{- if (eq $value.mas_app_id "iot") }}

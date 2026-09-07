@@ -52,8 +52,7 @@ ibm_cp4d:
   cpd_metadata_storage_class: string
   # Optional — public CPD route
   cpd_public_route_enabled: bool    # default: false
-  cis_subdomain: string             # e.g. inst1002.saasmax (populated from dns.cis.subdomain)
-  cis_domain: string                # e.g. ibmmasivt.com   (populated from dns.cis.mas_domain)
+  cis_domain: string                # e.g. inst1002.saasmax.ibmmasivt.com (ibm_mas_suite.cis_mas_domain)
 ```
 
 **Note**: Values marked with "(secret reference)" should use the format `<path:secrets/path:key>` to reference secrets stored in the Secrets Vault.

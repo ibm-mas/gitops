@@ -12,14 +12,16 @@
   The Route itself is managed declaratively by ArgoCD (below)
   The Job only handles what ArgoCD cannot do declaratively:
     1. Reads the internal cpd route host
-    2. Immediately restores the internal cpd route host (before ZenService can overwrite it)
-    3. Patches ZenService zenCustomRoute so nginx accepts the new hostname
-    4. Waits for ZenService to reconcile
+    2. Patches ZenService zenCustomRoute so nginx accepts the new hostname
+    3. Waits for ZenService to reach Completed
+    4. Restores the internal cpd route host (AFTER ZenService finishes — it overwrites it
+       as a side effect of zenCustomRoute reconciliation)
     5. Restarts nginx pods to pick up the updated server_name whitelist
 
-  Step ordering is critical: the internal cpd route is restored BEFORE ZenService is patched
-  so ArgoCD never observes the cpd-public route in a HostAlreadyClaimed / Degraded state,
-  which would block the wave-090 job from running entirely.
+  Step ordering is critical: the internal cpd route is restored AFTER ZenService Completed,
+  not before patching it. ZenService overwrites cpd route spec.host during its own reconcile
+  cycle — restoring before would be immediately undone. Restoring after ensures the correct
+  hostname sticks and cpd-public is never left in HostAlreadyClaimed state.
 */}}
 {{- if .Values.cpd_public_route_enabled }}
 
@@ -46,7 +48,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -196,8 +198,7 @@ spec:
               echo
 
               # -----------------------------------------------------------------------
-              # Step 1: Read the internal cpd route host.
-              # We must capture this before ZenService has any chance to overwrite it.
+              # Step 1: Read the internal cpd route host before patching anything.
               # -----------------------------------------------------------------------
               echo "Step 1: Reading internal cpd route host..."
               INTERNAL_CPD_HOST=$(oc get route cpd -n "${CPD_INSTANCE_NAMESPACE}" \
@@ -206,37 +207,26 @@ spec:
                 echo "ERROR: Could not find internal cpd route in ${CPD_INSTANCE_NAMESPACE}"
                 exit 1
               fi
-              echo "  Internal cpd route host: ${INTERNAL_CPD_HOST}"
-
-              # -----------------------------------------------------------------------
-              # Step 2: Immediately restore the internal cpd route host.
-              # This MUST happen before patching ZenService. ZenService overwrites the
-              # cpd route spec.host as a side effect of zenCustomRoute reconciliation,
-              # causing cpd-public to get HostAlreadyClaimed and ArgoCD to mark the app
-              # Degraded — which blocks the wave-090 job from ever running.
-              # By restoring the correct host first, ArgoCD never sees the broken state.
-              # -----------------------------------------------------------------------
-              echo
-              echo "Step 2: Asserting internal cpd route host is ${INTERNAL_CPD_HOST}..."
-              CURRENT_CPD_HOST=$(oc get route cpd -n "${CPD_INSTANCE_NAMESPACE}" \
-                --ignore-not-found -o jsonpath='{.spec.host}')
-              if [[ "${CURRENT_CPD_HOST}" == "${INTERNAL_CPD_HOST}" ]]; then
-                echo "  Internal cpd route host is already correct, no patch needed."
+              # If ZenService already overwrote it, derive the correct host from the cluster domain.
+              # The correct internal host follows the pattern: cpd-<namespace>.<cluster-domain>
+              if [[ "${INTERNAL_CPD_HOST}" == "${CPD_PUBLIC_HOST}" ]]; then
+                echo "  WARNING: cpd route host already overwritten by ZenService (${INTERNAL_CPD_HOST})"
+                CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster \
+                  -o jsonpath='{.spec.domain}')
+                INTERNAL_CPD_HOST="cpd-${CPD_INSTANCE_NAMESPACE}.${CLUSTER_DOMAIN}"
+                echo "  Derived correct internal host: ${INTERNAL_CPD_HOST}"
               else
-                echo "  Patching cpd route (current: ${CURRENT_CPD_HOST})..."
-                oc patch route cpd -n "${CPD_INSTANCE_NAMESPACE}" --type=merge \
-                  -p "{\"spec\":{\"host\":\"${INTERNAL_CPD_HOST}\"}}"
-                echo "  Internal cpd route restored."
+                echo "  Internal cpd route host: ${INTERNAL_CPD_HOST}"
               fi
 
               # -----------------------------------------------------------------------
-              # Step 3: Patch ZenService zenCustomRoute (idempotent).
+              # Step 2: Patch ZenService zenCustomRoute (idempotent).
               # This adds the public hostname to nginx's server_name whitelist.
-              # ZenService will overwrite the cpd route host again as a side effect,
-              # but Step 2 already ran so ArgoCD has already observed the route as healthy.
+              # NOTE: ZenService will overwrite cpd route spec.host as a side effect of
+              # its reconcile — this is corrected in Step 4 after reconcile completes.
               # -----------------------------------------------------------------------
               echo
-              echo "Step 3: Patching ZenService zenCustomRoute..."
+              echo "Step 2: Patching ZenService zenCustomRoute..."
               CURRENT_CUSTOM_HOST=$(oc get ZenService lite-cr -n "${CPD_INSTANCE_NAMESPACE}" \
                 --ignore-not-found -o jsonpath='{.spec.zenCustomRoute.route_host}')
 
@@ -247,39 +237,60 @@ spec:
                 oc patch ZenService lite-cr -n "${CPD_INSTANCE_NAMESPACE}" --type=merge \
                   -p "{\"spec\":{\"zenCustomRoute\":{\"route_host\":\"${CPD_PUBLIC_HOST}\"}}}"
                 echo "  ZenService patched."
-
-                # -----------------------------------------------------------------------
-                # Step 4: Wait for ZenService to reconcile.
-                # -----------------------------------------------------------------------
-                echo
-                echo "Step 4: Waiting for ZenService to reach Completed (up to 10 minutes)..."
-                WAIT=0
-                while true; do
-                  ZS_STATUS=$(oc get ZenService lite-cr -n "${CPD_INSTANCE_NAMESPACE}" \
-                    --ignore-not-found -o jsonpath='{.status.zenStatus}')
-                  echo "  ZenService status: ${ZS_STATUS}"
-                  if [[ "${ZS_STATUS}" == "Completed" ]]; then
-                    echo "  ZenService reconcile complete."
-                    break
-                  fi
-                  WAIT=$((WAIT + 30))
-                  if [[ ${WAIT} -gt 600 ]]; then
-                    echo "WARNING: ZenService did not reach Completed within 10 minutes. Proceeding anyway."
-                    break
-                  fi
-                  sleep 30
-                done
-
-                # -----------------------------------------------------------------------
-                # Step 5: Restart nginx pods so new server_name whitelist takes effect.
-                # nginx reads /nginx_data/defaults.d/external-server.active.conf at startup.
-                # -----------------------------------------------------------------------
-                echo
-                echo "Step 5: Restarting nginx pods to load updated server_name config..."
-                oc delete pods -n "${CPD_INSTANCE_NAMESPACE}" \
-                  -l component=ibm-nginx --ignore-not-found
-                echo "  Nginx pods deleted — Kubernetes will recreate them automatically."
               fi
+
+              # -----------------------------------------------------------------------
+              # Step 3: Wait for ZenService to reach Completed.
+              # ZenService overwrites cpd route spec.host during this reconcile — that
+              # is intentional and corrected immediately after in Step 4.
+              # -----------------------------------------------------------------------
+              echo
+              echo "Step 3: Waiting for ZenService to reach Completed (up to 10 minutes)..."
+              WAIT=0
+              while true; do
+                ZS_STATUS=$(oc get ZenService lite-cr -n "${CPD_INSTANCE_NAMESPACE}" \
+                  --ignore-not-found -o jsonpath='{.status.zenStatus}')
+                echo "  ZenService status: ${ZS_STATUS}"
+                if [[ "${ZS_STATUS}" == "Completed" ]]; then
+                  echo "  ZenService reconcile complete."
+                  break
+                fi
+                WAIT=$((WAIT + 30))
+                if [[ ${WAIT} -gt 600 ]]; then
+                  echo "WARNING: ZenService did not reach Completed within 10 minutes. Proceeding anyway."
+                  break
+                fi
+                sleep 30
+              done
+
+              # -----------------------------------------------------------------------
+              # Step 4: Restore the internal cpd route host unconditionally.
+              # ZenService overwrites spec.host on the cpd route as a side effect of
+              # zenCustomRoute reconciliation. We restore it here, AFTER ZenService
+              # has fully reconciled, so the restore sticks and is not overwritten again.
+              # -----------------------------------------------------------------------
+              echo
+              echo "Step 4: Restoring internal cpd route host to ${INTERNAL_CPD_HOST}..."
+              CURRENT_CPD_HOST=$(oc get route cpd -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.spec.host}')
+              if [[ "${CURRENT_CPD_HOST}" == "${INTERNAL_CPD_HOST}" ]]; then
+                echo "  Internal cpd route host is already correct, no patch needed."
+              else
+                echo "  Patching cpd route (current: ${CURRENT_CPD_HOST})..."
+                oc patch route cpd -n "${CPD_INSTANCE_NAMESPACE}" --type=merge \
+                  -p "{\"spec\":{\"host\":\"${INTERNAL_CPD_HOST}\"}}"
+                echo "  Internal cpd route restored to ${INTERNAL_CPD_HOST}."
+              fi
+
+              # -----------------------------------------------------------------------
+              # Step 5: Restart nginx pods so new server_name whitelist takes effect.
+              # nginx reads /nginx_data/defaults.d/external-server.active.conf at startup.
+              # -----------------------------------------------------------------------
+              echo
+              echo "Step 5: Restarting nginx pods to load updated server_name config..."
+              oc delete pods -n "${CPD_INSTANCE_NAMESPACE}" \
+                -l component=ibm-nginx --ignore-not-found
+              echo "  Nginx pods deleted — Kubernetes will recreate them automatically."
 
               echo
               echo "================================================================================"

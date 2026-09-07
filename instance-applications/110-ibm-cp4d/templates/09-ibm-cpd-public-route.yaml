@@ -2,11 +2,11 @@
 {{- /*
   Only render when cpd_public_route_enabled is true.
   Creates a public-facing CPD route at:
-    https://cpd-public.<cis_subdomain>.<cis_domain>
+    https://cpd-public.<cis_domain>
   (e.g. https://cpd-public.inst1002.saasmax.ibmmasivt.com)
 
   Prerequisites handled upstream (by suite_dns ansible role via gitops_suite_dns):
-    - CIS DNS CNAME: cpd-public.<cis_subdomain> → cluster public NLB
+    - CIS DNS CNAME: cpd-public.<cis_domain> → cluster public NLB
     - CIS edge certificate (Let's Encrypt) for the hostname
 
   The Route itself is managed declaratively by ArgoCD (below)
@@ -78,7 +78,7 @@ metadata:
     route-type: external
 {{- end }}
 spec:
-  host: "cpd-public.{{ .Values.cis_subdomain }}.{{ .Values.cis_domain }}"
+  host: "cpd-public.{{ .Values.cis_domain }}"
   to: {kind: Service, name: ibm-nginx-svc, weight: 100}
   port:
     targetPort: ibm-nginx-https-port
@@ -170,8 +170,6 @@ spec:
               value: "{{ .Values.cpd_instance_namespace }}"
             - name: CPD_OPERATORS_NAMESPACE
               value: "{{ .Values.cpd_operators_namespace }}"
-            - name: CIS_SUBDOMAIN
-              value: "{{ .Values.cis_subdomain }}"
             - name: CIS_DOMAIN
               value: "{{ .Values.cis_domain }}"
           command:
@@ -181,7 +179,7 @@ spec:
 
               set -e
 
-              CPD_PUBLIC_HOST="cpd-public.${CIS_SUBDOMAIN}.${CIS_DOMAIN}"
+              CPD_PUBLIC_HOST="cpd-public.${CIS_DOMAIN}"
 
               echo
               echo "================================================================================"

@@ -6,7 +6,7 @@ postsync setup job (sync-wave 129) has completed.
 
 Only executed for applications that use DB2 audit policy:
   - manage    : AUDIT ROLE MAXIMO_READ, ROLE MAXIMO_WRITE USING POLICY USER_AUDIT
-  - facilities: AUDIT ROLE TRIRIGA_READ, ROLE TRIRIGA_WRITE USING POLICY USER_AUDIT
+  - facilities: AUDIT ROLE TRIDATA_READ, ROLE TRIDATA_WRITE USING POLICY USER_AUDIT
   - monitor   : no role audit - db2inst1 user audit only
   - iot       : no role audit - db2inst1 user audit only
 
@@ -165,21 +165,21 @@ spec:
                   fi
                   ROLE_LABEL='MAXIMO_READ, MAXIMO_WRITE'
                 elif [ \"${MAS_APP_ID}\" = \"facilities\" ]; then
-                  ROLE_READ_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='TRIRIGA_READ'\" | tr -d ' ')
-                  ROLE_WRITE_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='TRIRIGA_WRITE'\" | tr -d ' ')
+                  ROLE_READ_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='TRIDATA_READ'\" | tr -d ' ')
+                  ROLE_WRITE_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME='TRIDATA_WRITE'\" | tr -d ' ')
                   if [ \"\$ROLE_READ_EXISTS\" -gt \"0\" ] && [ \"\$ROLE_WRITE_EXISTS\" -gt \"0\" ]; then
-                    echo '  - TRIRIGA_READ'
-                    db2 \"AUDIT ROLE TRIRIGA_READ USING POLICY USER_AUDIT\" >/dev/null 2>&1 \
+                    echo '  - TRIDATA_READ'
+                    db2 \"AUDIT ROLE TRIDATA_READ USING POLICY USER_AUDIT\" >/dev/null 2>&1 \
                       && echo '    [OK] USER_AUDIT assigned.' \
                       || echo '    [SKIP] Already assigned.'
-                    echo '  - TRIRIGA_WRITE'
-                    db2 \"AUDIT ROLE TRIRIGA_WRITE USING POLICY USER_AUDIT\" >/dev/null 2>&1 \
+                    echo '  - TRIDATA_WRITE'
+                    db2 \"AUDIT ROLE TRIDATA_WRITE USING POLICY USER_AUDIT\" >/dev/null 2>&1 \
                       && echo '    [OK] USER_AUDIT assigned.' \
                       || echo '    [SKIP] Already assigned.'
                   else
-                    echo '  [SKIP] TRIRIGA_READ/TRIRIGA_WRITE roles not found - skipping role audit.'
+                    echo '  [SKIP] TRIDATA_READ/TRIDATA_WRITE roles not found - skipping role audit.'
                   fi
-                  ROLE_LABEL='TRIRIGA_READ, TRIRIGA_WRITE'
+                  ROLE_LABEL='TRIDATA_READ, TRIDATA_WRITE'
                 elif [ \"${MAS_APP_ID}\" = \"monitor\" ] || [ \"${MAS_APP_ID}\" = \"iot\" ]; then
                   ROLE_LABEL='N/A - user audit only'
                   echo '  [SKIP] No role audit required for ${MAS_APP_ID} - db2inst1 user audit only.'

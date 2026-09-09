@@ -7,6 +7,7 @@ INSTHOME=` cat /etc/passwd | grep ${INSTOWNER} | cut -d: -f6`
 
 DEST_USER=`db2 list applications show detail | cut -d" " -f1 | grep -v DB2INST1 | grep -v CTGINST1 | grep -v CONNECT |grep -E "MANA|FACI"  | grep -v "\-\-" |grep -v MONITOR | sort -n | uniq | tail -1`
 SCRIPT=/mnt/backup/bin/PostBF_Scripts.sh
+CUSTOMER_SQL=/mnt/backup/bin/Post_Backflow.sql
 
     echo "db2 connect to bludb" > ${SCRIPT}
     echo "db2 GRANT DBADM,CREATETAB,BINDADD,CONNECT,CREATE_NOT_FENCED_ROUTINE,IMPLICIT_SCHEMA,LOAD,CREATE_EXTERNAL_ROUTINE,QUIESCE_CONNECT ON DATABASE TO USER ${DEST_USER}" >> ${SCRIPT}
@@ -29,3 +30,10 @@ fi
 
 
 chmod 755 ${SCRIPT}
+
+# -- Execute customer-provided SQL file if present
+if [[ -f ${CUSTOMER_SQL} ]]; then
+  echo "Executing customer SQL file: ${CUSTOMER_SQL} . . ."
+  db2 -tvf ${CUSTOMER_SQL}
+  echo "Post Backflow SQL script executed successfully."
+fi

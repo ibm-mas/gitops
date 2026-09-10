@@ -124,14 +124,14 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               
-              # Search for a pre-existing service-account-token secret bound to this SA via annotation.
-              # This handles secrets like <sa-name>-token-<suffix> created by older Kubernetes versions,
-              # as well as the canonical <sa-name>-token secret created by this job.
+              # Search for a pre-existing service-account-token secret bound to this SA via annotation
+              # kubernetes.io/service-account.name. This correctly detects secrets with any name, including
+              # those with a random suffix like <sa-name>-token-<suffix> created by older Kubernetes versions.
               SECRET_NAME=$(oc get secret -n ${CUSTOM_SA_NAMESPACE} \
-                -o jsonpath='{range .items[?(@.type=="kubernetes.io/service-account-token")]}{.metadata.name}{"\n"}{end}' \
-                | xargs -I{} sh -c \
-                  "oc get secret {} -n ${CUSTOM_SA_NAMESPACE} -o jsonpath='{.metadata.annotations.kubernetes\\.io/service-account\\.name}' 2>/dev/null | grep -qx '${CUSTOM_SA_NAME}' && echo {}" \
-                | head -1)
+                -o jsonpath="{range .items[?(@.type=='kubernetes.io/service-account-token')]}{.metadata.annotations.kubernetes\\.io/service-account\\.name}{'|'}{.metadata.name}{'\n'}{end}" \
+                | grep "^${CUSTOM_SA_NAME}|" \
+                | head -1 \
+                | cut -d'|' -f2 || true)
 
               if [[ -z "${SECRET_NAME}" ]]; then
                 # No existing secret found — create one with the correct type and annotation so that
@@ -146,14 +146,20 @@ spec:
                   | oc apply -f -
                 # Wait for Kubernetes to populate the token into the secret (up to 30s)
                 echo "Waiting for Kubernetes to populate token in secret ${SECRET_NAME}"
+                TOKEN_POPULATED=false
                 for i in $(seq 1 30); do
                   TOKEN_CHECK=$(oc get secret ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} -o jsonpath='{.data.token}' 2>/dev/null)
                   if [[ -n "${TOKEN_CHECK}" ]]; then
                     echo "Token populated in secret ${SECRET_NAME} after ${i}s"
+                    TOKEN_POPULATED=true
                     break
                   fi
                   sleep 1
                 done
+                if [[ "${TOKEN_POPULATED}" != "true" ]]; then
+                  echo "Timed out waiting for Kubernetes to populate token in secret ${SECRET_NAME}"
+                  exit 1
+                fi
               else
                 echo "Found existing service-account-token secret ${SECRET_NAME} for ${CUSTOM_SA_NAME}; skipping creation"
               fi

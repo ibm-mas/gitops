@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v3" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -124,20 +124,38 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
               
-              # Get name of secret generated for the custom service account
-              # As of kubernetes 1.24 (OCP 4.11+), tokens are no longer automatically generated for service accounts.
-              # On Kubernetes 1.27+ (OCP 4.17+) tokens must be created manually using oc create token.
-              # The bound object (secret) must exist before oc create token can bind to it.
-              SECRET_NAME="${CUSTOM_SA_NAME}-token"
-              EXISTING_TOKEN=$(oc get secret ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} --ignore-not-found -o json | jq -r '.data.token // empty')
-              if [[ -z "${EXISTING_TOKEN}" ]]; then
-                echo "Token not found in secret ${SECRET_NAME}; creating secret and generating bound token"
-                oc create secret generic ${SECRET_NAME} --from-literal=token=placeholder -n ${CUSTOM_SA_NAMESPACE} --dry-run=client -o yaml | oc apply -f -
-                SECRET_TOKEN=$(oc create token ${CUSTOM_SA_NAME} --bound-object-kind Secret --bound-object-name ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} -o json | jq -r '.status.token')
-                echo "Updating token secret ${SECRET_NAME} with generated token"
-                oc patch secret ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} --type merge -p "{\"data\":{\"token\":\"$(echo -n ${SECRET_TOKEN} | base64 -w 0)\"}}"
+              # Search for a pre-existing service-account-token secret bound to this SA via annotation.
+              # This handles secrets like <sa-name>-token-<suffix> created by older Kubernetes versions,
+              # as well as the canonical <sa-name>-token secret created by this job.
+              SECRET_NAME=$(oc get secret -n ${CUSTOM_SA_NAMESPACE} \
+                -o jsonpath='{range .items[?(@.type=="kubernetes.io/service-account-token")]}{.metadata.name}{"\n"}{end}' \
+                | xargs -I{} sh -c \
+                  "oc get secret {} -n ${CUSTOM_SA_NAMESPACE} -o jsonpath='{.metadata.annotations.kubernetes\\.io/service-account\\.name}' 2>/dev/null | grep -qx '${CUSTOM_SA_NAME}' && echo {}" \
+                | head -1)
+
+              if [[ -z "${SECRET_NAME}" ]]; then
+                # No existing secret found — create one with the correct type and annotation so that
+                # Kubernetes automatically populates the token field.
+                SECRET_NAME="${CUSTOM_SA_NAME}-token"
+                echo "No existing service-account-token secret found for ${CUSTOM_SA_NAME}; creating ${SECRET_NAME}"
+                oc create secret generic ${SECRET_NAME} \
+                  --type=kubernetes.io/service-account-token \
+                  -n ${CUSTOM_SA_NAMESPACE} \
+                  --dry-run=client -o yaml \
+                  | oc annotate --local -f - "kubernetes.io/service-account.name=${CUSTOM_SA_NAME}" -o yaml \
+                  | oc apply -f -
+                # Wait for Kubernetes to populate the token into the secret (up to 30s)
+                echo "Waiting for Kubernetes to populate token in secret ${SECRET_NAME}"
+                for i in $(seq 1 30); do
+                  TOKEN_CHECK=$(oc get secret ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} -o jsonpath='{.data.token}' 2>/dev/null)
+                  if [[ -n "${TOKEN_CHECK}" ]]; then
+                    echo "Token populated in secret ${SECRET_NAME} after ${i}s"
+                    break
+                  fi
+                  sleep 1
+                done
               else
-                echo "Token secret ${SECRET_NAME} already exists with a token; skipping token generation"
+                echo "Found existing service-account-token secret ${SECRET_NAME} for ${CUSTOM_SA_NAME}; skipping creation"
               fi
 
               # Get secret token to store in sm

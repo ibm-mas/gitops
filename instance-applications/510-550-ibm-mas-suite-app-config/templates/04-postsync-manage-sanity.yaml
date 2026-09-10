@@ -520,10 +520,13 @@ data:
         # -------------------------------
         # Manage URL (OpenShift Route)
         # -------------------------------
+        manageRouteSvcName = None
         try:
             manageRouteObject = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
             manageRouteDetails = manageRouteObject.get(name=f'{mas_instance_id}-manage-{mas_workspace_id}', namespace=manageNamespace)
             manageUrl = manageRouteDetails.spec.host
+            if manageRouteDetails.spec.to and manageRouteDetails.spec.to.name:
+                manageRouteSvcName = manageRouteDetails.spec.to.name
         except Exception as e:
             if e.status == 404:
                 logger.info(f"Unable to find route {mas_instance_id}-manage-{mas_workspace_id} in {manageNamespace}")
@@ -531,12 +534,15 @@ data:
                 logger.info(f"Error retrieving route: {str(e)}")
 
         global MAS_ADMIN_USERNAME, MAS_ADMIN_PASSWORD, MANAGE_URL, MAS_URL, MAS_APIURL
-        MAS_URL=f"https://{masUrl.spec.host}{masUrl.spec.path}"
-        MAS_APIURL=f"https://{masapiUrl.spec.host}{masapiUrl.spec.path}"
+        mas_admin_host = f"{masUrl.spec.to.name}.{masNamespace}.svc" if (masUrl.spec.to and masUrl.spec.to.name) else masUrl.spec.host
+        mas_api_host = f"{masapiUrl.spec.to.name}.{masNamespace}.svc" if (masapiUrl.spec.to and masapiUrl.spec.to.name) else masapiUrl.spec.host
+        MAS_URL = f"https://{mas_admin_host}{masUrl.spec.path}"
+        MAS_APIURL = f"https://{mas_api_host}{masapiUrl.spec.path}"
         if manageUrl:
             #MANAGE_URL = f"https://{manageUrl}"
             #MANAGE_URL="https://127.0.0.1:9080"    # Use when run from Local. Do port forwarding...
-            MANAGE_URL = f'https://{mas_instance_id}-{mas_workspace_id}.mas-{mas_instance_id}-manage.svc'  # Use for cluster
+            manage_host = f"{manageRouteSvcName}.{manageNamespace}.svc" if manageRouteSvcName else f"{mas_instance_id}-{mas_workspace_id}.{manageNamespace}.svc"
+            MANAGE_URL = f'https://{manage_host}'  # Use for cluster
             
         global MANAGE_JDBC_URL, MANAGE_JDBC_USERNAME, MANAGE_JDBC_PASSWORD, MANAGE_JDBC_DRIVER, MANAGE_JDBC_SCHEMA, MANAGE_JDBC_CERT
 
@@ -1450,6 +1456,7 @@ data:
     from kubernetes.client import Configuration
     from openshift.dynamic import DynamicClient
     import os
+    import re
     import logging
     from assertpy import assert_that
     import pytest
@@ -1459,6 +1466,7 @@ data:
     # Get environment variables
     mas_instance_id = os.getenv("MAS_INSTANCE_ID")
     mas_workspace_id = os.getenv("MAS_WORKSPACE_ID")
+    mas_app_channel = os.getenv("MAS_APP_CHANNEL", "")
     manageNamespace = f"mas-{mas_instance_id}-manage"
 
 
@@ -1487,6 +1495,10 @@ data:
 
     def test_mcp_pod_availability(dyn_client):
         """Test: Verify MCP pod is available and running."""
+        match = re.match(r'^(\d+)\.(\d+)', mas_app_channel)
+        if not (match and (int(match.group(1)), int(match.group(2))) >= (9, 2)):
+            pytest.skip(f"MCP pod availability test is only supported for Manage >= 9.2 (current channel: '{mas_app_channel}')")
+
         logger.info("=" * 80)
         logger.info("TEST: MCP Pod Availability Check")
         logger.info("=" * 80)
@@ -1599,6 +1611,8 @@ spec:
               value: "{{ .Values.mas_app_namespace }}"
             - name: MAS_NAMESPACE
               value: "mas-{{ .Values.instance_id }}-core"
+            - name: MAS_APP_CHANNEL
+              value: "{{ .Values.mas_app_channel }}"
             - name: TEST_RECORD_CM
               value: "{{ $record_cm_name }}"
           volumeMounts:

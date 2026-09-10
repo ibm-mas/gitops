@@ -134,10 +134,16 @@ spec:
                 | cut -d'|' -f2 || true)
 
               if [[ -z "${SECRET_NAME}" ]]; then
-                # No existing secret found — create one with the correct type and annotation so that
-                # Kubernetes automatically populates the token field.
+                # No existing service-account-token secret found for this SA.
+                # The old automation may have left a stale secret with the wrong type (e.g. Opaque).
+                # Since secret type is immutable in Kubernetes, delete it if it exists so we can
+                # recreate it with the correct type kubernetes.io/service-account-token.
                 SECRET_NAME="${CUSTOM_SA_NAME}-token"
-                echo "No existing service-account-token secret found for ${CUSTOM_SA_NAME}; creating ${SECRET_NAME}"
+                if oc get secret ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE} --ignore-not-found -o name | grep -q .; then
+                  echo "Found stale secret ${SECRET_NAME} with incorrect type; deleting so it can be recreated correctly"
+                  oc delete secret ${SECRET_NAME} -n ${CUSTOM_SA_NAMESPACE}
+                fi
+                echo "Creating secret ${SECRET_NAME} with type kubernetes.io/service-account-token for ${CUSTOM_SA_NAME}"
                 oc create secret generic ${SECRET_NAME} \
                   --type=kubernetes.io/service-account-token \
                   -n ${CUSTOM_SA_NAMESPACE} \

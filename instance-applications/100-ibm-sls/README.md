@@ -1,9 +1,11 @@
 IBM Suite License Service
 ===============================================================================
+
+## Overview
+
 Installs the `ibm-sls` operator and creates an instance of the `LicenseService`.
 
 <!--docs-include-start-->
-
 
 Contains a job that runs last (`07-postsync-update-sm_Job.yaml`). This registers the `${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/sls` secret in the **Secrets Vault** used to share some information that is generated at runtime with other ArgoCD Applications.
 
@@ -69,6 +71,10 @@ ibm_sls:
       - alias: string
         crt: string (multiline)
   
+  # Pod Templates (optional)
+  sls_pod_templates:
+    key: value
+
   # Certificate Authority (optional)
   internal_certificate_authority: string
 ```

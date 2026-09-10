@@ -12,6 +12,7 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 
 {{ $ns               :=  .Values.mas_app_namespace }}
 {{ $np_name          :=  "postsync-verify-maximoit-np" }}
+{{ $secret_name      :=  "postsync-verify-maximoit-devopsuri" }}
 {{ $role_name        :=  "postsync-verify-maximoit-role" }}
 {{ $sa_name          :=  "postsync-verify-maximoit-sa" }}
 {{ $rb_name          :=  "postsync-verify-maximoit-rb" }}
@@ -45,6 +46,25 @@ spec:
   policyTypes:
     - Egress
 
+
+---
+# Secret — MongoDB URI (optional; only used when devops_mongo_uri is set)
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: {{ $secret_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "600"
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
 
 ---
 kind: ServiceAccount
@@ -518,9 +538,21 @@ spec:
               value: "mas-{{ .Values.instance_id }}-core"
             - name: TEST_RECORD_CM
               value: "{{ $record_cm_name }}"
+            - name: DEVOPS_ENVIRONMENT
+              value: "{{ .Values.instance_id }}"
+            - name: DEVOPS_SUITE_NAME
+              value: "postsync-verify-maximoit-{{ .Values.instance_id }}"
+            - name: DEVOPS_BUILD_NUMBER
+              value: "{{ .Values.devops_build_number }}"
+            - name: PRODUCT_ID
+              value: "ibm-mas-gitops"
+            - name: JUNIT_OUTPUT_DIR
+              value: "/tmp"
           volumeMounts:
             - name: tests
               mountPath: /tmp/tests
+            - name: devops-uri
+              mountPath: /etc/mas/devops-uri
           command:
             - /bin/sh
             - -c
@@ -531,7 +563,7 @@ spec:
 
               set -o pipefail
               echo "Running tests..."
-              pytest -v --junit-xml=junitxml_test_output.xml -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py 2>&1 | tee test_log.txt
+              pytest -v --junit-xml=/tmp/junitxml_test_output.xml -o junit_family=xunit2 -o cache_dir=/tmp/__pycache__ /tmp/tests/tests.py 2>&1 | tee /tmp/test_log.txt
               if [[ $? -ne 0 ]]; then
                   TEST_PASSED=false
               else
@@ -543,9 +575,29 @@ spec:
               set -e
               echo "Updating $TEST_RECORD_CM configmap with test result"
               oc set data cm $TEST_RECORD_CM test_passed=$TEST_PASSED
-              oc set data cm $TEST_RECORD_CM --from-file=junitxml_test_output.xml
-              oc set data cm $TEST_RECORD_CM --from-file=test_log.txt
-              
+              oc set data cm $TEST_RECORD_CM --from-file=/tmp/junitxml_test_output.xml
+              oc set data cm $TEST_RECORD_CM --from-file=/tmp/test_log.txt
+
+              DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri 2>/dev/null || true)
+              if [[ -n "${DEVOPS_MONGO_URI}" ]]; then
+                echo "Normalising junit XML to xunit2 format for MongoDB..."
+                python3 - <<'PYEOF'
+import xml.etree.ElementTree as ET, sys
+tree = ET.parse("/tmp/junitxml_test_output.xml")
+root = tree.getroot()
+if root.tag == "testsuite":
+    wrapper = ET.Element("testsuites")
+    wrapper.append(root)
+    ET.ElementTree(wrapper).write("/tmp/junitxml_test_output.xml", xml_declaration=True, encoding="unicode")
+    print("Wrapped <testsuite> inside <testsuites>")
+else:
+    print("XML already has <testsuites> root — no change needed")
+PYEOF
+                echo "Saving junit results to MongoDB..."
+                export DEVOPS_MONGO_URI
+                python3 /opt/app-root/src/save-junit-to-mongo.py
+              fi
+
               if [[ $TEST_PASSED == "false" ]]; then
                 echo "Test Result failed, exit 1"
                 exit 1
@@ -564,6 +616,11 @@ spec:
                 path: tests.py
             defaultMode: 420
             optional: false
+        - name: devops-uri
+          secret:
+            secretName: {{ $secret_name }}
+            defaultMode: 420
+            optional: true
   backoffLimit: 10
 
 {{- end }}

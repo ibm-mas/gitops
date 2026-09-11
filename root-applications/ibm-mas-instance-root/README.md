@@ -64,6 +64,10 @@ Applications are deployed in the following order (controlled by sync-wave annota
 5. **500-550: Applications** - MAS application installations and configurations
 6. **600: RBAC & Post-Sync** - RBAC setup and post-deployment validation
 
+## Configuration Files
+
+See the [ArgoCD Applications](#argocd-applications) section for the full list of template files managed by this root application.
+
 ## Configuration
 
 **Important:** This application receives its configuration from the parent Cluster Root ApplicationSet. Values are not read from a `values.yaml` file but are passed as Helm parameters from the ApplicationSet generator.
@@ -211,7 +215,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`120-ibm-wsl-app.yaml`](templates/120-ibm-wsl-app.yaml) | wsl | ✓ | | | 120 |
 | [`121-ibm-post-sync-job-cp4d-services.yaml`](templates/121-ibm-post-sync-job-cp4d-services.yaml) | postsyncjobs.cp4dservices | ✓ | | | 121 |
 | [`130-ibm-mas-suite-app.yaml`](templates/130-ibm-mas-suite-app.yaml) | suite | | | ✓ | 130 |
-| [`130-ibm-mas-suite-configs-app.yaml`](templates/130-ibm-mas-suite-configs-app.yaml) | mas_config_name | | ✓ | | 130 |
+| [`140-ibm-mas-suite-configs-app.yaml`](templates/140-ibm-mas-suite-configs-app.yaml) | mas_config_name | | ✓ | | 140 |
 | [`200-ibm-mas-workspaces.yaml`](templates/200-ibm-mas-workspaces.yaml) | workspace | | ✓ | | 200 |
 | [`500-ibm-mas-masapp-manage-install.yaml`](templates/500-ibm-mas-masapp-manage-install.yaml) | manage | | | ✓ | 500 |
 | [`505-ibm-mas-masapp-facilities-install.yaml`](templates/505-ibm-mas-masapp-facilities-install.yaml) | facilities | | | ✓ | 505 |
@@ -278,7 +282,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 - **application-admin-rbac** - Application-level RBAC
 - **postsyncjobs** - Post-deployment validation
 
-## Example Configuration
+## Examples
 
 ### Minimal Configuration Structure
 

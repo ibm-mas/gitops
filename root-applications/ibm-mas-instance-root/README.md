@@ -205,6 +205,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`110-ibm-db2u-app.yaml`](templates/110-ibm-db2u-app.yaml) | db2u | ✓ | | | 110 |
 | [`120-db2-databases-app.yaml`](templates/120-db2-databases-app.yaml) | db2-db | | ✓ | | 120 |
 | [`120-dbs-rds-databases-app.yaml`](templates/120-dbs-rds-databases-app.yaml) | dbs-rds-db | | | ✓ | 120 |
+| [`120-ibm-cognos-analytics-app.yaml`](templates/120-ibm-cognos-analytics-app.yaml) | cognos | ✓ | | | 120 |
 | [`120-ibm-spark-app.yaml`](templates/120-ibm-spark-app.yaml) | spark | ✓ | | | 120 |
 | [`120-ibm-spss-app.yaml`](templates/120-ibm-spss-app.yaml) | spss | ✓ | | | 120 |
 | [`120-ibm-wml-app.yaml`](templates/120-ibm-wml-app.yaml) | wml | ✓ | | | 120 |

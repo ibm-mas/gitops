@@ -4,7 +4,7 @@
  They are created in this chart (instead of the config application charts) to:
    1. ensure the resources are not deleted by ArgoCD before ArgoCD runs the PostDelete hook jobs that depend on them
    2. reduce code and resource duplication
- ( NOTE: this is a workaround for the fact it is not currently possible to annotate these types of resource with 
+ ( NOTE: this is a workaround for the fact it is not currently possible to annotate these types of resource with
    PostDelete due to a bug in ArgoCD: https://github.com/argoproj/argo-cd/issues/17191) and the fact that ArgoCD
    does not yet support PreDelete hooks: https://github.com/argoproj/argo-cd/issues/13975, either of which
    would offer a preferable solution to this workaround )
@@ -13,9 +13,9 @@
 
 
 {{ $role_name := "postdelete-delete-cr-r" }}
-{{ $sa_name :=   "postdelete-delete-cr-sa" }}
-{{ $rb_name :=   "postdelete-delete-cr-rb" }}
-{{ $np_name :=   "postdelete-delete-cr-np" }}
+{{ $sa_name   := "postdelete-delete-cr-sa" }}
+{{ $rb_name   := "postdelete-delete-cr-rb" }}
+{{ $np_name   := "postdelete-delete-cr-np" }}
 {{ $job_label := "postdelete-delete-cr-job" }}
 {{ $ns := printf "mas-%s-core" .Values.instance_id }}
 
@@ -82,6 +82,39 @@ rules:
       - addons.mas.ibm.com
     resources:
       - genericaddons
+  - verbs:
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+    apiGroups:
+      - core.mas.ibm.com
+    resources:
+      - suites
+  - verbs:
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+    apiGroups:
+      - apps.mas.ibm.com
+    resources:
+      - assistapps
+      - assistworkspaces
+      - facilitiesapps
+      - facilitiesworkspaces
+      - manageapps
+      - manageworkspaces
+      - monitorapps
+      - monitorworkspaces
+      - optimizerapps
+      - optimizerworkspaces
+      - predictapps
+      - predictworkspaces
+      - visualinspectionapps
+      - visualinspectionappworkspaces
 
 ---
 kind: ServiceAccount

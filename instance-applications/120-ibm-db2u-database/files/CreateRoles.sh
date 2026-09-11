@@ -7,7 +7,7 @@
 #   Arguments:
 #     $1 - Schema name to create roles for (required)
 #          e.g. ./CreateRoles.sh MAXIMO   (for Manage DB2)
-#               ./CreateRoles.sh TRIRIGA  (for Facilities DB2)
+#               ./CreateRoles.sh TRIDATA  (for Facilities DB2)
 #
 ################################################################################
 

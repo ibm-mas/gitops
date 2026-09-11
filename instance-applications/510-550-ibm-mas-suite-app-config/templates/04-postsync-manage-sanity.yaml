@@ -1667,20 +1667,20 @@ spec:
               if [[ -n "${DEVOPS_MONGO_URI}" ]]; then
                 echo "Splitting combined junit XML into per-suite XMLs for MongoDB..."
                 python3 -c '
-import xml.etree.ElementTree as ET, os, sys
-OUT_DIRS = [("/tmp/mongo_suite_manage", "postsync-sanity-manage-{{ .Values.instance_id }}"), ("/tmp/mongo_suite_mcp", "postsync-sanity-manage-mcp-{{ .Values.instance_id }}")]
-tree = ET.parse("/tmp/junitxml_test_output.xml")
-root = tree.getroot()
-suites = list(root) if root.tag == "testsuites" else [root]
-for i, suite in enumerate(suites):
-    if i >= len(OUT_DIRS): break
-    out_dir, suite_name = OUT_DIRS[i]
-    os.makedirs(out_dir, exist_ok=True)
-    wrapper = ET.Element("testsuites")
-    wrapper.append(suite)
-    out_path = os.path.join(out_dir, "output.xml")
-    ET.ElementTree(wrapper).write(out_path, xml_declaration=True, encoding="unicode")
-    print("Written suite " + suite_name + " to " + out_path)
+                import xml.etree.ElementTree as ET, os, sys
+                OUT_DIRS = [("/tmp/mongo_suite_manage", "postsync-sanity-manage-{{ .Values.instance_id }}"), ("/tmp/mongo_suite_mcp", "postsync-sanity-manage-mcp-{{ .Values.instance_id }}")]
+                tree = ET.parse("/tmp/junitxml_test_output.xml")
+                root = tree.getroot()
+                suites = list(root) if root.tag == "testsuites" else [root]
+                for i, suite in enumerate(suites):
+                    if i >= len(OUT_DIRS): break
+                    out_dir, suite_name = OUT_DIRS[i]
+                    os.makedirs(out_dir, exist_ok=True)
+                    wrapper = ET.Element("testsuites")
+                    wrapper.append(suite)
+                    out_path = os.path.join(out_dir, "output.xml")
+                    ET.ElementTree(wrapper).write(out_path, xml_declaration=True, encoding="unicode")
+                    print("Written suite " + suite_name + " to " + out_path)
                 '
 
                 export DEVOPS_MONGO_URI

@@ -53,6 +53,7 @@ manage_logging_access_secret_key: string (secret reference)
 manage_update_schedule: string
 
 # Facilities Configuration (optional)
+# facilities_vault_secret_name defaults to "{mas_workspace_id}-facilities--vs-sn"
 facilities_vault_secret_name: string
 facilities_vault_secret_value: string (secret reference)
 facilities_liberty_extensions_secret_name: string

@@ -30,6 +30,7 @@ Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers
 | `Service` | Db2 services, including HADR services | DB2 application namespace | Always | `application_admin_role` |
 | `Service` | Private NLB service | DB2 application namespace | When `private_nlb.enabled` is true | `application_admin_role` |
 | `Secret` | Post-sync DB2 generated secret | DB2 application namespace | Always | `application_admin_role` |
+| `Secret` | Customer certificate secret (`db2u-manual-certificate-<instance>`) | DB2 application namespace | When `db2_manual_cert.enabled` is true | `application_admin_role` |
 | `NetworkPolicy` | HADR network policy | DB2 application namespace | When HADR is enabled | `application_admin_role` |
 | `Job` | Pre/post-sync DB2 setup jobs | DB2 application namespace | Always | `application_admin_role` |
 | `Job` | DB2 audit policy setup job | DB2 application namespace | When `mas_application_id` is `manage`, `facilities`, `monitor`, or `iot` | `application_admin_role` |
@@ -139,6 +140,16 @@ private_nlb:
   subnet_ids: list(string) # required when enabled: true
   allowed_cidrs: list(string) # required when enabled: true
   port: number             # default: 50001
+
+# Custom Route Hostname (optional)
+db2_route_hostname: string
+
+# Customer-supplied certificate (optional)
+db2_manual_cert:
+  enabled: boolean      # default: false
+  tls_crt: string       # base64 encoded PEM certificate
+  tls_key: string       # base64 encoded PEM private key
+  ca_crt: string        # base64 encoded CA certificate/chain
 ```
 
 **Note**: Values marked with "(secret reference)" should use the format `<path:secrets/path:key>` to reference secrets stored in the Secrets Vault.
@@ -208,6 +219,86 @@ Both can use port 50001 without conflict since they are separate AWS NLB resourc
 
 The NLB is created independently for each instance (e.g. facilities, manage) using the instance-specific selector.
 
+## PrivateLink Route Hostname and Customer Certificates
+
+This chart supports customer-facing hostnames and customer-managed TLS certificates for Db2 instances accessed through AWS PrivateLink.
+
+By default:
+- The Db2 Route hostname is generated automatically from the cluster domain.
+- Db2 uses a cert-manager generated certificate (`db2u-certificate-<instance>`).
+
+When configured, a customer may:
+- Override the Route hostname using `db2_route_hostname`.
+- Supply a customer-managed TLS certificate using `db2_manual_cert`.
+
+### Custom Route Hostname
+
+```yaml
+db2_route_hostname: db2-manage.company.example.com
+```
+
+When specified:
+- `Route.spec.host` uses the configured hostname.
+- The hostname is added to the cert-manager certificate SAN list when using the default certificate workflow.
+- Existing Route behavior is unchanged when the value is not set.
+
+### Customer-Managed Certificates
+
+```yaml
+db2_manual_cert:
+  enabled: true
+  tls_crt: <base64-encoded PEM certificate>
+  tls_key: <base64-encoded PEM private key>
+  ca_crt: <base64-encoded PEM CA chain>
+```
+
+When `enabled: true`:
+- A Secret named `db2u-manual-certificate-<instance>` is created.
+- `Db2uInstance.spec.environment.ssl.secretName` references the customer certificate Secret.
+- Db2 presents the customer certificate during TLS handshakes.
+
+When disabled, the existing cert-manager issued certificate remains in use.
+
+### PEM Requirements
+
+Customer certificates must be PEM encoded.
+
+| Field | Required | Description |
+|---|---|---|
+| `tls_crt` | Yes | PEM certificate (or certificate chain) |
+| `tls_key` | Yes | PEM private key |
+| `ca_crt` | No | PEM CA certificate or chain |
+
+The certificate SANs should cover both the configured `db2_route_hostname` and the internal Db2 service names used by MAS.
+
+If `ca_crt` is not supplied, the certificate ingestion workflow will attempt to extract the issuing CA certificate from the certificate chain contained in `tls_crt`. If a full CA chain is available, providing it explicitly via `ca_crt` is recommended.
+
+### PrivateLink Access Pattern
+
+Two TLS connection paths exist when PrivateLink is in use:
+
+**MAS Internal Connection** — MAS connects directly using the Db2 engine service:
+```
+c-<db2_instance>-db2u-engn-svc.<namespace>.svc
+```
+This connection bypasses the OpenShift Router and does not use the Route hostname, but still requires MAS to trust the certificate presented by Db2.
+
+**Customer PrivateLink Connection** — External clients connect via:
+```
+Customer DNS -> AWS PrivateLink -> OpenShift Route (TLS passthrough) -> Db2
+```
+The Route performs hostname-based routing using SNI while TLS terminates directly on the Db2 engine. Because of this, the Route hostname must match the hostname used by the client.
+
+### Certificate Renewal
+
+Certificate renewal is customer-managed. To rotate certificates:
+
+1. Update the certificate material.
+2. Update the GitOps configuration.
+3. Allow ArgoCD to synchronize the changes.
+
+This chart does not perform automatic certificate renewal.
+
 ## DB2 Audit Policy
 
 ### When It Is Applied
@@ -274,6 +365,18 @@ db2_tls_version: "1.2"
 db2_table_org: ROW
 mas_application_id: manage
 cluster_domain: "<path:secrets/path:cluster_domain>"
+```
+
+### PrivateLink with Customer Certificate
+
+```yaml
+db2_route_hostname: db2-manage.company.example.com
+
+db2_manual_cert:
+  enabled: true
+  tls_crt: "<base64-encoded certificate>"
+  tls_key: "<base64-encoded private key>"
+  ca_crt: "<base64-encoded CA chain>"
 ```
 
 ### With backup and audit log upload enabled

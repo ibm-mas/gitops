@@ -67,6 +67,8 @@ spec:
               value: {{ $cr_api_v }}
             - name: CR_KIND
               value: {{ $cr_kind }}
+            - name: MAS_APP_ID
+              value: "{{ .Values.mas_app_id }}"
           volumeMounts: []
           command:
             - /bin/sh
@@ -109,6 +111,23 @@ spec:
                 echo "ERROR: resource still present after delete"
                 exit 1
               fi
+
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete ibm-mas-${MAS_APP_ID} CSV in ${CR_NAMESPACE}"
+              set +e
+              CSV_NAME=$(oc get csv -n ${CR_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep "^ibm-mas-${MAS_APP_ID}\.")
+              set -e
+              if [[ -z "${CSV_NAME}" ]]; then
+                echo "No ibm-mas-${MAS_APP_ID} CSV found - skipping"
+              else
+                echo "Deleting CSV: ${CSV_NAME}"
+                oc delete csv "${CSV_NAME}" -n ${CR_NAMESPACE} \
+                  --timeout=60s --wait=true 2>/dev/null || true
+                echo "CSV deleted"
+              fi
+
               echo "Done"
       volumes: []
   backoffLimit: 4

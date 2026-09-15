@@ -1680,7 +1680,8 @@ spec:
               DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri 2>/dev/null || true)
               if [[ -n "${DEVOPS_MONGO_URI}" ]]; then
                 echo "Splitting combined junit XML into per-suite XMLs for MongoDB..."
-                python3 -c "import xml.etree.ElementTree as ET, os; OUT_DIRS = [('/tmp/mongo_suite_manage', 'postsync-sanity-manage-{{ .Values.instance_id }}'), ('/tmp/mongo_suite_mcp', 'postsync-sanity-manage-mcp-{{ .Values.instance_id }}')]; tree = ET.parse('/tmp/junitxml_test_output.xml'); root = tree.getroot(); suites = list(root) if root.tag == 'testsuites' else [root]; [([os.makedirs(OUT_DIRS[i][0], exist_ok=True), ET.ElementTree((lambda w: (w.append(suite), w)[1])(ET.Element('testsuites'))).write(os.path.join(OUT_DIRS[i][0], 'output.xml'), xml_declaration=True, encoding='unicode'), print('Written ' + OUT_DIRS[i][1])] for i, suite in enumerate(suites) if i < len(OUT_DIRS)]"
+                python3 -c "import xml.etree.ElementTree as ET, os; root = ET.parse('/tmp/junitxml_test_output.xml').getroot(); suites = list(root) if root.tag == 'testsuites' else [root]; os.makedirs('/tmp/mongo_suite_manage', exist_ok=True); w = ET.Element('testsuites'); w.append(suites[0]); ET.ElementTree(w).write('/tmp/mongo_suite_manage/output.xml', xml_declaration=True, encoding='unicode')"
+                python3 -c "import xml.etree.ElementTree as ET, os; root = ET.parse('/tmp/junitxml_test_output.xml').getroot(); suites = list(root) if root.tag == 'testsuites' else [root]; os.makedirs('/tmp/mongo_suite_mcp', exist_ok=True); w = ET.Element('testsuites'); w.append(suites[1]); ET.ElementTree(w).write('/tmp/mongo_suite_mcp/output.xml', xml_declaration=True, encoding='unicode')" 2>/dev/null || true
 
                 export DEVOPS_MONGO_URI
 

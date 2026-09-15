@@ -83,35 +83,39 @@ spec:
                 -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
               set -e
 
-              if [[ -z "${RESOURCE_NAME}" ]]; then
-                echo "Resource not found - nothing to do"
-                exit 0
-              fi
-
-              # Force-clear finalizers so delete completes even if the operator is gone
-              echo "Patching out finalizers..."
-              set +e
-              oc patch ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} -n ${CR_NAMESPACE} \
-                --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
-              set -e
-
-              echo "Deleting resource..."
-              set +e
-              oc delete ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
-                -n ${CR_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
-              set -e
-
-              # Verify gone
-              set +e
-              RESOURCE_NAME=$(oc get ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
-                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
-              set -e
-
               if [[ -n "${RESOURCE_NAME}" ]]; then
-                echo "ERROR: resource still present after delete"
-                exit 1
+                # CR still exists - patch out finalizers first so delete succeeds
+                # even if the operator is already gone, then delete the CR before
+                # the CSV (killing CSV/operator while CR has finalizers = stuck Terminating)
+                echo "Patching out finalizers..."
+                set +e
+                oc patch ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} -n ${CR_NAMESPACE} \
+                  --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
+                set -e
+
+                echo "Deleting resource..."
+                set +e
+                oc delete ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
+                  -n ${CR_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
+                set -e
+
+                # Verify gone
+                set +e
+                RESOURCE_NAME=$(oc get ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
+                  -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+                set -e
+
+                if [[ -n "${RESOURCE_NAME}" ]]; then
+                  echo "ERROR: resource still present after delete"
+                  exit 1
+                fi
+              else
+                echo "App CR not found - already removed by operator"
               fi
 
+              # Always delete the CSV - OLM does not cascade-delete it when the
+              # Subscription is removed, so the operator pod would otherwise remain
+              # running and prevent the namespace from terminating.
               echo "------------------------------------------------------------------"
               echo "PostDelete: delete ibm-mas-${MAS_APP_ID} CSV in ${CR_NAMESPACE}"
               set +e

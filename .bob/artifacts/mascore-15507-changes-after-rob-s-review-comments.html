@@ -1,0 +1,184 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MASCORE-15507 — Changes After Rob's Review</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.6; background: #ffffff; color: #1f2328; }
+  .container { max-width: 760px; margin: 0 auto; padding: 32px 24px; }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: #57606a; font-size: 13px; margin-bottom: 32px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 28px 0 10px; color: #1f2328; }
+  h3 { font-size: 13px; font-weight: 700; margin: 18px 0 6px; color: #1f2328; }
+  p { margin-bottom: 10px; color: #1f2328; }
+  .rob-comment { background: #f7f8fa; border-left: 3px solid #3b82d4; border-radius: 4px; padding: 12px 16px; margin: 10px 0 16px; font-size: 13px; color: #1f2328; }
+  .rob-comment .label { font-size: 11px; font-weight: 700; color: #3b82d4; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .answer { background: #f0faf0; border-left: 3px solid #2da44e; border-radius: 4px; padding: 12px 16px; margin: 6px 0 16px; font-size: 13px; }
+  .answer .label { font-size: 11px; font-weight: 700; color: #2da44e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 20px; font-size: 13px; }
+  th { background: #f7f8fa; text-align: left; padding: 8px 10px; border: 1px solid #e5e7eb; font-weight: 600; color: #57606a; font-size: 12px; }
+  td { padding: 8px 10px; border: 1px solid #e5e7eb; vertical-align: top; }
+  td.file { font-family: "SF Mono", "Consolas", monospace; font-size: 11px; color: #0550ae; }
+  td.removed { color: #cf222e; }
+  td.added { color: #2da44e; }
+  code { font-family: "SF Mono", "Consolas", monospace; font-size: 11px; background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 3px; padding: 1px 5px; }
+  .commit { font-family: "SF Mono", "Consolas", monospace; font-size: 11px; background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 3px; padding: 2px 6px; color: #0550ae; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+  .badge-done { background: #dafbe1; color: #1a7f37; }
+  .wave-diagram { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px; margin: 12px 0; font-size: 12px; }
+  .wave-row { display: flex; align-items: center; margin: 4px 0; gap: 12px; }
+  .wave-num { font-family: monospace; font-weight: 700; color: #57606a; width: 40px; flex-shrink: 0; }
+  .wave-bar { height: 24px; border-radius: 3px; display: flex; align-items: center; padding: 0 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .w-cluster { background: #ddf4ff; color: #0550ae; }
+  .w-ns { background: #dafbe1; color: #1a7f37; }
+  .w-post { background: #fff8c5; color: #9a6700; }
+  .w-spss { background: #ffebe9; color: #cf222e; }
+  .section-divider { border: none; border-top: 1px solid #e5e7eb; margin: 28px 0; }
+  .stats-row { display: flex; gap: 16px; margin: 12px 0; }
+  .stat-box { flex: 1; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; text-align: center; }
+  .stat-num { font-size: 24px; font-weight: 700; color: #3b82d4; }
+  .stat-label { font-size: 11px; color: #57606a; margin-top: 2px; }
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>MASCORE-15507: CPD 5.3.1 GitOps Support</h1>
+  <div class="subtitle">Changes implemented after Rob's review comments  ·  Branch: <code>MASCORE-15507</code>  ·  16 commits after merge from main (<code>a33e3a35</code>)</div>
+
+  <div class="stats-row">
+    <div class="stat-box"><div class="stat-num">+2,064</div><div class="stat-label">lines added</div></div>
+    <div class="stat-box"><div class="stat-num">−811</div><div class="stat-label">lines removed</div></div>
+    <div class="stat-box"><div class="stat-num">22</div><div class="stat-label">files changed</div></div>
+    <div class="stat-box"><div class="stat-num">16</div><div class="stat-label">commits</div></div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <h2>Rob Comment #1 — Cluster-scoped ownership conflict</h2>
+  <div class="rob-comment">
+    <div class="label">Rob's comment</div>
+    "We should not be using cluster-scoped deploys for this. The resources created will then become managed by multiple deploys of this."
+  </div>
+  <div class="answer">
+    <div class="label">What was done ✅</div>
+    Each cluster-scoped chart (CRDs + ClusterRoles) is now its own dedicated ArgoCD <code>Application</code> with a unique name per cluster/instance. ArgoCD's Server-Side Apply (SSA) field manager ensures only one app owns each cluster-scoped resource — no conflicts between instances.
+  </div>
+  <p>Each service now has a <strong>cluster-scoped app</strong> (CRDs) and a <strong>namespace-scoped app</strong> (operator + CR). Example for WML:</p>
+  <table>
+    <tr><th>ArgoCD App</th><th>Helm Chart</th><th>Scope</th></tr>
+    <tr><td class="file">wml-redis-cluster.noble10.inst02</td><td><code>ibm-redis-cp-cluster-scoped</code></td><td>Cluster (CRDs)</td></tr>
+    <tr><td class="file">wml-redis.noble10.inst02</td><td><code>ibm-redis-cp</code></td><td>Namespace (operator)</td></tr>
+    <tr><td class="file">wml-cluster.noble10.inst02</td><td><code>wml-cluster-scoped</code></td><td>Cluster (CRDs)</td></tr>
+    <tr><td class="file">wml.noble10.inst02</td><td><code>wml</code></td><td>Namespace (operator + CR)</td></tr>
+  </table>
+
+  <hr class="section-divider" />
+
+  <h2>Rob Comment #2 — No helm CLI in K8s Jobs; use ArgoCD Helm Applications</h2>
+  <div class="rob-comment">
+    <div class="label">Rob's comment</div>
+    "I don't believe that using the helm command in a kubernetes job is the pattern we want to use for deployment of helm charts. We should be creating argo apps below the instance set that deploy the helm charts. These apps should be conditioned on 5.3.1. Versions should be handled as well within this so that we deploy the correct charts at the correct version."
+  </div>
+  <div class="answer">
+    <div class="label">What was done ✅</div>
+    All K8s Jobs running <code>helm upgrade --install</code> were removed. Replaced with native ArgoCD <code>Application</code> objects using <code>spec.source.chart</code> + <code>spec.source.targetRevision</code> pointing at <code>https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm</code>. Chart versions are read dynamically from the <code>olm-utils-cm</code> ConfigMap — no hardcoded versions.
+  </div>
+
+  <h3>K8s Jobs removed (instance chart templates)</h3>
+  <table>
+    <tr><th>File</th><th>What was removed</th><th>Lines</th></tr>
+    <tr><td class="file">120-ibm-wml/templates/02-ibm-wml-cr.yaml</td><td class="removed">install-wml-helm Job (helm install redis + wml in shell script)</td><td class="removed">−110</td></tr>
+    <tr><td class="file">120-ibm-spark/templates/01-ibm-spark-cr.yaml</td><td class="removed">install-spark-helm Job</td><td class="removed">−78</td></tr>
+    <tr><td class="file">120-ibm-spss/templates/01-ibm-spss-cr.yaml</td><td class="removed">install-spss-helm Job</td><td class="removed">−120</td></tr>
+    <tr><td class="file">120-ibm-wsl/templates/01-ibm-wsl-cr.yaml</td><td class="removed">install-wsl-helm Job (opensearch + ccs + datarefinery + ws-runtimes + ws in one giant script)</td><td class="removed">−222</td></tr>
+    <tr><td class="file">110-ibm-cp4d/templates/02-ibm-cp4d_rbac.yaml</td><td class="removed">cpd-sa-helm ClusterRole + ClusterRoleBinding (only needed for Jobs)</td><td class="removed">−140</td></tr>
+  </table>
+
+  <h3>Native ArgoCD Helm Applications added (root app templates)</h3>
+  <table>
+    <tr><th>File</th><th>Apps added for CPD ≥ 5.3.1</th><th>Lines</th></tr>
+    <tr><td class="file">120-ibm-wml-app.yaml</td><td class="added">wml-redis-cluster, wml-redis, wml-cluster, wml (waves 119–122) + wml-post-verify AVP (wave 123)</td><td class="added">+293</td></tr>
+    <tr><td class="file">120-ibm-wsl-app.yaml</td><td class="added">opensearch-cluster, opensearch, ccs-cluster, ccs, datarefinery-cluster, datarefinery, ws-runtimes-cluster, ws-runtimes (waves 115–122) + wsl-cluster (119) + wsl (124) + wsl-post-verify AVP (126)</td><td class="added">+560</td></tr>
+    <tr><td class="file">120-ibm-spark-app.yaml</td><td class="added">spark-cluster, spark (waves 119–120)</td><td class="added">+119</td></tr>
+    <tr><td class="file">120-ibm-spss-app.yaml</td><td class="added">spss-canvasbase-cluster, spss-canvasbase, spss-cluster, spss (waves 119–125)</td><td class="added">+210</td></tr>
+    <tr><td class="file">120-ibm-cognos-analytics-app.yaml</td><td class="added">cognos-cluster, cognos (waves 119–120) + ignoreDifferences for operator-mutated fields</td><td class="added">+137</td></tr>
+  </table>
+
+  <h3>Version handling — read from olm-utils-cm, not hardcoded</h3>
+  <table>
+    <tr><th>Variable</th><th>Source</th><th>Fallback</th></tr>
+    <tr><td><code>$wmlVersion</code></td><td><code>olm-utils-cm → release_components_meta["wml"].case_version</code></td><td><code>"12.1.0"</code></td></tr>
+    <tr><td><code>$wsVersion</code></td><td><code>olm-utils-cm → release_components_meta["ws"].case_version</code></td><td><code>"12.1.0"</code></td></tr>
+    <tr><td><code>$sparkVersion</code></td><td><code>olm-utils-cm → release_components_meta["analyticsengine"].case_version</code></td><td><code>"12.1.0"</code></td></tr>
+    <tr><td><code>$spssVersion</code></td><td><code>olm-utils-cm → release_components_meta["spss-modeler"].case_version</code></td><td><code>"12.1.0"</code></td></tr>
+    <tr><td><code>$cognosVersion</code></td><td><code>olm-utils-cm → release_components_meta["cognos-analytics"].case_version</code></td><td><code>"29.1.0"</code></td></tr>
+  </table>
+
+  <hr class="section-divider" />
+
+  <h2>Rob Comment #3 — Gate entire directory at root app level</h2>
+  <div class="rob-comment">
+    <div class="label">Rob's comment</div>
+    "The others CPD deployment should be excluded when version &lt; 5.3.1 (i.e. the whole directory so these conditions need to move to root applications)."
+  </div>
+  <div class="answer">
+    <div class="label">What was done ✅</div>
+    The <code>{{- $is531 }}</code> version gate sits at the top of every root app template. For CPD &lt; 5.3.1, the entire block of native Helm Applications is skipped — only the old OLM CR templates render. Instance chart CR templates still contain the OLM path for backward compatibility but render nothing for ≥ 5.3.1.
+  </div>
+  <table>
+    <tr><th>Template section</th><th>Rendered when</th></tr>
+    <tr><td><code>{{- if not $is531 }} ... OLM AVP app ...</code></td><td>CPD &lt; 5.3.1 only — original OLM Subscription path</td></tr>
+    <tr><td><code>{{- if $is531 }} ... native Helm Apps ...</code></td><td>CPD ≥ 5.3.1 only — new native ArgoCD Helm path</td></tr>
+  </table>
+
+  <hr class="section-divider" />
+
+  <h2>Wave Ordering Bugs Found &amp; Fixed During Testing</h2>
+  <div class="wave-diagram">
+    <div style="font-size:11px;font-weight:700;color:#57606a;margin-bottom:10px">FINAL WAVE ORDER (CPD ≥ 5.3.1)</div>
+    <div class="wave-row"><div class="wave-num">115–118</div><div class="wave-bar w-cluster">WSL deps cluster-scoped (opensearch, ccs, datarefinery, ws-runtimes)</div></div>
+    <div class="wave-row"><div class="wave-num">119</div><div class="wave-bar w-cluster">wsl-cluster (ws CRDs) · wml-redis-cluster · spark-cluster · spss-canvasbase-cluster</div></div>
+    <div class="wave-row"><div class="wave-num">120</div><div class="wave-bar w-ns">WSL deps namespace-scoped · wml-redis · spark · cognos-cluster</div></div>
+    <div class="wave-row"><div class="wave-num">121</div><div class="wave-bar w-ns">spss-canvasbase · wml-cluster · cognos</div></div>
+    <div class="wave-row"><div class="wave-num">122</div><div class="wave-bar w-ns">spss-cluster · wml (WmlBase CR) · wsl-ws-runtimes</div></div>
+    <div class="wave-row"><div class="wave-num">123</div><div class="wave-bar w-post">wml-post-verify → writes wml-cp4d to AWS SM</div></div>
+    <div class="wave-row"><div class="wave-num">124</div><div class="wave-bar w-ns">wsl (WS operator + WS CR)</div></div>
+    <div class="wave-row"><div class="wave-num">125</div><div class="wave-bar w-spss">spss (Spss CR — MUST be after WSL operator at 124)</div></div>
+    <div class="wave-row"><div class="wave-num">126</div><div class="wave-bar w-post">wsl-post-verify → writes wsl-cp4d to AWS SM</div></div>
+  </div>
+  <table>
+    <tr><th>Bug</th><th>Symptom</th><th>Fix</th><th>Commit</th></tr>
+    <tr><td>ws-cluster-scoped at wave 123</td><td>SPSS at wave 122 failed: <code>ws.cpd.ibm.com CRD not found</code></td><td>Moved to wave 119</td><td><span class="commit">4ece441a</span></td></tr>
+    <tr><td>SPSS at wave 122</td><td>SPSS operator tries to create WS CR but WSL operator only starts at wave 124</td><td>Moved SPSS to wave 125</td><td><span class="commit">d3b138d3</span></td></tr>
+    <tr><td>No WSL post-verify for ≥ 5.3.1</td><td><code>inst02-watsonstudio-system</code> AVP failed: <code>wsl-cp4d</code> secret missing in AWS SM</td><td>Added wsl-post-verify AVP app at wave 126</td><td><span class="commit">63f87548</span></td></tr>
+  </table>
+
+  <hr class="section-divider" />
+
+  <h2>New: Post-Verify Jobs for CPD ≥ 5.3.1</h2>
+  <table>
+    <tr><th>App</th><th>Job prefix</th><th>Writes to AWS SM</th></tr>
+    <tr><td><code>wml-post-verify.&lt;cluster&gt;.&lt;inst&gt;</code></td><td><code>cpd-wml-post-verify</code></td><td><code>&lt;account&gt;/&lt;cluster&gt;/&lt;inst&gt;/wml-cp4d</code> → username, password, url</td></tr>
+    <tr><td><code>wsl-post-verify.&lt;cluster&gt;.&lt;inst&gt;</code></td><td><code>cpd-wsl-post-verify</code></td><td><code>&lt;account&gt;/&lt;cluster&gt;/&lt;inst&gt;/wsl-cp4d</code> → username, password, url</td></tr>
+  </table>
+
+  <hr class="section-divider" />
+
+  <h2>Validation</h2>
+  <table>
+    <tr><th>Check</th><th>Result</th></tr>
+    <tr><td><code>helm-lint.sh -p root-applications/ibm-mas-instance-root</code></td><td><span class="badge badge-done">1 chart linted, 0 failed</span></td></tr>
+    <tr><td><code>verify-job-definitions.sh .</code></td><td><span class="badge badge-done">Passed</span></td></tr>
+    <tr><td>noble8 inst02 (dirty cluster)</td><td><span class="badge badge-done">All CPD apps Synced/Healthy</span></td></tr>
+    <tr><td>noble10 inst02 (clean cluster)</td><td><span class="badge badge-done">WML ✅ WSL ✅ Spark ✅ SPSS ✅ Cognos ✅</span></td></tr>
+    <tr><td>ArgoCD controller memory (was OOMKilling at 2Gi)</td><td><span class="badge badge-done">Patched to 6Gi — stable</span></td></tr>
+  </table>
+
+  <footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>

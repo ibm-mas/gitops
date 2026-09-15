@@ -1,0 +1,347 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cluster-Scoped Implementation — Exact Code Changes</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.6; background: #fff; color: #1f2328; }
+  .container { max-width: 760px; margin: 0 auto; padding: 32px 24px; }
+  h1 { font-size: 21px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: #57606a; font-size: 13px; margin-bottom: 28px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 32px 0 8px; padding-bottom: 6px; border-bottom: 1px solid #e5e7eb; }
+  h3 { font-size: 13px; font-weight: 700; margin: 18px 0 6px; color: #57606a; text-transform: uppercase; letter-spacing: 0.4px; }
+  p { margin-bottom: 10px; font-size: 13px; }
+  code { font-family: "SF Mono", Consolas, monospace; font-size: 11px; background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 3px; padding: 1px 5px; }
+  .file-path { font-family: "SF Mono", Consolas, monospace; font-size: 12px; font-weight: 700; color: #0550ae; background: #ddf4ff; border: 1px solid #b6e3ff; border-radius: 4px; padding: 3px 8px; display: inline-block; margin-bottom: 8px; }
+  .diff-block { border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; margin: 10px 0 20px; font-family: "SF Mono", Consolas, monospace; font-size: 12px; line-height: 1.5; }
+  .diff-header { background: #f7f8fa; padding: 6px 12px; font-size: 11px; font-weight: 700; color: #57606a; border-bottom: 1px solid #e5e7eb; }
+  .diff-line { padding: 1px 12px; white-space: pre; }
+  .diff-removed { background: #ffebe9; color: #82071e; }
+  .diff-removed::before { content: "- "; color: #cf222e; }
+  .diff-added { background: #dafbe1; color: #116329; }
+  .diff-added::before { content: "+ "; color: #2da44e; }
+  .diff-context { color: #57606a; }
+  .diff-context::before { content: "  "; }
+  .annotation { background: #fff8c5; border-left: 3px solid #d4a72c; border-radius: 0 4px 4px 0; padding: 8px 12px; margin: 6px 0; font-size: 12px; }
+  .annotation strong { color: #9a6700; }
+  .why-box { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 8px 0 16px; font-size: 13px; }
+  .why-box .label { font-size: 11px; font-weight: 700; color: #57606a; text-transform: uppercase; margin-bottom: 4px; }
+  .removed-box { background: #ffebe9; border: 1px solid #ffcfc9; border-radius: 6px; padding: 12px 16px; margin: 8px 0 10px; font-size: 13px; }
+  .removed-box .label { font-size: 11px; font-weight: 700; color: #cf222e; text-transform: uppercase; margin-bottom: 4px; }
+  .added-box { background: #dafbe1; border: 1px solid #aceebb; border-radius: 6px; padding: 12px 16px; margin: 8px 0 10px; font-size: 13px; }
+  .added-box .label { font-size: 11px; font-weight: 700; color: #1a7f37; text-transform: uppercase; margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 12px; }
+  th { background: #f7f8fa; text-align: left; padding: 7px 10px; border: 1px solid #e5e7eb; font-weight: 600; color: #57606a; }
+  td { padding: 7px 10px; border: 1px solid #e5e7eb; vertical-align: top; }
+  .hr { border: none; border-top: 1px solid #e5e7eb; margin: 28px 0; }
+  .flow { display: flex; gap: 0; align-items: stretch; margin: 14px 0; font-size: 12px; }
+  .flow-box { border: 1px solid #e5e7eb; border-radius: 4px; padding: 10px 14px; flex: 1; }
+  .flow-arrow { display: flex; align-items: center; padding: 0 10px; color: #57606a; font-size: 18px; }
+  .flow-old { background: #ffebe9; border-color: #ffcfc9; }
+  .flow-new { background: #dafbe1; border-color: #aceebb; }
+  .flow-box .title { font-weight: 700; font-size: 11px; text-transform: uppercase; margin-bottom: 6px; }
+  .flow-old .title { color: #cf222e; }
+  .flow-new .title { color: #1a7f37; }
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Cluster-Scoped Implementation — Exact Code Changes</h1>
+<div class="subtitle">Rob's Comment #1: "We should not be using cluster-scoped deploys for this. The resources created will then become managed by multiple deploys."  ·  Branch: <code>MASCORE-15507</code></div>
+
+
+<h2>The Problem (Before)</h2>
+<p>The old approach ran <code>helm template ... | oc apply -f -</code> inside a K8s Job pod. This applied CRDs and ClusterRoles with <strong>no owner reference</strong>. Any instance deploying the same chart would overwrite those resources, and ArgoCD had no record of who owned them.</p>
+
+<div class="flow">
+  <div class="flow-box flow-old">
+    <div class="title">Old approach (inside K8s Job)</div>
+    1. Job pod starts<br />
+    2. <code>helm repo add ibm-charts ...</code><br />
+    3. <code>helm template wml-cluster-scoped | oc apply -f -</code><br />
+    4. CRDs/ClusterRoles applied — <strong>no owner, no SSA manager</strong><br />
+    5. <code>helm upgrade --install wml ...</code><br />
+    6. Job completes and is deleted
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box flow-new">
+    <div class="title">New approach (native ArgoCD App)</div>
+    1. ArgoCD renders <code>wml-cluster.noble10.inst02</code> Application<br />
+    2. ArgoCD runs <code>helm template wml-cluster-scoped</code> internally<br />
+    3. Resources applied via SSA with field manager = ArgoCD app name<br />
+    4. Ownership tracked forever — ArgoCD diffs on every sync<br />
+    5. Second instance gets its own app: <code>wml-cluster.noble10.inst02b</code><br />
+    6. SSA manager prevents conflicts
+  </div>
+</div>
+
+<hr class="hr" />
+
+
+<h2>File 1 — Removed: cpd-sa ClusterRole &amp; ClusterRoleBinding</h2>
+<div class="file-path">instance-applications/110-ibm-cp4d/templates/02-ibm-cp4d_rbac.yaml</div>
+
+<div class="removed-box">
+  <div class="label">Why this was removed</div>
+  The <code>cpd-sa-helm-cluster-role</code> was a massive ClusterRole created specifically to give the K8s Job's service account (<code>cpd-sa</code>) permission to apply CRDs and ClusterRoles via <code>helm template | oc apply</code>. Once the K8s Job is gone, this ClusterRole has no purpose. ArgoCD uses its own service account with cluster-admin permissions — no extra RBAC needed.
+</div>
+
+<div class="diff-block">
+  <div class="diff-header">02-ibm-cp4d_rbac.yaml — lines 1527–1669 (removed)</div>
+  <div class="diff-line diff-removed">{{- if not (lt (semver "5.3.1" | (semver (.Values.cpd_product_version ...).Compare) 0) }}</div>
+  <div class="diff-line diff-removed">kind: ClusterRole</div>
+  <div class="diff-line diff-removed">apiVersion: rbac.authorization.k8s.io/v1</div>
+  <div class="diff-line diff-removed">metadata:</div>
+  <div class="diff-line diff-removed">  name: "cpd-sa-helm-cluster-role-{{ .Values.instance_id }}"</div>
+  <div class="diff-line diff-removed">rules:</div>
+  <div class="diff-line diff-removed">  # CRD management (create, update, patch, delete)</div>
+  <div class="diff-line diff-removed">  - verbs: [get, list, create, update, patch, delete]</div>
+  <div class="diff-line diff-removed">    apiGroups: [apiextensions.k8s.io]</div>
+  <div class="diff-line diff-removed">    resources: [customresourcedefinitions]</div>
+  <div class="diff-line diff-removed">  # ClusterRole/Binding with escalate</div>
+  <div class="diff-line diff-removed">  - verbs: [get, list, create, update, patch, delete, bind, escalate]</div>
+  <div class="diff-line diff-removed">    apiGroups: [rbac.authorization.k8s.io]</div>
+  <div class="diff-line diff-removed">    resources: [clusterroles, clusterrolebindings]</div>
+  <div class="diff-line diff-removed">  # ... 60 more lines of rules ...</div>
+  <div class="diff-line diff-removed">---</div>
+  <div class="diff-line diff-removed">kind: ClusterRoleBinding</div>
+  <div class="diff-line diff-removed">metadata:</div>
+  <div class="diff-line diff-removed">  name: "cpd-sa-helm-cluster-rb-{{ .Values.instance_id }}"</div>
+  <div class="diff-line diff-removed">subjects:</div>
+  <div class="diff-line diff-removed">  - kind: ServiceAccount</div>
+  <div class="diff-line diff-removed">    name: cpd-sa</div>
+  <div class="diff-line diff-removed">    namespace: "{{ .Values.cpd_operators_namespace }}"</div>
+  <div class="diff-line diff-removed">{{- end }}</div>
+</div>
+
+<div class="annotation"><strong>Result:</strong> 140 lines deleted. No more privileged <code>cpd-sa</code> ClusterRole. Security posture improved — least privilege.</div>
+
+<hr class="hr" />
+
+
+<h2>File 2 — WML: Job removed, 4 ArgoCD Apps added</h2>
+<div class="file-path">instance-applications/120-ibm-wml/templates/02-ibm-wml-cr.yaml  (Job removed)</div>
+<div class="file-path">root-applications/ibm-mas-instance-root/templates/120-ibm-wml-app.yaml  (Apps added)</div>
+
+<h3>What was removed from 02-ibm-wml-cr.yaml</h3>
+<div class="removed-box">
+  <div class="label">Removed — lines 26–136 (the entire ≥5.3.1 else block)</div>
+  A K8s <code>Job</code> (kind: batch/v1) that ran a shell script inside a <code>quay.io/ibmmas/cli</code> pod. The script did:
+  <ol style="margin:6px 0 0 18px">
+    <li><code>helm repo add ibm-charts ...</code></li>
+    <li><code>helm template ibm-redis-cp-cluster-scoped | oc apply -f -</code> (cluster-scoped, no owner)</li>
+    <li>While loop polling CRD establishment (manual, fragile)</li>
+    <li><code>helm upgrade --install ibm-redis-cp ...</code></li>
+    <li><code>helm template wml-cluster-scoped | oc apply -f -</code> (cluster-scoped, no owner)</li>
+    <li>While loop polling CRD again</li>
+    <li><code>helm upgrade --install wml ... --wait --timeout 60m</code></li>
+  </ol>
+</div>
+
+<div class="diff-block">
+  <div class="diff-header">02-ibm-wml-cr.yaml — the else block that was removed</div>
+  <div class="diff-line diff-context">{{- if lt (semver "5.3.1" ...) }}   ← OLM path kept</div>
+  <div class="diff-line diff-context">... WmlBase CR for &lt; 5.3.1 ...</div>
+  <div class="diff-line diff-removed">{{- else }}</div>
+  <div class="diff-line diff-removed">apiVersion: batch/v1</div>
+  <div class="diff-line diff-removed">kind: Job</div>
+  <div class="diff-line diff-removed">metadata:</div>
+  <div class="diff-line diff-removed">  name: install-wml-helm-&lt;hash&gt;</div>
+  <div class="diff-line diff-removed">  annotations:</div>
+  <div class="diff-line diff-removed">    argocd.argoproj.io/hook: Sync</div>
+  <div class="diff-line diff-removed">    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed</div>
+  <div class="diff-line diff-removed">spec:</div>
+  <div class="diff-line diff-removed">  template:</div>
+  <div class="diff-line diff-removed">    spec:</div>
+  <div class="diff-line diff-removed">      serviceAccountName: cpd-sa  ← needed the ClusterRole above</div>
+  <div class="diff-line diff-removed">      containers:</div>
+  <div class="diff-line diff-removed">        - name: helm-install</div>
+  <div class="diff-line diff-removed">          command: [/bin/sh, -c, |</div>
+  <div class="diff-line diff-removed">            helm repo add ibm-charts ...</div>
+  <div class="diff-line diff-removed">            helm template ibm-redis-cp-cluster-scoped | oc apply -f -</div>
+  <div class="diff-line diff-removed">            while true; do  ← manual CRD poll loop</div>
+  <div class="diff-line diff-removed">              STATUS=$(oc get crd rediscps.redis.ibm.com ...)</div>
+  <div class="diff-line diff-removed">            done</div>
+  <div class="diff-line diff-removed">            helm upgrade --install ibm-redis-cp ...</div>
+  <div class="diff-line diff-removed">            helm template wml-cluster-scoped | oc apply -f -</div>
+  <div class="diff-line diff-removed">            while true; do  ← another manual poll loop</div>
+  <div class="diff-line diff-removed">            done</div>
+  <div class="diff-line diff-removed">            helm upgrade --install wml ... --wait --timeout 60m]</div>
+  <div class="diff-line diff-context">{{- end }}</div>
+</div>
+
+<h3>What was added to 120-ibm-wml-app.yaml</h3>
+
+<div class="added-box">
+  <div class="label">Added — version gate + 4 native ArgoCD Helm Applications</div>
+  Instead of one Job doing everything sequentially, 4 separate ArgoCD <code>Application</code> objects are added — each deploying exactly one Helm chart with ArgoCD as the Helm engine. Wave ordering replaces the manual shell polling loops.
+</div>
+
+<div class="diff-block">
+  <div class="diff-header">120-ibm-wml-app.yaml — version gate added at top of $is531 block</div>
+  <div class="diff-added">{{- $olmUtils := lookup "v1" "ConfigMap" $cpd_instance_ns "olm-utils-cm" }}</div>
+  <div class="diff-added">{{- $meta := dict }}</div>
+  <div class="diff-added">{{- if $olmUtils }}</div>
+  <div class="diff-added">{{-   $meta = $olmUtils.data.release_components_meta | fromYaml }}</div>
+  <div class="diff-added">{{- end }}</div>
+  <div class="diff-added">{{- $redisVersion := .Values.ibm_wml.redis_chart_version | default ((index $meta "ibm_redis_cp" | default dict).case_version | default "1.3.1") }}</div>
+  <div class="diff-added">{{- $wmlVersion   := .Values.ibm_wml.wml_chart_version   | default ((index $meta "wml" | default dict).case_version | default "12.1.0") }}</div>
+</div>
+
+<div class="annotation"><strong>Why the lookup?</strong> CPD stores the correct chart version for each service in the <code>olm-utils-cm</code> ConfigMap (key: <code>release_components_meta</code>). Reading it at render time means the version auto-updates when CPD is upgraded — no hardcoded versions in git.</div>
+
+<div class="diff-block">
+  <div class="diff-header">App 1 of 4 — wml-redis-cluster (wave 119, cluster-scoped)</div>
+  <div class="diff-added">---</div>
+  <div class="diff-added"># Wave 119: ibm-redis-cp cluster-scoped (CRDs + ClusterRoles)</div>
+  <div class="diff-added">apiVersion: argoproj.io/v1alpha1</div>
+  <div class="diff-added">kind: Application</div>
+  <div class="diff-added">metadata:</div>
+  <div class="diff-added">  name: wml-redis-cluster.{{ .Values.cluster.id }}.{{ .Values.instance.id }}</div>
+  <div class="diff-added">  annotations:</div>
+  <div class="diff-added">    argocd.argoproj.io/sync-wave: "119"   ← fires BEFORE namespace-scoped</div>
+  <div class="diff-added">spec:</div>
+  <div class="diff-added">  destination:</div>
+  <div class="diff-added">    namespace: {{ $cpd_operators_ns }}     ← operators namespace</div>
+  <div class="diff-added">  source:</div>
+  <div class="diff-added">    chart: ibm-redis-cp-cluster-scoped     ← CLUSTER-SCOPED chart only</div>
+  <div class="diff-added">    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm</div>
+  <div class="diff-added">    targetRevision: "{{ $redisVersion }}"  ← from olm-utils-cm</div>
+  <div class="diff-added">    helm:</div>
+  <div class="diff-added">      valuesObject:</div>
+  <div class="diff-added">        global:</div>
+  <div class="diff-added">          licenseAccept: true</div>
+  <div class="diff-added">          operatorNamespace: {{ $cpd_operators_ns }}</div>
+  <div class="diff-added">          instanceNamespace: {{ $cpd_instance_ns }}</div>
+  <div class="diff-added">          imagePullSecret: ibm-entitlement-key</div>
+  <div class="diff-added">  syncPolicy:</div>
+  <div class="diff-added">    syncOptions:</div>
+  <div class="diff-added">      - SkipDryRunOnMissingResource=true   ← handles CRDs not yet existing</div>
+</div>
+
+<div class="diff-block">
+  <div class="diff-header">App 2 of 4 — wml-redis (wave 120, namespace-scoped operator)</div>
+  <div class="diff-added">---</div>
+  <div class="diff-added"># Wave 120: ibm-redis-cp namespace-scoped (operator)</div>
+  <div class="diff-added">apiVersion: argoproj.io/v1alpha1</div>
+  <div class="diff-added">kind: Application</div>
+  <div class="diff-added">metadata:</div>
+  <div class="diff-added">  name: wml-redis.{{ .Values.cluster.id }}.{{ .Values.instance.id }}</div>
+  <div class="diff-added">  annotations:</div>
+  <div class="diff-added">    argocd.argoproj.io/sync-wave: "120"   ← fires AFTER cluster-scoped at 119</div>
+  <div class="diff-added">spec:</div>
+  <div class="diff-added">  source:</div>
+  <div class="diff-added">    chart: ibm-redis-cp                    ← NAMESPACE-SCOPED chart</div>
+  <div class="diff-added">    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm</div>
+  <div class="diff-added">    targetRevision: "{{ $redisVersion }}"</div>
+</div>
+
+<div class="diff-block">
+  <div class="diff-header">App 3 of 4 — wml-cluster (wave 121, cluster-scoped WML CRDs)</div>
+  <div class="diff-added">---</div>
+  <div class="diff-added"># Wave 121: WML cluster-scoped (CRDs + ClusterRoles)</div>
+  <div class="diff-added">apiVersion: argoproj.io/v1alpha1</div>
+  <div class="diff-added">kind: Application</div>
+  <div class="diff-added">metadata:</div>
+  <div class="diff-added">  name: wml-cluster.{{ .Values.cluster.id }}.{{ .Values.instance.id }}</div>
+  <div class="diff-added">  annotations:</div>
+  <div class="diff-added">    argocd.argoproj.io/sync-wave: "121"</div>
+  <div class="diff-added">  source:</div>
+  <div class="diff-added">    chart: wml-cluster-scoped</div>
+  <div class="diff-added">    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm</div>
+  <div class="diff-added">    targetRevision: "{{ $wmlVersion }}"</div>
+</div>
+
+<div class="diff-block">
+  <div class="diff-header">App 4 of 4 — wml (wave 122, namespace-scoped operator + WmlBase CR)</div>
+  <div class="diff-added">---</div>
+  <div class="diff-added"># Wave 122: WML namespace-scoped (operator + WmlBase CR)</div>
+  <div class="diff-added">apiVersion: argoproj.io/v1alpha1</div>
+  <div class="diff-added">kind: Application</div>
+  <div class="diff-added">metadata:</div>
+  <div class="diff-added">  name: wml.{{ .Values.cluster.id }}.{{ .Values.instance.id }}</div>
+  <div class="diff-added">  annotations:</div>
+  <div class="diff-added">    argocd.argoproj.io/sync-wave: "122"   ← fires AFTER wml-cluster at 121</div>
+  <div class="diff-added">spec:</div>
+  <div class="diff-added">  destination:</div>
+  <div class="diff-added">    namespace: {{ $cpd_instance_ns }}      ← INSTANCE namespace (not operators)</div>
+  <div class="diff-added">  source:</div>
+  <div class="diff-added">    chart: wml                             ← full operator + WmlBase CR</div>
+  <div class="diff-added">    helm:</div>
+  <div class="diff-added">      valuesObject:</div>
+  <div class="diff-added">        wml:</div>
+  <div class="diff-added">          scaleConfig: {{ .Values.ibm_wml.cpd_service_scale_config }}</div>
+</div>
+
+<hr class="hr" />
+
+
+<h2>Same Pattern Applied to All 4 Other Services</h2>
+
+<table>
+  <tr>
+    <th>Service</th>
+    <th>Job removed from</th>
+    <th>Apps added to root template</th>
+    <th>Cluster-scoped charts</th>
+    <th>Namespace-scoped charts</th>
+  </tr>
+  <tr>
+    <td><strong>Spark</strong></td>
+    <td><code>120-ibm-spark/templates/01-ibm-spark-cr.yaml</code><br />−78 lines</td>
+    <td><code>120-ibm-spark-app.yaml</code></td>
+    <td><code>analyticsengine-cluster-scoped</code> (wave 119)</td>
+    <td><code>analyticsengine</code> (wave 120)</td>
+  </tr>
+  <tr>
+    <td><strong>SPSS</strong></td>
+    <td><code>120-ibm-spss/templates/01-ibm-spss-cr.yaml</code><br />−120 lines</td>
+    <td><code>120-ibm-spss-app.yaml</code></td>
+    <td><code>canvasbase-cluster-scoped</code> (wave 119)<br /><code>spss-cluster-scoped</code> (wave 121)</td>
+    <td><code>canvasbase</code> (wave 120)<br /><code>spss</code> (wave 125 — after WSL)</td>
+  </tr>
+  <tr>
+    <td><strong>WSL</strong></td>
+    <td><code>120-ibm-wsl/templates/01-ibm-wsl-cr.yaml</code><br />−222 lines</td>
+    <td><code>120-ibm-wsl-app.yaml</code></td>
+    <td><code>opencontent-opensearch-cluster-scoped</code> (115)<br /><code>ccs-cluster-scoped</code> (117)<br /><code>datarefinery-cluster-scoped</code> (118)<br /><code>ws-runtimes-cluster-scoped</code> (119 via wsl-ws-runtimes-cluster)<br /><code>ws-cluster-scoped</code> (119 via wsl-cluster)</td>
+    <td><code>opencontent-opensearch</code> (116)<br /><code>ccs</code> (120)<br /><code>datarefinery</code> (120)<br /><code>ws-runtimes</code> (122)<br /><code>ws</code> (124)</td>
+  </tr>
+  <tr>
+    <td><strong>Cognos</strong></td>
+    <td><code>01-ibm-cognos-analytics-cr.yaml</code><br />−80 lines (Job block)</td>
+    <td><code>120-ibm-cognos-analytics-app.yaml</code></td>
+    <td><code>ca-cluster-scoped</code> (wave 119)</td>
+    <td><code>ca</code> (wave 120)</td>
+  </tr>
+</table>
+
+<hr class="hr" />
+
+
+<h2>Why Server-Side Apply Solves the Ownership Conflict</h2>
+
+<div class="why-box">
+  <div class="label">The key difference</div>
+  <p>When ArgoCD applies a cluster-scoped resource (e.g. <code>CustomResourceDefinition/wml.cpd.ibm.com</code>) via SSA, it sets a <strong>field manager</strong> on every field it owns. The field manager name is the ArgoCD Application name — e.g. <code>wml-cluster.noble10.inst02</code>.</p>
+  <p>If a second instance (<code>inst02b</code>) deploys <code>wml-cluster.noble10.inst02b</code>, it gets its own field manager on the same CRD object. The fields they both set are identical (it's the same chart), so SSA merges them cleanly — no conflict, no overwrite, no data loss.</p>
+  <p>With the old <code>helm template | oc apply -f -</code> approach, the kubectl apply used the <code>last-applied-configuration</code> annotation — the second instance would simply overwrite whatever the first had set, potentially stripping fields the first instance had added.</p>
+</div>
+
+<table>
+  <tr><th></th><th>Old: helm template | oc apply</th><th>New: ArgoCD SSA</th></tr>
+  <tr><td>CRD owner</td><td>None — annotation-based</td><td>SSA field manager per ArgoCD app</td></tr>
+  <tr><td>Multi-instance conflict</td><td>Second install overwrites first</td><td>Managed separately, no conflict</td></tr>
+  <tr><td>Drift detection</td><td>None after Job completes</td><td>Every ArgoCD sync cycle</td></tr>
+  <tr><td>Version upgrade</td><td>Manual re-run of Job</td><td>Auto-sync when <code>targetRevision</code> changes</td></tr>
+  <tr><td>Permissions needed</td><td>cpd-sa ClusterRole (broad)</td><td>ArgoCD SA (already cluster-admin)</td></tr>
+</table>
+
+<footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>

@@ -113,6 +113,25 @@ spec:
                 echo "App CR not found - already removed by operator"
               fi
 
+              # Delete Subscription - stops OLM from re-installing the operator.
+              # Must happen after CR deletion so the operator is still alive to
+              # process its finalizer, and before CSV deletion so OLM can react.
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete ibm-mas-${MAS_APP_ID} Subscription in ${CR_NAMESPACE}"
+              set +e
+              SUB_NAME=$(oc get subscription -n ${CR_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep "^ibm-mas-${MAS_APP_ID}$")
+              set -e
+              if [[ -z "${SUB_NAME}" ]]; then
+                echo "No ibm-mas-${MAS_APP_ID} Subscription found - skipping"
+              else
+                echo "Deleting Subscription: ${SUB_NAME}"
+                oc delete subscription "${SUB_NAME}" -n ${CR_NAMESPACE} \
+                  --timeout=60s --wait=true 2>/dev/null || true
+                echo "Subscription deleted"
+              fi
+
               # Always delete the CSV - OLM does not cascade-delete it when the
               # Subscription is removed, so the operator pod would otherwise remain
               # running and prevent the namespace from terminating.

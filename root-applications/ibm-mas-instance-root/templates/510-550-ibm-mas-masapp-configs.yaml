@@ -26,31 +26,31 @@ metadata:
   namespace: {{ $.Values.argo.namespace }}
   annotations:
     {{- if eq $value.mas_app_id "assist" }}
-    argocd.argoproj.io/sync-wave: "515"
+    argocd.argoproj.io/sync-wave: "520"
     {{- else if eq $value.mas_app_id "facilities" }}
-    argocd.argoproj.io/sync-wave: "510"
+    argocd.argoproj.io/sync-wave: "515"
     {{- else if eq $value.mas_app_id "iot" }}
     {{- if $iot_is_v92_or_higher }}
-    argocd.argoproj.io/sync-wave: "530"
+    argocd.argoproj.io/sync-wave: "535"
     {{- else }}
-    argocd.argoproj.io/sync-wave: "515"
+    argocd.argoproj.io/sync-wave: "525"
     {{- end }}
     {{- else if eq $value.mas_app_id "manage" }}
-    argocd.argoproj.io/sync-wave: "510"
+    argocd.argoproj.io/sync-wave: "505"
     {{- else if eq $value.mas_app_id "visualinspection" }}
-    argocd.argoproj.io/sync-wave: "515"
+    argocd.argoproj.io/sync-wave: "520"
     {{- else if eq $value.mas_app_id "health" }}
-    argocd.argoproj.io/sync-wave: "530"
+    argocd.argoproj.io/sync-wave: "535"
     {{- else if eq $value.mas_app_id "monitor" }}
     {{- if $monitor_is_v92_or_higher }}
-    argocd.argoproj.io/sync-wave: "515"
+    argocd.argoproj.io/sync-wave: "525"
     {{- else }}
-    argocd.argoproj.io/sync-wave: "530"
+    argocd.argoproj.io/sync-wave: "535"
     {{- end }}
     {{- else if eq $value.mas_app_id "optimizer" }}
-    argocd.argoproj.io/sync-wave: "530"
+    argocd.argoproj.io/sync-wave: "535"
     {{- else if eq $value.mas_app_id "predict" }}
-    argocd.argoproj.io/sync-wave: "550"
+    argocd.argoproj.io/sync-wave: "555"
     {{- end }}
     {{- if and $.Values.notifications $.Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ $.Values.notifications.slack_channel_id }}
@@ -58,6 +58,8 @@ metadata:
     {{- end }}
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+    - post-delete-finalizer.argocd.argoproj.io
+    - post-delete-finalizer.argocd.argoproj.io/cleanup
   labels:
     environment: '{{ $.Values.account.id }}'
     region: '{{ $.Values.region.id }}'
@@ -88,6 +90,7 @@ spec:
             mas_app_ws_apiversion: "{{ $value.mas_app_ws_apiversion }}"
             mas_app_ws_kind: "{{ $value.mas_app_ws_kind }}"
             mas_appws_spec: {{ $value.mas_appws_spec | toYaml | nindent 14 }}
+            use_postdelete_hooks: {{ $.Values.use_postdelete_hooks | default true }}
             {{- if (eq $value.mas_app_id "manage") }}
             mas_app_channel: "{{ $.Values.ibm_suite_app_manage_install.mas_app_channel }}"
             {{- end }}
@@ -176,9 +179,12 @@ spec:
                   {{- end }}
                 {{- end }}
               {{- else }}
+
+
             debug_mas_rds_databases: "EMPTY - No RDS databases configured for manage"
               {{- end }}
             {{- end }}
+            
 
             {{- if (eq $value.mas_app_id "facilities") }}
               {{- if not (empty $.Values.ibm_dbs_rds_databases) }}
@@ -196,6 +202,9 @@ spec:
                   {{- end }}
                 {{- end }}
               {{- end }}
+            {{- if $value.tririga_db_schema }}
+            tririga_db_schema: {{ $value.tririga_db_schema }}
+            {{- end }}
             {{- end }}
 
             {{- if (eq $value.mas_app_id "iot") }}

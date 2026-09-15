@@ -1,0 +1,117 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+PostDelete job: force-deletes the MAS App Workspace CR (e.g. VisualInspectionAppWorkspace,
+ManageWorkspace, MonitorWorkspace, etc.) after the ArgoCD Application is removed.
+Patches out operator-owned finalizers first so deletion succeeds even if the app operator
+namespace is already gone.
+
+Depends on SA/Role/NetworkPolicy created by ibm-mas-suite chart (01-postdelete-crs-resources.yaml).
+
+Use the build/bin/set-cli-image-digest.sh script to update the image digest below.
+*/}}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+
+{{- $core_ns   := printf "mas-%s-core" .Values.instance_id }}
+{{- $app_ns    := .Values.mas_app_namespace }}
+{{- $cr_name   := printf "%s-%s" .Values.instance_id .Values.mas_workspace_id }}
+{{- $cr_kind   := .Values.mas_app_ws_kind }}
+{{- $cr_api_v  := .Values.mas_app_ws_apiversion }}
+{{- $name_hash := $cr_name | sha256sum | trunc 6 }}
+{{- $job_name  := printf "postdelete-cr-job-ws-%s-%s" ($cr_name | trunc 32) $name_hash }}
+
+{{ $sa_name   := "postdelete-delete-cr-sa" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CR_NAMESPACE
+              value: {{ $app_ns }}
+            - name: CR_NAME
+              value: {{ $cr_name }}
+            - name: CR_API_VERSION
+              value: {{ $cr_api_v }}
+            - name: CR_KIND
+              value: {{ $cr_kind }}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} in ${CR_NAMESPACE}"
+
+              set +e
+              RESOURCE_NAME=$(oc get ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
+                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -z "${RESOURCE_NAME}" ]]; then
+                echo "Resource not found - nothing to do"
+                exit 0
+              fi
+
+              # Force-clear finalizers so delete completes even if the operator is gone
+              echo "Patching out finalizers..."
+              set +e
+              oc patch ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} -n ${CR_NAMESPACE} \
+                --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
+              set -e
+
+              echo "Deleting resource..."
+              set +e
+              oc delete ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
+                -n ${CR_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
+              set -e
+
+              # Verify gone
+              set +e
+              RESOURCE_NAME=$(oc get ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
+                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -n "${RESOURCE_NAME}" ]]; then
+                echo "ERROR: resource still present after delete"
+                exit 1
+              fi
+              echo "Done"
+      volumes: []
+  backoffLimit: 4
+{{- end }}
+{{- end }}

@@ -1,0 +1,116 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+PostDelete job: force-deletes the Suite CR (core.mas.ibm.com/v1 Suite) after the ArgoCD
+Application is removed.
+
+The MAS core operator holds a finalizer on the Suite CR that orchestrates teardown of
+core components. If the operator is Degraded/Progressing at deprovisioning time, the
+finalizer will never be released automatically — this job patches it out so Kubernetes
+can complete deletion regardless of operator health state.
+
+The Suite CR lives in mas-<instance_id>-core — the same namespace as the SA and Role
+created in 01-postdelete-crs-resources.yaml. No ClusterRole is required.
+
+Use the build/bin/set-cli-image-digest.sh script to update the image digest below.
+*/}}
+{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+
+{{- $core_ns := printf "mas-%s-core" .Values.instance_id }}
+{{- $cr_name := .Values.instance_id }}
+{{- $job_name := printf "postdelete-suite-cr-%s" ($cr_name | trunc 48) }}
+
+{{ $sa_name   := "postdelete-delete-cr-sa" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CR_NAMESPACE
+              value: {{ $core_ns }}
+            - name: CR_NAME
+              value: {{ $cr_name }}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: Suite.core.mas.ibm.com/${CR_NAME} in ${CR_NAMESPACE}"
+
+              set +e
+              RESOURCE_NAME=$(oc get suite.core.mas.ibm.com/${CR_NAME} \
+                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -z "${RESOURCE_NAME}" ]]; then
+                echo "Suite CR not found — nothing to do"
+                exit 0
+              fi
+
+              echo "Current finalizers:"
+              oc get suite.core.mas.ibm.com/${CR_NAME} -n ${CR_NAMESPACE} \
+                -o=jsonpath="{.metadata.finalizers}" 2>/dev/null || true
+              echo ""
+
+              echo "Patching out finalizers..."
+              set +e
+              oc patch suite.core.mas.ibm.com/${CR_NAME} -n ${CR_NAMESPACE} \
+                --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
+              set -e
+
+              echo "Deleting Suite CR..."
+              set +e
+              oc delete suite.core.mas.ibm.com/${CR_NAME} \
+                -n ${CR_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
+              set -e
+
+              set +e
+              RESOURCE_NAME=$(oc get suite.core.mas.ibm.com/${CR_NAME} \
+                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -n "${RESOURCE_NAME}" ]]; then
+                echo "ERROR: Suite CR still present after delete attempt"
+                exit 1
+              fi
+              echo "Suite CR deleted successfully"
+      volumes: []
+  backoffLimit: 4
+{{- end }}
+{{- end }}

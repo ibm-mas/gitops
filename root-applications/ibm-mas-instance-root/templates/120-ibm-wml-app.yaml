@@ -3,6 +3,12 @@
 {{ $cpd_instance_ns := .Values.ibm_cp4d.cpd_instance_namespace }}
 {{ $cpd_version := .Values.ibm_cp4d.cpd_product_version | default "0.0.0" | toString }}
 {{ $is531 := not (lt (semver "5.3.1" | (semver $cpd_version).Compare) 0) }}
+{{- /*
+  For CPD >= 5.3.1, each instance must have a dedicated operator namespace to avoid
+  resource name collisions (IBM chart uses hardcoded names like ibm-cpd-wml-operator-serviceaccount).
+  We derive it from the instance ID so it is always unique per instance on the cluster.
+*/}}
+{{ $cpd_wml_operators_ns := ternary (printf "ibm-cpd-%s-operators" .Values.instance.id) $cpd_operators_ns $is531 }}
 {{- if not $is531 }}
 ---
 # CPD < 5.3.1 — OLM path
@@ -125,7 +131,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: {{ $cpd_operators_ns }}
+    namespace: {{ $cpd_wml_operators_ns }}
   source:
     chart: ibm-redis-cp-cluster-scoped
     repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
@@ -134,7 +140,7 @@ spec:
       valuesObject:
         global:
           licenseAccept: true
-          operatorNamespace: {{ $cpd_operators_ns }}
+          operatorNamespace: {{ $cpd_wml_operators_ns }}
           instanceNamespace: {{ $cpd_instance_ns }}
           imagePullSecret: ibm-entitlement-key
   syncPolicy:
@@ -168,7 +174,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: {{ $cpd_operators_ns }}
+    namespace: {{ $cpd_wml_operators_ns }}
   source:
     chart: ibm-redis-cp
     repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
@@ -177,7 +183,7 @@ spec:
       valuesObject:
         global:
           licenseAccept: true
-          operatorNamespace: {{ $cpd_operators_ns }}
+          operatorNamespace: {{ $cpd_wml_operators_ns }}
           instanceNamespace: {{ $cpd_instance_ns }}
           imagePullSecret: ibm-entitlement-key
   syncPolicy:
@@ -210,7 +216,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: {{ $cpd_operators_ns }}
+    namespace: {{ $cpd_wml_operators_ns }}
   source:
     chart: wml-cluster-scoped
     repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
@@ -220,7 +226,7 @@ spec:
         global:
           licenseAccept: true
           releaseVersion: {{ $cpd_version }}
-          operatorNamespace: {{ $cpd_operators_ns }}
+          operatorNamespace: {{ $cpd_wml_operators_ns }}
           instanceNamespace: {{ $cpd_instance_ns }}
           imagePullSecret: ibm-entitlement-key
   syncPolicy:
@@ -268,7 +274,7 @@ spec:
         global:
           licenseAccept: true
           releaseVersion: {{ $cpd_version }}
-          operatorNamespace: {{ $cpd_operators_ns }}
+          operatorNamespace: {{ $cpd_wml_operators_ns }}
           instanceNamespace: {{ $cpd_instance_ns }}
           fileStorageClass: {{ .Values.ibm_wml.cpd_service_storage_class }}
           blockStorageClass: {{ .Values.ibm_wml.cpd_service_block_storage_class }}
@@ -314,7 +320,7 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: {{ $cpd_operators_ns }}
+    namespace: {{ $cpd_wml_operators_ns }}
   source:
     repoURL: "{{ .Values.source.repo_url }}"
     path: instance-applications/120-ibm-wml
@@ -333,7 +339,7 @@ spec:
             application_admin_role: {{ .Values.application_admin_role }}
             sm_aws_access_key_id: "{{ .Values.sm.aws_access_key_id }}"
             sm_aws_secret_access_key: "{{ .Values.sm.aws_secret_access_key }}"
-            cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
+            cpd_operators_namespace: "{{ $cpd_wml_operators_ns }}"
             cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
             cpd_product_version: "{{ .Values.ibm_cp4d.cpd_product_version }}"
             cpd_service_storage_class: "{{ .Values.ibm_wml.cpd_service_storage_class }}"

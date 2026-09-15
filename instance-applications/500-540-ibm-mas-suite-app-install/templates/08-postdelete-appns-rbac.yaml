@@ -1,0 +1,58 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- $core_ns  := printf "mas-%s-core" .Values.instance_id }}
+{{- $app_ns   := .Values.mas_app_namespace }}
+
+{{ $role_name := "postdelete-delete-appws-cr-r" }}
+{{ $rb_name   := "postdelete-delete-appws-cr-rb" }}
+{{ $sa_name   := "postdelete-delete-cr-sa" }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $app_ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "131"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+    apiGroups:
+      - apps.mas.ibm.com
+    resources:
+      - visualinspectionapps
+      - visualinspectionappworkspaces
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $app_ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "132"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $core_ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+{{- end }}
+{{- end }}

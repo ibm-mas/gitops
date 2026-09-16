@@ -215,7 +215,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`120-ibm-wsl-app.yaml`](templates/120-ibm-wsl-app.yaml) | wsl | ✓ | | | 120 |
 | [`121-ibm-post-sync-job-cp4d-services.yaml`](templates/121-ibm-post-sync-job-cp4d-services.yaml) | postsyncjobs.cp4dservices | ✓ | | | 121 |
 | [`130-ibm-mas-suite-app.yaml`](templates/130-ibm-mas-suite-app.yaml) | suite | | | ✓ | 130 |
-| [`140-ibm-mas-suite-configs-app.yaml`](templates/140-ibm-mas-suite-configs-app.yaml) | mas_config_name | | ✓ | | 140 |
+| [`100-ibm-mas-suite-configs-app.yaml`](templates/140-ibm-mas-suite-configs-app.yaml) | mas_config_name | | ✓ | | 140 |
 | [`200-ibm-mas-workspaces.yaml`](templates/200-ibm-mas-workspaces.yaml) | workspace | | ✓ | | 200 |
 | [`500-ibm-mas-masapp-manage-install.yaml`](templates/500-ibm-mas-masapp-manage-install.yaml) | manage | | | ✓ | 500 |
 | [`505-ibm-mas-masapp-facilities-install.yaml`](templates/505-ibm-mas-masapp-facilities-install.yaml) | facilities | | | ✓ | 505 |

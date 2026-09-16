@@ -151,6 +151,17 @@ spec:
                 echo "CSV deleted"
               fi
 
+              # Clean up the postdelete RBAC objects in the app namespace.
+              # These carry helm.sh/resource-policy: keep so ArgoCD did not prune them.
+              # Now that all cleanup is complete they are safe to remove.
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: clean up postdelete RBAC in ${CR_NAMESPACE}"
+              oc delete role postdelete-delete-appws-cr-r \
+                -n ${CR_NAMESPACE} --ignore-not-found 2>/dev/null || true
+              oc delete rolebinding postdelete-delete-appws-cr-rb \
+                -n ${CR_NAMESPACE} --ignore-not-found 2>/dev/null || true
+              echo "RBAC cleanup done"
+
               echo "Done"
       volumes: []
   backoffLimit: 4

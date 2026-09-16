@@ -1,0 +1,206 @@
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "predelete-wait-configs-gone" }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_digest := "sha256:b6df7b173b131d7340087a1a5d7ed51ff16cef7fcac7291a269b2ad1937a61af" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a new hook resource to be created.
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
+*/}}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
+{{ $job_label   := "predelete-wait-configs-gone" }}
+{{ $sa_name     := "predelete-wait-configs-sa" }}
+{{ $cr_name     := "predelete-wait-configs-cr" }}
+{{ $crb_name    := printf "predelete-wait-configs-crb-%s" .Values.instance_id }}
+{{ $np_name     := "predelete-wait-configs-np" }}
+{{ $ns          := printf "mas-%s-core" .Values.instance_id }}
+
+{{- if .Values.application_admin_role }}
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the Kubernetes API server)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+# ClusterRole to read ArgoCD Application resources in the argocd namespace
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $cr_name }}-{{ .Values.instance_id }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - watch
+    apiGroups:
+      - "argoproj.io"
+    resources:
+      - applications
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $crb_name }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $cr_name }}-{{ .Values.instance_id }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ARGO_NAMESPACE
+              value: {{ .Values.argo_namespace | default "openshift-gitops" }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "PreDelete: waiting for all suite config Applications to be deleted"
+              echo "================================================================================"
+              echo
+              echo "ArgoCD namespace : ${ARGO_NAMESPACE}"
+              echo "Cluster ID       : ${CLUSTER_ID}"
+              echo "Instance ID      : ${INSTANCE_ID}"
+              echo
+
+              wait_period=0
+              while true; do
+                REMAINING=$(oc get applications.argoproj.io \
+                  -n "${ARGO_NAMESPACE}" \
+                  -l "cluster=${CLUSTER_ID},instance=${INSTANCE_ID}" \
+                  --no-headers 2>/dev/null | grep -v "^$" | wc -l || echo "0")
+
+                echo "Suite config Applications still present: ${REMAINING}"
+
+                if [ "${REMAINING}" -eq "0" ]; then
+                  echo "All suite config Applications have been deleted. Proceeding."
+                  exit 0
+                fi
+
+                wait_period=$(( wait_period + 30 ))
+                if [ "${wait_period}" -gt 3600 ]; then
+                  echo "Timed out after 60 minutes waiting for suite config Applications to be deleted."
+                  exit 1
+                fi
+
+                echo "Waiting 30 seconds before next check..."
+                sleep 30
+              done
+  backoffLimit: 2
+
+{{- end }}

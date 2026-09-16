@@ -59,7 +59,7 @@ are required here.
 
 
 
-{{- $ns := printf "mas-%s-%s-sls" (.Values.ibm_customer_number | lower) .Values.subscription_id }}
+{{- $ns := printf "mas-%s-%s-sls" .Values.ibm_customer_number .Values.subscription_id }}
 
 {{- $aws_secret := "aws"}}
 {{- $np_name :=    "postsync-ibm-sls-update-sm-np" }}
@@ -77,7 +77,7 @@ kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
 metadata:
   name: {{ $np_name }}
-  namespace: {{ $ns }}
+  namespace: {{ $ns | lower }}
   annotations:
     argocd.argoproj.io/sync-wave: "110"
 {{- if .Values.custom_labels }}
@@ -99,7 +99,7 @@ kind: Secret
 apiVersion: v1
 metadata:
   name: {{ $aws_secret }}
-  namespace: {{ $ns }}
+  namespace: {{ $ns | lower }}
   annotations:
     argocd.argoproj.io/sync-wave: "110"
 {{- if .Values.custom_labels }}
@@ -116,7 +116,7 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: {{ $sa_name }}
-  namespace: {{ $ns }}
+  namespace: {{ $ns | lower }}
   annotations:
     argocd.argoproj.io/sync-wave: "110"
 {{- if .Values.custom_labels }}
@@ -129,7 +129,7 @@ kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: {{ $role_name }}
-  namespace: {{ $ns }}
+  namespace: {{ $ns | lower }}
   annotations:
     argocd.argoproj.io/sync-wave: "110"
 {{- if .Values.custom_labels }}
@@ -157,7 +157,7 @@ kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: {{ $rb_name }}
-  namespace: {{ $ns }}
+  namespace: {{ $ns | lower }}
   annotations:
     argocd.argoproj.io/sync-wave: "111"
 {{- if .Values.custom_labels }}
@@ -167,7 +167,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: {{ $sa_name }}
-    namespace: {{ $ns }}
+    namespace: {{ $ns | lower }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -178,7 +178,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ $_job_name }}
-  namespace: {{ $ns }}
+  namespace: {{ $ns | lower }}
   annotations:
     argocd.argoproj.io/sync-wave: "112"
     argocd.argoproj.io/sync-options: Prune=true

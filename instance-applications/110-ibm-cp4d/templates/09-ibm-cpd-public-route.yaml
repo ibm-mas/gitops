@@ -53,7 +53,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v8" }}
+{{- $_job_version := "v9" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -212,30 +212,36 @@ spec:
               echo
 
               # -----------------------------------------------------------------------
-              # Step 0: Apply cpd-public Route with inline LE cert from cpd-public-tls secret.
-              # The Route is applied imperatively (not declared in Git) because:
-              #   a) ZenService overwrites spec.tls inline certs during reconcile — the Job
-              #      restores them after ZenService completes (Step 4 below handles spec.host,
-              #      this step handles the TLS cert after Step 3 ZenService completion).
-              #   b) RouteExternalCertificate FeatureGate is disabled on this cluster, so
-              #      externalCertificate field cannot be used declaratively.
-              # The LE cert from cpd-public-tls makes the origin cert publicly trusted so
-              # CIS strict-mode SSL passes without HTTP 526 errors.
+              # Step 0: Create cpd-public Route if it does not exist.
+              # Not declared in Git — ZenService overwrites spec.tls during reconcile.
+              # LE cert is injected in Step 5 AFTER ZenService Completed so it sticks.
               # -----------------------------------------------------------------------
-              echo "Step 0: Applying cpd-public Route with inline LE cert..."
-              TLS_CRT=$(oc get secret cpd-public-tls -n "${CPD_INSTANCE_NAMESPACE}" \
-                --ignore-not-found -o jsonpath='{.data.tls\.crt}' | base64 -d)
-              TLS_KEY=$(oc get secret cpd-public-tls -n "${CPD_INSTANCE_NAMESPACE}" \
-                --ignore-not-found -o jsonpath='{.data.tls\.key}' | base64 -d)
-
-              if [[ -z "${TLS_CRT}" ]]; then
-                echo "  WARNING: cpd-public-tls secret not found yet — skipping cert injection, will use ZenService cert"
+              echo "Step 0: Ensuring cpd-public Route exists (type=external, reencrypt)..."
+              if oc get route cpd-public -n "${CPD_INSTANCE_NAMESPACE}" --ignore-not-found 2>/dev/null | grep -q cpd-public; then
+                echo "  cpd-public Route already exists."
               else
-                ISSUER=$(echo "${TLS_CRT}" | openssl x509 -noout -issuer 2>/dev/null | sed 's/issuer=//')
-                echo "  LE cert issuer: ${ISSUER}"
-                oc patch route cpd-public -n "${CPD_INSTANCE_NAMESPACE}" --type=merge -p \
-                  "{\"spec\":{\"tls\":{\"termination\":\"reencrypt\",\"insecureEdgeTerminationPolicy\":\"Redirect\",\"certificate\":\"$(echo "${TLS_CRT}" | awk '{printf "%s\\n", $0}')\",\"key\":\"$(echo "${TLS_KEY}" | awk '{printf "%s\\n", $0}')\"}}}"
-                echo "  LE cert injected into cpd-public Route."
+                oc create -f - <<ROUTEEOF
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: cpd-public
+  namespace: ${CPD_INSTANCE_NAMESPACE}
+  labels:
+    type: external
+    route-type: external
+spec:
+  host: ${CPD_PUBLIC_HOST}
+  to:
+    kind: Service
+    name: ibm-nginx-svc
+    weight: 100
+  port:
+    targetPort: ibm-nginx-https-port
+  tls:
+    termination: reencrypt
+    insecureEdgeTerminationPolicy: Redirect
+ROUTEEOF
+                echo "  cpd-public Route created."
               fi
 
               # -----------------------------------------------------------------------
@@ -324,11 +330,33 @@ spec:
               fi
 
               # -----------------------------------------------------------------------
-              # Step 5: Restart nginx pods so new server_name whitelist takes effect.
-              # nginx reads /nginx_data/defaults.d/external-server.active.conf at startup.
+              # Step 5: Inject LE cert AFTER ZenService Completed.
+              # ZenService overwrites spec.tls during reconcile — injecting after ensures
+              # the LE cert sticks. RouteExternalCertificate FeatureGate is DISABLED.
               # -----------------------------------------------------------------------
               echo
-              echo "Step 5: Restarting nginx pods to load updated server_name config..."
+              echo "Step 5: Injecting LE cert from cpd-public-tls into cpd-public Route..."
+              TLS_CRT=$(oc get secret cpd-public-tls -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.data.tls\.crt}' | base64 -d)
+              TLS_KEY=$(oc get secret cpd-public-tls -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.data.tls\.key}' | base64 -d)
+              if [[ -z "${TLS_CRT}" ]]; then
+                echo "  WARNING: cpd-public-tls secret not found — CIS strict-mode SSL may return 526"
+              else
+                ISSUER=$(echo "${TLS_CRT}" | openssl x509 -noout -issuer 2>/dev/null | sed 's/issuer=//')
+                echo "  LE cert issuer: ${ISSUER}"
+                TLS_CRT_ESC=$(echo "${TLS_CRT}" | awk '{printf "%s\\n", $0}')
+                TLS_KEY_ESC=$(echo "${TLS_KEY}" | awk '{printf "%s\\n", $0}')
+                oc patch route cpd-public -n "${CPD_INSTANCE_NAMESPACE}" --type=merge -p \
+                  "{\"spec\":{\"tls\":{\"certificate\":\"${TLS_CRT_ESC}\",\"key\":\"${TLS_KEY_ESC}\"}}}"
+                echo "  LE cert injected."
+              fi
+
+              # -----------------------------------------------------------------------
+              # Step 6: Restart nginx pods so new server_name whitelist takes effect.
+              # -----------------------------------------------------------------------
+              echo
+              echo "Step 6: Restarting nginx pods to load updated server_name config..."
               oc delete pods -n "${CPD_INSTANCE_NAMESPACE}" \
                 -l component=ibm-nginx --ignore-not-found
               echo "  Nginx pods deleted — Kubernetes will recreate them automatically."
@@ -336,7 +364,7 @@ spec:
               echo
               echo "================================================================================"
               echo "CPD Public Route setup complete!"
-              echo "  Route:    cpd-public (passthrough, type=external) — managed by ArgoCD"
+              echo "  Route:    cpd-public (reencrypt + LE cert, type=external)"
               echo "  URL:      https://${CPD_PUBLIC_HOST}"
               echo "  Internal: https://${INTERNAL_CPD_HOST} (unchanged)"
               echo "================================================================================"

@@ -53,7 +53,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v6" }}
+{{- $_job_version := "v7" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -100,37 +100,6 @@ spec:
     name: "{{ .Values.instance_id }}-cis-le-prod"
 
 ---
-# Route — reencrypt termination using the LE cert from cpd-public-tls secret.
-# type=external label picks it up on the public ingress controller (routeSelector matchLabels).
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: cpd-public
-  namespace: "{{ .Values.cpd_instance_namespace }}"
-  annotations:
-    argocd.argoproj.io/sync-wave: "089"
-  labels:
-    type: external
-    route-type: external
-{{- if .Values.custom_labels }}
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  host: "cpd-public.{{ .Values.cis_domain }}"
-  to: {kind: Service, name: ibm-nginx-svc, weight: 100}
-  port:
-    targetPort: ibm-nginx-https-port
-  tls:
-    termination: reencrypt
-    insecureEdgeTerminationPolicy: Redirect
-    # externalCertificate references the LE cert secret produced by the Certificate above.
-    # The router mounts tls.crt/tls.key from this secret as the edge (client-facing) cert.
-    # destinationCACertificate is omitted — the router trusts the origin (ibm-nginx-svc)
-    # via the cluster CA bundle injected by OpenShift service-ca.
-    externalCertificate:
-      name: cpd-public-tls
-
----
 # Role in cpd_instance_namespace — patch ZenService, routes, restart nginx pods
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
@@ -156,6 +125,10 @@ rules:
   - verbs: [get, list, delete]
     apiGroups: [""]
     resources: [pods]
+  - verbs: [get]
+    apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [cpd-public-tls]
 
 ---
 kind: RoleBinding
@@ -232,11 +205,38 @@ spec:
 
               echo
               echo "================================================================================"
-              echo "CPD Public Route — ZenService patch + nginx restart"
+              echo "CPD Public Route — Route apply + ZenService patch + nginx restart"
               echo "================================================================================"
               echo "- CPD Instance Namespace ............ ${CPD_INSTANCE_NAMESPACE}"
               echo "- Public Hostname ................... ${CPD_PUBLIC_HOST}"
               echo
+
+              # -----------------------------------------------------------------------
+              # Step 0: Apply cpd-public Route with inline LE cert from cpd-public-tls secret.
+              # The Route is applied imperatively (not declared in Git) because:
+              #   a) ZenService overwrites spec.tls inline certs during reconcile — the Job
+              #      restores them after ZenService completes (Step 4 below handles spec.host,
+              #      this step handles the TLS cert after Step 3 ZenService completion).
+              #   b) RouteExternalCertificate FeatureGate is disabled on this cluster, so
+              #      externalCertificate field cannot be used declaratively.
+              # The LE cert from cpd-public-tls makes the origin cert publicly trusted so
+              # CIS strict-mode SSL passes without HTTP 526 errors.
+              # -----------------------------------------------------------------------
+              echo "Step 0: Applying cpd-public Route with inline LE cert..."
+              TLS_CRT=$(oc get secret cpd-public-tls -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.data.tls\.crt}' | base64 -d)
+              TLS_KEY=$(oc get secret cpd-public-tls -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.data.tls\.key}' | base64 -d)
+
+              if [[ -z "${TLS_CRT}" ]]; then
+                echo "  WARNING: cpd-public-tls secret not found yet — skipping cert injection, will use ZenService cert"
+              else
+                ISSUER=$(echo "${TLS_CRT}" | openssl x509 -noout -issuer 2>/dev/null | sed 's/issuer=//')
+                echo "  LE cert issuer: ${ISSUER}"
+                oc patch route cpd-public -n "${CPD_INSTANCE_NAMESPACE}" --type=merge -p \
+                  "{\"spec\":{\"tls\":{\"termination\":\"reencrypt\",\"insecureEdgeTerminationPolicy\":\"Redirect\",\"certificate\":\"$(echo "${TLS_CRT}" | awk '{printf "%s\\n", $0}')\",\"key\":\"$(echo "${TLS_KEY}" | awk '{printf "%s\\n", $0}')\"}}}"
+                echo "  LE cert injected into cpd-public Route."
+              fi
 
               # -----------------------------------------------------------------------
               # Step 1: Read the internal cpd route host before patching anything.

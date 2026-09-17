@@ -156,12 +156,42 @@ spec:
               # Now that all cleanup is complete they are safe to remove.
               echo "------------------------------------------------------------------"
               echo "PostDelete: clean up postdelete RBAC in ${CR_NAMESPACE}"
-              oc delete role postdelete-delete-appws-cr-r \
-                -n ${CR_NAMESPACE} --ignore-not-found 2>/dev/null || true
-              oc delete rolebinding postdelete-delete-appws-cr-rb \
-                -n ${CR_NAMESPACE} --ignore-not-found 2>/dev/null || true
-              echo "RBAC cleanup done"
 
+              # Delete RoleBinding
+              echo "Deleting RoleBinding: postdelete-delete-appws-cr-rb"
+              set +e
+              oc delete rolebinding postdelete-delete-appws-cr-rb \
+                -n "${CR_NAMESPACE}" \
+                --ignore-not-found \
+                --timeout=60s \
+                --wait=true
+              RB_DELETE_RC=$?
+              set -e
+
+              if [[ ${RB_DELETE_RC} -eq 0 ]]; then
+                echo "RoleBinding deletion completed"
+              else
+                echo "WARNING: RoleBinding deletion failed with exit code ${RB_DELETE_RC}"
+              fi
+
+              # Delete Role
+              echo "Deleting Role: postdelete-delete-appws-cr"
+              set +e
+              oc delete role postdelete-delete-appws-cr \
+                -n "${CR_NAMESPACE}" \
+                --ignore-not-found \
+                --timeout=60s \
+                --wait=true
+              ROLE_DELETE_RC=$?
+              set -e
+
+              if [[ ${ROLE_DELETE_RC} -eq 0 ]]; then
+                echo "Role deletion completed"
+              else
+                echo "WARNING: Role deletion failed with exit code ${ROLE_DELETE_RC}"
+              fi
+
+              echo "RBAC cleanup completed"
               echo "Done"
       volumes: []
   backoffLimit: 4

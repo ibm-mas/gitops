@@ -86,20 +86,29 @@ spec:
               fi
 
               # CR has helm.sh/resource-policy:keep so the operator is still alive here.
+              # Use --wait=false then poll — operator takes several minutes to tear down
+              # all child resources before releasing the finalizer.
               echo "Deleting resource..."
               set +e
               oc delete ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
-                -n ${CR_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
+                -n ${CR_NAMESPACE} --wait=false 2>/dev/null
               set -e
 
-              # Verify gone
-              set +e
-              RESOURCE_NAME=$(oc get ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
-                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
-              set -e
+              echo "Waiting up to 600s for operator to process finalizer..."
+              WAIT_SECS=0
+              while [[ ${WAIT_SECS} -lt 600 ]]; do
+                set +e
+                RESOURCE_NAME=$(oc get ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
+                  -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+                set -e
+                [[ -z "${RESOURCE_NAME}" ]] && break
+                sleep 15
+                WAIT_SECS=$((WAIT_SECS + 15))
+                echo "  Still waiting... ${WAIT_SECS}s elapsed"
+              done
 
               if [[ -n "${RESOURCE_NAME}" ]]; then
-                echo "ERROR: resource still present after delete"
+                echo "ERROR: AppWorkspace CR still present after ${WAIT_SECS}s - operator did not release finalizer"
                 exit 1
               fi
               echo "Done"

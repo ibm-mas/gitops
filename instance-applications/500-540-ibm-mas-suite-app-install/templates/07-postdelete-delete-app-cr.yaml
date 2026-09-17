@@ -22,6 +22,8 @@ Use the build/bin/set-cli-image-digest.sh script to update the image digest belo
 
 {{ $sa_name   := "postdelete-delete-cr-sa" }}
 {{ $job_label := "postdelete-delete-cr-job" }}
+{{ $appns_role_name := "postdelete-delete-appws-cr-r" }}
+{{ $appns_rb_name   := "postdelete-delete-appws-cr-rb" }}
 
 ---
 apiVersion: batch/v1
@@ -69,6 +71,10 @@ spec:
               value: {{ $cr_kind }}
             - name: MAS_APP_ID
               value: "{{ .Values.mas_app_id }}"
+            - name: APPNS_ROLE_NAME
+              value: {{ $appns_role_name }}
+            - name: APPNS_RB_NAME
+              value: {{ $appns_rb_name }}
           volumeMounts: []
           command:
             - /bin/sh
@@ -159,9 +165,9 @@ spec:
               echo "PostDelete: clean up postdelete RBAC in ${CR_NAMESPACE}"
 
               # Delete RoleBinding
-              echo "Deleting RoleBinding: postdelete-delete-appws-cr-rb"
+              echo "Deleting RoleBinding: ${APPNS_RB_NAME}"
               set +e
-              oc delete rolebinding postdelete-delete-appws-cr-rb \
+              oc delete rolebinding "${APPNS_RB_NAME}" \
                 -n "${CR_NAMESPACE}" \
                 --ignore-not-found \
                 --timeout=60s \
@@ -176,9 +182,9 @@ spec:
               fi
 
               # Delete Role
-              echo "Deleting Role: postdelete-delete-appws-cr"
+              echo "Deleting Role: ${APPNS_ROLE_NAME}"
               set +e
-              oc delete role postdelete-delete-appws-cr \
+              oc delete role "${APPNS_ROLE_NAME}" \
                 -n "${CR_NAMESPACE}" \
                 --ignore-not-found \
                 --timeout=60s \

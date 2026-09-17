@@ -1,6 +1,12 @@
 {{- if .Values.application_admin_role }}
 {{- if .Values.use_postdelete_hooks }}
 
+{{- /*
+PostDelete job: force-deletes the Workspace CR after the ArgoCD Application is removed.
+Patches out operator-owned finalizers so deletion succeeds even if the operator is degraded.
+Depends on SA/Role created in 01-postdelete-crs-resources.yaml.
+Use build/bin/set-cli-image-digest.sh to update the image digest below.
+*/}}
 {{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
 
 {{- $core_ns  := printf "mas-%s-core" .Values.instance_id }}
@@ -69,11 +75,6 @@ spec:
                 exit 0
               fi
 
-              echo "Current finalizers:"
-              oc get workspace.core.mas.ibm.com/${CR_NAME} -n ${CR_NAMESPACE} \
-                -o=jsonpath="{.metadata.finalizers}" 2>/dev/null || true
-              echo ""
-
               echo "Patching out finalizers..."
               set +e
               oc patch workspace.core.mas.ibm.com/${CR_NAME} -n ${CR_NAMESPACE} \
@@ -86,6 +87,7 @@ spec:
                 -n ${CR_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
               set -e
 
+              # Verify gone
               set +e
               RESOURCE_NAME=$(oc get workspace.core.mas.ibm.com/${CR_NAME} \
                 -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)

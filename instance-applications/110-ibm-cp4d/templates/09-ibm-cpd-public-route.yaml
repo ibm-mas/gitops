@@ -53,7 +53,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v10" }}
+{{- $_job_version := "v11" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -128,7 +128,7 @@ rules:
   - verbs: [get]
     apiGroups: [""]
     resources: [secrets]
-    resourceNames: [cpd-public-tls]
+    resourceNames: [cpd-public-tls, zen-ca-cert-secret]
 
 ---
 kind: RoleBinding
@@ -319,6 +319,25 @@ spec:
                 oc patch route cpd-public -n "${CPD_INSTANCE_NAMESPACE}" --type=merge -p \
                   "{\"spec\":{\"tls\":{\"certificate\":\"${TLS_CRT_ESC}\",\"key\":\"${TLS_KEY_ESC}\"}}}"
                 echo "  LE cert injected."
+              fi
+
+              # -----------------------------------------------------------------------
+              # Step 5b: Set destinationCACertificate to the IBM-Data-and-AI-CA so the
+              # OCP router can verify nginx's origin cert during reencrypt TLS handshake.
+              # Nginx serves a cert signed by IBM-Data-and-AI-CA (from zen-ca-cert-secret).
+              # Without this the router gets a TLS verify failure and returns HTTP 503.
+              # -----------------------------------------------------------------------
+              echo
+              echo "Step 5b: Setting destinationCACertificate on cpd-public Route..."
+              ZEN_CA=$(oc get secret zen-ca-cert-secret -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.data.tls\.crt}' | base64 -d)
+              if [[ -z "${ZEN_CA}" ]]; then
+                echo "  WARNING: zen-ca-cert-secret not found — router may return 503"
+              else
+                ZEN_CA_ESC=$(echo "${ZEN_CA}" | awk '{printf "%s\\n", $0}')
+                oc patch route cpd-public -n "${CPD_INSTANCE_NAMESPACE}" --type=merge -p \
+                  "{\"spec\":{\"tls\":{\"destinationCACertificate\":\"${ZEN_CA_ESC}\"}}}"
+                echo "  destinationCACertificate set to IBM-Data-and-AI-CA."
               fi
 
               # -----------------------------------------------------------------------

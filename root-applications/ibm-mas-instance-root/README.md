@@ -64,6 +64,10 @@ Applications are deployed in the following order (controlled by sync-wave annota
 5. **500-550: Applications** - MAS application installations and configurations
 6. **600: RBAC & Post-Sync** - RBAC setup and post-deployment validation
 
+## Configuration Files
+
+See the [ArgoCD Applications](#argocd-applications) section for the full list of template files managed by this root application.
+
 ## Configuration
 
 **Important:** This application receives its configuration from the parent Cluster Root ApplicationSet. Values are not read from a `values.yaml` file but are passed as Helm parameters from the ApplicationSet generator.
@@ -278,7 +282,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 - **application-admin-rbac** - Application-level RBAC
 - **postsyncjobs** - Post-deployment validation
 
-## Example Configuration
+## Examples
 
 ### Minimal Configuration Structure
 

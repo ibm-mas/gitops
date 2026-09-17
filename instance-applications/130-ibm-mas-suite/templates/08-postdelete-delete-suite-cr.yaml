@@ -2,8 +2,10 @@
 {{- if .Values.use_postdelete_hooks }}
 
 {{- /*
-PostDelete job: force-deletes the Suite CR after the ArgoCD Application is removed.
-Patches out operator-owned finalizers so deletion succeeds even if the operator is degraded.
+PostDelete job: deletes the Suite CR after the ArgoCD Application is removed.
+The Suite CR carries helm.sh/resource-policy:keep so resources-finalizer skips it,
+meaning the MAS core operator is still running when this PostDelete job executes and
+can process the Suite CR's finalizer cleanly.
 Depends on SA/Role created in 01-postdelete-crs-resources.yaml.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
@@ -74,12 +76,6 @@ spec:
                 echo "Suite CR not found — nothing to do"
                 exit 0
               fi
-
-              echo "Patching out finalizers..."
-              set +e
-              oc patch suite.core.mas.ibm.com/${CR_NAME} -n ${CR_NAMESPACE} \
-                --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
-              set -e
 
               echo "Deleting Suite CR..."
               set +e

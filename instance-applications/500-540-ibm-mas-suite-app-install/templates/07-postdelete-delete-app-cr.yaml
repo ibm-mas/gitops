@@ -2,10 +2,14 @@
 {{- if .Values.use_postdelete_hooks }}
 
 {{- /*
-PostDelete job: force-deletes the MAS App CR after the ArgoCD Application is removed.
-Patches out finalizers, deletes CR, then removes the Subscription and CSV so OLM does
-not keep the operator running. Also cleans up the app-namespace Role created in
-08-postdelete-appns-rbac.yaml. Depends on SA/Role in 01-postdelete-crs-resources.yaml.
+PostDelete job: deletes the MAS App CR after the ArgoCD Application is removed.
+The App CR carries helm.sh/resource-policy:keep so resources-finalizer skips it,
+meaning the app operator is still running when this PostDelete job executes and
+can process the CR's finalizer cleanly.
+After CR deletion, removes the Subscription and CSV so OLM does not keep the operator
+running and the namespace can terminate. Also cleans up the app-namespace Role created
+in 08-postdelete-appns-rbac.yaml.
+Depends on SA/Role in 01-postdelete-crs-resources.yaml.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
 {{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
@@ -85,15 +89,8 @@ spec:
               set -e
 
               if [[ -n "${RESOURCE_NAME}" ]]; then
-                # CR still exists - patch out finalizers first so delete succeeds
-                # even if the operator is already gone, then delete the CR before
-                # the CSV (killing CSV/operator while CR has finalizers = stuck Terminating)
-                echo "Patching out finalizers..."
-                set +e
-                oc patch ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} -n ${CR_NAMESPACE} \
-                  --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
-                set -e
-
+                # CR still exists - delete it so the operator can process its finalizer cleanly.
+                # The CR has helm.sh/resource-policy:keep so the operator is still alive here.
                 echo "Deleting resource..."
                 set +e
                 oc delete ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \

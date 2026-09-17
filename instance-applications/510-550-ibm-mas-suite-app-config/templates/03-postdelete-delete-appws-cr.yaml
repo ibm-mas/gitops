@@ -2,8 +2,10 @@
 {{- if .Values.use_postdelete_hooks }}
 
 {{- /*
-PostDelete job: force-deletes the MAS App Workspace CR after the ArgoCD Application is removed.
-Patches out operator-owned finalizers so deletion succeeds even if the operator namespace is gone.
+PostDelete job: deletes the MAS App Workspace CR after the ArgoCD Application is removed.
+The AppWorkspace CR carries helm.sh/resource-policy:keep so resources-finalizer skips it,
+meaning the app operator is still running when this PostDelete job executes and
+can process the CR's finalizer cleanly.
 Depends on SA/Role created in 01-postdelete-crs-resources.yaml.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
@@ -83,12 +85,7 @@ spec:
                 exit 0
               fi
 
-              echo "Patching out finalizers..."
-              set +e
-              oc patch ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} -n ${CR_NAMESPACE} \
-                --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
-              set -e
-
+              # CR has helm.sh/resource-policy:keep so the operator is still alive here.
               echo "Deleting resource..."
               set +e
               oc delete ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \

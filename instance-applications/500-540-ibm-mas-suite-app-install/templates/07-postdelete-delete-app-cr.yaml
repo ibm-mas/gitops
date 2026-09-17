@@ -2,10 +2,9 @@
 {{- if .Values.use_postdelete_hooks }}
 
 {{- /*
-PostDelete job: force-deletes the MAS App CR after the ArgoCD Application is removed.
-Patches out finalizers, deletes CR, then removes the Subscription and CSV so OLM does
-not keep the operator running. Also cleans up the app-namespace Role created in
-08-postdelete-appns-rbac.yaml. Depends on SA/Role in 01-postdelete-crs-resources.yaml.
+PostDelete job: deletes the MAS App CR, Subscription, CSV and app-namespace Role
+after the ArgoCD Application is removed.
+Depends on SA/Role in 01-postdelete-crs-resources.yaml.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
 {{- $_cli_image_digest := "sha256:b6df7b173b131d7340087a1a5d7ed51ff16cef7fcac7291a269b2ad1937a61af" }}
@@ -20,7 +19,6 @@ Use build/bin/set-cli-image-digest.sh to update the image digest below.
 
 {{ $sa_name   := "postdelete-delete-cr-sa" }}
 {{ $job_label := "postdelete-delete-cr-job" }}
-{{ $appns_role_name := "postdelete-delete-appws-cr-r" }}
 
 ---
 apiVersion: batch/v1
@@ -68,8 +66,6 @@ spec:
               value: {{ $cr_kind }}
             - name: MAS_APP_ID
               value: "{{ .Values.mas_app_id }}"
-            - name: APPNS_ROLE_NAME
-              value: {{ $appns_role_name }}
           volumeMounts: []
           command:
             - /bin/sh
@@ -80,43 +76,38 @@ spec:
               echo "PostDelete: ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} in ${CR_NAMESPACE}"
 
               set +e
-              RESOURCE_NAME=$(oc get ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
+              RESOURCE_NAME=$(oc get ${CR_KIND} ${CR_NAME} \
                 -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
               set -e
 
               if [[ -n "${RESOURCE_NAME}" ]]; then
-                # CR still exists - patch out finalizers first so delete succeeds
-                # even if the operator is already gone, then delete the CR before
-                # the CSV (killing CSV/operator while CR has finalizers = stuck Terminating)
-                echo "Patching out finalizers..."
-                set +e
-                oc patch ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} -n ${CR_NAMESPACE} \
-                  --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
-                set -e
-
                 echo "Deleting resource..."
                 set +e
-                oc delete ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
-                  -n ${CR_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
+                oc delete ${CR_KIND} ${CR_NAME} \
+                  -n ${CR_NAMESPACE} --wait=false 2>/dev/null
                 set -e
 
-                # Verify gone
-                set +e
-                RESOURCE_NAME=$(oc get ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} \
-                  -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
-                set -e
+                echo "Waiting up to 600s for operator to process finalizer..."
+                WAIT_SECS=0
+                while [[ ${WAIT_SECS} -lt 600 ]]; do
+                  set +e
+                  RESOURCE_NAME=$(oc get ${CR_KIND} ${CR_NAME} \
+                    -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+                  set -e
+                  [[ -z "${RESOURCE_NAME}" ]] && break
+                  sleep 15
+                  WAIT_SECS=$((WAIT_SECS + 15))
+                  echo "  Still waiting... ${WAIT_SECS}s elapsed"
+                done
 
                 if [[ -n "${RESOURCE_NAME}" ]]; then
-                  echo "ERROR: resource still present after delete"
+                  echo "ERROR: App CR still present after ${WAIT_SECS}s - operator did not release finalizer"
                   exit 1
                 fi
               else
                 echo "App CR not found - already removed by operator"
               fi
 
-              # Delete Subscription - stops OLM from re-installing the operator.
-              # Must happen after CR deletion so the operator is still alive to
-              # process its finalizer, and before CSV deletion so OLM can react.
               echo "------------------------------------------------------------------"
               echo "PostDelete: delete ibm-mas-${MAS_APP_ID} Subscription in ${CR_NAMESPACE}"
               set +e
@@ -133,9 +124,6 @@ spec:
                 echo "Subscription deleted"
               fi
 
-              # Always delete the CSV - OLM does not cascade-delete it when the
-              # Subscription is removed, so the operator pod would otherwise remain
-              # running and prevent the namespace from terminating.
               echo "------------------------------------------------------------------"
               echo "PostDelete: delete ibm-mas-${MAS_APP_ID} CSV in ${CR_NAMESPACE}"
               set +e
@@ -152,28 +140,15 @@ spec:
                 echo "CSV deleted"
               fi
 
-              # Delete the app-namespace Role 
               echo "------------------------------------------------------------------"
-              echo "PostDelete: clean up postdelete RBAC in ${CR_NAMESPACE}"
-
-              # Delete Role
-              echo "Deleting Role: ${APPNS_ROLE_NAME}"
+              echo "PostDelete: delete postdelete-delete-appws-cr-r Role in ${CR_NAMESPACE}"
               set +e
-              oc delete role "${APPNS_ROLE_NAME}" \
-                -n "${CR_NAMESPACE}" \
-                --ignore-not-found \
-                --timeout=60s \
-                --wait=true
-              ROLE_DELETE_RC=$?
+              oc delete role postdelete-delete-appws-cr-r \
+                -n ${CR_NAMESPACE} --ignore-not-found=true 2>/dev/null || true
               set -e
+              echo "Role deleted (or not found)"
 
-              if [[ ${ROLE_DELETE_RC} -eq 0 ]]; then
-                echo "Role deletion completed"
-              else
-                echo "WARNING: Role deletion failed with exit code ${ROLE_DELETE_RC}"
-              fi
-
-              echo "RBAC cleanup completed"
+              echo "PostDelete: app CR and OLM cleanup complete"
       volumes: []
   backoffLimit: 4
 {{- end }}

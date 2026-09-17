@@ -2,8 +2,7 @@
 {{- if .Values.use_postdelete_hooks }}
 
 {{- /*
-PostDelete job: force-deletes the Workspace CR after the ArgoCD Application is removed.
-Patches out operator-owned finalizers so deletion succeeds even if the operator is degraded.
+PostDelete job: deletes the Workspace CR after the ArgoCD Application is removed.
 Depends on SA/Role created in 01-postdelete-crs-resources.yaml.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
@@ -75,26 +74,27 @@ spec:
                 exit 0
               fi
 
-              echo "Patching out finalizers..."
-              set +e
-              oc patch workspace.core.mas.ibm.com/${CR_NAME} -n ${CR_NAMESPACE} \
-                --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null
-              set -e
-
               echo "Deleting Workspace CR..."
               set +e
               oc delete workspace.core.mas.ibm.com/${CR_NAME} \
-                -n ${CR_NAMESPACE} --timeout=120s --wait=true 2>/dev/null
+                -n ${CR_NAMESPACE} --wait=false 2>/dev/null
               set -e
 
-              # Verify gone
-              set +e
-              RESOURCE_NAME=$(oc get workspace.core.mas.ibm.com/${CR_NAME} \
-                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
-              set -e
+              echo "Waiting up to 600s for operator to process finalizer..."
+              WAIT_SECS=0
+              while [[ ${WAIT_SECS} -lt 600 ]]; do
+                set +e
+                RESOURCE_NAME=$(oc get workspace.core.mas.ibm.com/${CR_NAME} \
+                  -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+                set -e
+                [[ -z "${RESOURCE_NAME}" ]] && break
+                sleep 15
+                WAIT_SECS=$((WAIT_SECS + 15))
+                echo "  Still waiting... ${WAIT_SECS}s elapsed"
+              done
 
               if [[ -n "${RESOURCE_NAME}" ]]; then
-                echo "ERROR: Workspace CR still present after delete attempt"
+                echo "ERROR: Workspace CR still present after ${WAIT_SECS}s - operator did not release finalizer"
                 exit 1
               fi
               echo "Workspace CR deleted successfully"

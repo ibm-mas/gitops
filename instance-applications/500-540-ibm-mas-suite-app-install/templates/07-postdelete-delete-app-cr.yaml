@@ -7,8 +7,11 @@ The App CR carries helm.sh/resource-policy:keep so resources-finalizer skips it,
 meaning the app operator is still running when this PostDelete job executes and
 can process the CR's finalizer cleanly.
 After CR deletion, removes the Subscription and CSV so OLM does not keep the operator
-running and the namespace can terminate. Also cleans up the app-namespace Role created
-in 08-postdelete-appns-rbac.yaml.
+running and the namespace can terminate.
+The cross-namespace Role+RoleBinding in the app namespace (08-postdelete-appns-rbac.yaml)
+are left in place — they have helm.sh/resource-policy:keep and will be removed when the
+namespace terminates. Do NOT delete the Role here; doing so destroys the SA's cross-namespace
+permission for future deprovision runs.
 Depends on SA/Role in 01-postdelete-crs-resources.yaml.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
@@ -24,7 +27,6 @@ Use build/bin/set-cli-image-digest.sh to update the image digest below.
 
 {{ $sa_name   := "postdelete-delete-cr-sa" }}
 {{ $job_label := "postdelete-delete-cr-job" }}
-{{ $appns_role_name := "postdelete-delete-appws-cr-r" }}
 
 ---
 apiVersion: batch/v1
@@ -72,8 +74,6 @@ spec:
               value: {{ $cr_kind }}
             - name: MAS_APP_ID
               value: "{{ .Values.mas_app_id }}"
-            - name: APPNS_ROLE_NAME
-              value: {{ $appns_role_name }}
           volumeMounts: []
           command:
             - /bin/sh
@@ -158,28 +158,7 @@ spec:
                 echo "CSV deleted"
               fi
 
-              # Delete the app-namespace Role 
-              echo "------------------------------------------------------------------"
-              echo "PostDelete: clean up postdelete RBAC in ${CR_NAMESPACE}"
-
-              # Delete Role
-              echo "Deleting Role: ${APPNS_ROLE_NAME}"
-              set +e
-              oc delete role "${APPNS_ROLE_NAME}" \
-                -n "${CR_NAMESPACE}" \
-                --ignore-not-found \
-                --timeout=60s \
-                --wait=true
-              ROLE_DELETE_RC=$?
-              set -e
-
-              if [[ ${ROLE_DELETE_RC} -eq 0 ]]; then
-                echo "Role deletion completed"
-              else
-                echo "WARNING: Role deletion failed with exit code ${ROLE_DELETE_RC}"
-              fi
-
-              echo "RBAC cleanup completed"
+              echo "PostDelete: app CR and OLM cleanup complete"
       volumes: []
   backoffLimit: 4
 {{- end }}

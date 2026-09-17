@@ -66,11 +66,6 @@ mas_provisioner:
   # Default: 100
   async_poll_max: 100
 
-  # Enable PagerDuty alerts (required)
-  # Enable alerting via PagerDuty
-  # Options: true or false
-  enable_pd_alert: false
-
   # Enable OCM alerts (required)
   # Enable alerting via OpenShift Cluster Manager
   # Options: true or false
@@ -105,9 +100,6 @@ mas_provisioner:
   # API token for OpenShift Cluster Manager
   ocm_api_token: ""
 
-  # PagerDuty integration key (optional)
-  # Integration key for PagerDuty alerts
-  pagerduty_integration: ""
 ```
 
 ## Base Cluster Values
@@ -150,7 +142,6 @@ mas_provisioner:
   base_branch: "main"
   async_poll_interval: 30
   async_poll_max: 100
-  enable_pd_alert: false
   enable_ocm_alert: false
   github_token: "ghp_xxxxxxxxxxxx"
 ```
@@ -170,14 +161,12 @@ mas_provisioner:
   base_branch: "main"
   async_poll_interval: 30
   async_poll_max: 100
-  enable_pd_alert: true
   enable_ocm_alert: true
   github_token: "ghp_xxxxxxxxxxxx"
   storage_class: "gp3"
   instana_api_token: "your-instana-token"
   instana_url_prefix: "https://instana.example.com"
   ocm_api_token: "your-ocm-token"
-  pagerduty_integration: "your-pd-integration-key"
 ```
 
 **With custom certificates:**
@@ -195,7 +184,6 @@ mas_provisioner:
   base_branch: "main"
   async_poll_interval: 30
   async_poll_max: 100
-  enable_pd_alert: false
   enable_ocm_alert: false
   github_token: "ghp_xxxxxxxxxxxx"
   git_root_ca: |
@@ -213,7 +201,7 @@ mas_provisioner:
 - **Internal Use Only**: This service is designed for internal IBM use and handles AWS Marketplace order notifications
 - **Security**: Always use mTLS in production environments
 - **Monitoring**: Enable Instana integration for production deployments
-- **Alerting**: Configure PagerDuty or OCM alerts for critical notifications
+- **Alerting**: Configure OCM alerts for critical notifications
 
 ## Resources Created
 

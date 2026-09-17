@@ -278,7 +278,7 @@ The SLS ApplicationSet ([`065-sls-appset.yaml`](templates/065-sls-appset.yaml)) 
 **Generator:** Single git generator (no merge)
 - Path: `{account.id}/icn/{cluster.id}/*/ibm-sls.yaml`
 
-**Generated Application Naming:** `sls.root.{ibm_customer_number}.{subscription_id}`
+**Generated Application Naming:** `sls.root.{ibm_customer_number | lower}.{subscription_id}`
 
 ### AI Service Instance ApplicationSet
 

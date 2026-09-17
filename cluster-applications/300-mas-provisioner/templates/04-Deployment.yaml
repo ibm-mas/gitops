@@ -37,10 +37,6 @@ spec:
             - name: LOG_STORAGE_DIR
               value: /opt/automation/mas-provisioner/logs
             {{- end }}
-            {{- if and .Values.enable_pd_alert (not (empty .Values.pd_key)) }}
-            - name: PD_ROUTING_KEY
-              value: /opt/automation/mas-provisioner/pdkey/key
-            {{- end }}
             - name: MTLS_ENABLED
               value: "{{ .Values.enable_mtls }}"
             {{- if .Values.enable_mtls }}
@@ -69,8 +65,6 @@ spec:
               value: "{{ .Values.account_alias }}"
             - name: BASE_BRANCH
               value: "{{ .Values.base_branch }}"
-            - name: ENABLE_PD_ALERT
-              value: "{{ .Values.enable_pd_alert }}"
             - name: ENABLE_OCM_ALERT
               value: "{{ .Values.enable_ocm_alert }}"
             {{- if and .Values.enable_ocm_alert (not (empty .Values.ocm_api_key))}}
@@ -124,11 +118,6 @@ spec:
               readOnly: true
               mountPath: /opt/automation/mas-provisioner/git
             {{- end }}
-            {{- if and .Values.enable_pd_alert (.Values.pd_key) }}
-            - name: pd-key
-              readOnly: true
-              mountPath: /opt/automation/mas-provisioner/pdkey
-            {{- end }}
             {{- if .Values.enable_mtls }}
             - name: csb-client-ca
               readOnly: true
@@ -165,11 +154,6 @@ spec:
         - name: git
           secret:
             secretName: git-secret
-        {{- end }}
-        {{- if and .Values.enable_pd_alert (not (empty .Values.pd_key)) }}
-        - name: pd-key
-          secret:
-            secretName: pd-routing-key-secret
         {{- end }}
         {{- if and .Values.enable_mtls (not (empty .Values.csb_client_ca)) }}
         - name: csb-client-ca

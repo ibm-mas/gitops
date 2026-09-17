@@ -4,7 +4,7 @@ apiVersion: sls.ibm.com/v1
 kind: LicenseService
 metadata:
   name: sls
-  namespace: mas-{{ .Values.ibm_customer_number }}-{{ .Values.subscription_id }}-sls
+  namespace: mas-{{ .Values.ibm_customer_number | lower }}-{{ .Values.subscription_id }}-sls
   annotations:
     argocd.argoproj.io/sync-wave: "105"
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
@@ -18,6 +18,10 @@ spec:
 {{  .Values.mongo_spec | toYaml | indent 4 }}
   license:
     accept: true
+{{- if not (empty .Values.sls_pod_templates) }}
+  podTemplates:
+{{ .Values.sls_pod_templates | toYaml | indent 4 }}
+{{- end }}
   settings:
     auth:
       enforce: true

@@ -1,14 +1,15 @@
-# This job runs for CP4D version 5.0.0 and up. It precreates or patches the ibm-mcs-* Service Accounts with
-# ibm-entitlement pull secret which is required to pull images for the various corresponding deployments that will
-# run later during the installation. This job will not run when cpd_product_version is less than 5.0.0
-
-{{- if .Values.cpd_product_version }}
-{{- if le (semver .Values.cpd_product_version | (semver "5.0.0").Compare) 0 }}
+{{- if .Values.cluster_admin_role }}
+{{- $masChannel := .Values.mas_channel }}
+{{- $versionParts := splitList "." $masChannel }}
+{{- $majorVersion := index $versionParts 0 | int }}
+{{- $minorVersion := index $versionParts 1 | int }}
+{{- if or (gt $majorVersion 9) (and (eq $majorVersion 9) (ge $minorVersion 2)) }}
+{{- if eq .Values.mas_routing_mode "path" }}
 
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
-{{- $_job_name_prefix := "cpd-mcs-sa-patch-job" }}
+{{- $_job_name_prefix := "patch-ingress-ns-ownership" }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
@@ -31,7 +32,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v1" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -62,14 +63,15 @@ are required here.
 */}}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
+
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ $_job_name }}
-  namespace: "{{ .Values.cpd_operators_namespace }}"
+  namespace: mas-{{ .Values.instance_id }}-syncres
   annotations:
-    argocd.argoproj.io/sync-wave: "084"
+    argocd.argoproj.io/sync-wave: "00"
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -77,73 +79,60 @@ metadata:
 {{- end }}
 spec:
   template:
-{{- if .Values.custom_labels }}
     metadata:
       labels:
+        app: "sync-job"
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
       containers:
-        - name: run
+        - name: patch-ingress-ns-ownership
           image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
           imagePullPolicy: IfNotPresent
-          resources:
-            limits:
-              cpu: 200m
-              memory: 512Mi
-            requests:
-              cpu: 10m
-              memory: 64Mi
           env:
-            - name: CPD_INSTANCE_NAMESPACE
-              value: {{ .Values.cpd_instance_namespace }}
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+            - name: MAS_INGRESS_CONTROLLER_NAME
+              value: "{{ .Values.mas_ingress_controller_name | default "default" }}"
           command:
             - /bin/sh
             - -c
             - |
-
               set -e
-              echo
+
+              echo ""
               echo "================================================================================"
-              echo "Provide ibm-entitlement-key image pull secret for mcs service accounts"
+              echo "Patch IngressController namespaceOwnership to InterNamespaceAllowed"
               echo "================================================================================"
-              echo
+              echo "MAS Instance ID ..................... ${MAS_INSTANCE_ID}"
+              echo "IngressController Name .............. ${MAS_INGRESS_CONTROLLER_NAME}"
 
-              # ibm-mcs-hubwork-sa
-              RESOURCE_NAME=$(oc get serviceaccount ibm-mcs-hubwork-sa -n ${CPD_INSTANCE_NAMESPACE} -o=jsonpath="{.metadata.name}" --ignore-not-found)
-              if [[ -z "${RESOURCE_NAME}" ]]; then
-                echo "creating ibm-mcs-hubwork sa..."
-                oc create serviceaccount ibm-mcs-hubwork-sa -n ${CPD_INSTANCE_NAMESPACE}
+              CURRENT_OWNERSHIP=$(oc get ingresscontroller "${MAS_INGRESS_CONTROLLER_NAME}" \
+                -n openshift-ingress-operator \
+                -o jsonpath='{.spec.routeAdmission.namespaceOwnership}' 2>/dev/null || echo "")
+
+              echo "Current namespaceOwnership .......... ${CURRENT_OWNERSHIP:-<not set>}"
+
+              if [ "${CURRENT_OWNERSHIP}" = "InterNamespaceAllowed" ]; then
+                echo "IngressController '${MAS_INGRESS_CONTROLLER_NAME}' is already configured with namespaceOwnership=InterNamespaceAllowed - no changes needed"
+                exit 0
               fi
 
-              echo "patching ibm-mcs-hubwork sa..."
-              oc patch serviceaccount ibm-mcs-hubwork-sa -n ${CPD_INSTANCE_NAMESPACE} -p '{"imagePullSecrets":[{"name":"ibm-entitlement-key"}]}'
+              echo "Patching IngressController '${MAS_INGRESS_CONTROLLER_NAME}' ..."
+              oc patch ingresscontroller "${MAS_INGRESS_CONTROLLER_NAME}" \
+                -n openshift-ingress-operator \
+                --type=merge \
+                --patch='{"spec":{"routeAdmission":{"namespaceOwnership":"InterNamespaceAllowed"}}}'
 
-              # ibm-mcs-placement-sa
-              RESOURCE_NAME=$(oc get serviceaccount ibm-mcs-placement-sa -n ${CPD_INSTANCE_NAMESPACE} -o=jsonpath="{.metadata.name}" --ignore-not-found)
-              if [[ -z "${RESOURCE_NAME}" ]]; then
-                echo "creating ibm-mcs-placement sa..."
-                oc create serviceaccount ibm-mcs-placement-sa -n ${CPD_INSTANCE_NAMESPACE}
-              fi
-
-              echo "patching ibm-mcs-placement sa..."
-              oc patch serviceaccount ibm-mcs-placement-sa -n ${CPD_INSTANCE_NAMESPACE} -p '{"imagePullSecrets":[{"name":"ibm-entitlement-key"}]}'
-
-              # ibm-mcs-storage-sa
-              RESOURCE_NAME=$(oc get serviceaccount ibm-mcs-storage-sa -n ${CPD_INSTANCE_NAMESPACE} -o=jsonpath="{.metadata.name}" --ignore-not-found)
-              if [[ -z "${RESOURCE_NAME}" ]]; then
-                echo "creating ibm-mcs-storage sa..."
-                oc create serviceaccount ibm-mcs-storage-sa -n ${CPD_INSTANCE_NAMESPACE}
-              fi
-
-              echo "patching ibm-mcs-storage sa..."
-              oc patch serviceaccount ibm-mcs-storage-sa -n ${CPD_INSTANCE_NAMESPACE} -p '{"imagePullSecrets":[{"name":"ibm-entitlement-key"}]}'
-
-              echo "Done"
+              rc=$?
+              echo "patch_ingress_namespace_ownership rc=${rc}"
+              [ $rc -ne 0 ] && exit $rc
+              exit 0
 
       restartPolicy: Never
-      serviceAccountName: cpd-sa
+      serviceAccountName: patch-ingress-job
   backoffLimit: 4
-
+{{- end }}
 {{- end }}
 {{- end }}

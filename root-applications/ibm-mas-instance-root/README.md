@@ -224,11 +224,11 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`500-ibm-mas-masapp-manage-install.yaml`](templates/500-ibm-mas-masapp-manage-install.yaml) | manage | | | ✓ | 500 |
 | [`505-ibm-mas-masapp-facilities-install.yaml`](templates/505-ibm-mas-masapp-facilities-install.yaml) | facilities | | | ✓ | 521 |
 | [`510-ibm-mas-masapp-assist-install.yaml`](templates/510-ibm-mas-masapp-assist-install.yaml) | assist | | | ✓ | 525 |
-| [`510-ibm-mas-masapp-iot-install.yaml`](templates/510-ibm-mas-masapp-iot-install.yaml) | iot | | | ✓ | 530 (540 for channel ≥9.2) |
+| [`510-ibm-mas-masapp-iot-install.yaml`](templates/510-ibm-mas-masapp-iot-install.yaml) | iot | | | ✓ | 525 (540 for channel ≥9.2) |
 | [`510-ibm-mas-masapp-visualinspection-install.yaml`](templates/510-ibm-mas-masapp-visualinspection-install.yaml) | visualinspection | | | ✓ | 525 |
 | [`510-550-ibm-mas-masapp-configs.yaml`](templates/510-550-ibm-mas-masapp-configs.yaml) | masapp-config | | ✓ | | 505-558 |
 | [`520-ibm-mas-masapp-health-install.yaml`](templates/520-ibm-mas-masapp-health-install.yaml) | health | | | ✓ | 540 |
-| [`520-ibm-mas-masapp-monitor-install.yaml`](templates/520-ibm-mas-masapp-monitor-install.yaml) | monitor | | | ✓ | 540 (525 for channel ≥9.2, aligns with Assist) |
+| [`520-ibm-mas-masapp-monitor-install.yaml`](templates/520-ibm-mas-masapp-monitor-install.yaml) | monitor | | | ✓ | 540 (525 for channel ≥9.2, co-wave with Assist and IoT default) |
 | [`520-ibm-mas-masapp-optimizer-install.yaml`](templates/520-ibm-mas-masapp-optimizer-install.yaml) | optimizer | | | ✓ | 540 |
 | [`540-ibm-mas-masapp-predict-install.yaml`](templates/540-ibm-mas-masapp-predict-install.yaml) | predict | | | ✓ | 555 |
 | [`550-ibm-mas-addons-config.yaml`](templates/550-ibm-mas-addons-config.yaml) | addons | | ✓ | | 560 |

@@ -9,14 +9,22 @@
     - CIS DNS CNAME: cpd-public.<cis_domain> → cluster public NLB
     - CIS edge certificate (Let's Encrypt) for the hostname
 
-  The Route itself is managed declaratively by ArgoCD (below)
-  The Job only handles what ArgoCD cannot do declaratively:
+  A cert-manager Certificate resource (below) requests a Let's Encrypt production cert
+  for cpd-public.<cis_domain> via the <instance_id>-cis-le-prod ClusterIssuer (dns01/CIS).
+  This produces a publicly-trusted cert that CIS strict-mode SSL can verify on the origin,
+  avoiding HTTP 526 errors.
+
+  The Job handles what ArgoCD cannot do declaratively:
     1. Reads the internal cpd route host
     2. Patches ZenService zenCustomRoute so nginx accepts the new hostname
     3. Waits for ZenService to reach Completed
     4. Restores the internal cpd route host (AFTER ZenService finishes — it overwrites it
        as a side effect of zenCustomRoute reconciliation)
-    5. Restarts nginx pods to pick up the updated server_name whitelist
+    5. Injects the LE cert (cpd-public-tls) into the cpd-public Route after ZenService
+       has reconciled (ZenService overwrites spec.tls during reconcile)
+    5b. Sets destinationCACertificate to IBM-Data-and-AI-CA (ibm-nginx-internal-tls-ca)
+        so the OCP router can complete the reencrypt TLS handshake with nginx
+    6. Restarts nginx pods to pick up the updated server_name whitelist
 
   Step ordering is critical: the internal cpd route is restored AFTER ZenService Completed,
   not before patching it. ZenService overwrites cpd route spec.host during its own reconcile
@@ -48,7 +56,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v5" }}
+{{- $_job_version := "v12" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -66,32 +74,36 @@ By convention, we sha1sum this value to guarantee we never exceed the 63 char li
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
 ---
-# Route managed by ArgoCD — passthrough TLS, picked up by the public ingress controller
-# via the type: external label (routeSelector: matchLabels: type: external)
-apiVersion: route.openshift.io/v1
-kind: Route
+# cert-manager Certificate — requests a Let's Encrypt production cert for the public hostname.
+# Uses the <instance_id>-cis-le-prod ClusterIssuer (dns01 via CIS webhook).
+# The resulting secret (cpd-public-tls) is injected into the Route by the Job so that
+# CIS strict-mode SSL can verify the origin cert and avoid HTTP 526 errors.
+apiVersion: cert-manager.io/v1
+kind: Certificate
 metadata:
-  name: cpd-public
+  name: cpd-public-cert
   namespace: "{{ .Values.cpd_instance_namespace }}"
   annotations:
-    argocd.argoproj.io/sync-wave: "089"
-  labels:
-    type: external
-    route-type: external
+    argocd.argoproj.io/sync-wave: "088"
 {{- if .Values.custom_labels }}
+  labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  host: "cpd-public.{{ .Values.cis_domain }}"
-  to: {kind: Service, name: ibm-nginx-svc, weight: 100}
-  port:
-    targetPort: ibm-nginx-https-port
-  tls:
-    termination: passthrough
-    insecureEdgeTerminationPolicy: None
+  secretName: cpd-public-tls
+  commonName: "cpd-public.{{ .Values.cis_domain }}"
+  dnsNames:
+    - "cpd-public.{{ .Values.cis_domain }}"
+  duration: 8760h0m0s
+  renewBefore: 720h0m0s
+  privateKey:
+    size: 2048
+  issuerRef:
+    kind: ClusterIssuer
+    name: "{{ .Values.instance_id }}-cis-le-prod"
 
 ---
-# Role in cpd_instance_namespace — patch ZenService, routes, restart nginx pods
+# Role in cpd_instance_namespace — patch ZenService, routes, secrets, restart nginx pods
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -107,12 +119,16 @@ rules:
   - verbs: [get, list, patch]
     apiGroups: [zen.cpd.ibm.com]
     resources: [zenservices]
-  - verbs: [get, list, patch]
+  - verbs: [get, list, create, patch]
     apiGroups: [route.openshift.io]
     resources: [routes]
   - verbs: [get, list, delete]
     apiGroups: [""]
     resources: [pods]
+  - verbs: [get]
+    apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [cpd-public-tls, ibm-nginx-internal-tls-ca]
 
 ---
 kind: RoleBinding
@@ -168,10 +184,6 @@ spec:
               cpu: 10m
               memory: 64Mi
           env:
-            - name: INSTANCE_ID
-              value: "{{ .Values.instance_id }}"
-            - name: CPD_PUBLIC_ROUTE_ENABLED
-              value: "{{ .Values.cpd_public_route_enabled }}"
             - name: CPD_INSTANCE_NAMESPACE
               value: "{{ .Values.cpd_instance_namespace }}"
             - name: CPD_OPERATORS_NAMESPACE
@@ -189,7 +201,7 @@ spec:
 
               echo
               echo "================================================================================"
-              echo "CPD Public Route — ZenService patch + nginx restart"
+              echo "CPD Public Route — ZenService patch + cert injection + nginx restart"
               echo "================================================================================"
               echo "- CPD Instance Namespace ............ ${CPD_INSTANCE_NAMESPACE}"
               echo "- Public Hostname ................... ${CPD_PUBLIC_HOST}"
@@ -205,8 +217,8 @@ spec:
                 echo "ERROR: Could not find internal cpd route in ${CPD_INSTANCE_NAMESPACE}"
                 exit 1
               fi
-              # If ZenService already overwrote it, derive the correct host from the cluster domain.
-              # The correct internal host follows the pattern: cpd-<namespace>.<cluster-domain>
+              # If ZenService already overwrote it with the public host, derive the correct
+              # internal host from the cluster domain: cpd-<namespace>.<cluster-domain>
               if [[ "${INTERNAL_CPD_HOST}" == "${CPD_PUBLIC_HOST}" ]]; then
                 echo "  WARNING: cpd route host already overwritten by ZenService (${INTERNAL_CPD_HOST})"
                 CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster \
@@ -281,11 +293,54 @@ spec:
               fi
 
               # -----------------------------------------------------------------------
-              # Step 5: Restart nginx pods so new server_name whitelist takes effect.
-              # nginx reads /nginx_data/defaults.d/external-server.active.conf at startup.
+              # Step 5: Inject LE cert into cpd-public Route AFTER ZenService Completed.
+              # ZenService overwrites spec.tls during reconcile — injecting after ensures
+              # the LE cert sticks. RouteExternalCertificate FeatureGate is DISABLED on
+              # this cluster so inline injection is the only available mechanism.
               # -----------------------------------------------------------------------
               echo
-              echo "Step 5: Restarting nginx pods to load updated server_name config..."
+              echo "Step 5: Injecting LE cert from cpd-public-tls into cpd-public Route..."
+              TLS_CRT=$(oc get secret cpd-public-tls -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.data.tls\.crt}' | base64 -d)
+              TLS_KEY=$(oc get secret cpd-public-tls -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.data.tls\.key}' | base64 -d)
+              if [[ -z "${TLS_CRT}" ]]; then
+                echo "  WARNING: cpd-public-tls secret not found — CIS strict-mode SSL may return 526"
+              else
+                ISSUER=$(echo "${TLS_CRT}" | openssl x509 -noout -issuer 2>/dev/null | sed 's/issuer=//')
+                echo "  LE cert issuer: ${ISSUER}"
+                TLS_CRT_ESC=$(echo "${TLS_CRT}" | awk '{printf "%s\\n", $0}')
+                TLS_KEY_ESC=$(echo "${TLS_KEY}" | awk '{printf "%s\\n", $0}')
+                oc patch route cpd-public -n "${CPD_INSTANCE_NAMESPACE}" --type=merge -p \
+                  "{\"spec\":{\"tls\":{\"certificate\":\"${TLS_CRT_ESC}\",\"key\":\"${TLS_KEY_ESC}\"}}}"
+                echo "  LE cert injected."
+              fi
+
+              # -----------------------------------------------------------------------
+              # Step 5b: Set destinationCACertificate so the OCP router can verify nginx's
+              # origin cert during the reencrypt TLS handshake.
+              # Nginx serves a cert signed by IBM-Data-and-AI-CA, which is the self-signed
+              # CA stored in ibm-nginx-internal-tls-ca (cert.crt key).
+              # Without this the router cannot verify the origin and returns HTTP 503.
+              # -----------------------------------------------------------------------
+              echo
+              echo "Step 5b: Setting destinationCACertificate on cpd-public Route..."
+              NGINX_CA=$(oc get secret ibm-nginx-internal-tls-ca -n "${CPD_INSTANCE_NAMESPACE}" \
+                --ignore-not-found -o jsonpath='{.data.cert\.crt}' | base64 -d)
+              if [[ -z "${NGINX_CA}" ]]; then
+                echo "  WARNING: ibm-nginx-internal-tls-ca not found — router may return 503"
+              else
+                NGINX_CA_ESC=$(echo "${NGINX_CA}" | awk '{printf "%s\\n", $0}')
+                oc patch route cpd-public -n "${CPD_INSTANCE_NAMESPACE}" --type=merge -p \
+                  "{\"spec\":{\"tls\":{\"destinationCACertificate\":\"${NGINX_CA_ESC}\"}}}"
+                echo "  destinationCACertificate set to IBM-Data-and-AI-CA."
+              fi
+
+              # -----------------------------------------------------------------------
+              # Step 6: Restart nginx pods so new server_name whitelist takes effect.
+              # -----------------------------------------------------------------------
+              echo
+              echo "Step 6: Restarting nginx pods to load updated server_name config..."
               oc delete pods -n "${CPD_INSTANCE_NAMESPACE}" \
                 -l component=ibm-nginx --ignore-not-found
               echo "  Nginx pods deleted — Kubernetes will recreate them automatically."
@@ -293,7 +348,7 @@ spec:
               echo
               echo "================================================================================"
               echo "CPD Public Route setup complete!"
-              echo "  Route:    cpd-public (passthrough, type=external) — managed by ArgoCD"
+              echo "  Route:    cpd-public (reencrypt + LE cert, type=external)"
               echo "  URL:      https://${CPD_PUBLIC_HOST}"
               echo "  Internal: https://${INTERNAL_CPD_HOST} (unchanged)"
               echo "================================================================================"

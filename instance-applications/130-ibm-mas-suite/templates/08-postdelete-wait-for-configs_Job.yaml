@@ -21,7 +21,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -77,9 +77,25 @@ rules:
       - get
       - list
     apiGroups:
-      - "argoproj.io"
+      - "config.mas.ibm.com"
     resources:
-      - applications
+      - appcfgs
+      - bascfgs
+      - idpcfgs
+      - jdbccfgs
+      - kafkacfgs
+      - mongocfgs
+      - objectstoragecfgs
+      - slscfgs
+      - smtpcfgs
+      - watsonstudiocfgs
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - "addons.mas.ibm.com"
+    resources:
+      - genericaddons
 
 ---
 kind: ClusterRoleBinding
@@ -137,10 +153,8 @@ spec:
               cpu: 10m
               memory: 64Mi
           env:
-            - name: ARGO_NAMESPACE
-              value: {{ $argo_ns }}
-            - name: CLUSTER_ID
-              value: {{ .Values.cluster_id }}
+            - name: SUITE_NAMESPACE
+              value: mas-{{ .Values.instance_id }}-core
             - name: INSTANCE_ID
               value: {{ .Values.instance_id }}
           command:
@@ -151,40 +165,52 @@ spec:
               set -e
               echo
               echo "================================================================================"
-              echo "PostDelete: waiting for all suite config Applications to be deleted"
+              echo "PostDelete: waiting for all suite config CRs to be deleted"
               echo "================================================================================"
               echo
-              echo "ArgoCD namespace : ${ARGO_NAMESPACE}"
-              echo "Cluster ID       : ${CLUSTER_ID}"
-              echo "Instance ID      : ${INSTANCE_ID}"
+              echo "Suite namespace : ${SUITE_NAMESPACE}"
+              echo "Instance ID     : ${INSTANCE_ID}"
               echo
 
-              # The suite Application itself (suite.<cluster>.<instance>) also carries the
-              # cluster+instance labels. Exclude it by name to avoid counting it.
-              SUITE_APP_NAME="suite.${CLUSTER_ID}.${INSTANCE_ID}"
+              # All config CR types that can exist in mas-<instance>-core.
+              # These map 1:1 to the resources deployed by the suite-config applications:
+              #   appcfgs, bascfgs, idpcfgs, jdbccfgs, kafkacfgs, mongocfgs,
+              #   objectstoragecfgs, slscfgs, smtpcfgs, watsonstudiocfgs, genericaddons
+              CONFIG_RESOURCES="appcfgs.config.mas.ibm.com \
+                                bascfgs.config.mas.ibm.com \
+                                idpcfgs.config.mas.ibm.com \
+                                jdbccfgs.config.mas.ibm.com \
+                                kafkacfgs.config.mas.ibm.com \
+                                mongocfgs.config.mas.ibm.com \
+                                objectstoragecfgs.config.mas.ibm.com \
+                                slscfgs.config.mas.ibm.com \
+                                smtpcfgs.config.mas.ibm.com \
+                                watsonstudiocfgs.config.mas.ibm.com \
+                                genericaddons.addons.mas.ibm.com"
 
               wait_period=0
               while true; do
-                set +e
-                REMAINING=$(oc get applications.argoproj.io \
-                  -n "${ARGO_NAMESPACE}" \
-                  -l "cluster=${CLUSTER_ID},instance=${INSTANCE_ID}" \
-                  --no-headers 2>/dev/null \
-                  | grep -v "^${SUITE_APP_NAME}[[:space:]]" \
-                  | grep -v "^$" \
-                  | wc -l)
-                set -e
+                REMAINING=0
+                for resource in ${CONFIG_RESOURCES}; do
+                  set +e
+                  COUNT=$(oc get "${resource}" \
+                    -n "${SUITE_NAMESPACE}" \
+                    --no-headers 2>/dev/null \
+                    | grep -v "^$" | wc -l)
+                  set -e
+                  REMAINING=$(( REMAINING + COUNT ))
+                done
 
-                echo "Suite config Applications still present: ${REMAINING}"
+                echo "Config CRs still present in ${SUITE_NAMESPACE}: ${REMAINING}"
 
                 if [ "${REMAINING}" -eq "0" ]; then
-                  echo "All suite config Applications are gone. Suite deletion can proceed."
+                  echo "All config CRs are gone. Suite deletion can proceed."
                   exit 0
                 fi
 
                 wait_period=$(( wait_period + 30 ))
                 if [ "${wait_period}" -gt 3600 ]; then
-                  echo "Timed out after 60 minutes waiting for suite config Applications."
+                  echo "Timed out after 60 minutes waiting for config CRs to be deleted."
                   exit 1
                 fi
 

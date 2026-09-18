@@ -1,0 +1,112 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+PostDelete job: deletes the MAS App Workspace CR after the ArgoCD Application is removed.
+Depends on SA/Role created in 01-postdelete-crs-resources.yaml.
+Use build/bin/set-cli-image-digest.sh to update the image digest below.
+*/}}
+{{- $_cli_image_digest := "sha256:b6df7b173b131d7340087a1a5d7ed51ff16cef7fcac7291a269b2ad1937a61af" }}
+
+{{- $core_ns   := printf "mas-%s-core" .Values.instance_id }}
+{{- $app_ns    := .Values.mas_app_namespace }}
+{{- $cr_name   := printf "%s-%s" .Values.instance_id .Values.mas_workspace_id }}
+{{- $cr_kind   := .Values.mas_app_ws_kind }}
+{{- $cr_api_v  := .Values.mas_app_ws_apiversion }}
+{{- $name_hash := $cr_name | sha256sum | trunc 6 }}
+{{- $job_name  := printf "postdelete-cr-job-ws-%s-%s" ($cr_name | trunc 32) $name_hash }}
+
+{{ $sa_name   := "postdelete-delete-cr-sa" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CR_NAMESPACE
+              value: {{ $app_ns }}
+            - name: CR_NAME
+              value: {{ $cr_name }}
+            - name: CR_API_VERSION
+              value: {{ $cr_api_v }}
+            - name: CR_KIND
+              value: {{ $cr_kind }}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} in ${CR_NAMESPACE}"
+
+              set +e
+              RESOURCE_NAME=$(oc get ${CR_KIND} ${CR_NAME} \
+                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -z "${RESOURCE_NAME}" ]]; then
+                echo "Resource not found - nothing to do"
+                exit 0
+              fi
+
+              echo "Deleting resource..."
+              set +e
+              oc delete ${CR_KIND} ${CR_NAME} \
+                -n ${CR_NAMESPACE} --wait=false 2>/dev/null
+              set -e
+
+              echo "Waiting up to 600s for operator to process finalizer..."
+              WAIT_SECS=0
+              while [[ ${WAIT_SECS} -lt 600 ]]; do
+                set +e
+                RESOURCE_NAME=$(oc get ${CR_KIND} ${CR_NAME} \
+                  -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+                set -e
+                [[ -z "${RESOURCE_NAME}" ]] && break
+                sleep 15
+                WAIT_SECS=$((WAIT_SECS + 15))
+                echo "  Still waiting... ${WAIT_SECS}s elapsed"
+              done
+
+              if [[ -n "${RESOURCE_NAME}" ]]; then
+                echo "ERROR: AppWorkspace CR still present after ${WAIT_SECS}s - operator did not release finalizer"
+                exit 1
+              fi
+              echo "Done"
+      volumes: []
+  backoffLimit: 4
+{{- end }}
+{{- end }}

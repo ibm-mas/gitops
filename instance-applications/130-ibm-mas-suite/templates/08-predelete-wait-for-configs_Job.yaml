@@ -1,7 +1,7 @@
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
-{{- $_job_name_prefix := "predelete-wait-configs-gone" }}
+{{- $_job_name_prefix := "predelete-suite-wait" }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
@@ -23,51 +23,38 @@ Included in $_job_hash (see below).
 {{- $_job_version := "v1" }}
 
 {{- /*
-10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
+10 char hash appended to the job name.
 */}}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
 
-{{ $job_label   := "predelete-wait-configs-gone" }}
-{{ $sa_name     := "predelete-wait-configs-sa" }}
-{{ $cr_name     := "predelete-wait-configs-cr" }}
-{{ $crb_name    := printf "predelete-wait-configs-crb-%s" .Values.instance_id }}
-{{ $np_name     := "predelete-wait-configs-np" }}
-{{ $ns          := printf "mas-%s-core" .Values.instance_id }}
+{{- /*
+All hook resources in this file intentionally run in argo_namespace (the ArgoCD namespace),
+NOT in mas-<instance>-core.
+
+Reason: the suite Application has selfHeal:true watching mas-<instance>-core. Any hook
+resources created there are seen as drift and trigger a reconcile that puts the Suite CR
+into Progressing state, breaking deletion. Resources created in argo_namespace are outside
+the suite Application's watch scope, so selfHeal never fires.
+
+argo_namespace is passed in as a value from the ibm-mas-instance-root chart.
+*/}}
+
+{{ $job_label := "predelete-suite-wait" }}
+{{ $sa_name   := printf "predelete-suite-wait-sa-%s"  .Values.instance_id }}
+{{ $cr_name   := printf "predelete-suite-wait-cr-%s"  .Values.instance_id }}
+{{ $crb_name  := printf "predelete-suite-wait-crb-%s" .Values.instance_id }}
+{{ $argo_ns   := .Values.argo_namespace | default "openshift-gitops" }}
 
 {{- if .Values.application_admin_role }}
-
----
-# Permit outbound communication by the Job pods
-# (Needed to communicate with the Kubernetes API server)
-kind: NetworkPolicy
-apiVersion: networking.k8s.io/v1
-metadata:
-  name: {{ $np_name }}
-  namespace: {{ $ns }}
-  annotations:
-    argocd.argoproj.io/hook: PreDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-spec:
-  podSelector:
-    matchLabels:
-      app: {{ $job_label }}
-  egress:
-    - {}
-  policyTypes:
-    - Egress
 
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ $sa_name }}
-  namespace: {{ $ns }}
+  namespace: {{ $argo_ns }}
   annotations:
     argocd.argoproj.io/hook: PreDelete
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
@@ -77,11 +64,10 @@ metadata:
 {{- end }}
 
 ---
-# ClusterRole to read ArgoCD Application resources in the argocd namespace
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ $cr_name }}-{{ .Values.instance_id }}
+  name: {{ $cr_name }}
   annotations:
     argocd.argoproj.io/hook: PreDelete
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
@@ -93,7 +79,6 @@ rules:
   - verbs:
       - get
       - list
-      - watch
     apiGroups:
       - "argoproj.io"
     resources:
@@ -114,18 +99,18 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: {{ $sa_name }}
-    namespace: {{ $ns }}
+    namespace: {{ $argo_ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ $cr_name }}-{{ .Values.instance_id }}
+  name: {{ $cr_name }}
 
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ $_job_name }}
-  namespace: {{ $ns }}
+  namespace: {{ $argo_ns }}
   annotations:
     argocd.argoproj.io/hook: PreDelete
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
@@ -157,7 +142,7 @@ spec:
               memory: 64Mi
           env:
             - name: ARGO_NAMESPACE
-              value: {{ .Values.argo_namespace | default "openshift-gitops" }}
+              value: {{ $argo_ns }}
             - name: CLUSTER_ID
               value: {{ .Values.cluster_id }}
             - name: INSTANCE_ID
@@ -178,23 +163,32 @@ spec:
               echo "Instance ID      : ${INSTANCE_ID}"
               echo
 
+              # The suite Application itself (suite.<cluster>.<instance>) also carries the
+              # cluster+instance labels, so exclude it by name to avoid counting it.
+              SUITE_APP_NAME="suite.${CLUSTER_ID}.${INSTANCE_ID}"
+
               wait_period=0
               while true; do
+                set +e
                 REMAINING=$(oc get applications.argoproj.io \
                   -n "${ARGO_NAMESPACE}" \
                   -l "cluster=${CLUSTER_ID},instance=${INSTANCE_ID}" \
-                  --no-headers 2>/dev/null | grep -v "^$" | wc -l || echo "0")
+                  --no-headers 2>/dev/null \
+                  | grep -v "^${SUITE_APP_NAME}[[:space:]]" \
+                  | grep -v "^$" \
+                  | wc -l)
+                set -e
 
                 echo "Suite config Applications still present: ${REMAINING}"
 
                 if [ "${REMAINING}" -eq "0" ]; then
-                  echo "All suite config Applications have been deleted. Proceeding."
+                  echo "All suite config Applications are gone. Proceeding with suite deletion."
                   exit 0
                 fi
 
                 wait_period=$(( wait_period + 30 ))
                 if [ "${wait_period}" -gt 3600 ]; then
-                  echo "Timed out after 60 minutes waiting for suite config Applications to be deleted."
+                  echo "Timed out after 60 minutes waiting for suite config Applications."
                   exit 1
                 fi
 

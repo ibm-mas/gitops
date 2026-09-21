@@ -21,7 +21,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v3" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -98,6 +98,14 @@ rules:
       - "addons.mas.ibm.com"
     resources:
       - genericaddons
+  - verbs:
+      - get
+      - patch
+      - delete
+    apiGroups:
+      - "core.mas.ibm.com"
+    resources:
+      - suites
 
 ---
 kind: ClusterRoleBinding
@@ -168,7 +176,7 @@ spec:
               set -e
               echo
               echo "================================================================================"
-              echo "PostDelete: waiting for all suite config CRs to be deleted"
+              echo "PostDelete phase 1: wait for all suite config CRs to be deleted"
               echo "================================================================================"
               echo
               echo "Suite namespace : ${SUITE_NAMESPACE}"
@@ -176,9 +184,6 @@ spec:
               echo
 
               # All config CR types that can exist in mas-<instance>-core.
-              # These map 1:1 to the resources deployed by the suite-config applications:
-              #   appcfgs, bascfgs, idpcfgs, jdbccfgs, kafkacfgs, mongocfgs,
-              #   objectstoragecfgs, slscfgs, smtpcfgs, watsonstudiocfgs, genericaddons
               CONFIG_RESOURCES="appcfgs.config.mas.ibm.com \
                                 bascfgs.config.mas.ibm.com \
                                 idpcfgs.config.mas.ibm.com \
@@ -207,8 +212,8 @@ spec:
                 echo "Config CRs still present in ${SUITE_NAMESPACE}: ${REMAINING}"
 
                 if [ "${REMAINING}" -eq "0" ]; then
-                  echo "All config CRs are gone. Suite deletion can proceed."
-                  exit 0
+                  echo "All config CRs are gone. Moving to phase 2."
+                  break
                 fi
 
                 wait_period=$(( wait_period + 30 ))
@@ -220,6 +225,29 @@ spec:
                 echo "Waiting 30 seconds before next check..."
                 sleep 30
               done
+
+              echo
+              echo "================================================================================"
+              echo "PostDelete phase 2: delete Suite CR ${INSTANCE_ID}"
+              echo "================================================================================"
+              echo
+
+              set +e
+              SUITE_EXISTS=$(oc get suite.core.mas.ibm.com "${INSTANCE_ID}" \
+                -n "${SUITE_NAMESPACE}" \
+                --no-headers 2>/dev/null | grep -v "^$" | wc -l)
+              set -e
+
+              if [ "${SUITE_EXISTS}" -eq "0" ]; then
+                echo "Suite CR '${INSTANCE_ID}' not found — nothing to delete."
+                exit 0
+              fi
+
+              echo "Deleting Suite CR '${INSTANCE_ID}'..."
+              oc delete suite.core.mas.ibm.com "${INSTANCE_ID}" \
+                -n "${SUITE_NAMESPACE}" \
+                --wait=true
+              echo "Suite CR '${INSTANCE_ID}' deleted successfully."
   backoffLimit: 2
 
 {{- end }}

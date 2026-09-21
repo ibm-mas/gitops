@@ -2,7 +2,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:b6df7b173b131d7340087a1a5d7ed51ff16cef7fcac7291a269b2ad1937a61af" }}
+{{- $_cli_image_digest := "sha256:e1fa9ce3f7f30c3c7803bf03684620cc1ce71b1410a89d0d18b02bf2bd7d8724" }}
 
 
 ---
@@ -291,6 +291,23 @@ spec:
                   for secret_name in ${secret_names}; do
                     secret_number=$((secret_number + 1))
                     echo "[INFO] [$secret_number/$num_secrets] Processing JDBC secret ${secret_name}"
+
+                    # Filter 1: skip if instance name segment does not contain 'db2' (cheap, no AWS call needed)
+                    jdbc_instance_segment=$(echo "${secret_name}" | sed -n 's|.*/jdbc/\([^/]*\)/config|\1|p')
+                    if [[ ! "${jdbc_instance_segment}" =~ db2 ]]; then
+                      echo "[INFO] Skipping JDBC secret ${secret_name} as instance name '${jdbc_instance_segment}' does not indicate a DB2 database"
+                      skipped_count=$((skipped_count + 1))
+                      continue
+                    fi
+
+                    # Filter 2: skip if jdbc_connection_url does not start with jdbc:db2
+                    jdbc_secret=$(sm_get_secret "${secret_name}")
+                    jdbc_url=$(extract_secret_value "${jdbc_secret}" jdbc_connection_url)
+                    if [[ ! "${jdbc_url}" =~ ^jdbc:db2 ]]; then
+                      echo "[INFO] Skipping JDBC secret ${secret_name} as JDBC URL is not DB2 (${jdbc_url})"
+                      skipped_count=$((skipped_count + 1))
+                      continue
+                    fi
 
                     # Get DB2 credentials with error handling
                     echo "[DEBUG] Retrieving DB2 credentials for ${secret_name}"

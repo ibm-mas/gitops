@@ -6,7 +6,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:b6df7b173b131d7340087a1a5d7ed51ff16cef7fcac7291a269b2ad1937a61af" }}
+{{- $_cli_image_digest := "sha256:e1fa9ce3f7f30c3c7803bf03684620cc1ce71b1410a89d0d18b02bf2bd7d8724" }}
 
 # A sanity test is one that can be disruptive i.e. it can create new users, call authenticated apis, creates resources 
 # in the application. This type of test should only be run in a downstream environment such as a dev or staging env
@@ -1907,7 +1907,7 @@ spec:
             - |
               python -m venv .venv
               source .venv/bin/activate
-              pip install -r /tmp/tests/requirements.txt
+              pip install -r /tmp/tests/requirements.txt pymongo xmljson
 
               set -o pipefail
               echo "Running tests..."
@@ -1929,21 +1929,10 @@ spec:
               DEVOPS_MONGO_URI=$(cat /etc/mas/devops-uri/devops_mongo_uri 2>/dev/null || true)
               if [[ -n "${DEVOPS_MONGO_URI}" ]]; then
                 echo "Normalising junit XML to xunit2 format for MongoDB..."
-                python3 - <<'PYEOF'
-import xml.etree.ElementTree as ET, sys
-tree = ET.parse("/tmp/junitxml_test_output.xml")
-root = tree.getroot()
-if root.tag == "testsuite":
-    wrapper = ET.Element("testsuites")
-    wrapper.append(root)
-    ET.ElementTree(wrapper).write("/tmp/junitxml_test_output.xml", xml_declaration=True, encoding="unicode")
-    print("Wrapped <testsuite> inside <testsuites>")
-else:
-    print("XML already has <testsuites> root — no change needed")
-PYEOF
+                python3 -c "import xml.etree.ElementTree as ET; tree = ET.parse('/tmp/junitxml_test_output.xml'); root = tree.getroot(); wrapper = ET.Element('testsuites'); wrapper.append(root); ET.ElementTree(wrapper).write('/tmp/junitxml_test_output.xml', xml_declaration=True, encoding='unicode') if root.tag == 'testsuite' else print('XML already has testsuites root')"
                 echo "Saving junit results to MongoDB..."
                 export DEVOPS_MONGO_URI
-                python3 /opt/app-root/src/save-junit-to-mongo.py
+                python /opt/app-root/src/save-junit-to-mongo.py
               fi
 
               if [[ $TEST_PASSED == "false" ]]; then

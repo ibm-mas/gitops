@@ -21,6 +21,8 @@ Certain templates are enabled only for specific MAS editions (`mas_edition`) and
 | `ResourceQuota` | MVI resource quota | Application namespace | When required by the target MAS app | `application_admin_role` |
 | `Subscription` | MAS application operator subscription | Application namespace | When required by the target MAS app | `application_admin_role` |
 | `Job` | Pre/post-sync SCC and helper jobs | Application namespace | When sync hook jobs are enabled | `application_admin_role` |
+| `Role` | PostDelete RBAC role for CR and OLM cleanup | Application namespace | When `use_postdelete_hooks` is enabled | `application_admin_role` |
+| `RoleBinding` | PostDelete RBAC role binding for CR and OLM cleanup | Application namespace | When `use_postdelete_hooks` is enabled | `application_admin_role` |
 
 ## Configuration
 

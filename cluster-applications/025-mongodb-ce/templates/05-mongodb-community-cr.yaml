@@ -1,0 +1,51 @@
+---
+apiVersion: mongodbcommunity.mongodb.com/v1
+kind: MongoDBCommunity
+metadata:
+  name: {{ .Values.mongodb_instance_name | default "mas-mongo-ce" }}
+  namespace: {{ .Values.mongodb_namespace | default "mongoce" }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "025"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  members: {{ .Values.mongodb_members | default 3 }}
+  type: ReplicaSet
+  version: {{ .Values.mongodb_version | default "7.0.5" | quote }}
+  security:
+    authentication:
+      modes:
+        - SCRAM
+  users:
+    - name: admin
+      db: admin
+      passwordSecretRef:
+        name: admin-user-credentials
+      roles:
+        - name: root
+          db: admin
+      scramCredentialsSecretName: admin-user-credentials
+  statefulSet:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: mongod
+              resources:
+{{ .Values.resources | toYaml | indent 16 }}
+{{- if .Values.storage_size }}
+      volumeClaimTemplates:
+        - metadata:
+            name: data-volume
+          spec:
+            accessModes: [ "ReadWriteOnce" ]
+            {{- if .Values.storage_class }}
+            storageClassName: "{{ .Values.storage_class }}"
+            {{- end }}
+            resources:
+              requests:
+                storage: "{{ .Values.storage_size }}"
+{{- end }}

@@ -108,26 +108,31 @@ spec:
                 set +e
                 RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
                 set -e
+                # NOTE: finalizer patch fallback commented out for PreDelete hook validation
+                # if [[ -n "${RESOURCE_NAME}" ]]; then
+                #   echo "$RESOURCE still present after delete, attempting to patch out finalizers"
+                #   set +e
+                #   oc patch $RESOURCE -n $NAMESPACE --type=json \
+                #     -p='[{"op":"remove","path":"/metadata/finalizers"}]'
+                #   patch_rc=$?
+                #   set -e
+                #   if [[ $patch_rc -ne 0 ]]; then
+                #     echo "Failed to patch finalizers from $RESOURCE, failing job"
+                #     exit 1
+                #   fi
+                #   echo "Finalizers patched, verifying $RESOURCE is now gone"
+                #   sleep 5
+                #   set +e
+                #   RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                #   set -e
+                #   if [[ -n "${RESOURCE_NAME}" ]]; then
+                #     echo "$RESOURCE still present after finalizer patch, failing job"
+                #     exit 1
+                #   fi
+                # fi
                 if [[ -n "${RESOURCE_NAME}" ]]; then
-                  echo "$RESOURCE still present after delete, attempting to patch out finalizers"
-                  set +e
-                  oc patch $RESOURCE -n $NAMESPACE --type=json \
-                    -p='[{"op":"remove","path":"/metadata/finalizers"}]'
-                  patch_rc=$?
-                  set -e
-                  if [[ $patch_rc -ne 0 ]]; then
-                    echo "Failed to patch finalizers from $RESOURCE, failing job"
-                    exit 1
-                  fi
-                  echo "Finalizers patched, verifying $RESOURCE is now gone"
-                  sleep 5
-                  set +e
-                  RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
-                  set -e
-                  if [[ -n "${RESOURCE_NAME}" ]]; then
-                    echo "$RESOURCE still present after finalizer patch, failing job"
-                    exit 1
-                  fi
+                  echo "$RESOURCE still present, failing job"
+                  exit 1
                 fi
 
                 echo "... verified"

@@ -20,7 +20,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -98,6 +98,19 @@ rules:
       - "argoproj.io"
     resources:
       - applications
+  - verbs:
+      - get
+      - list
+      - watch
+    apiGroups:
+      - "config.mas.ibm.com"
+    resources:
+      - mongocfgs
+      - slscfgs
+      - bascfgs
+      - idpcfgs
+      - smtpcfgs
+      - appcfgs
 
 ---
 kind: ClusterRoleBinding
@@ -170,33 +183,40 @@ spec:
               set -e
               echo
               echo "================================================================================"
-              echo "PreDelete: waiting for all suite config Applications to be deleted"
+              echo "PreDelete: waiting for all suite config CRs to be fully deleted"
               echo "================================================================================"
               echo
               echo "ArgoCD namespace : ${ARGO_NAMESPACE}"
               echo "Cluster ID       : ${CLUSTER_ID}"
               echo "Instance ID      : ${INSTANCE_ID}"
+              echo "Core namespace   : mas-${INSTANCE_ID}-core"
               echo
+
+              CORE_NS="mas-${INSTANCE_ID}-core"
 
               wait_period=0
               while true; do
-                REMAINING=$(oc get applications.argoproj.io \
-                  -n "${ARGO_NAMESPACE}" \
-                  -l "cluster=${CLUSTER_ID},instance=${INSTANCE_ID}" \
+                REMAINING=$(oc get \
+                  mongocfgs.config.mas.ibm.com \
+                  slscfgs.config.mas.ibm.com \
+                  bascfgs.config.mas.ibm.com \
+                  idpcfgs.config.mas.ibm.com \
+                  smtpcfgs.config.mas.ibm.com \
+                  appcfgs.config.mas.ibm.com \
+                  -n "${CORE_NS}" \
                   --no-headers 2>/dev/null \
-                  | grep "^${INSTANCE_ID}-.*-system\." \
                   | grep -v "^$" | wc -l || echo "0")
 
-                echo "Suite config Applications still present: ${REMAINING}"
+                echo "Suite config CRs still present: ${REMAINING}"
 
                 if [ "${REMAINING}" -eq "0" ]; then
-                  echo "All suite config Applications have been deleted. Proceeding."
+                  echo "All suite config CRs have been deleted. Proceeding."
                   exit 0
                 fi
 
                 wait_period=$(( wait_period + 30 ))
                 if [ "${wait_period}" -gt 3600 ]; then
-                  echo "Timed out after 60 minutes waiting for suite config Applications to be deleted."
+                  echo "Timed out after 60 minutes waiting for suite config CRs to be deleted."
                   exit 1
                 fi
 

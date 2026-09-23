@@ -1,0 +1,155 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+PostDelete job: deletes the MAS App CR, Subscription, CSV and app-namespace Role
+after the ArgoCD Application is removed.
+Depends on SA/Role in 01-postdelete-crs-resources.yaml.
+Use build/bin/set-cli-image-digest.sh to update the image digest below.
+*/}}
+{{- $_cli_image_digest := "sha256:c715f4cdc38d1fded23cd9f1c22f30f8668618e73905fd11edf4a1184f25e1bb" }}
+
+{{- $core_ns  := printf "mas-%s-core" .Values.instance_id }}
+{{- $app_ns   := .Values.mas_app_namespace }}
+{{- $cr_name  := .Values.instance_id }}
+{{- $cr_kind  := .Values.mas_app_kind }}
+{{- $cr_api_v := .Values.mas_app_api_version }}
+{{- $name_hash := $cr_name | sha256sum | trunc 6 }}
+{{- $job_name  := printf "postdelete-cr-job-app-%s-%s" ($cr_name | trunc 32) $name_hash }}
+
+{{ $sa_name   := "postdelete-delete-cr-sa" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CR_NAMESPACE
+              value: {{ $app_ns }}
+            - name: CR_NAME
+              value: {{ $cr_name }}
+            - name: CR_API_VERSION
+              value: {{ $cr_api_v }}
+            - name: CR_KIND
+              value: {{ $cr_kind }}
+            - name: MAS_APP_ID
+              value: "{{ .Values.mas_app_id }}"
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: ${CR_KIND}.${CR_API_VERSION}/${CR_NAME} in ${CR_NAMESPACE}"
+
+              set +e
+              RESOURCE_NAME=$(oc get ${CR_KIND} ${CR_NAME} \
+                -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -n "${RESOURCE_NAME}" ]]; then
+                echo "Deleting resource..."
+                set +e
+                oc delete ${CR_KIND} ${CR_NAME} \
+                  -n ${CR_NAMESPACE} --wait=false 2>/dev/null
+                set -e
+
+                echo "Waiting up to 600s for operator to process finalizer..."
+                WAIT_SECS=0
+                while [[ ${WAIT_SECS} -lt 600 ]]; do
+                  set +e
+                  RESOURCE_NAME=$(oc get ${CR_KIND} ${CR_NAME} \
+                    -n ${CR_NAMESPACE} -o=jsonpath="{.metadata.name}" 2>/dev/null)
+                  set -e
+                  [[ -z "${RESOURCE_NAME}" ]] && break
+                  sleep 15
+                  WAIT_SECS=$((WAIT_SECS + 15))
+                  echo "  Still waiting... ${WAIT_SECS}s elapsed"
+                done
+
+                if [[ -n "${RESOURCE_NAME}" ]]; then
+                  echo "ERROR: App CR still present after ${WAIT_SECS}s - operator did not release finalizer"
+                  exit 1
+                fi
+              else
+                echo "App CR not found - already removed by operator"
+              fi
+
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete ibm-mas-${MAS_APP_ID} Subscription in ${CR_NAMESPACE}"
+              set +e
+              SUB_NAME=$(oc get subscription -n ${CR_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep "^ibm-mas-${MAS_APP_ID}$")
+              set -e
+              if [[ -z "${SUB_NAME}" ]]; then
+                echo "No ibm-mas-${MAS_APP_ID} Subscription found - skipping"
+              else
+                echo "Deleting Subscription: ${SUB_NAME}"
+                oc delete subscription "${SUB_NAME}" -n ${CR_NAMESPACE} \
+                  --timeout=60s --wait=true 2>/dev/null || true
+                echo "Subscription deleted"
+              fi
+
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete ibm-mas-${MAS_APP_ID} CSV in ${CR_NAMESPACE}"
+              set +e
+              CSV_NAME=$(oc get csv -n ${CR_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep "^ibm-mas-${MAS_APP_ID}\.")
+              set -e
+              if [[ -z "${CSV_NAME}" ]]; then
+                echo "No ibm-mas-${MAS_APP_ID} CSV found - skipping"
+              else
+                echo "Deleting CSV: ${CSV_NAME}"
+                oc delete csv "${CSV_NAME}" -n ${CR_NAMESPACE} \
+                  --timeout=60s --wait=true 2>/dev/null || true
+                echo "CSV deleted"
+              fi
+
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete postdelete-delete-appws-cr-r Role in ${CR_NAMESPACE}"
+              set +e
+              oc delete role postdelete-delete-appws-cr-r \
+                -n ${CR_NAMESPACE} --ignore-not-found=true 2>/dev/null || true
+              set -e
+              echo "Role deleted (or not found)"
+
+              echo "PostDelete: app CR and OLM cleanup complete"
+      volumes: []
+  backoffLimit: 4
+{{- end }}
+{{- end }}

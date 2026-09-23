@@ -47,6 +47,18 @@ rules:
     resources:
       - subscriptions
       - clusterserviceversions
+  - verbs:
+      - get
+      - list
+      - patch
+      - update
+      - delete
+    apiGroups:
+      - logging.openshift.io
+      - observability.openshift.io
+    resources:
+      - clusterloggings
+      - clusterlogforwarders
 
 ---
 kind: RoleBinding
@@ -113,6 +125,22 @@ spec:
             - -c
             - |
 
+              set -e
+
+              echo "Removing finalizers from ClusterLogging instances in ${NAMESPACE}"
+              set +e
+              for cr in $(oc get clusterlogging -n ${NAMESPACE} -o name 2>/dev/null); do
+                oc patch ${cr} -n ${NAMESPACE} --type=json \
+                  -p='[{"op":"replace","path":"/metadata/finalizers","value":[]}]' 2>/dev/null || true
+              done
+              set -e
+
+              echo "Removing finalizers from ClusterLogForwarder instances in ${NAMESPACE}"
+              set +e
+              for cr in $(oc get clusterlogforwarder -n ${NAMESPACE} -o name 2>/dev/null); do
+                oc patch ${cr} -n ${NAMESPACE} --type=json \
+                  -p='[{"op":"replace","path":"/metadata/finalizers","value":[]}]' 2>/dev/null || true
+              done
               set -e
 
               echo "Deleting Subscription ${SUBSCRIPTION_NAME} in namespace ${NAMESPACE}"

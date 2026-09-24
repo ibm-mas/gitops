@@ -155,6 +155,16 @@ rules:
     - db2uinstances
   verbs:
     - "get"
+- apiGroups:
+    - ""
+  resources:
+    - configmaps
+  verbs:
+    - create
+    - get
+    - list
+    - update
+    - patch
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -387,6 +397,32 @@ spec:
               echo "Waiting for service c-${DB2_INSTANCE_NAME}-db2u-engn-svc to be present before continuing (timeout 300s)"
               echo "================================================================================"
               wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
+
+              # Check if HADR upgrade is in progress and run Primary database post-upgrade operations
+              UPGRADE_CM="hadr-upgrade-in-progress-${DB2_INSTANCE_NAME}"
+              if oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                PRIMARY_UPGRADED=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.primary_upgraded}' 2>/dev/null || echo "false")
+                if [[ "${PRIMARY_UPGRADED}" != "true" ]]; then
+                  echo ""
+                  echo "================================================================================"
+                  echo "Running Db2 Primary upgrade operations (db2_update_upgrade)..."
+                  echo "================================================================================"
+                  echo "Updating databases on Primary..."
+                  oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2_update_upgrade --databases" || exit $?
+
+                  echo "Running post-upgrade on Primary..."
+                  oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2_update_upgrade --post-upgrade" || exit $?
+
+                  REPLICA_DB_VAL=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.replica_db}' 2>/dev/null || echo "false")
+                  if [[ "${REPLICA_DB_VAL}" == "true" ]]; then
+                    oc patch configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --type=merge -p '{"data":{"primary_upgraded":"true"}}'
+                    echo "Primary upgrade completed and marked in ConfigMap for Standby processing."
+                  else
+                    oc delete configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --ignore-not-found=true
+                    echo "Primary upgrade completed. ConfigMap cleaned up (non-HADR standalone instance)."
+                  fi
+                fi
+              fi
 
               echo ""
               echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"

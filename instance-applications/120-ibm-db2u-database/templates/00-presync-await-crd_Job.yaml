@@ -41,6 +41,34 @@ rules:
   verbs:
     - get
     - list
+    - patch
+    - update
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - get
+    - list
+- apiGroups:
+    - ""
+  resources:
+    - pods/exec
+  verbs:
+    - create
+    - get
+    - list
+- apiGroups:
+    - ""
+  resources:
+    - configmaps
+  verbs:
+    - create
+    - get
+    - list
+    - update
+    - patch
+    - delete
 
 
 
@@ -98,7 +126,15 @@ spec:
             requests:
               cpu: 10m
               memory: 64Mi
-          env: []
+          env:
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+            - name: TARGET_DB2_VERSION
+              value: "{{ .Values.db2_version }}"
+            - name: REPLICA_DB
+              value: "{{ .Values.replica_db | default false }}"
           volumeMounts: []
           command:
             - /bin/sh
@@ -107,12 +143,8 @@ spec:
 
               set -e
 
-              
-
               # Wait for DB2 CRD to be available by checking if we can query the resource
-              # This approach uses namespace-scoped permissions instead of cluster-scoped CRD access
               wait_period=0
-              
               echo "Waiting for DB2 CRD (db2uinstances) to be available..."
               
               while true
@@ -125,17 +157,76 @@ spec:
                 
                 sleep 10
                 
-                # Try to query db2uinstances - if CRD exists, this will succeed (even if no instances exist)
-                # If CRD doesn't exist, we'll get an error about unknown resource type
-                if oc get db2uinstances -n {{ .Values.db2_namespace }} --no-headers 2>/dev/null; then
+                if oc get db2uinstances -n "${DB2_NAMESPACE}" --no-headers 2>/dev/null; then
                   echo "DB2 CRD db2uinstances.db2u.databases.ibm.com is available"
                   break
                 fi
                 
                 echo "DB2 CRD not yet available, waiting... (${wait_period}s elapsed)"
               done
-              
               echo "DB2 CRD is ready"
+
+              # Check if Primary DB version upgrade is being initiated
+              if [[ "${DB2_INSTANCE_NAME}" != *"sdb"* ]] && [[ -n "${TARGET_DB2_VERSION}" ]]; then
+                UPGRADE_CM="hadr-upgrade-in-progress-${DB2_INSTANCE_NAME}"
+
+                if oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                  CURRENT_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}')
+                  echo "Checking Db2 version: Current=${CURRENT_VERSION}, Target=${TARGET_DB2_VERSION}"
+
+                  if [[ -n "${CURRENT_VERSION}" ]] && [[ "${CURRENT_VERSION}" != "${TARGET_DB2_VERSION}" ]]; then
+                    echo "================================================================================"
+                    echo "Version drift detected. Initiating PreSync upgrade preparation..."
+                    echo "================================================================================"
+
+                    # 1. Stop governor on primary engine pod
+                    echo "Stopping governor on Primary (c-${DB2_INSTANCE_NAME}-db2u-0)..."
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- sv stop governor || true
+
+                    # 2. If replica_db is true and standby instance exists, process standby-specific steps
+                    if [[ "${REPLICA_DB}" == "true" ]]; then
+                      SDB_INSTANCE_NAME="${DB2_INSTANCE_NAME}-sdb"
+                      if oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                        echo "Stopping governor on Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
+                        oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- sv stop governor || true
+
+                        echo "Annotating Standby ${SDB_INSTANCE_NAME} with db2ckupgrade_hadr=initialize..."
+                        oc annotate db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" \
+                          db2u.databases.ibm.com/db2ckupgrade_hadr=initialize --overwrite
+
+                        echo "Waiting for Standby condition Db2CheckUpgradeHadrSuccess=True..."
+                        check_count=0
+                        until [ "$(oc get db2uinstance ${SDB_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrSuccess")].status}' 2>/dev/null)" == "True" ]; do
+                          if [ "$(oc get db2uinstance ${SDB_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrFailure")].status}' 2>/dev/null)" == "True" ]; do
+                            echo "ERROR: Standby upgrade check failed! Check \${SUPPORTDIR}/db2_upgrade_check.log on standby pod."
+                            exit 1
+                          fi
+                          check_count=$((check_count+1))
+                          if [ $check_count -gt 30 ]; then
+                            echo "ERROR: Timeout waiting for Standby Db2CheckUpgradeHadrSuccess condition after 300s."
+                            exit 1
+                          fi
+                          echo "... waiting for Db2CheckUpgradeHadrSuccess (attempt ${check_count}/30)..."
+                          sleep 10
+                        done
+                        echo "Standby upgrade check succeeded."
+                      fi
+                    fi
+
+                    # 3. Create upgrade state ConfigMap for PostSync jobs
+                    echo "Recording upgrade state in ConfigMap ${UPGRADE_CM}..."
+                    oc create configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" \
+                      --from-literal=target_version="${TARGET_DB2_VERSION}" \
+                      --from-literal=primary_upgraded="false" \
+                      --from-literal=standby_upgraded="false" \
+                      --from-literal=replica_db="${REPLICA_DB}" \
+                      --dry-run=client -o yaml | oc apply -f -
+                    echo "PreSync upgrade preparation completed successfully."
+                  else
+                    echo "Db2 version matches target (${TARGET_DB2_VERSION}). No upgrade preparation needed."
+                  fi
+                fi
+              fi
 
       restartPolicy: Never
 

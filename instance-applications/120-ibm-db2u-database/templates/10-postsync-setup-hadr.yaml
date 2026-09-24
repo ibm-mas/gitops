@@ -115,6 +115,17 @@ rules:
     - db2uinstances
   verbs:
     - "get"
+- apiGroups:
+    - ""
+  resources:
+    - configmaps
+  verbs:
+    - create
+    - get
+    - list
+    - update
+    - patch
+    - delete
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -375,6 +386,41 @@ spec:
               echo "================================================================================"
               wait_for_resource "svc" "c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
 
+              # Check if HADR upgrade is in progress and run Standby upgrade operations
+              UPGRADE_CM="hadr-upgrade-in-progress-${PRIMARY_DB2_INSTANCE_NAME}"
+              if oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                PRIMARY_UPGRADED=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.primary_upgraded}' 2>/dev/null || echo "false")
+                STANDBY_UPGRADED=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.standby_upgraded}' 2>/dev/null || echo "false")
+
+                if [[ "${PRIMARY_UPGRADED}" == "true" ]] && [[ "${STANDBY_UPGRADED}" != "true" ]]; then
+                  echo ""
+                  echo "================================================================================"
+                  echo "Running Db2 Standby upgrade operations (db2_update_upgrade)..."
+                  echo "================================================================================"
+                  echo "Updating databases on Standby..."
+                  oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2_update_upgrade --databases" || exit $?
+
+                  echo "Waiting for HADR to enter PEER state..."
+                  peer_count=0
+                  until oc exec -n "${DB2_NAMESPACE}" "c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "manage_hadr -status" 2>/dev/null | grep -q "PEER"; do
+                    peer_count=$((peer_count+1))
+                    if [ $peer_count -gt 30 ]; then
+                      echo "WARNING: HADR not yet in PEER state after 300s, continuing status check..."
+                      break
+                    fi
+                    echo "... waiting for PEER state (attempt ${peer_count}/30)..."
+                    sleep 10
+                  done
+
+                  echo "Running post-upgrade on Standby..."
+                  oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2_update_upgrade --post-upgrade" || exit $?
+
+                  # Remove upgrade annotation and cleanup upgrade state ConfigMap
+                  oc annotate db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" db2u.databases.ibm.com/db2ckupgrade_hadr- || true
+                  oc delete configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --ignore-not-found=true
+                  echo "HADR upgrade completed successfully across Primary and Standby."
+                fi
+              fi
 
               # Get HADR ROLE and CONNECT STATUS for Primary and Standby
               get_existing_hadr_config

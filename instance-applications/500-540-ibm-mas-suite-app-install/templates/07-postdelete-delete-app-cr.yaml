@@ -11,9 +11,11 @@ Use build/bin/set-cli-image-digest.sh to update the image digest below.
 
 {{- $core_ns  := printf "mas-%s-core" .Values.instance_id }}
 {{- $app_ns   := .Values.mas_app_namespace }}
-{{- $cr_name  := .Values.instance_id }}
-{{- $cr_kind  := .Values.mas_app_kind }}
-{{- $cr_api_v := .Values.mas_app_api_version }}
+{{- $cr_name     := .Values.instance_id }}
+{{- $cr_kind     := .Values.mas_app_kind }}
+{{- $cr_api_v    := .Values.mas_app_api_version }}
+{{- $ws_cr_kind  := .Values.mas_app_ws_kind }}
+{{- $ws_cr_api_v := .Values.mas_app_ws_api_version }}
 {{- $name_hash := $cr_name | sha256sum | trunc 6 }}
 {{- $job_name  := printf "postdelete-cr-job-app-%s-%s" ($cr_name | trunc 32) $name_hash }}
 
@@ -66,6 +68,10 @@ spec:
               value: {{ $cr_kind }}
             - name: MAS_APP_ID
               value: "{{ .Values.mas_app_id }}"
+            - name: WS_CR_KIND
+              value: "{{ $ws_cr_kind }}"
+            - name: WS_CR_API_VERSION
+              value: "{{ $ws_cr_api_v }}"
           volumeMounts: []
           command:
             - /bin/sh
@@ -106,6 +112,34 @@ spec:
                 fi
               else
                 echo "App CR not found - already removed by operator"
+              fi
+
+              # Wait for the AppWorkspace CR to be gone before removing OLM resources.
+              # The config chart's PostDelete job deletes the workspace CR, but it fires
+              # concurrently with this job. The operator MUST still be alive to process
+              # the workspace finalizer — so we must not delete Subscription/CSV until
+              # the workspace CR is confirmed gone.
+              if [[ -n "${WS_CR_KIND}" ]]; then
+                echo "------------------------------------------------------------------"
+                echo "PostDelete: waiting for ${WS_CR_KIND} to be gone in ${CR_NAMESPACE}"
+                WS_NAME=$(oc get ${WS_CR_KIND} -n ${CR_NAMESPACE} \
+                  --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+                WAIT_SECS=0
+                while [[ -n "${WS_NAME}" && ${WAIT_SECS} -lt 600 ]]; do
+                  echo "  ${WS_CR_KIND} ${WS_NAME} still present - waiting for config PostDelete job... ${WAIT_SECS}s elapsed"
+                  sleep 15
+                  WAIT_SECS=$((WAIT_SECS + 15))
+                  set +e
+                  WS_NAME=$(oc get ${WS_CR_KIND} -n ${CR_NAMESPACE} \
+                    --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+                  set -e
+                done
+                if [[ -n "${WS_NAME}" ]]; then
+                  echo "WARNING: ${WS_CR_KIND} ${WS_NAME} still present after ${WAIT_SECS}s - patching finalizer to unblock OLM cleanup"
+                  oc patch ${WS_CR_KIND} "${WS_NAME}" -n ${CR_NAMESPACE} \
+                    --type=json -p='[{"op":"replace","path":"/metadata/finalizers","value":[]}]' 2>/dev/null || true
+                fi
+                echo "${WS_CR_KIND} gone - safe to remove OLM resources"
               fi
 
               echo "------------------------------------------------------------------"

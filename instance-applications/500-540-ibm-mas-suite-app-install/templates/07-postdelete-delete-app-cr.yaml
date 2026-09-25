@@ -2,19 +2,12 @@
 {{- if .Values.use_postdelete_hooks }}
 
 {{- /*
-PostDelete job: deletes the MAS App CR after the ArgoCD Application is removed.
-The App CR carries helm.sh/resource-policy:keep so resources-finalizer skips it,
-meaning the app operator is still running when this PostDelete job executes and
-can process the CR's finalizer cleanly.
-After CR deletion, removes the Subscription and CSV so OLM does not keep the operator
-running and the namespace can terminate.
-Finally, removes the cross-namespace Role (postdelete-delete-appws-cr-r) from the app
-namespace — the RoleBinding is left in place and both are recreated on next provision
-by 08-postdelete-appns-rbac.yaml.
+PostDelete job: deletes the MAS App CR, Subscription, CSV and app-namespace Role
+after the ArgoCD Application is removed.
 Depends on SA/Role in 01-postdelete-crs-resources.yaml.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
-{{- $_cli_image_digest := "sha256:887cc3059a04601241687711df0c03d662931e6719121eec0eb0490001b2c8b9" }}
+{{- $_cli_image_digest := "sha256:020f1925421de13beaf439aa09181209875ed3791824bcaaf1daaf910c725266" }}
 
 {{- $core_ns  := printf "mas-%s-core" .Values.instance_id }}
 {{- $app_ns   := .Values.mas_app_namespace }}
@@ -88,10 +81,6 @@ spec:
               set -e
 
               if [[ -n "${RESOURCE_NAME}" ]]; then
-                # CR still exists - delete it so the operator can process its finalizer cleanly.
-                # The CR has helm.sh/resource-policy:keep so the operator is still alive here.
-                # Use --wait=false then poll — operator takes several minutes to tear down
-                # all child resources (Deployments, Services, PVCs) before releasing the finalizer.
                 echo "Deleting resource..."
                 set +e
                 oc delete ${CR_KIND} ${CR_NAME} \
@@ -119,9 +108,6 @@ spec:
                 echo "App CR not found - already removed by operator"
               fi
 
-              # Delete Subscription - stops OLM from re-installing the operator.
-              # Must happen after CR deletion so the operator is still alive to
-              # process its finalizer, and before CSV deletion so OLM can react.
               echo "------------------------------------------------------------------"
               echo "PostDelete: delete ibm-mas-${MAS_APP_ID} Subscription in ${CR_NAMESPACE}"
               set +e
@@ -138,9 +124,6 @@ spec:
                 echo "Subscription deleted"
               fi
 
-              # Always delete the CSV - OLM does not cascade-delete it when the
-              # Subscription is removed, so the operator pod would otherwise remain
-              # running and prevent the namespace from terminating.
               echo "------------------------------------------------------------------"
               echo "PostDelete: delete ibm-mas-${MAS_APP_ID} CSV in ${CR_NAMESPACE}"
               set +e
@@ -157,9 +140,6 @@ spec:
                 echo "CSV deleted"
               fi
 
-              # Delete the cross-namespace Role from the app namespace.
-              # The RoleBinding references it but is harmless without it.
-              # Both are recreated by 08-postdelete-appns-rbac.yaml on next provision.
               echo "------------------------------------------------------------------"
               echo "PostDelete: delete postdelete-delete-appws-cr-r Role in ${CR_NAMESPACE}"
               set +e

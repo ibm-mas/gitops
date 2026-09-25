@@ -2,8 +2,11 @@
 {{- if .Values.use_postdelete_hooks }}
 
 {{- /*
-PostDelete job: deletes the MAS App CR, Subscription, CSV and app-namespace Role
-after the ArgoCD Application is removed.
+PostDelete job: deletes the MAS App CR, App Workspace CR, Subscription, CSV and
+app-namespace Role after the ArgoCD Application is removed.
+The App CR and Workspace CR each carry helm.sh/resource-policy:keep so the operator
+is still running when this job executes and can process both finalizers cleanly.
+Subscription/CSV are only removed after both CRs are confirmed gone.
 Depends on SA/Role in 01-postdelete-crs-resources.yaml.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
@@ -114,32 +117,44 @@ spec:
                 echo "App CR not found - already removed by operator"
               fi
 
-              # Wait for the AppWorkspace CR to be gone before removing OLM resources.
-              # The config chart's PostDelete job deletes the workspace CR, but it fires
-              # concurrently with this job. The operator MUST still be alive to process
-              # the workspace finalizer — so we must not delete Subscription/CSV until
-              # the workspace CR is confirmed gone.
+              # Delete the AppWorkspace CR so the operator processes its finalizer
+              # before we remove Subscription/CSV. The Workspace CR carries
+              # helm.sh/resource-policy:keep so the operator is still alive here.
               if [[ -n "${WS_CR_KIND}" ]]; then
                 echo "------------------------------------------------------------------"
-                echo "PostDelete: waiting for ${WS_CR_KIND} to be gone in ${CR_NAMESPACE}"
+                echo "PostDelete: ${WS_CR_KIND}.${WS_CR_API_VERSION} in ${CR_NAMESPACE}"
+                set +e
                 WS_NAME=$(oc get ${WS_CR_KIND} -n ${CR_NAMESPACE} \
                   --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
-                WAIT_SECS=0
-                while [[ -n "${WS_NAME}" && ${WAIT_SECS} -lt 600 ]]; do
-                  echo "  ${WS_CR_KIND} ${WS_NAME} still present - waiting for config PostDelete job... ${WAIT_SECS}s elapsed"
-                  sleep 15
-                  WAIT_SECS=$((WAIT_SECS + 15))
-                  set +e
-                  WS_NAME=$(oc get ${WS_CR_KIND} -n ${CR_NAMESPACE} \
-                    --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
-                  set -e
-                done
+                set -e
+
                 if [[ -n "${WS_NAME}" ]]; then
-                  echo "WARNING: ${WS_CR_KIND} ${WS_NAME} still present after ${WAIT_SECS}s - patching finalizer to unblock OLM cleanup"
-                  oc patch ${WS_CR_KIND} "${WS_NAME}" -n ${CR_NAMESPACE} \
-                    --type=json -p='[{"op":"replace","path":"/metadata/finalizers","value":[]}]' 2>/dev/null || true
+                  echo "Deleting ${WS_CR_KIND} ${WS_NAME}..."
+                  set +e
+                  oc delete ${WS_CR_KIND} "${WS_NAME}" \
+                    -n ${CR_NAMESPACE} --wait=false 2>/dev/null
+                  set -e
+
+                  echo "Waiting up to 600s for operator to process workspace finalizer..."
+                  WAIT_SECS=0
+                  while [[ ${WAIT_SECS} -lt 600 ]]; do
+                    set +e
+                    WS_NAME=$(oc get ${WS_CR_KIND} -n ${CR_NAMESPACE} \
+                      --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+                    set -e
+                    [[ -z "${WS_NAME}" ]] && break
+                    sleep 15
+                    WAIT_SECS=$((WAIT_SECS + 15))
+                    echo "  Still waiting... ${WAIT_SECS}s elapsed"
+                  done
+
+                  if [[ -n "${WS_NAME}" ]]; then
+                    echo "ERROR: ${WS_CR_KIND} still present after ${WAIT_SECS}s - operator did not release finalizer"
+                    exit 1
+                  fi
+                else
+                  echo "${WS_CR_KIND} not found - already removed"
                 fi
-                echo "${WS_CR_KIND} gone - safe to remove OLM resources"
               fi
 
               echo "------------------------------------------------------------------"

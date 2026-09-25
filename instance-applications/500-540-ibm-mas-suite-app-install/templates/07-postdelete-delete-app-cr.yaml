@@ -7,13 +7,15 @@ after the ArgoCD Application is removed.
 Depends on SA/Role in 01-postdelete-crs-resources.yaml.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
-{{- $_cli_image_digest := "sha256:1dc8665fddb9546b84290b0615fc7c7017e19516082b35541d41b8ea82df347b" }}
+{{- $_cli_image_digest := "sha256:020f1925421de13beaf439aa09181209875ed3791824bcaaf1daaf910c725266" }}
 
 {{- $core_ns  := printf "mas-%s-core" .Values.instance_id }}
 {{- $app_ns   := .Values.mas_app_namespace }}
-{{- $cr_name  := .Values.instance_id }}
-{{- $cr_kind  := .Values.mas_app_kind }}
-{{- $cr_api_v := .Values.mas_app_api_version }}
+{{- $cr_name     := .Values.instance_id }}
+{{- $cr_kind     := .Values.mas_app_kind }}
+{{- $cr_api_v    := .Values.mas_app_api_version }}
+{{- $ws_cr_kind  := .Values.mas_app_ws_kind }}
+{{- $ws_cr_api_v := .Values.mas_app_ws_api_version }}
 {{- $name_hash := $cr_name | sha256sum | trunc 6 }}
 {{- $job_name  := printf "postdelete-cr-job-app-%s-%s" ($cr_name | trunc 32) $name_hash }}
 
@@ -66,6 +68,10 @@ spec:
               value: {{ $cr_kind }}
             - name: MAS_APP_ID
               value: "{{ .Values.mas_app_id }}"
+            - name: WS_CR_KIND
+              value: "{{ $ws_cr_kind }}"
+            - name: WS_CR_API_VERSION
+              value: "{{ $ws_cr_api_v }}"
           volumeMounts: []
           command:
             - /bin/sh
@@ -106,6 +112,44 @@ spec:
                 fi
               else
                 echo "App CR not found - already removed by operator"
+              fi
+
+              # Delete the AppWorkspace CR so the operator processes its finalizer
+              if [[ -n "${WS_CR_KIND}" ]]; then
+                echo "------------------------------------------------------------------"
+                echo "PostDelete: ${WS_CR_KIND}.${WS_CR_API_VERSION} in ${CR_NAMESPACE}"
+                set +e
+                WS_NAME=$(oc get ${WS_CR_KIND} -n ${CR_NAMESPACE} \
+                  --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+                set -e
+
+                if [[ -n "${WS_NAME}" ]]; then
+                  echo "Deleting ${WS_CR_KIND} ${WS_NAME}..."
+                  set +e
+                  oc delete ${WS_CR_KIND} "${WS_NAME}" \
+                    -n ${CR_NAMESPACE} --wait=false 2>/dev/null
+                  set -e
+
+                  echo "Waiting up to 600s for operator to process workspace finalizer..."
+                  WAIT_SECS=0
+                  while [[ ${WAIT_SECS} -lt 600 ]]; do
+                    set +e
+                    WS_NAME=$(oc get ${WS_CR_KIND} -n ${CR_NAMESPACE} \
+                      --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+                    set -e
+                    [[ -z "${WS_NAME}" ]] && break
+                    sleep 15
+                    WAIT_SECS=$((WAIT_SECS + 15))
+                    echo "  Still waiting... ${WAIT_SECS}s elapsed"
+                  done
+
+                  if [[ -n "${WS_NAME}" ]]; then
+                    echo "ERROR: ${WS_CR_KIND} still present after ${WAIT_SECS}s - operator did not release finalizer"
+                    exit 1
+                  fi
+                else
+                  echo "${WS_CR_KIND} not found - already removed"
+                fi
               fi
 
               echo "------------------------------------------------------------------"

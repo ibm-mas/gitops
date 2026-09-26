@@ -2,9 +2,6 @@
 {{- if not .Values.private_nlb.subnet_ids }}
 {{- fail "private_nlb.subnet_ids must be provided when private_nlb.enabled is true" }}
 {{- end }}
-{{- if not .Values.private_nlb.allowed_cidrs }}
-{{- fail "private_nlb.allowed_cidrs must be provided when private_nlb.enabled is true — restrict access to customer CIDRs only" }}
-{{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -12,28 +9,44 @@ metadata:
   name: {{ .Values.db2_instance_name }}-private-nlb
   namespace: {{ .Values.db2_namespace }}
   annotations:
+    # ROSA Classic uses the AWS cloud-controller-manager to provision
+    # an instance-target Network Load Balancer.
     service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+    # The Db2 NLB is internal-only and is intended to be exposed
+    # through an AWS PrivateLink VPC Endpoint Service.
     service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+
+    # Private connectivity edge subnets, typically one per AZ.
     service.beta.kubernetes.io/aws-load-balancer-subnets: {{ .Values.private_nlb.subnet_ids | join "," | quote }}
-    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "TCP"
+
+    # Db2 TLS is passed through end-to-end.
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "tcp"
     service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "traffic-port"
+
+    # Allow infrastructure automation to identify the NLB that
+    # should be associated with the Db2 VPC Endpoint Service.
+    service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: {{ printf "Application=MAS,Component=Db2,PrivateLink=true,Db2Instance=%s" .Values.db2_instance_name | quote }}
+
 spec:
   type: LoadBalancer
+
+  # ROSA Classic uses instance targets and an automatically allocated
+  # NodePort. Cluster allows any registered worker to forward traffic
+  # to the active Db2 engine pod.
   externalTrafficPolicy: Cluster
-  loadBalancerSourceRanges:
-    {{- range .Values.private_nlb.allowed_cidrs }}
-    - {{ . }}
-    {{- end }}
+
   ports:
-    - name: db2-ssl
+    - name: db2-tls
       protocol: TCP
       port: {{ .Values.private_nlb.port | default 50001 }}
       targetPort: 50001
+
+  # Match the selector used by the standard Db2u engine service.
   selector:
     app: {{ .Values.db2_instance_name }}
     component: db2wh
     formation_id: {{ .Values.db2_instance_name }}
-    name: dashmpp-head-0
     role: db
     type: engine
 {{- end }}

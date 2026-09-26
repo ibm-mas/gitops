@@ -133,11 +133,10 @@ db2_backup_icd_auth_key: string (secret reference, optional, when backup enabled
 
 allow_list: string (optional)
 
-# Private NLB for customer TGW connectivity (optional)
+# Dedicated Db2 NLB for AWS PrivateLink access (optional)
 private_nlb:
   enabled: boolean         # default: false
   subnet_ids: list(string) # required when enabled: true
-  allowed_cidrs: list(string) # required when enabled: true
   port: number             # default: 50001
 ```
 
@@ -171,42 +170,89 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base instance values including optional fields like `custom_labels`, `argocluster_instance`, `application_admin_service_account`, `mas_wipe_mongo_data`, `allow_list`, `additional_vpn`, `application_configuration`, `use_postdelete_hooks`, `additional_resources`, `extensions`, `enhanced_dr`, and `cli_image_repo`, see the [Instance Base Values Reference](../../docs/reference/instance-base-values.md)
 
-## Private NLB for Customer TGW Connectivity
+## Private NLB for AWS PrivateLink Access
 
-When `private_nlb.enabled: true`, this chart creates a Kubernetes `Service` of
-`type: LoadBalancer` that causes ROSA to provision an internal AWS NLB in the
-specified subnets. This is the recommended approach for exposing Db2 to a customer
-network via the TGW and hub-firewall path (A.4 Option 2).
+When `private_nlb.enabled: true`, this chart creates a Kubernetes
+`Service` of `type: LoadBalancer`. On ROSA Classic, the AWS
+cloud-controller-manager provisions an internal AWS Network Load
+Balancer in the specified subnets.
 
-ROSA automatically manages the required EC2 worker node security group rules.
-No manual security group changes are needed.
+The NLB provides the provider-side Db2 target for an AWS PrivateLink
+VPC Endpoint Service.
+
+The intended connection path is:
+
+    Consumer VPC
+      -> Interface VPC Endpoint
+      -> AWS PrivateLink
+      -> VPC Endpoint Service
+      -> dedicated Db2 NLB :50001
+      -> ROSA-managed NodePort
+      -> Db2 :50001
+
+The NLB performs Layer-4 TCP forwarding only. TLS remains end-to-end
+between the Db2 client and the Db2 server.
+
+This path does not traverse the OpenShift ingress router and therefore
+does not depend on TLS SNI for Db2 routing.
+
+The AWS VPC Endpoint Service is not created or managed by this chart.
+It should be managed separately by the PrivateLink infrastructure
+automation and associated with the NLB created by this Service.
 
 | Value | Description | Required when enabled |
-|---|---|---|
-| `private_nlb.enabled` | Toggle NLB creation on/off | — |
-| `private_nlb.subnet_ids` | Private-connectivity-edge subnet IDs, one per AZ | Yes |
-| `private_nlb.allowed_cidrs` | Customer CIDRs for `loadBalancerSourceRanges` | Yes |
-| `private_nlb.port` | NLB listener port, defaults to 50001 | No |
+| --- | --- | --- |
+| `private_nlb.enabled` | Enable the dedicated Db2 NLB | — |
+| `private_nlb.subnet_ids` | Private-connectivity-edge subnet IDs, typically one per AZ | Yes |
+| `private_nlb.port` | NLB listener port; defaults to `50001` | No |
 
-### Example — enabling for a customer-connected instance
+### Example
 
-```yaml
-private_nlb:
-  enabled: true
-  subnet_ids:
-    - subnet-0e40955c9b8865e7a   # us-gov-east-1a
-    - subnet-0e53a1f9071b8d9ba   # us-gov-east-1b
-    - subnet-04eba2a3f36ec0e7c   # us-gov-east-1c
-  allowed_cidrs:
-    - 10.200.20.0/24             # customer network CIDR
-  port: 50001
-```
+    private_nlb:
+      enabled: true
+      subnet_ids:
+        - <private-connectivity-edge-az1>
+        - <private-connectivity-edge-az2>
+        - <private-connectivity-edge-az3>
+      port: 50001
 
-Each Db2 instance (facilities, manage) gets its own NLB because the ArgoCD
-application is deployed separately per instance with its own `db2_instance_name`.
-Both can use port 50001 without conflict since they are separate AWS NLB resources.
+Each Db2 instance receives its own dedicated NLB because the ArgoCD
+application is deployed independently for each Db2 instance with its
+own `db2_instance_name`. Each NLB can therefore expose the standard
+Db2 TLS port `50001`.
 
-The NLB is created independently for each instance (e.g. facilities, manage) using the instance-specific selector.
+On ROSA Classic, the resulting forwarding path is:
+
+    NLB :50001
+      -> automatically allocated NodePort
+      -> Kubernetes Service
+      -> Db2 :50001
+
+### Access Control
+
+The NLB is internal and is intended to be exposed to customers through
+AWS PrivateLink.
+
+Customer access is controlled by the VPC Endpoint Service configuration,
+including allowed AWS principals and endpoint acceptance, and by the
+security group associated with the consumer Interface Endpoint.
+
+The NLB itself should be deployed into the private-connectivity-edge
+subnets and should not rely on customer CIDR ranges for PrivateLink
+access control.
+
+### Lifecycle
+
+The Kubernetes `LoadBalancer` Service manages the lifecycle of the AWS
+NLB through the ROSA AWS cloud-controller-manager.
+
+When a Db2 instance is decommissioned, the associated VPC Endpoint
+Service must be disassociated/deleted before ArgoCD removes this
+Service. Once this Service is removed, the AWS cloud-controller-manager
+can remove the dedicated NLB.
+
+The VPC Endpoint Service lifecycle is managed separately from this
+chart.
 
 ## DB2 Audit Policy
 
@@ -251,9 +297,10 @@ CREATE AUDIT POLICY USER_AUDIT
 
 ### Validation
 
-If `private_nlb.enabled: true` and either `subnet_ids` or `allowed_cidrs` is
-empty, Helm will fail immediately with a clear error message before rendering
-any resources. This prevents a broken or unrestricted NLB from being deployed..
+If `private_nlb.enabled: true` and `subnet_ids` is empty, Helm fails
+before rendering the Service. This prevents an NLB from being
+provisioned without an explicitly defined set of private connectivity
+subnets.
 
 ## Prerequisites
 

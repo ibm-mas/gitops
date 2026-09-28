@@ -572,9 +572,18 @@ spec:
                       mkdir -p /mnt/backup/standby
                       db2 update db cfg for ${DB2_DBNAME} using DBHEAP AUTOMATIC UTIL_HEAP_SZ 128000 AUTOMATIC DATABASE_MEMORY AUTOMATIC || true
                       if ! db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby with 2 buffers buffer 1024 parallelism 1 > /mnt/backup/standby/dbbackup.log 2>&1; then
-                        echo '=== Online backup output / failure ==='
-                        cat /mnt/backup/standby/dbbackup.log
-                        exit 1
+                        echo 'Online backup with custom buffers failed, trying standard online backup...'
+                        if ! db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby compress include logs without prompting > /mnt/backup/standby/dbbackup.log 2>&1; then
+                          echo 'Online backup failed, falling back to offline backup to clear backup pending state...'
+                          db2 force application all
+                          db2 deactivate database ${DB2_DBNAME}
+                          if ! db2 backup db ${DB2_DBNAME} on all dbpartitionnums to /mnt/backup/standby > /mnt/backup/standby/dbbackup.log 2>&1; then
+                            echo '=== Backup output / failure ==='
+                            cat /mnt/backup/standby/dbbackup.log
+                            exit 1
+                          fi
+                          db2 activate database ${DB2_DBNAME}
+                        fi
                       fi
                       cat /mnt/backup/standby/dbbackup.log
                     " || exit $?

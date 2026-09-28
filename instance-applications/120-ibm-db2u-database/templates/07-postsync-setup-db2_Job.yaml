@@ -247,6 +247,8 @@ spec:
               value: "{{ .Values.db2_dbname }}"
             - name: DB2_TLS_VERSION
               value: "{{ .Values.db2_tls_version }}"
+            - name: DB2_VERSION
+              value: "{{ .Values.db2_version }}"
             - name: DB2_INSTANCE_HOME_PATH
               value: "{{ .Values.db2_instance_home_path }}"
 {{- if .Values.db2_backup_bucket_name }}
@@ -422,6 +424,30 @@ spec:
                     oc delete configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --ignore-not-found=true
                     echo "Primary upgrade completed. ConfigMap cleaned up (non-HADR standalone instance)."
                   fi
+                fi
+              fi
+
+              # Apply Db2 License if Db2 version >= 12 and secret db2u-license-${DB2_INSTANCE_NAME} exists
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]]; then
+                echo ""
+                echo "================================================================================"
+                echo "Checking and applying Db2 License from secret for Db2 v12..."
+                echo "================================================================================"
+                LICENSE_SECRET="db2u-license-${DB2_INSTANCE_NAME}"
+                if oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                  echo "Found secret ${LICENSE_SECRET}. Extracting and applying license to c-${DB2_INSTANCE_NAME}-db2u-0..."
+                  oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.db2u-lic}' | base64 -d > /tmp/db2_apply_lic.lic
+                  oc cp /tmp/db2_apply_lic.lic "${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2_license.lic" -c db2u || true
+                  rm -f /tmp/db2_apply_lic.lic
+                  oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su -lc "
+                    if [ -f /tmp/db2_license.lic ]; then
+                      echo 'Applying license via db2licm...'
+                      db2licm -a /tmp/db2_license.lic || true
+                      rm -f /tmp/db2_license.lic
+                    fi
+                  " db2inst1 || true
+                else
+                  echo "No custom license secret found (${LICENSE_SECRET}). Skipping license registration."
                 fi
               fi
 

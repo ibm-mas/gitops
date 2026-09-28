@@ -193,6 +193,8 @@ spec:
               value: "{{ .Values.db2_instance_name }}"
             - name: DB2_DBNAME
               value: "{{ .Values.db2_dbname }}"
+            - name: DB2_VERSION
+              value: "{{ .Values.db2_version }}"
             - name: AUTO_BACKUP
               value: "{{ .Values.auto_backup }}"
           command:
@@ -419,6 +421,31 @@ spec:
                   oc annotate db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" db2u.databases.ibm.com/db2ckupgrade_hadr- || true
                   oc delete configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --ignore-not-found=true
                   echo "HADR upgrade completed successfully across Primary and Standby."
+                fi
+              fi
+
+              # Apply Db2 License if Db2 version >= 12 using Primary secret db2u-license-${PRIMARY_DB2_INSTANCE_NAME}
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]]; then
+                echo ""
+                echo "================================================================================"
+                echo "Checking and applying Db2 License from secret for Standby Db2 v12..."
+                echo "================================================================================"
+                PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
+                LICENSE_SECRET="db2u-license-${PRIMARY_DB2_INSTANCE_NAME}"
+                if oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                  echo "Found secret ${LICENSE_SECRET}. Extracting and applying license to Standby c-${DB2_INSTANCE_NAME}-db2u-0..."
+                  oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.db2u-lic}' | base64 -d > /tmp/db2_apply_lic.lic
+                  oc cp /tmp/db2_apply_lic.lic "${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2_license.lic" -c db2u || true
+                  rm -f /tmp/db2_apply_lic.lic
+                  oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su -lc "
+                    if [ -f /tmp/db2_license.lic ]; then
+                      echo 'Applying license via db2licm on Standby...'
+                      db2licm -a /tmp/db2_license.lic || true
+                      rm -f /tmp/db2_license.lic
+                    fi
+                  " db2inst1 || true
+                else
+                  echo "No custom license secret found (${LICENSE_SECRET}). Skipping license registration."
                 fi
               fi
 

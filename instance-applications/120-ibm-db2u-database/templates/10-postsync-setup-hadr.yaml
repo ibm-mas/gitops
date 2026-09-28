@@ -434,7 +434,7 @@ spec:
                 LICENSE_SECRET="db2u-license-${PRIMARY_DB2_INSTANCE_NAME}"
                 if oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
                   echo "Found secret ${LICENSE_SECRET}. Extracting and applying license to Standby c-${DB2_INSTANCE_NAME}-db2u-0..."
-                  oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.db2u-lic}' | base64 -d > /tmp/db2_apply_lic.lic
+                  oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.db2u-lic}' | base64 -d | sed '/^[[:space:]]*$/d' > /tmp/db2_apply_lic.lic
                   oc cp /tmp/db2_apply_lic.lic "${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2_license.lic" -c db2u || true
                   rm -f /tmp/db2_apply_lic.lic
                   oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su -lc "

@@ -4,6 +4,9 @@ This is required on OpenShift because the operator container runs as a
 non-root user (UID 2000) which falls outside the namespace-allocated UID
 range enforced by restricted-v2 SCC.
 
+Uses RoleBinding (namespace-scoped) referencing system:openshift:scc:anyuid ClusterRole —
+the same pattern used by the instana-agent-operator chart in this repo.
+
 This replicates what the ansible-devops mongodb community role does with:
   oc adm policy add-scc-to-user anyuid system:serviceaccount:<ns>:mongodb-kubernetes-operator
   oc adm policy add-scc-to-user anyuid system:serviceaccount:<ns>:mongodb-database
@@ -14,9 +17,10 @@ This replicates what the ansible-devops mongodb community role does with:
 ---
 # Grant anyuid SCC to the mongodb-kubernetes-operator ServiceAccount
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: mongodb-operator-anyuid-{{ $ns }}
+  name: system:openshift:scc:anyuid:operator
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "021"
 {{- if .Values.custom_labels }}
@@ -35,9 +39,10 @@ roleRef:
 ---
 # Grant anyuid SCC to the mongodb-database ServiceAccount
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: mongodb-database-anyuid-{{ $ns }}
+  name: system:openshift:scc:anyuid:database
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "021"
 {{- if .Values.custom_labels }}
@@ -56,9 +61,10 @@ roleRef:
 ---
 # Grant anyuid SCC to the default ServiceAccount (used by mongodb pods)
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: mongodb-default-anyuid-{{ $ns }}
+  name: system:openshift:scc:anyuid:default
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "021"
 {{- if .Values.custom_labels }}

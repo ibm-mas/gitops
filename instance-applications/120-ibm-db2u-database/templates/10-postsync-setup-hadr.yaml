@@ -568,7 +568,16 @@ spec:
                     echo ""
                     echo "Taking backup on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
                     echo "--------------------------------------------------------------------------------"
-                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su - db2inst1 -c "mkdir -p /mnt/backup/standby && db2 update db cfg for ${DB2_DBNAME} using DBHEAP AUTOMATIC UTIL_HEAP_SZ 128000 AUTOMATIC DATABASE_MEMORY AUTOMATIC && db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby with 2 buffers buffer 1024 parallelism 1 > /mnt/backup/standby/dbbackup.log 2>&1 && cat /mnt/backup/standby/dbbackup.log" || exit $?
+                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su - db2inst1 -c "
+                      mkdir -p /mnt/backup/standby
+                      db2 update db cfg for ${DB2_DBNAME} using DBHEAP AUTOMATIC UTIL_HEAP_SZ 128000 AUTOMATIC DATABASE_MEMORY AUTOMATIC || true
+                      if ! db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby with 2 buffers buffer 1024 parallelism 1 > /mnt/backup/standby/dbbackup.log 2>&1; then
+                        echo '=== Online backup output / failure ==='
+                        cat /mnt/backup/standby/dbbackup.log
+                        exit 1
+                      fi
+                      cat /mnt/backup/standby/dbbackup.log
+                    " || exit $?
                     echo ""
                     timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
                     echo "Timestamp of backup is ${timestamp}"

@@ -166,8 +166,8 @@ spec:
               done
               echo "DB2 CRD is ready"
 
-              # Check if Primary DB version upgrade is being initiated
-              if [[ "${DB2_INSTANCE_NAME}" != *"sdb"* ]] && [[ -n "${TARGET_DB2_VERSION}" ]]; then
+              # Check if HADR Primary DB version upgrade is being initiated
+              if [[ "${DB2_INSTANCE_NAME}" != *"sdb"* ]] && [[ -n "${TARGET_DB2_VERSION}" ]] && [[ "${REPLICA_DB}" == "true" ]]; then
                 UPGRADE_CM="hadr-upgrade-in-progress-${DB2_INSTANCE_NAME}"
 
                 if oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
@@ -176,41 +176,39 @@ spec:
 
                   if [[ -n "${CURRENT_VERSION}" ]] && [[ "${CURRENT_VERSION}" != "${TARGET_DB2_VERSION}" ]] && [[ "${TARGET_DB2_VERSION}" == "s12."* || "${TARGET_DB2_VERSION}" == "12."* ]]; then
                     echo "================================================================================"
-                    echo "Version drift detected. Initiating PreSync upgrade preparation..."
+                    echo "HADR Version drift detected. Initiating PreSync upgrade preparation..."
                     echo "================================================================================"
 
                     # 1. Stop governor on primary engine pod
                     echo "Stopping governor on Primary (c-${DB2_INSTANCE_NAME}-db2u-0)..."
                     oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- sv stop governor || true
 
-                    # 2. If replica_db is true and standby instance exists, process standby-specific steps
-                    if [[ "${REPLICA_DB}" == "true" ]]; then
-                      SDB_INSTANCE_NAME="${DB2_INSTANCE_NAME}-sdb"
-                      if oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-                        echo "Stopping governor on Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
-                        oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- sv stop governor || true
+                    # 2. Process standby-specific steps
+                    SDB_INSTANCE_NAME="${DB2_INSTANCE_NAME}-sdb"
+                    if oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                      echo "Stopping governor on Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
+                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- sv stop governor || true
 
-                        echo "Annotating Standby ${SDB_INSTANCE_NAME} with db2ckupgrade_hadr=initialize..."
-                        oc annotate db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" \
-                          db2u.databases.ibm.com/db2ckupgrade_hadr=initialize --overwrite
+                      echo "Annotating Standby ${SDB_INSTANCE_NAME} with db2ckupgrade_hadr=initialize..."
+                      oc annotate db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" \
+                        db2u.databases.ibm.com/db2ckupgrade_hadr=initialize --overwrite
 
-                        echo "Waiting for Standby condition Db2CheckUpgradeHadrSuccess=True..."
-                        check_count=0
-                        until [ "$(oc get db2uinstance ${SDB_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrSuccess")].status}' 2>/dev/null)" == "True" ]; do
-                          if [ "$(oc get db2uinstance ${SDB_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrFailure")].status}' 2>/dev/null)" == "True" ]; then
-                            echo "ERROR: Standby upgrade check failed! Check \${SUPPORTDIR}/db2_upgrade_check.log on standby pod."
-                            exit 1
-                          fi
-                          check_count=$((check_count+1))
-                          if [ $check_count -gt 30 ]; then
-                            echo "ERROR: Timeout waiting for Standby Db2CheckUpgradeHadrSuccess condition after 300s."
-                            exit 1
-                          fi
-                          echo "... waiting for Db2CheckUpgradeHadrSuccess (attempt ${check_count}/30)..."
-                          sleep 10
-                        done
-                        echo "Standby upgrade check succeeded."
-                      fi
+                      echo "Waiting for Standby condition Db2CheckUpgradeHadrSuccess=True..."
+                      check_count=0
+                      until [ "$(oc get db2uinstance ${SDB_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrSuccess")].status}' 2>/dev/null)" == "True" ]; do
+                        if [ "$(oc get db2uinstance ${SDB_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrFailure")].status}' 2>/dev/null)" == "True" ]; then
+                          echo "ERROR: Standby upgrade check failed! Check \${SUPPORTDIR}/db2_upgrade_check.log on standby pod."
+                          exit 1
+                        fi
+                        check_count=$((check_count+1))
+                        if [ $check_count -gt 30 ]; then
+                          echo "ERROR: Timeout waiting for Standby Db2CheckUpgradeHadrSuccess condition after 300s."
+                          exit 1
+                        fi
+                        echo "... waiting for Db2CheckUpgradeHadrSuccess (attempt ${check_count}/30)..."
+                        sleep 10
+                      done
+                      echo "Standby upgrade check succeeded."
                     fi
 
                     # 3. Create upgrade state ConfigMap for PostSync jobs

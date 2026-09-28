@@ -7,7 +7,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:c715f4cdc38d1fded23cd9f1c22f30f8668618e73905fd11edf4a1184f25e1bb" }}
+{{- $_cli_image_digest := "sha256:020f1925421de13beaf439aa09181209875ed3791824bcaaf1daaf910c725266" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -20,7 +20,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v5" }}
+{{- $_job_version := "v6" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -77,7 +77,7 @@ metadata:
 {{- end }}
 
 ---
-# ClusterRole to read MongoCfg CR (proxy signal for entity manager health)
+# ClusterRole to read suite config CRs managed by config app PostDelete jobs
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -98,6 +98,11 @@ rules:
       - "config.mas.ibm.com"
     resources:
       - mongocfgs
+      - slscfgs
+      - bascfgs
+      - idpcfgs
+      - smtpcfgs
+      - appcfgs
 
 ---
 kind: ClusterRoleBinding
@@ -170,7 +175,7 @@ spec:
               set -e
               echo
               echo "================================================================================"
-              echo "PreDelete: waiting for all suite config CRs to be fully deleted"
+              echo "PreDelete: waiting for all suite config CRs to be deleted"
               echo "================================================================================"
               echo
               echo "ArgoCD namespace : ${ARGO_NAMESPACE}"
@@ -183,20 +188,28 @@ spec:
 
               wait_period=0
               while true; do
-                REMAINING=$(oc get mongocfgs.config.mas.ibm.com \
-                  -n "${CORE_NS}" --no-headers 2>/dev/null \
-                  | grep -v "^$" | wc -l || echo "0")
+                REMAINING=0
+                for CR_TYPE in \
+                  mongocfgs.config.mas.ibm.com \
+                  slscfgs.config.mas.ibm.com \
+                  bascfgs.config.mas.ibm.com \
+                  idpcfgs.config.mas.ibm.com \
+                  smtpcfgs.config.mas.ibm.com \
+                  appcfgs.config.mas.ibm.com; do
+                  COUNT=$(oc get "${CR_TYPE}" -n "${CORE_NS}" --no-headers 2>/dev/null | grep -v "^$" | wc -l || echo "0")
+                  REMAINING=$(( REMAINING + COUNT ))
+                done
 
-                echo "MongoCfg CRs still present: ${REMAINING}"
+                echo "Suite config CRs still present: ${REMAINING}"
 
                 if [ "${REMAINING}" -eq "0" ]; then
-                  echo "MongoCfg CR is gone. Proceeding with Suite deletion."
+                  echo "All suite config CRs have been deleted. Proceeding with Suite deletion."
                   exit 0
                 fi
 
                 wait_period=$(( wait_period + 30 ))
                 if [ "${wait_period}" -gt 3600 ]; then
-                  echo "Timed out after 60 minutes waiting for MongoCfg CR to be deleted."
+                  echo "Timed out after 60 minutes waiting for suite config CRs to be deleted."
                   exit 1
                 fi
 

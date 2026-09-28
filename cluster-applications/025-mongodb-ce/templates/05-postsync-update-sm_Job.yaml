@@ -164,31 +164,34 @@ spec:
           command:
             - /bin/bash
             - -c
-            - >
-              set -e;
-              source /mascli/functions/gitops_utils;
-              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id);
-              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key);
-              export SM_AWS_REGION=${REGION_ID};
-              sm_login;
-              echo "Waiting for MongoDBCommunity ${MONGO_INSTANCE_NAME} in ${MONGO_NAMESPACE}";
+            - |
+              set -e
+              source /mascli/functions/gitops_utils
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
+
+              echo "Waiting for MongoDBCommunity ${MONGO_INSTANCE_NAME} in ${MONGO_NAMESPACE}"
               for (( c=1; c<=30; c++ )); do
-                echo "... check attempt ${c} of 30";
-                PHASE=$(oc get mongodbcommunity "${MONGO_INSTANCE_NAME}" -n "${MONGO_NAMESPACE}" -o=jsonpath='{.status.phase}' 2>/dev/null || true);
-                echo "Current Phase: ${PHASE}";
+                echo "... check attempt ${c} of 30"
+                PHASE=$(oc get mongodbcommunity "${MONGO_INSTANCE_NAME}" -n "${MONGO_NAMESPACE}" -o=jsonpath='{.status.phase}' 2>/dev/null || true)
+                echo "Current Phase: ${PHASE}"
                 if [[ "${PHASE}" == "Running" ]]; then
-                  echo "MongoDBCommunity instance is Running!";
-                  break;
-                fi;
-                sleep 20;
-              done;
-              PRIMARY_HOST="${MONGO_INSTANCE_NAME}-0.${MONGO_INSTANCE_NAME}-svc.${MONGO_NAMESPACE}.svc.cluster.local";
-              CA_CERT="";
-              CA_SECRET_NAME="${MONGO_INSTANCE_NAME}-ca";
+                  echo "MongoDBCommunity instance is Running!"
+                  break
+                fi
+                sleep 20
+              done
+
+              CA_CERT=""
+              CA_SECRET_NAME="${MONGO_INSTANCE_NAME}-ca"
               if oc get secret "${CA_SECRET_NAME}" -n "${MONGO_NAMESPACE}" >/dev/null 2>&1; then
-                CA_CERT=$(oc get secret "${CA_SECRET_NAME}" -n "${MONGO_NAMESPACE}" -o=jsonpath='{.data.ca\.crt}' | base64 -d 2>/dev/null || true);
-              fi;
-              python3 -c "
+                CA_CERT=$(oc get secret "${CA_SECRET_NAME}" -n "${MONGO_NAMESPACE}" -o=jsonpath='{.data.ca\.crt}' | base64 -d 2>/dev/null || true)
+              fi
+              export CA_CERT
+
+              cat > /tmp/build_secret.py << 'PYEOF'
               import os, json
               account = os.environ.get('ACCOUNT_ID')
               cluster = os.environ.get('CLUSTER_ID')
@@ -211,7 +214,6 @@ spec:
                   for line in ca_cert.strip().split('\n'):
                       info_lines.append(f'      {line}')
               info_str = '\n'.join(info_lines) + '\n'
-              secret_name = f'{account}/{cluster}/mongo'
               payload = {
                   'docdb_host': primary_host,
                   'docdb_port': '27017',
@@ -228,10 +230,13 @@ spec:
                   f.write(json.dumps(payload))
               with open('/tmp/secret_tags.json', 'w') as f:
                   f.write(tags)
-              ";
-              SECRET_NAME_MONGO="${ACCOUNT_ID}/${CLUSTER_ID}/mongodatabase";
-              echo "Updating AWS Secret: ${SECRET_NAME_MONGO}";
-              sm_update_secret "${SECRET_NAME_MONGO}" "$(cat /tmp/secret_payload.json)" "$(cat /tmp/secret_tags.json)" || exit $?;
+              PYEOF
+
+              python3 /tmp/build_secret.py
+
+              SECRET_NAME_MONGO="${ACCOUNT_ID}/${CLUSTER_ID}/mongodatabase"
+              echo "Updating AWS Secret: ${SECRET_NAME_MONGO}"
+              sm_update_secret "${SECRET_NAME_MONGO}" "$(cat /tmp/secret_payload.json)" "$(cat /tmp/secret_tags.json)" || exit $?
               echo "Successfully registered MongoDB credentials and info secret to AWS Secrets Manager!"
   backoffLimit: 4
 {{- end }}

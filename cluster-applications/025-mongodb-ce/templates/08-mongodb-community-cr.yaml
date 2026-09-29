@@ -1,0 +1,100 @@
+{{- /*
+MongoDBCommunity CR — mirrors ansible-devops: templates/community/0.9.0/cr.yml.j2
+Key alignments vs previous version:
+  - security.tls enabled, referencing mongo-server-cert + mas-mongo-ce-cert-map
+  - authentication modes: SCRAM-SHA-256 + SCRAM-SHA-1 (MAS 8.5 compat)
+  - prometheus metrics endpoint referencing mas-mongo-ce-metrics-endpoint-secret
+  - passwordSecretRef: mas-mongo-ce-admin-password (matches ansible)
+  - scramCredentialsSecretName: mas-mongo-ce-scram (matches ansible)
+  - user roles: clusterAdmin, userAdminAnyDatabase, dbOwner, readWriteAnyDatabase
+  - statefulSet.spec.serviceName: mas-mongo-ce-svc
+  - additionalMongodConfig: snappy journal compression + TLS invalid cert allowances
+  - volumeClaimTemplates: data-volume + logs-volume (matches ansible)
+*/}}
+{{- $ns := .Values.mongodb_namespace | default "mongoce" }}
+{{- $instance := .Values.mongodb_instance_name | default "mas-mongo-ce" }}
+---
+apiVersion: mongodbcommunity.mongodb.com/v1
+kind: MongoDBCommunity
+metadata:
+  name: {{ $instance }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "025"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    mongodb-image-version: "{{ .Values.mongodb_version | default "7.0.12" }}"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  members: {{ .Values.mongodb_members | default 3 }}
+  type: ReplicaSet
+  version: "{{ .Values.mongodb_version | default "7.0.12" }}"
+  featureCompatibilityVersion: "{{ .Values.mongodb_version | default "7.0.12" | splitList "." | initial | join "." }}"
+  security:
+    tls:
+      enabled: true
+      certificateKeySecretRef:
+        name: mongo-server-cert
+      caConfigMapRef:
+        name: mas-mongo-ce-cert-map
+    authentication:
+      modes:
+        - SCRAM-SHA-256
+        - SCRAM-SHA-1
+  prometheus:
+    username: metrics-endpoint-user
+    passwordSecretRef:
+      name: mas-mongo-ce-metrics-endpoint-secret
+  users:
+    - name: admin
+      db: admin
+      passwordSecretRef:
+        name: mas-mongo-ce-admin-password
+      roles:
+        - name: clusterAdmin
+          db: admin
+        - name: userAdminAnyDatabase
+          db: admin
+        - name: dbOwner
+          db: admin
+        - name: readWriteAnyDatabase
+          db: admin
+      scramCredentialsSecretName: mas-mongo-ce-scram
+  additionalMongodConfig:
+    storage.wiredTiger.engineConfig.journalCompressor: snappy
+    net.tls.allowInvalidCertificates: true
+    net.tls.allowInvalidHostnames: true
+  statefulSet:
+    spec:
+      serviceName: {{ $instance }}-svc
+      selector: {}
+      template:
+        spec:
+          containers:
+            - name: mongod
+              image: "quay.io/mongodb/mongodb-community-server:{{ .Values.mongodb_version | default "7.0.12" }}-ubi8"
+              resources:
+{{ .Values.resources | toYaml | indent 16 }}
+      volumeClaimTemplates:
+        - metadata:
+            name: data-volume
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            {{- if .Values.storage_class }}
+            storageClassName: "{{ .Values.storage_class }}"
+            {{- end }}
+            resources:
+              requests:
+                storage: "{{ .Values.storage_size | default "10Gi" }}"
+        - metadata:
+            name: logs-volume
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            {{- if .Values.storage_class }}
+            storageClassName: "{{ .Values.storage_class }}"
+            {{- end }}
+            resources:
+              requests:
+                storage: "{{ .Values.logs_storage_size | default "1Gi" }}"

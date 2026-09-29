@@ -1,0 +1,318 @@
+{{- if and .Values.run_sync_hooks .Values.cluster_admin_role }}
+
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length.
+*/}}
+{{- $_job_name_prefix := "postsync-mongo-update-sm-job" }}
+
+{{- /*
+CLI image digest
+*/}}
+{{- $_cli_image_digest := "sha256:1dc8665fddb9546b84290b0615fc7c7017e19516082b35541d41b8ea82df347b" }}
+
+{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_version := "v1" }}
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+{{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
+
+{{ $ns := .Values.mongodb_namespace | default "mongoce" }}
+{{ $aws_secret := "mongo-aws-creds" }}
+{{ $role_name := "postsync-mongo-update-sm-r" }}
+{{ $sa_name := "postsync-mongo-update-sm-sa" }}
+{{ $rb_name := "postsync-mongo-update-sm-rb" }}
+
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: {{ $aws_secret }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "026"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | default "" | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | default "" | b64enc }}
+type: Opaque
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "026"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "026"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - watch
+    apiGroups:
+      - ""
+    resources:
+      - secrets
+      - services
+      - pods
+  - verbs:
+      - get
+      - list
+      - watch
+    apiGroups:
+      - mongodbcommunity.mongodb.com
+    resources:
+      - mongodbcommunity
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "027"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $role_name }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "028"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      volumes:
+        - name: aws
+          secret:
+            secretName: {{ $aws_secret }}
+            defaultMode: 420
+            optional: false
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          volumeMounts:
+            - name: aws
+              mountPath: /etc/mas/creds/aws
+          env:
+            - name: AVP_TYPE
+              value: "aws"
+            - name: ACCOUNT_ID
+              value: "{{ .Values.account_id }}"
+            - name: REGION_ID
+              value: "{{ .Values.region_id }}"
+            - name: CLUSTER_ID
+              value: "{{ .Values.cluster_id }}"
+            - name: MONGO_NAMESPACE
+              value: "{{ $ns }}"
+            - name: MONGO_INSTANCE_NAME
+              value: "{{ .Values.mongodb_instance_name | default "mas-mongo-ce" }}"
+            - name: MONGO_MEMBERS
+              value: "{{ .Values.mongodb_members | default 3 }}"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+
+              SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
+              SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
+              export SM_AWS_REGION="${REGION_ID}"
+
+              # ---------------------------------------------------------------------------
+              # Wait for MongoDBCommunity CR to reach Running phase
+              # Mirrors: ansible install-mongo.yml step 11 — wait for StatefulSet ready
+              # ---------------------------------------------------------------------------
+              echo "Waiting for MongoDBCommunity/${MONGO_INSTANCE_NAME} in namespace ${MONGO_NAMESPACE} ..."
+              PHASE=""
+              for (( c=1; c<=30; c++ )); do
+                echo "  attempt ${c}/30 ..."
+                PHASE=$(oc get mongodbcommunity "${MONGO_INSTANCE_NAME}" -n "${MONGO_NAMESPACE}" \
+                  -o jsonpath='{.status.phase}' 2>/dev/null || true)
+                echo "  phase=${PHASE}"
+                [[ "${PHASE}" == "Running" ]] && break
+                sleep 20
+              done
+              if [[ "${PHASE}" != "Running" ]]; then
+                echo "ERROR: MongoDBCommunity did not reach Running phase after 10 minutes. Aborting."
+                exit 1
+              fi
+
+              # ---------------------------------------------------------------------------
+              # Read the admin password from the operator-generated secret.
+              # Mirrors: ansible install-mongo.yml step 14 —
+              #   "Lookup admin password" from secret mas-mongo-ce-admin-admin
+              #   (name pattern: <CR-name>-<db>-<username> = mas-mongo-ce-admin-admin)
+              # The MongoDBCommunity operator creates this secret automatically after the
+              # CR reaches Running state. It contains the real working password.
+              # ---------------------------------------------------------------------------
+              ADMIN_SECRET_NAME="${MONGO_INSTANCE_NAME}-admin-admin"
+              echo "Reading admin password from operator-generated secret: ${ADMIN_SECRET_NAME}"
+              MONGO_ADMIN_PASSWORD=""
+              for (( c=1; c<=30; c++ )); do
+                echo "  attempt ${c}/30 ..."
+                MONGO_ADMIN_PASSWORD=$(oc get secret "${ADMIN_SECRET_NAME}" -n "${MONGO_NAMESPACE}" \
+                  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+                if [[ -n "${MONGO_ADMIN_PASSWORD}" ]]; then
+                  echo "  admin password retrieved (${#MONGO_ADMIN_PASSWORD} chars)"
+                  break
+                fi
+                sleep 20
+              done
+              if [[ -z "${MONGO_ADMIN_PASSWORD}" ]]; then
+                echo "ERROR: Could not read admin password from secret ${ADMIN_SECRET_NAME} after 10 minutes."
+                exit 1
+              fi
+
+              # ---------------------------------------------------------------------------
+              # Fetch CA certificate from cert-manager-generated secret 'mongo-ca-secret'
+              # This is what the ansible role reads from mongodb_ca_lookup (mongo-server-cert)
+              # and writes into mas-mongo-ce-cert-map ConfigMap / suite_mongocfg.yml.j2
+              # ---------------------------------------------------------------------------
+              CA_CERT_PEM=""
+              # Primary: use the CA secret created by cert-manager Certificate 'mongo-ca-crt'
+              for CA_SECRET_NAME in "mongo-ca-secret" "${MONGO_INSTANCE_NAME}-ca"; do
+                if oc get secret "${CA_SECRET_NAME}" -n "${MONGO_NAMESPACE}" >/dev/null 2>&1; then
+                  echo "Found CA secret ${CA_SECRET_NAME}, extracting certificate ..."
+                  CA_CERT_PEM=$(oc get secret "${CA_SECRET_NAME}" -n "${MONGO_NAMESPACE}" \
+                    -o jsonpath='{.data.ca\.crt}' | base64 -d 2>/dev/null || true)
+                  if [[ -n "${CA_CERT_PEM}" ]]; then
+                    echo "CA certificate extracted from ${CA_SECRET_NAME} (${#CA_CERT_PEM} bytes)"
+                    break
+                  fi
+                fi
+              done
+              if [[ -z "${CA_CERT_PEM}" ]]; then
+                echo "WARNING: No CA certificate found - secret will be written without TLS certificate"
+              fi
+
+              # ---------------------------------------------------------------------------
+              # Build the 'info' YAML block (hosts + optional CA cert) using pure bash
+              # ---------------------------------------------------------------------------
+              INFO_YAML="config:"$'\n'"  hosts:"
+              for (( i=0; i<MONGO_MEMBERS; i++ )); do
+                INFO_YAML+=$'\n'"    - host: ${MONGO_INSTANCE_NAME}-${i}.${MONGO_INSTANCE_NAME}-svc.${MONGO_NAMESPACE}.svc.cluster.local"
+                INFO_YAML+=$'\n'"      port: 27017"
+              done
+              INFO_YAML+=$'\n'"  configDb: admin"
+              INFO_YAML+=$'\n'"  authMechanism: DEFAULT"
+
+              if [[ -n "${CA_CERT_PEM}" ]]; then
+                INFO_YAML+=$'\n'"certificates:"
+                INFO_YAML+=$'\n'"  - alias: ca"
+                INFO_YAML+=$'\n'"    crt: |"
+                while IFS= read -r cert_line; do
+                  INFO_YAML+=$'\n'"      ${cert_line}"
+                done <<< "${CA_CERT_PEM}"
+              fi
+
+              echo "--- info YAML ---"
+              echo "${INFO_YAML}"
+              echo "-----------------"
+
+              # ---------------------------------------------------------------------------
+              # Build JSON payload and write to AWS Secrets Manager.
+              # jq is available in the ibmmas/cli container image.
+              #
+              # The secret includes admin_password and metrics_password so that AVP
+              # can resolve <path:...:mongodatabase#admin_password> on subsequent syncs.
+              # This mirrors the ansible flow where the password is readable from K8s
+              # secret mas-mongo-ce-admin-admin after the operator sets it up.
+              # ---------------------------------------------------------------------------
+              PRIMARY_HOST="${MONGO_INSTANCE_NAME}-0.${MONGO_INSTANCE_NAME}-svc.${MONGO_NAMESPACE}.svc.cluster.local"
+
+              # Read metrics password from the metrics-endpoint secret (operator leaves it as-is)
+              MONGO_METRICS_PASSWORD=$(oc get secret "mas-mongo-ce-metrics-endpoint-secret" \
+                -n "${MONGO_NAMESPACE}" -o jsonpath='{.data.password}' 2>/dev/null \
+                | base64 -d 2>/dev/null || true)
+
+              SECRET_VALUE=$(jq -n \
+                --arg docdb_host        "${PRIMARY_HOST}" \
+                --arg docdb_port        "27017" \
+                --arg username          "admin" \
+                --arg password          "${MONGO_ADMIN_PASSWORD}" \
+                --arg admin_password    "${MONGO_ADMIN_PASSWORD}" \
+                --arg metrics_password  "${MONGO_METRICS_PASSWORD}" \
+                --arg info              "${INFO_YAML}" \
+                '{docdb_host: $docdb_host, docdb_port: $docdb_port, username: $username, password: $password, admin_password: $admin_password, metrics_password: $metrics_password, info: $info}')
+
+              TAGS=$(jq -n \
+                --arg account "${ACCOUNT_ID}" \
+                --arg cluster "${CLUSTER_ID}" \
+                '[
+                  {"Key":"source",  "Value":"postsync-mongo-update-sm-job"},
+                  {"Key":"account", "Value":$account},
+                  {"Key":"cluster", "Value":$cluster}
+                ]')
+
+              echo "${SECRET_VALUE}" > /tmp/secret_payload.json
+              echo "${TAGS}"        > /tmp/secret_tags.json
+
+              # ---------------------------------------------------------------------------
+              # Login to AWS SM and upsert the secret
+              # ---------------------------------------------------------------------------
+              source /mascli/functions/gitops_utils
+              sm_login
+
+              SECRET_NAME_MONGO="${ACCOUNT_ID}/${CLUSTER_ID}/mongodatabase"
+              echo "Upserting AWS Secrets Manager secret: ${SECRET_NAME_MONGO}"
+              sm_update_secret \
+                "${SECRET_NAME_MONGO}" \
+                "$(cat /tmp/secret_payload.json)" \
+                "$(cat /tmp/secret_tags.json)" || exit $?
+
+              echo "SUCCESS: MongoDB credentials stored at ${SECRET_NAME_MONGO}"
+  backoffLimit: 4
+{{- end }}

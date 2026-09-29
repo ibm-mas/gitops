@@ -1,26 +1,74 @@
 {{- if and .Values.run_sync_hooks .Values.cluster_admin_role }}
 
 {{- /*
-Meaningful prefix for the job resource name. Must be under 52 chars in length.
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
 {{- $_job_name_prefix := "postsync-mongo-update-sm-job" }}
 
 {{- /*
-CLI image digest
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+Included in $_job_hash (see below).
 */}}
 {{- $_cli_image_digest := "sha256:1dc8665fddb9546b84290b0615fc7c7017e19516082b35541d41b8ea82df347b" }}
 
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+*/}}
 {{- $_job_config_values := omit .Values "junitreporter" }}
-{{- $_job_version := "v1" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+*/}}
+{{- $_job_version := "v2" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
+*/}}
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash )}}
+
+{{- /*
+Set as the value for the mas.ibm.com/job-cleanup-group label on the Job resource.
+*/}}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
-{{- $ns := .Values.mongodb_namespace | default "mongoce" }}
-{{- $aws_secret := "mongo-aws-creds" }}
-{{- $role_name := "postsync-mongo-update-sm-r" }}
-{{- $sa_name := "postsync-mongo-update-sm-sa" }}
-{{- $rb_name := "postsync-mongo-update-sm-rb" }}
+
+
+{{ $ns := .Values.mongodb_namespace | default "mongoce" }}
+{{ $aws_secret := "aws" }}
+{{ $np_name :=   "postsync-mongo-update-sm-np" }}
+{{ $role_name := "postsync-mongo-update-sm-r" }}
+{{ $sa_name :=   "postsync-mongo-update-sm-sa" }}
+{{ $rb_name :=   "postsync-mongo-update-sm-rb" }}
+{{ $job_label := "postsync-mongo-update-sm-job" }}
+
+
+
+---
+# Permit outbound communication by the Job pods
+# (Needed to communicate with the K8S HTTP API and AWS SM)
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "026"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
 
 ---
 kind: Secret
@@ -35,8 +83,8 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 data:
-  aws_access_key_id: {{ .Values.sm_aws_access_key_id | default "" | b64enc }}
-  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | default "" | b64enc }}
+  aws_access_key_id: {{ .Values.sm_aws_access_key_id | b64enc }}
+  aws_secret_access_key: {{ .Values.sm_aws_secret_access_key | b64enc }}
 type: Opaque
 
 ---
@@ -53,10 +101,11 @@ metadata:
 {{- end }}
 
 ---
-kind: ClusterRole
+kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: {{ $role_name }}
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "026"
 {{- if .Values.custom_labels }}
@@ -66,28 +115,19 @@ metadata:
 rules:
   - verbs:
       - get
-      - list
-      - watch
     apiGroups:
       - ""
     resources:
       - secrets
-      - services
-      - pods
-  - verbs:
-      - get
-      - list
-      - watch
-    apiGroups:
-      - mongodbcommunity.mongodb.com
-    resources:
-      - mongodbcommunity
+
+
 
 ---
-kind: ClusterRoleBinding
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: {{ $rb_name }}
+  namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "027"
 {{- if .Values.custom_labels }}
@@ -100,7 +140,7 @@ subjects:
     namespace: {{ $ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: {{ $role_name }}
 
 ---
@@ -111,6 +151,7 @@ metadata:
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "028"
+    argocd.argoproj.io/sync-options: Prune=true
   labels:
     mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
 {{- if .Values.custom_labels }}
@@ -118,20 +159,13 @@ metadata:
 {{- end }}
 spec:
   template:
-{{- if .Values.custom_labels }}
     metadata:
       labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
-      serviceAccountName: {{ $sa_name }}
-      restartPolicy: Never
-      volumes:
-        - name: aws
-          secret:
-            secretName: {{ $aws_secret }}
-            defaultMode: 420
-            optional: false
       containers:
         - name: run
           image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
@@ -143,37 +177,46 @@ spec:
             requests:
               cpu: 10m
               memory: 64Mi
+          env:
+            - name: ACCOUNT_ID
+              value: {{ .Values.account_id }}
+            - name: REGION_ID
+              value: {{ .Values.region_id }}
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id }}
+            - name: MONGO_NAMESPACE
+              value: {{ $ns }}
+            - name: MONGO_INSTANCE_NAME
+              value: {{ .Values.mongodb_instance_name | default "mas-mongo-ce" }}
+            - name: MONGO_MEMBERS
+              value: "{{ .Values.mongodb_members | default 3 }}"
+            # Hard-coded for now:
+            - name: AVP_TYPE
+              value: "aws"
           volumeMounts:
             - name: aws
               mountPath: /etc/mas/creds/aws
-          env:
-            - name: AVP_TYPE
-              value: "aws"
-            - name: ACCOUNT_ID
-              value: "{{ .Values.account_id }}"
-            - name: REGION_ID
-              value: "{{ .Values.region_id }}"
-            - name: CLUSTER_ID
-              value: "{{ .Values.cluster_id }}"
-            - name: MONGO_NAMESPACE
-              value: "{{ $ns }}"
-            - name: MONGO_INSTANCE_NAME
-              value: "{{ .Values.mongodb_instance_name | default "mas-mongo-ce" }}"
-            - name: MONGO_MEMBERS
-              value: "{{ .Values.mongodb_members | default 3 }}"
           command:
-            - /bin/bash
+            - /bin/sh
             - -c
             - |
+
               set -e
 
+              # NOTE: cannot just render AWS secrets into here, as it will be exposed in the ArgoCD UI
+              # Instead, we pass them into a secret (ArgoCD knows to hide any data fields in k8s secrets),
+              # mount the secret on the jobs filesystem, and read them in here
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
-              export SM_AWS_REGION="${REGION_ID}"
+
+              # might as well take advantage of gitops_utils for sm_ functions as we're using the cli image
+              source /mascli/functions/gitops_utils
+
+              export SM_AWS_REGION=${REGION_ID}
+              sm_login
 
               # ---------------------------------------------------------------------------
               # Wait for MongoDBCommunity CR to reach Running phase
-              # Mirrors: ansible install-mongo.yml step 11 — wait for StatefulSet ready
               # ---------------------------------------------------------------------------
               echo "Waiting for MongoDBCommunity/${MONGO_INSTANCE_NAME} in namespace ${MONGO_NAMESPACE} ..."
               PHASE=""
@@ -192,14 +235,10 @@ spec:
 
               # ---------------------------------------------------------------------------
               # Read the admin password from the operator-generated secret.
-              # Mirrors: ansible install-mongo.yml step 14 —
-              #   "Lookup admin password" from secret mas-mongo-ce-admin-admin
-              #   (name pattern: <CR-name>-<db>-<username> = mas-mongo-ce-admin-admin)
-              # The MongoDBCommunity operator creates this secret automatically after the
-              # CR reaches Running state. It contains the real working password.
+              # Name pattern: <CR-name>-admin-admin (e.g. mas-mongo-ce-admin-admin)
               # ---------------------------------------------------------------------------
               ADMIN_SECRET_NAME="${MONGO_INSTANCE_NAME}-admin-admin"
-              echo "Reading admin password from operator-generated secret: ${ADMIN_SECRET_NAME}"
+              echo "Reading admin password from secret: ${ADMIN_SECRET_NAME}"
               MONGO_ADMIN_PASSWORD=""
               for (( c=1; c<=30; c++ )); do
                 echo "  attempt ${c}/30 ..."
@@ -217,12 +256,16 @@ spec:
               fi
 
               # ---------------------------------------------------------------------------
-              # Fetch CA certificate from cert-manager-generated secret 'mongo-ca-secret'
-              # This is what the ansible role reads from mongodb_ca_lookup (mongo-server-cert)
-              # and writes into mas-mongo-ce-cert-map ConfigMap / suite_mongocfg.yml.j2
+              # Read metrics password from the operator-generated metrics secret.
+              # ---------------------------------------------------------------------------
+              MONGO_METRICS_PASSWORD=$(oc get secret "${MONGO_INSTANCE_NAME}-metrics-endpoint-secret" \
+                -n "${MONGO_NAMESPACE}" -o jsonpath='{.data.password}' 2>/dev/null \
+                | base64 -d 2>/dev/null || true)
+
+              # ---------------------------------------------------------------------------
+              # Fetch CA certificate
               # ---------------------------------------------------------------------------
               CA_CERT_PEM=""
-              # Primary: use the CA secret created by cert-manager Certificate 'mongo-ca-crt'
               for CA_SECRET_NAME in "mongo-ca-secret" "${MONGO_INSTANCE_NAME}-ca"; do
                 if oc get secret "${CA_SECRET_NAME}" -n "${MONGO_NAMESPACE}" >/dev/null 2>&1; then
                   echo "Found CA secret ${CA_SECRET_NAME}, extracting certificate ..."
@@ -239,7 +282,7 @@ spec:
               fi
 
               # ---------------------------------------------------------------------------
-              # Build the 'info' YAML block (hosts + optional CA cert) using pure bash
+              # Build the 'info' YAML block (hosts + optional CA cert)
               # ---------------------------------------------------------------------------
               INFO_YAML="config:"$'\n'"  hosts:"
               for (( i=0; i<MONGO_MEMBERS; i++ )); do
@@ -263,56 +306,26 @@ spec:
               echo "-----------------"
 
               # ---------------------------------------------------------------------------
-              # Build JSON payload and write to AWS Secrets Manager.
-              # jq is available in the ibmmas/cli container image.
-              #
-              # The secret includes admin_password and metrics_password so that AVP
-              # can resolve <path:...:mongodatabase#admin_password> on subsequent syncs.
-              # This mirrors the ansible flow where the password is readable from K8s
-              # secret mas-mongo-ce-admin-admin after the operator sets it up.
+              # Build JSON payload and write to AWS Secrets Manager
               # ---------------------------------------------------------------------------
               PRIMARY_HOST="${MONGO_INSTANCE_NAME}-0.${MONGO_INSTANCE_NAME}-svc.${MONGO_NAMESPACE}.svc.cluster.local"
 
-              # Read metrics password from the metrics-endpoint secret (operator leaves it as-is)
-              MONGO_METRICS_PASSWORD=$(oc get secret "mas-mongo-ce-metrics-endpoint-secret" \
-                -n "${MONGO_NAMESPACE}" -o jsonpath='{.data.password}' 2>/dev/null \
-                | base64 -d 2>/dev/null || true)
-
-              SECRET_VALUE=$(jq -n \
-                --arg docdb_host        "${PRIMARY_HOST}" \
-                --arg docdb_port        "27017" \
-                --arg username          "admin" \
-                --arg password          "${MONGO_ADMIN_PASSWORD}" \
-                --arg admin_password    "${MONGO_ADMIN_PASSWORD}" \
-                --arg metrics_password  "${MONGO_METRICS_PASSWORD}" \
-                --arg info              "${INFO_YAML}" \
-                '{docdb_host: $docdb_host, docdb_port: $docdb_port, username: $username, password: $password, admin_password: $admin_password, metrics_password: $metrics_password, info: $info}')
-
-              TAGS=$(jq -n \
-                --arg account "${ACCOUNT_ID}" \
-                --arg cluster "${CLUSTER_ID}" \
-                '[
-                  {"Key":"source",  "Value":"postsync-mongo-update-sm-job"},
-                  {"Key":"account", "Value":$account},
-                  {"Key":"cluster", "Value":$cluster}
-                ]')
-
-              echo "${SECRET_VALUE}" > /tmp/secret_payload.json
-              echo "${TAGS}"        > /tmp/secret_tags.json
-
-              # ---------------------------------------------------------------------------
-              # Login to AWS SM and upsert the secret
-              # ---------------------------------------------------------------------------
-              source /mascli/functions/gitops_utils
-              sm_login
-
               SECRET_NAME_MONGO="${ACCOUNT_ID}/${CLUSTER_ID}/mongodatabase"
-              echo "Upserting AWS Secrets Manager secret: ${SECRET_NAME_MONGO}"
-              sm_update_secret \
-                "${SECRET_NAME_MONGO}" \
-                "$(cat /tmp/secret_payload.json)" \
-                "$(cat /tmp/secret_tags.json)" || exit $?
+              TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-mongo-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
+
+              sm_update_secret $SECRET_NAME_MONGO "{\"docdb_host\": \"${PRIMARY_HOST}\", \"docdb_port\": \"27017\", \"username\": \"admin\", \"password\": \"${MONGO_ADMIN_PASSWORD}\", \"admin_password\": \"${MONGO_ADMIN_PASSWORD}\", \"metrics_password\": \"${MONGO_METRICS_PASSWORD}\", \"info\": \"${INFO_YAML}\"}" "${TAGS}"
 
               echo "SUCCESS: MongoDB credentials stored at ${SECRET_NAME_MONGO}"
+
+      restartPolicy: Never
+
+      serviceAccountName: {{ $sa_name }}
+      volumes:
+        - name: aws
+          secret:
+            secretName: {{ $aws_secret }}
+            defaultMode: 420
+            optional: false
+
   backoffLimit: 4
 {{- end }}

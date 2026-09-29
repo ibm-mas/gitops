@@ -568,33 +568,10 @@ spec:
                     echo ""
                     echo "Taking backup on ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
                     echo "--------------------------------------------------------------------------------"
-                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su - db2inst1 -c "
-                      mkdir -p /mnt/backup/standby
-                      db2 update db cfg for ${DB2_DBNAME} using DBHEAP AUTOMATIC UTIL_HEAP_SZ 128000 AUTOMATIC DATABASE_MEMORY AUTOMATIC || true
-                      if ! db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby with 2 buffers buffer 1024 parallelism 1 > /mnt/backup/standby/dbbackup.log 2>&1; then
-                        echo 'Online backup with custom buffers failed, trying standard online backup...'
-                        if ! db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby compress include logs without prompting > /mnt/backup/standby/dbbackup.log 2>&1; then
-                          echo 'Online backup failed, falling back to offline backup to clear backup pending state...'
-                          db2 force application all
-                          db2 deactivate database ${DB2_DBNAME}
-                          if ! db2 backup db ${DB2_DBNAME} on all dbpartitionnums to /mnt/backup/standby > /mnt/backup/standby/dbbackup.log 2>&1; then
-                            echo '=== Backup output / failure ==='
-                            cat /mnt/backup/standby/dbbackup.log
-                            exit 1
-                          fi
-                          db2 activate database ${DB2_DBNAME}
-                        fi
-                      fi
-                      cat /mnt/backup/standby/dbbackup.log
-                    " || exit $?
+                    oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /mnt/backup/standby; db2 backup db ${DB2_DBNAME} on all dbpartitionnums online to /mnt/backup/standby | tee /mnt/backup/standby/dbbackup.log" db2inst1 || exit $?
                     echo ""
                     timestamp=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "cat /mnt/backup/standby/dbbackup.log | grep 'timestamp' | rev | cut -d ' ' -f1 | rev" db2inst1`
                     echo "Timestamp of backup is ${timestamp}"
-
-                    if [[ -z "${timestamp}" ]]; then
-                      echo "ERROR: Failed to obtain backup timestamp from /mnt/backup/standby/dbbackup.log"
-                      exit 1
-                    fi
 
                     backup_filenames=`oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "ls /mnt/backup/standby | grep ${timestamp}" db2inst1`
                     echo "Backup filenames are ${backup_filenames}"
@@ -674,25 +651,20 @@ spec:
                 echo "Copying keystore from primary to standby"
                 KEYSTORE_GENERATION_SCRIPT='/tmp/keystore_generation.sh'
 
+                GSK_CMD="gsk8capicmd_64"
+                if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]]; then
+                  GSK_CMD="gsk9certutil_64"
+                fi
+
                 cat > ${KEYSTORE_GENERATION_SCRIPT} << EOF
                   #!/bin/bash
-                  [ -f \$HOME/sqllib/db2profile ] && . \$HOME/sqllib/db2profile
-                  export PATH=\$PATH:\$HOME/sqllib/gskit/bin:\$HOME/sqllib/bin:\$(find /opt/ibm -type d -name "bin" 2>/dev/null | grep gskit | head -1)
-
-                  GSK_CMD=\$(which gsk8capicmd_64 2>/dev/null || which gskcapicmd_64 2>/dev/null || find /opt/ibm /mnt/blumeta0 -name gsk8capicmd_64 2>/dev/null | head -1)
-                  if [ -z "\${GSK_CMD}" ]; then
-                    echo "ERROR: gsk8capicmd_64 not found in PATH or standard installation paths!"
-                    exit 1
-                  fi
-                  echo "Using GSKit command: \${GSK_CMD}"
-
                   db2 connect to ${DB2_DBNAME};
                   if [ \$? != 0 ]; then
                     echo "Failed to connect to database!"
                     exit 1
                   fi
                   label=\$(db2 -x "select MASTER_KEY_LABEL from TABLE(SYSPROC.ADMIN_GET_ENCRYPTION_INFO()) where OBJECT_NAME='${DB2_DBNAME}' and OBJECT_TYPE='DATABASE'")
-                  \${GSK_CMD} -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label \${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'
+                  ${GSK_CMD} -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label \${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'
 
               EOF
 
@@ -709,12 +681,7 @@ spec:
                 oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /tmp/keystore; cp /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
                 oc rsync ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/keystore /tmp
                 oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su - db2inst1 -c "
-                  [ -f \$HOME/sqllib/db2profile ] && . \$HOME/sqllib/db2profile
-                  export PATH=\$PATH:\$HOME/sqllib/gskit/bin:\$HOME/sqllib/bin:\$(find /opt/ibm -type d -name 'bin' 2>/dev/null | grep gskit | head -1)
-                  GSK_CMD=\$(which gsk8capicmd_64 2>/dev/null || which gskcapicmd_64 2>/dev/null || find /opt/ibm /mnt/blumeta0 -name gsk8capicmd_64 2>/dev/null | head -1)
-                  \${GSK_CMD} -cert -import -db /tmp/keystore/migrate_hadr.p12 -pw 'CDS0n&Up' -target /mnt/blumeta0/db2/keystore/keystore.p12 -target_stashed
-                " || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${GSK_CMD} -cert -import -db /tmp/keystore/migrate_hadr.p12 -pw 'CDS0n&Up' -target /mnt/blumeta0/db2/keystore/keystore.p12 -target_stashed" db2inst1 || exit $?
 
                 # Restore in standby
                 echo ""

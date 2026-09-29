@@ -226,6 +226,41 @@ spec:
                 fi
               fi
 
+              # If running for standby (sdb) during HADR upgrade, wait for primary database upgrade to complete
+              if [[ "${DB2_INSTANCE_NAME}" == *"sdb"* ]] && [[ "${REPLICA_DB}" == "true" ]]; then
+                PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
+                UPGRADE_CM="hadr-upgrade-in-progress-${PRIMARY_DB2_INSTANCE_NAME}"
+
+                if oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                  echo "================================================================================"
+                  echo "HADR upgrade in progress detected. Waiting for Primary DB (${PRIMARY_DB2_INSTANCE_NAME}) upgrade to complete..."
+                  echo "================================================================================"
+
+                  wait_count=0
+                  while true; do
+                    if ! oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                      echo "Upgrade ConfigMap ${UPGRADE_CM} has been removed. Proceeding with Standby PreSync."
+                      break
+                    fi
+
+                    PRIMARY_UPGRADED=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.primary_upgraded}' 2>/dev/null || echo "false")
+                    if [[ "${PRIMARY_UPGRADED}" == "true" ]]; then
+                      echo "Primary database upgrade verified (primary_upgraded=true). Proceeding with Standby sync."
+                      break
+                    fi
+
+                    wait_count=$((wait_count+1))
+                    if [ $wait_count -gt 180 ]; then
+                      echo "ERROR: Timeout waiting for Primary database upgrade after 1800s (30m)."
+                      exit 1
+                    fi
+
+                    echo "Waiting for Primary DB upgrade... (${wait_count}/180 - $((wait_count*10))s elapsed)"
+                    sleep 10
+                  done
+                fi
+              fi
+
       restartPolicy: Never
 
       # TODO: is this the correct SA to use here?

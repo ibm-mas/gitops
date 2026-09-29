@@ -676,13 +676,23 @@ spec:
 
                 cat > ${KEYSTORE_GENERATION_SCRIPT} << EOF
                   #!/bin/bash
+                  [ -f \$HOME/sqllib/db2profile ] && . \$HOME/sqllib/db2profile
+                  export PATH=\$PATH:\$HOME/sqllib/gskit/bin:\$HOME/sqllib/bin:\$(find /opt/ibm -type d -name "bin" 2>/dev/null | grep gskit | head -1)
+
+                  GSK_CMD=\$(which gsk8capicmd_64 2>/dev/null || which gskcapicmd_64 2>/dev/null || find /opt/ibm /mnt/blumeta0 -name gsk8capicmd_64 2>/dev/null | head -1)
+                  if [ -z "\${GSK_CMD}" ]; then
+                    echo "ERROR: gsk8capicmd_64 not found in PATH or standard installation paths!"
+                    exit 1
+                  fi
+                  echo "Using GSKit command: \${GSK_CMD}"
+
                   db2 connect to ${DB2_DBNAME};
                   if [ \$? != 0 ]; then
                     echo "Failed to connect to database!"
                     exit 1
                   fi
                   label=\$(db2 -x "select MASTER_KEY_LABEL from TABLE(SYSPROC.ADMIN_GET_ENCRYPTION_INFO()) where OBJECT_NAME='${DB2_DBNAME}' and OBJECT_TYPE='DATABASE'")
-                  gsk8capicmd_64 -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label ${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'
+                  \${GSK_CMD} -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label \${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'
 
               EOF
 
@@ -699,7 +709,12 @@ spec:
                 oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /tmp/keystore; cp /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
                 oc rsync ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/keystore /tmp
                 oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "gsk8capicmd_64 -cert -import -db /tmp/keystore/migrate_hadr.p12 -pw 'CDS0n&Up' -target /mnt/blumeta0/db2/keystore/keystore.p12 -target_stashed" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su - db2inst1 -c "
+                  [ -f \$HOME/sqllib/db2profile ] && . \$HOME/sqllib/db2profile
+                  export PATH=\$PATH:\$HOME/sqllib/gskit/bin:\$HOME/sqllib/bin:\$(find /opt/ibm -type d -name 'bin' 2>/dev/null | grep gskit | head -1)
+                  GSK_CMD=\$(which gsk8capicmd_64 2>/dev/null || which gskcapicmd_64 2>/dev/null || find /opt/ibm /mnt/blumeta0 -name gsk8capicmd_64 2>/dev/null | head -1)
+                  \${GSK_CMD} -cert -import -db /tmp/keystore/migrate_hadr.p12 -pw 'CDS0n&Up' -target /mnt/blumeta0/db2/keystore/keystore.p12 -target_stashed
+                " || exit $?
 
                 # Restore in standby
                 echo ""

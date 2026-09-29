@@ -20,7 +20,7 @@ Any changes to values in this dict will trigger a rerun of the job.
 {{- /*
 Increment this value whenever you make a change to an immutable field of the Job resource.
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v5" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -345,14 +345,27 @@ spec:
               echo "-----------------"
 
               # ---------------------------------------------------------------------------
-              # Build JSON payload and write to AWS Secrets Manager
+              # Build JSON payload using jq to safely escape all field values,
+              # then write to AWS Secrets Manager.
+              # jq --arg handles newlines and special characters in INFO_YAML correctly,
+              # storing info as plain text (not encoded) in AWS Secrets Manager.
               # ---------------------------------------------------------------------------
               PRIMARY_HOST="${MONGO_INSTANCE_NAME}-0.${MONGO_INSTANCE_NAME}-svc.${MONGO_NAMESPACE}.svc.cluster.local"
+
+              SECRET_VALUE=$(jq -n \
+                --arg docdb_host       "${PRIMARY_HOST}" \
+                --arg docdb_port       "27017" \
+                --arg username         "admin" \
+                --arg password         "${MONGO_ADMIN_PASSWORD}" \
+                --arg admin_password   "${MONGO_ADMIN_PASSWORD}" \
+                --arg metrics_password "${MONGO_METRICS_PASSWORD}" \
+                --arg info             "${INFO_YAML}" \
+                '{docdb_host: $docdb_host, docdb_port: $docdb_port, username: $username, password: $password, admin_password: $admin_password, metrics_password: $metrics_password, info: $info}')
 
               SECRET_NAME_MONGO="${ACCOUNT_ID}/${CLUSTER_ID}/mongodatabase"
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-mongo-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"cluster\", \"Value\": \"${CLUSTER_ID}\"}]"
 
-              sm_update_secret $SECRET_NAME_MONGO "{\"docdb_host\": \"${PRIMARY_HOST}\", \"docdb_port\": \"27017\", \"username\": \"admin\", \"password\": \"${MONGO_ADMIN_PASSWORD}\", \"admin_password\": \"${MONGO_ADMIN_PASSWORD}\", \"metrics_password\": \"${MONGO_METRICS_PASSWORD}\", \"info\": \"${INFO_YAML}\"}" "${TAGS}"
+              sm_update_secret $SECRET_NAME_MONGO "${SECRET_VALUE}" "${TAGS}"
 
               echo "SUCCESS: MongoDB credentials stored at ${SECRET_NAME_MONGO}"
 

@@ -403,7 +403,7 @@ spec:
 
               # Check if HADR upgrade is in progress and run Primary database post-upgrade operations
               UPGRADE_CM="hadr-upgrade-in-progress-${DB2_INSTANCE_NAME}"
-              if oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
                 REPLICA_DB_VAL=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.replica_db}' 2>/dev/null || echo "false")
                 if [[ "${REPLICA_DB_VAL}" == "true" ]]; then
                   PRIMARY_UPGRADED=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.primary_upgraded}' 2>/dev/null || echo "false")

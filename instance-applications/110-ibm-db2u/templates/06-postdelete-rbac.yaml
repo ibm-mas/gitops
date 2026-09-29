@@ -1,0 +1,83 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+RBAC resources for supporting the PostDelete hook in 07-postdelete-delete-cr.yaml.
+Annotated with helm.sh/resource-policy: keep so ArgoCD does not delete them before the
+PostDelete job that depends on them runs.
+*/}}
+
+{{- $ns       := .Values.db2_namespace }}
+{{- $sa_name  := "postdelete-db2u-sa" }}
+{{- $role_name := "postdelete-db2u-r" }}
+{{- $rb_name  := "postdelete-db2u-rb" }}
+
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "063"
+    helm.sh/resource-policy: keep
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "063"
+    helm.sh/resource-policy: keep
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+    apiGroups:
+      - db2u.databases.ibm.com
+    resources:
+      - db2uinstances
+  - verbs:
+      - delete
+      - get
+      - list
+    apiGroups:
+      - operators.coreos.com
+    resources:
+      - clusterserviceversions
+      - subscriptions
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "063"
+    helm.sh/resource-policy: keep
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+{{- end }}
+{{- end }}

@@ -102,7 +102,7 @@ spec:
 
                 echo "oc delete resource $RESOURCE in namespace $NAMESPACE "
 
-                # don't want a non-zero rc from oc delete to cause the job to fail (since we then want to try patching out the finalizers)
+                # don't want a non-zero rc from oc delete to cause the job to fail
                 # so, temporarily set +e
                 set +e
                 oc delete $RESOURCE -n $NAMESPACE --timeout=300s --wait=true
@@ -116,28 +116,6 @@ spec:
                 RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
                 set -e
 
-                # NOTE: finalizer patch fallback commented out for PreDelete CR-watch validation
-                # if [[ -n "${RESOURCE_NAME}" ]]; then
-                #   echo "$RESOURCE still present after delete, attempting to patch out finalizers"
-                #   set +e
-                #   oc patch $RESOURCE -n $NAMESPACE --type=json \
-                #     -p='[{"op":"remove","path":"/metadata/finalizers"}]'
-                #   patch_rc=$?
-                #   set -e
-                #   if [[ $patch_rc -ne 0 ]]; then
-                #     echo "Failed to patch finalizers from $RESOURCE, failing job"
-                #     exit 1
-                #   fi
-                #   echo "Finalizers patched, verifying $RESOURCE is now gone"
-                #   sleep 5
-                #   set +e
-                #   RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
-                #   set -e
-                #   if [[ -n "${RESOURCE_NAME}" ]]; then
-                #     echo "$RESOURCE still present after finalizer patch, failing job"
-                #     exit 1
-                #   fi
-                # fi
                 if [[ -n "${RESOURCE_NAME}" ]]; then
                   echo "$RESOURCE still present, failing job"
                   exit 1
@@ -145,7 +123,6 @@ spec:
 
                 echo "... verified"
                 return 0
-                
               }
 
               delete_oc_resource "${CR_KIND}.${CR_API_VERSION}/${CR_NAME}" "${CR_NAMESPACE}"

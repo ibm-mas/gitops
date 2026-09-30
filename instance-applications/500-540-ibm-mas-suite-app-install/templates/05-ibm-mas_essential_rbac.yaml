@@ -1,0 +1,101 @@
+{{- /*
+  Essential namespace-scoped RBAC for MAS 9.2+ Manage application.
+
+  The MAS Manage operator (mas.util.bind role) creates these Role/RoleBinding objects
+  during the normal reconcile via install_essential_roles=true, but does NOT recreate
+  them during the ManageApp deletion finalizer (install_essential_roles defaults to
+  false in manageapp-finalizer.yml).  When deprovisioning, the ManageApp finalizer
+  calls internalAPI to mark the suite/system binding NOT_READY, and internalAPI itself
+  needs create/patch access to Secret/inst-suite-system-binding in the -manage
+  namespace.  Without these RBAC objects the call fails with HTTP 403 and the
+  ManageApp finalizer loops forever.
+
+  By managing these objects from gitops we guarantee they exist for the lifetime of the
+  ManageApp ArgoCD Application — including during deletion — regardless of which
+  operator version provisioned them.
+
+*/}}
+{{- if and .Values.instance_id (eq .Values.mas_app_id "manage") }}
+---
+# Role: grants ibm-mas-internalapi (in -core) access to secrets/configmaps/CRs
+# in the -manage namespace, required by the ManageApp deletion finalizer.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "mas:{{ .Values.instance_id }}:core:internalapi:manage:essential"
+  namespace: {{ .Values.mas_app_namespace }}
+  labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+    mas.ibm.com/applicationId: {{ .Values.mas_app_id }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["delete"]
+  - apiGroups: ["apps.mas.ibm.com"]
+    resources: ["manageapps", "manageworkspaces", "manageaccelerators"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+  - apiGroups: ["operators.coreos.com"]
+    resources: ["subscriptions"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "mas:{{ .Values.instance_id }}:core:internalapi:manage:essential"
+  namespace: {{ .Values.mas_app_namespace }}
+  labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+    mas.ibm.com/applicationId: {{ .Values.mas_app_id }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: "mas:{{ .Values.instance_id }}:core:internalapi:manage:essential"
+subjects:
+  - kind: ServiceAccount
+    name: ibm-mas-internalapi
+    namespace: "mas-{{ .Values.instance_id }}-core"
+---
+# Role: grants ibm-mas-coreapi (in -core) access to secrets/configmaps/CRs
+# in the -manage namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "mas:{{ .Values.instance_id }}:core:coreapi:manage:essential"
+  namespace: {{ .Values.mas_app_namespace }}
+  labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+    mas.ibm.com/applicationId: {{ .Values.mas_app_id }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "update", "create", "delete", "patch"]
+  - apiGroups: ["apps.mas.ibm.com"]
+    resources: ["manageapps", "manageworkspaces", "manageaccelerators"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "mas:{{ .Values.instance_id }}:core:coreapi:manage:essential"
+  namespace: {{ .Values.mas_app_namespace }}
+  labels:
+    mas.ibm.com/instanceId: {{ .Values.instance_id }}
+    mas.ibm.com/applicationId: {{ .Values.mas_app_id }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: "mas:{{ .Values.instance_id }}:core:coreapi:manage:essential"
+subjects:
+  - kind: ServiceAccount
+    name: ibm-mas-coreapi
+    namespace: "mas-{{ .Values.instance_id }}-core"
+{{- end }}

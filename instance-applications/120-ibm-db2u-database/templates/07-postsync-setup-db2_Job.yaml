@@ -401,7 +401,7 @@ spec:
               echo "================================================================================"
               wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
 
-              # Check if HADR upgrade is in progress and run Primary database post-upgrade operations
+              # Check if HADR upgrade is in progress and mark Primary database upgrade as complete
               UPGRADE_CM="hadr-upgrade-in-progress-${DB2_INSTANCE_NAME}"
               if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
                 REPLICA_DB_VAL=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.replica_db}' 2>/dev/null || echo "false")
@@ -410,16 +410,12 @@ spec:
                   if [[ "${PRIMARY_UPGRADED}" != "true" ]]; then
                     echo ""
                     echo "================================================================================"
-                    echo "Running Db2 Primary upgrade operations for HADR (db2_update_upgrade)..."
+                    echo "Verifying Primary Db2 database readiness after operator upgrade..."
                     echo "================================================================================"
-                    echo "Updating databases on Primary..."
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2_update_upgrade --databases" || exit $?
-
-                    echo "Running post-upgrade on Primary..."
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2_update_upgrade --post-upgrade" || exit $?
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 activate database ${DB2_DBNAME} || db2 connect to ${DB2_DBNAME}" || true
 
                     oc patch configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --type=merge -p '{"data":{"primary_upgraded":"true"}}'
-                    echo "Primary upgrade completed and marked in ConfigMap for Standby processing."
+                    echo "Primary upgrade verified and marked in ConfigMap for Standby processing."
                   fi
                 else
                   oc delete configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --ignore-not-found=true

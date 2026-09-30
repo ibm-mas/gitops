@@ -179,15 +179,17 @@ spec:
                     echo "HADR Version drift detected. Initiating PreSync upgrade preparation..."
                     echo "================================================================================"
 
-                    # 1. Stop governor on primary engine pod
-                    echo "Stopping governor on Primary (c-${DB2_INSTANCE_NAME}-db2u-0)..."
+                    # 1. Stop HADR/governor on primary engine pod
+                    echo "Stopping HADR and governor on Primary (c-${DB2_INSTANCE_NAME}-db2u-0)..."
                     oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- sv stop governor || true
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 stop hadr on db ${DB2_DBNAME} || true" || true
 
                     # 2. Process standby-specific steps
                     SDB_INSTANCE_NAME="${DB2_INSTANCE_NAME}-sdb"
                     if oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-                      echo "Stopping governor on Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
+                      echo "Stopping HADR and governor on Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
                       oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- sv stop governor || true
+                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 stop hadr on db ${DB2_DBNAME} || true" || true
 
                       echo "Annotating Standby ${SDB_INSTANCE_NAME} with db2ckupgrade_hadr=initialize..."
                       oc annotate db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" \

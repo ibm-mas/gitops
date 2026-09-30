@@ -1,0 +1,99 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+PostDelete job: deletes the ibm-sls Subscription and CSV after the ArgoCD Application
+is removed, so OLM does not keep the operator running and the namespace can terminate.
+Depends on SA/Role/RoleBinding in 08-postdelete-rbac.yaml.
+Use build/bin/set-cli-image-digest.sh to update the image digest below.
+*/}}
+{{- $_cli_image_digest := "sha256:020f1925421de13beaf439aa09181209875ed3791824bcaaf1daaf910c725266" }}
+
+{{- $ns       := printf "mas-%s-sls" .Values.instance_id }}
+{{- $name_hash := $ns | sha256sum | trunc 6 }}
+{{- $job_name  := printf "postdelete-cr-job-%s" $name_hash }}
+
+{{ $sa_name   := "postdelete-sls-sa" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: SLS_NAMESPACE
+              value: {{ $ns }}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete ibm-sls Subscription in ${SLS_NAMESPACE}"
+              set +e
+              SUB_NAME=$(oc get subscription -n ${SLS_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep "^ibm-sls$")
+              set -e
+              if [[ -z "${SUB_NAME}" ]]; then
+                echo "No ibm-sls Subscription found - skipping"
+              else
+                echo "Deleting Subscription: ${SUB_NAME}"
+                oc delete subscription "${SUB_NAME}" -n ${SLS_NAMESPACE} \
+                  --timeout=60s --wait=true 2>/dev/null || true
+                echo "Subscription deleted"
+              fi
+
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete ibm-sls CSV in ${SLS_NAMESPACE}"
+              set +e
+              CSV_NAME=$(oc get csv -n ${SLS_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep "^ibm-sls\.")
+              set -e
+              if [[ -z "${CSV_NAME}" ]]; then
+                echo "No ibm-sls CSV found - skipping"
+              else
+                echo "Deleting CSV: ${CSV_NAME}"
+                oc delete csv "${CSV_NAME}" -n ${SLS_NAMESPACE} \
+                  --timeout=60s --wait=true 2>/dev/null || true
+                echo "CSV deleted"
+              fi
+
+              echo "PostDelete: sls OLM cleanup complete"
+      volumes: []
+  backoffLimit: 4
+{{- end }}
+{{- end }}

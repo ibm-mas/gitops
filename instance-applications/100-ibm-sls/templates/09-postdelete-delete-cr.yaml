@@ -61,6 +61,43 @@ spec:
             - |
               set -e
               echo "------------------------------------------------------------------"
+              echo "PostDelete: delete LicenseService CR in ${SLS_NAMESPACE}"
+
+              set +e
+              LS_NAME=$(oc get licenseservice -n ${SLS_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+              set -e
+
+              if [[ -z "${LS_NAME}" ]]; then
+                echo "LicenseService CR not found - already removed"
+              else
+                echo "Deleting LicenseService: ${LS_NAME}"
+                set +e
+                oc delete licenseservice "${LS_NAME}" \
+                  -n ${SLS_NAMESPACE} --wait=false 2>/dev/null
+                set -e
+
+                echo "Waiting up to 600s for operator to process LicenseService finalizer..."
+                WAIT_SECS=0
+                while [[ ${WAIT_SECS} -lt 600 ]]; do
+                  set +e
+                  LS_NAME=$(oc get licenseservice -n ${SLS_NAMESPACE} \
+                    --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+                  set -e
+                  [[ -z "${LS_NAME}" ]] && break
+                  sleep 15
+                  WAIT_SECS=$((WAIT_SECS + 15))
+                  echo "  Still waiting... ${WAIT_SECS}s elapsed"
+                done
+
+                if [[ -n "${LS_NAME}" ]]; then
+                  echo "ERROR: LicenseService still present after ${WAIT_SECS}s - operator did not release finalizer"
+                  exit 1
+                fi
+                echo "LicenseService gone - safe to remove OLM resources"
+              fi
+
+              echo "------------------------------------------------------------------"
               echo "PostDelete: delete ibm-sls Subscription in ${SLS_NAMESPACE}"
               set +e
               SUB_NAME=$(oc get subscription -n ${SLS_NAMESPACE} \

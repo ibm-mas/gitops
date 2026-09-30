@@ -113,8 +113,21 @@ spec:
                 RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
                 set -e
                 if [[ -n "${RESOURCE_NAME}" ]]; then
-                  echo "$RESOURCE still present, failing job"
-                  exit 1
+                  echo "$RESOURCE still present after delete (operator finalizer may not have cleared)"
+                  echo "Attempting to patch out finalizers on $RESOURCE ..."
+                  set +e
+                  oc patch $RESOURCE -n $NAMESPACE \
+                    --type=json \
+                    -p='[{"op":"remove","path":"/metadata/finalizers"}]'
+                  set -e
+                  # Re-verify after finalizer removal
+                  set +e
+                  RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                  set -e
+                  if [[ -n "${RESOURCE_NAME}" ]]; then
+                    echo "$RESOURCE still present after finalizer removal, failing job"
+                    exit 1
+                  fi
                 fi
 
                 echo "... verified"

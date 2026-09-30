@@ -85,6 +85,10 @@ redhat_cert_manager:
 | `ClusterRoleBinding` | cert-manager operator cluster role bindings | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `Secret` | cert-manager related secrets | `cert-manager` and `default` | Always and hook-driven as applicable | `cluster_admin_role` |
 | `ServiceAccount` | cert-manager hook service accounts | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
+| `ServiceAccount` | `postdelete-delete-csv-sa` | `cert-manager-operator` | PostDelete hook | `cluster_admin_role` |
+| `Role` | `postdelete-delete-csv-r` | `cert-manager-operator` | PostDelete hook | `cluster_admin_role` |
+| `RoleBinding` | `postdelete-delete-csv-rb` | `cert-manager-operator` | PostDelete hook | `cluster_admin_role` |
 | `Job` | `postsync-rhcm-update-sm-job-*` | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `cert-manager-operator` | PostDelete hook | `cluster_admin_role` |
 
 **Note:** The PostSync Job updates AWS Secrets Manager with cluster information for use by other charts.

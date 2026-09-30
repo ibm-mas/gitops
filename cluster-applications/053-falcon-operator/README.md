@@ -118,3 +118,7 @@ For more information, see the [CrowdStrike Falcon Operator documentation](https:
 | `OperatorGroup` | `falcon-operator` | `falcon-operator` | Always | `cluster_admin_role` |
 | `Subscription` | `falcon-operator` | `falcon-operator` | Always | `cluster_admin_role` |
 | `FalconNodeSensor` | `falcon-node-sensor` | `falcon-operator` | Always | `cluster_admin_role` |
+| `ServiceAccount` | `postdelete-delete-csv-sa` | `falcon-operator` | PostDelete hook | `cluster_admin_role` |
+| `Role` | `postdelete-delete-csv-r` | `falcon-operator` | PostDelete hook | `cluster_admin_role` |
+| `RoleBinding` | `postdelete-delete-csv-rb` | `falcon-operator` | PostDelete hook | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `falcon-operator` | PostDelete hook | `cluster_admin_role` |

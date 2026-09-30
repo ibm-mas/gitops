@@ -121,3 +121,7 @@ nvidia_gpu_operator:
 | `Subscription` | `gpu-operator-certified` | `nvidia-gpu-operator` | Always | `cluster_admin_role` |
 | `ClusterPolicy` | `gpu-cluster-policy` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `SecurityContextConstraints` | `ibm-mas-customscc` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
+| `ServiceAccount` | `postdelete-delete-csv-sa` | `nvidia-gpu-operator` | PostDelete hook | `cluster_admin_role` |
+| `Role` | `postdelete-delete-csv-r` | `nvidia-gpu-operator` | PostDelete hook | `cluster_admin_role` |
+| `RoleBinding` | `postdelete-delete-csv-rb` | `nvidia-gpu-operator` | PostDelete hook | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `nvidia-gpu-operator` | PostDelete hook | `cluster_admin_role` |

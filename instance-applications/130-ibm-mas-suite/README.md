@@ -4,6 +4,9 @@ Installs the `ibm-mas` operator and creates an instance of the `Suite`.
 
 <!--docs-include-start-->
 
+## Overview
+
+This chart installs the `ibm-mas` operator via an OLM Subscription and creates a `Suite` CR to provision a MAS instance. It also contains a pre-delete hook (`08-predelete-wait-for-configs_Job.yaml`) that ensures all suite config ArgoCD applications are fully deleted before Suite app resources are removed, and post-delete hook resources that allow config charts to force-remove config CR finalizers when entity managers are no longer running.
 
 ## Resources Created
 
@@ -18,6 +21,8 @@ Installs the `ibm-mas` operator and creates an instance of the `Suite`.
 | `ServiceAccount` | Post-sync and post-delete job service accounts | MAS core namespace | When associated jobs are enabled | `application_admin_role` |
 | `Role` | Post-sync and post-delete job roles | MAS core namespace | When associated jobs are enabled | `application_admin_role` |
 | `RoleBinding` | Post-sync and post-delete job role bindings | MAS core namespace | When associated jobs are enabled | `application_admin_role` |
+| `ClusterRole` | Pre-delete hook job cluster role | N/A (cluster-scoped) | When pre-delete hooks are enabled | `application_admin_role` |
+| `ClusterRoleBinding` | Pre-delete hook job cluster role binding | N/A (cluster-scoped) | When pre-delete hooks are enabled | `application_admin_role` |
 | `Job` | Post-sync suite configuration jobs | MAS core namespace | When associated jobs are enabled | `application_admin_role` |
 | `ConfigMap` | Suite helper and runtime configuration config maps | MAS core namespace | When associated jobs or certificate management features are enabled | `application_admin_role` |
 
@@ -128,3 +133,18 @@ sm:                             # Secrets Manager configuration
 ```
 
 For complete documentation of all base instance values including optional fields like `custom_labels`, `argocluster_instance`, `application_admin_service_account`, `mas_wipe_mongo_data`, `allow_list`, `additional_vpn`, `application_configuration`, `use_postdelete_hooks`, `additional_resources`, `extensions`, `enhanced_dr`, and `cli_image_repo`, see the [Instance Base Values Reference](../../docs/reference/instance-base-values.md).
+
+## Examples
+
+### Basic MAS Suite installation
+
+```yaml
+# suite-params.yaml
+merge-key: "production/us-east-1/inst1"
+ibm_mas_suite:
+  domain: "inst1.example.com"
+  mas_channel: "9.x"
+  mas_install_plan: "Automatic"
+  icr_cp: "cp.icr.io"
+  icr_cp_open: "icr.io"
+```

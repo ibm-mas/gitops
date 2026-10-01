@@ -206,9 +206,15 @@ spec:
                       done
                       echo "Standby upgrade check step finished."
 
-                      echo "Stopping HADR on Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
+                      echo "Stopping HADR and isolating Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
                       oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- sv stop governor 2>/dev/null || true
-                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 stop hadr on db ${DB_NAME}" 2>/dev/null || true
+                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                        db2 stop hadr on db ${DB_NAME} || true
+                        db2set -null DB2COMM
+                        db2 force application all
+                        db2 terminate
+                        db2 deactivate database ${DB_NAME} || true
+                      " 2>/dev/null || true
                     fi
 
                     # 2. Stop HADR on Primary, disable DB2COMM, and deactivate database so operator has exclusive access during rollout
@@ -249,6 +255,16 @@ spec:
                     echo "Standby HADR upgrade detected (Current=${CURRENT_VERSION}, Target=${TARGET_DB2_VERSION})."
                     echo "Waiting for Primary DB (${PRIMARY_DB2_INSTANCE_NAME}) upgrade to complete..."
                     echo "================================================================================"
+
+                    # Isolate local standby database to prevent reconnection contention
+                    DB_NAME="${DB2_DBNAME:-BLUDB}"
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                      db2 stop hadr on db ${DB_NAME} || true
+                      db2set -null DB2COMM
+                      db2 force application all
+                      db2 terminate
+                      db2 deactivate database ${DB_NAME} || true
+                    " 2>/dev/null || true
 
                     wait_count=0
                     while true; do

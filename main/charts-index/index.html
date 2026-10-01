@@ -6872,6 +6872,8 @@ sm:                             # Secrets Manager configuration
 <hr>
 <h3 id="ibm-mas-suite">IBM MAS Suite<a class="headerlink" href="#ibm-mas-suite" title="Permanent link">¤</a></h3>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/130-ibm-mas-suite">130-ibm-mas-suite</a></p>
+<h5 id="overview_5">Overview<a class="headerlink" href="#overview_5" title="Permanent link">¤</a></h5>
+<p>This chart installs the <code>ibm-mas</code> operator via an OLM Subscription and creates a <code>Suite</code> CR to provision a MAS instance. It also contains a pre-delete hook (<code>08-predelete-wait-for-configs_Job.yaml</code>) that ensures all suite config ArgoCD applications are fully deleted before Suite app resources are removed, and post-delete hook resources that allow config charts to force-remove config CR finalizers when entity managers are no longer running.</p>
 <h5 id="resources-created_45">Resources Created<a class="headerlink" href="#resources-created_45" title="Permanent link">¤</a></h5>
 <table>
 <thead>
@@ -6945,6 +6947,20 @@ sm:                             # Secrets Manager configuration
 <td>Post-sync and post-delete job role bindings</td>
 <td>MAS core namespace</td>
 <td>When associated jobs are enabled</td>
+<td><code>application_admin_role</code></td>
+</tr>
+<tr>
+<td><code>ClusterRole</code></td>
+<td>Pre-delete hook job cluster role</td>
+<td>N/A (cluster-scoped)</td>
+<td>When pre-delete hooks are enabled</td>
+<td><code>application_admin_role</code></td>
+</tr>
+<tr>
+<td><code>ClusterRoleBinding</code></td>
+<td>Pre-delete hook job cluster role binding</td>
+<td>N/A (cluster-scoped)</td>
+<td>When pre-delete hooks are enabled</td>
 <td><code>application_admin_role</code></td>
 </tr>
 <tr>
@@ -7061,6 +7077,17 @@ sm:                             # Secrets Manager configuration
   aws_secret_access_key: string (secret reference)
 </code></pre>
 <p>For complete documentation of all base instance values including optional fields like <code>custom_labels</code>, <code>argocluster_instance</code>, <code>application_admin_service_account</code>, <code>mas_wipe_mongo_data</code>, <code>allow_list</code>, <code>additional_vpn</code>, <code>application_configuration</code>, <code>use_postdelete_hooks</code>, <code>additional_resources</code>, <code>extensions</code>, <code>enhanced_dr</code>, and <code>cli_image_repo</code>, see the <a href="../reference/instance-base-values/">Instance Base Values Reference</a>.</p>
+<h5 id="examples_5">Examples<a class="headerlink" href="#examples_5" title="Permanent link">¤</a></h5>
+<h6 id="basic-mas-suite-installation">Basic MAS Suite installation<a class="headerlink" href="#basic-mas-suite-installation" title="Permanent link">¤</a></h6>
+<pre><code class="language-yaml"># suite-params.yaml
+merge-key: "production/us-east-1/inst1"
+ibm_mas_suite:
+  domain: "inst1.example.com"
+  mas_channel: "9.x"
+  mas_install_plan: "Automatic"
+  icr_cp: "cp.icr.io"
+  icr_cp_open: "icr.io"
+</code></pre>
 <hr>
 <h3 id="ibm-object-storage-config">IBM Object Storage Config<a class="headerlink" href="#ibm-object-storage-config" title="Permanent link">¤</a></h3>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/instance-applications/130-ibm-objectstorage-config">130-ibm-objectstorage-config</a></p>

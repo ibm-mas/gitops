@@ -169,5 +169,8 @@ For more information, see the [OpenShift Cluster Logging documentation](https://
 | `ConfigMap` | `syslog-forwarder` | `openshift-logging` | When `setup_log_forwarding` is true | `cluster_admin_role` |
 | `Service` | `syslog-forwarder` | `openshift-logging` | When `setup_log_forwarding` is true | `cluster_admin_role` |
 | `Deployment` | `syslog-forwarder` | `openshift-logging` | When `setup_log_forwarding` is true | `cluster_admin_role` |
+| `Role` | `postdelete-delete-csv-r` | `openshift-logging` | PostDelete hook | `cluster_admin_role` |
+| `RoleBinding` | `postdelete-delete-csv-rb` | `openshift-logging` | PostDelete hook | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `openshift-logging` | PostDelete hook | `cluster_admin_role` |
 
 **Note:** The syslog forwarder resources are only created when `setup_log_forwarding` is enabled. The `ClusterLogForwarder` resource is created for both supported operator version ranges, but the API group and collector RBAC differ between channel versions.

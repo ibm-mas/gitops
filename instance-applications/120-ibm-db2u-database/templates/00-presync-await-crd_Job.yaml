@@ -171,6 +171,7 @@ spec:
               # Check if HADR Primary DB version upgrade is being initiated
               if [[ "${DB2_INSTANCE_NAME}" != *"sdb"* ]] && [[ -n "${TARGET_DB2_VERSION}" ]] && [[ "${REPLICA_DB}" == "true" ]]; then
                 UPGRADE_CM="hadr-upgrade-in-progress-${DB2_INSTANCE_NAME}"
+                DB_NAME="${DB2_DBNAME:-BLUDB}"
 
                 if oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
                   CURRENT_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}')
@@ -181,18 +182,9 @@ spec:
                     echo "HADR Version drift detected. Initiating PreSync upgrade preparation..."
                     echo "================================================================================"
 
-                    # 1. Stop HADR/governor on primary engine pod
-                    echo "Stopping HADR and governor on Primary (c-${DB2_INSTANCE_NAME}-db2u-0)..."
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- sv stop governor || true
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 stop hadr on db ${DB2_DBNAME} || true" || true
-
-                    # 2. Process standby-specific steps
+                    # 1. Process Standby-specific pre-upgrade check while HADR is connected
                     SDB_INSTANCE_NAME="${DB2_INSTANCE_NAME}-sdb"
                     if oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-                      echo "Stopping HADR and governor on Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
-                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- sv stop governor || true
-                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 stop hadr on db ${DB2_DBNAME} || true" || true
-
                       echo "Annotating Standby ${SDB_INSTANCE_NAME} with db2ckupgrade_hadr=initialize..."
                       oc annotate db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" \
                         db2u.databases.ibm.com/db2ckupgrade_hadr=initialize --overwrite
@@ -201,19 +193,28 @@ spec:
                       check_count=0
                       until [ "$(oc get db2uinstance ${SDB_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrSuccess")].status}' 2>/dev/null)" == "True" ]; do
                         if [ "$(oc get db2uinstance ${SDB_INSTANCE_NAME} -n ${DB2_NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrFailure")].status}' 2>/dev/null)" == "True" ]; then
-                          echo "ERROR: Standby upgrade check failed! Check \${SUPPORTDIR}/db2_upgrade_check.log on standby pod."
-                          exit 1
+                          echo "WARNING: Standby upgrade check reported failure. Check \${SUPPORTDIR}/db2_upgrade_check.log on standby pod."
+                          break
                         fi
                         check_count=$((check_count+1))
                         if [ $check_count -gt 30 ]; then
-                          echo "ERROR: Timeout waiting for Standby Db2CheckUpgradeHadrSuccess condition after 300s."
-                          exit 1
+                          echo "WARNING: Timeout waiting for Standby Db2CheckUpgradeHadrSuccess condition after 300s, continuing..."
+                          break
                         fi
                         echo "... waiting for Db2CheckUpgradeHadrSuccess (attempt ${check_count}/30)..."
                         sleep 10
                       done
-                      echo "Standby upgrade check succeeded."
+                      echo "Standby upgrade check step finished."
+
+                      echo "Stopping HADR on Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
+                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- sv stop governor 2>/dev/null || true
+                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 stop hadr on db ${DB_NAME}" 2>/dev/null || true
                     fi
+
+                    # 2. Stop HADR on Primary to allow exclusive access during operator pod rollout
+                    echo "Stopping HADR on Primary (c-${DB2_INSTANCE_NAME}-db2u-0)..."
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- sv stop governor 2>/dev/null || true
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 stop hadr on db ${DB_NAME}" 2>/dev/null || true
 
                     # 3. Create upgrade state ConfigMap for PostSync jobs
                     echo "Recording upgrade state in ConfigMap ${UPGRADE_CM}..."

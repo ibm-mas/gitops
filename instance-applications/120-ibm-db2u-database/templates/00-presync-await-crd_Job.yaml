@@ -211,10 +211,16 @@ spec:
                       oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 stop hadr on db ${DB_NAME}" 2>/dev/null || true
                     fi
 
-                    # 2. Stop HADR on Primary to allow exclusive access during operator pod rollout
-                    echo "Stopping HADR on Primary (c-${DB2_INSTANCE_NAME}-db2u-0)..."
+                    # 2. Stop HADR on Primary, disable DB2COMM, and deactivate database so operator has exclusive access during rollout
+                    echo "Stopping HADR and isolating Primary (c-${DB2_INSTANCE_NAME}-db2u-0)..."
                     oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- sv stop governor 2>/dev/null || true
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 stop hadr on db ${DB_NAME}" 2>/dev/null || true
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                      db2 stop hadr on db ${DB_NAME} || true
+                      db2set -null DB2COMM
+                      db2 force application all
+                      db2 terminate
+                      db2 deactivate database ${DB_NAME} || true
+                    " 2>/dev/null || true
 
                     # 3. Create upgrade state ConfigMap for PostSync jobs
                     echo "Recording upgrade state in ConfigMap ${UPGRADE_CM}..."

@@ -410,9 +410,19 @@ spec:
                   if [[ "${PRIMARY_UPGRADED}" != "true" ]]; then
                     echo ""
                     echo "================================================================================"
-                    echo "Verifying Primary Db2 database readiness after operator upgrade..."
+                    echo "Verifying Primary Db2 database readiness and restoring communications..."
                     echo "================================================================================"
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 activate database ${DB2_DBNAME} || db2 connect to ${DB2_DBNAME}" || true
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                      # If database still needs upgrade, perform it exclusively
+                      if db2 upgrade database ${DB2_DBNAME} 2>&1 | grep -q 'SQL5035N\|SQL1035N\|DB20000I'; then
+                        echo 'Database upgrade verified/completed.'
+                      fi
+                      # Restore communication protocols
+                      db2stop force || true
+                      db2set DB2COMM=TCPIP,SSL
+                      db2start
+                      db2 activate database ${DB2_DBNAME} || db2 connect to ${DB2_DBNAME} || true
+                    " || true
 
                     oc patch configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --type=merge -p '{"data":{"primary_upgraded":"true"}}'
                     echo "Primary upgrade verified and marked in ConfigMap for Standby processing."

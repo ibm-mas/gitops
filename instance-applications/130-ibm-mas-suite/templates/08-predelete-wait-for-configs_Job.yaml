@@ -210,6 +210,9 @@ spec:
                 wait_period=$(( wait_period + 30 ))
                 if [ "${wait_period}" -gt 3600 ]; then
                   echo "Timed out after 60 minutes waiting for suite config CRs to be deleted."
+                  # If a config CR is stuck in Terminating, the responsible operator may not have picked up the deletionTimestamp.
+                  # Restarting the operator pod via the ArgoCD UI will force a fresh reconcile and should unblock the deletion.
+                  # As a last resort, the finalizer can be removed manually
                   exit 1
                 fi
 

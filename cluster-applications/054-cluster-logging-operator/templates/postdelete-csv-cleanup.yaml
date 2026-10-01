@@ -1,0 +1,166 @@
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:020f1925421de13beaf439aa09181209875ed3791824bcaaf1daaf910c725266" }}
+
+{{- $job_name    := "postdelete-delete-csv-job" }}
+{{- $role_name   := "postdelete-delete-csv-r" }}
+{{- $sa_name     := "postdelete-delete-csv-sa" }}
+{{- $rb_name     := "postdelete-delete-csv-rb" }}
+{{- $job_label   := "postdelete-delete-csv-job" }}
+{{- $ns          := "openshift-logging" }}
+{{- $sub_name    := "cluster-logging-operator" }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - watch
+      - delete
+    apiGroups:
+      - operators.coreos.com
+    resources:
+      - subscriptions
+      - clusterserviceversions
+  - verbs:
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+    apiGroups:
+      - logging.openshift.io
+      - observability.openshift.io
+    resources:
+      - clusterloggings
+      - clusterlogforwarders
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: NAMESPACE
+              value: {{ $ns }}
+            - name: SUBSCRIPTION_NAME
+              value: {{ $sub_name }}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              echo "Removing finalizers from ClusterLogging instances in ${NAMESPACE}"
+              set +e
+              for cr in $(oc get clusterlogging -n ${NAMESPACE} -o name 2>/dev/null); do
+                oc patch ${cr} -n ${NAMESPACE} --type=json \
+                  -p='[{"op":"replace","path":"/metadata/finalizers","value":[]}]' 2>/dev/null || true
+              done
+              set -e
+
+              echo "Removing finalizers from ClusterLogForwarder instances in ${NAMESPACE}"
+              set +e
+              for cr in $(oc get clusterlogforwarder -n ${NAMESPACE} -o name 2>/dev/null); do
+                oc patch ${cr} -n ${NAMESPACE} --type=json \
+                  -p='[{"op":"replace","path":"/metadata/finalizers","value":[]}]' 2>/dev/null || true
+              done
+              set -e
+
+              echo "Deleting Subscription ${SUBSCRIPTION_NAME} in namespace ${NAMESPACE}"
+              set +e
+              oc delete subscription ${SUBSCRIPTION_NAME} -n ${NAMESPACE} --ignore-not-found --timeout=60s
+              set -e
+
+              echo "Deleting ClusterServiceVersions in namespace ${NAMESPACE}"
+              set +e
+              oc delete clusterserviceversion -n ${NAMESPACE} --all --timeout=120s
+              set -e
+
+              echo "CSV cleanup complete"
+
+      restartPolicy: Never
+      serviceAccountName: {{ $sa_name }}
+      volumes: []
+  backoffLimit: 4

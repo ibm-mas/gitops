@@ -1,0 +1,136 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+PostDelete job: waits for all Db2uInstance CRs to be gone (operator processes their
+finalizers via the 120-ibm-db2u-database PostDelete), then deletes the db2u-operator
+Subscription and CSV so OLM does not keep the operator running and the namespace can
+terminate cleanly.
+Depends on SA/Role/RoleBinding in 06-postdelete-rbac.yaml.
+Use build/bin/set-cli-image-digest.sh to update the image digest below.
+*/}}
+{{- $_cli_image_digest := "sha256:020f1925421de13beaf439aa09181209875ed3791824bcaaf1daaf910c725266" }}
+
+{{- $ns        := .Values.db2_namespace }}
+{{- $name_hash := $ns | sha256sum | trunc 6 }}
+{{- $job_name  := printf "postdelete-cr-job-%s" $name_hash }}
+
+{{ $sa_name   := "postdelete-db2u-sa" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: DB2_NAMESPACE
+              value: {{ $ns }}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: check for remaining Db2uInstance CRs in ${DB2_NAMESPACE}"
+
+              # Guard: wait for all Db2uInstance CRs to be gone before touching OLM.
+              # The 120-ibm-db2u-database PostDelete job is responsible for deleting them;
+              # if it failed or hasn't run yet the operator must still be alive to process
+              # their finalizers, so we must not remove the Subscription/CSV yet.
+              WAIT_SECS=0
+              while [[ ${WAIT_SECS} -lt 600 ]]; do
+                set +e
+                CR_COUNT=$(oc get db2uinstance -n ${DB2_NAMESPACE} \
+                  --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                set -e
+                [[ "${CR_COUNT}" == "0" ]] && break
+                echo "  ${CR_COUNT} Db2uInstance CR(s) still present - waiting for operator to process finalizers... ${WAIT_SECS}s elapsed"
+                sleep 15
+                WAIT_SECS=$((WAIT_SECS + 15))
+              done
+
+              set +e
+              CR_COUNT=$(oc get db2uinstance -n ${DB2_NAMESPACE} \
+                --no-headers 2>/dev/null | wc -l | tr -d ' ')
+              set -e
+              if [[ "${CR_COUNT}" != "0" ]]; then
+                echo "ERROR: ${CR_COUNT} Db2uInstance CR(s) still present after ${WAIT_SECS}s - operator did not release finalizers"
+                exit 1
+              fi
+              echo "No Db2uInstance CRs present - safe to remove OLM resources"
+
+              # Delete Subscription - stops OLM from re-installing the operator.
+              # Must happen after CR deletion so the operator is still alive to
+              # process any finalizers, and before CSV deletion so OLM can react.
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete ibm-db2u-operator Subscription in ${DB2_NAMESPACE}"
+              set +e
+              SUB_NAME=$(oc get subscription -n ${DB2_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep "^ibm-db2u-operator$")
+              set -e
+              if [[ -z "${SUB_NAME}" ]]; then
+                echo "No ibm-db2u-operator Subscription found - skipping"
+              else
+                echo "Deleting Subscription: ${SUB_NAME}"
+                oc delete subscription "${SUB_NAME}" -n ${DB2_NAMESPACE} \
+                  --timeout=60s --wait=true 2>/dev/null || true
+                echo "Subscription deleted"
+              fi
+
+              # Delete the CSV - OLM does not cascade-delete it when the Subscription is
+              # removed, so the operator pod would otherwise remain running and prevent the
+              # namespace from terminating.
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete db2u-operator CSV in ${DB2_NAMESPACE}"
+              set +e
+              CSV_NAME=$(oc get csv -n ${DB2_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep "^db2u-operator\.")
+              set -e
+              if [[ -z "${CSV_NAME}" ]]; then
+                echo "No db2u-operator CSV found - skipping"
+              else
+                echo "Deleting CSV: ${CSV_NAME}"
+                oc delete csv "${CSV_NAME}" -n ${DB2_NAMESPACE} \
+                  --timeout=60s --wait=true 2>/dev/null || true
+                echo "CSV deleted"
+              fi
+
+              echo "PostDelete: db2u OLM cleanup complete"
+      volumes: []
+  backoffLimit: 4
+{{- end }}
+{{- end }}

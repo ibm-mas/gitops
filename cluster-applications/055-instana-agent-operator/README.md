@@ -132,5 +132,6 @@ This chart includes a CronJob that automatically discovers DB2 instances in the 
 | `RoleBinding` | `instana-agent-db2-config-sa-edit` | `instana-agent` | Always | `cluster_admin_role` |
 | `NetworkPolicy` | `instana-agent-db2-config-netpol` | `instana-agent` | Always | `cluster_admin_role` |
 | `CronJob` | `instana-agent-db2-config` | `instana-agent` | Always | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `instana-agent` | PostDelete hook | `cluster_admin_role` |
 
 **Note:** The CronJob automatically updates the InstanaAgent configuration with DB2 instance connection details.

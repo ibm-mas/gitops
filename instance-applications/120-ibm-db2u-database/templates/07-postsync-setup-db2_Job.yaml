@@ -432,14 +432,15 @@ spec:
                     while true; do
                       SPEC_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
                       STATUS_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
-                      echo "... spec.version=${SPEC_VERSION}, status.version=${STATUS_VERSION} (attempt ${version_sync_count})"
-                      if [[ -n "${SPEC_VERSION}" && "${SPEC_VERSION}" == "${STATUS_VERSION}" ]]; then
-                        echo "db2uinstance versions are in sync. Proceeding."
+                      STATUS_STATE=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
+                      echo "... spec.version=${SPEC_VERSION}, status.version=${STATUS_VERSION}, status.state=${STATUS_STATE} (attempt ${version_sync_count})"
+                      if [[ -n "${SPEC_VERSION}" && "${SPEC_VERSION}" == "${STATUS_VERSION}" && "${STATUS_STATE}" == "Ready" ]]; then
+                        echo "db2uinstance versions are in sync and state is Ready. Proceeding."
                         break
                       fi
                       version_sync_count=$((version_sync_count+1))
                       if [ $version_sync_count -gt 60 ]; then
-                        echo "WARNING: Timeout waiting for db2uinstance spec.version and status.version to match after 600s. Proceeding anyway."
+                        echo "WARNING: Timeout waiting for db2uinstance spec.version, status.version, and status.state=Ready after 600s. Proceeding anyway."
                         break
                       fi
                       sleep 10

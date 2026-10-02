@@ -185,6 +185,27 @@ spec:
                     # 1. Process Standby-specific pre-upgrade check while HADR is connected
                     SDB_INSTANCE_NAME="${DB2_INSTANCE_NAME}-sdb"
                     if oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                      DB_NAME="${DB2_DBNAME:-BLUDB}"
+
+                      echo "Checking if standby pod c-${SDB_INSTANCE_NAME}-db2u-0 is in HADR standby mode..."
+                      STANDBY_HADR_ROLE=$(oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2pd -db ${DB_NAME} -hadr | grep 'HADR_ROLE' | cut -d'=' -f2 | tr -d ' '" 2>/dev/null || true)
+                      echo "Standby HADR role: '${STANDBY_HADR_ROLE}'"
+
+                      if [[ "${STANDBY_HADR_ROLE}" != "STANDBY" ]]; then
+                        echo "Standby pod is not in standby mode (role='${STANDBY_HADR_ROLE}'). Starting HADR in standby mode..."
+                        oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                          db2stop force || true
+                          db2start
+                          sleep 60
+                          db2 start hadr on db ${DB_NAME} as standby
+                        " || true
+                        echo "HADR standby start attempted. Re-checking standby role..."
+                        STANDBY_HADR_ROLE=$(oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2pd -db ${DB_NAME} -hadr | grep 'HADR_ROLE' | cut -d'=' -f2 | tr -d ' '" 2>/dev/null || true)
+                        echo "Standby HADR role after start attempt: '${STANDBY_HADR_ROLE}'"
+                      else
+                        echo "Standby pod is already in standby mode. Proceeding with annotation."
+                      fi
+
                       echo "Annotating Standby ${SDB_INSTANCE_NAME} with db2ckupgrade_hadr=initialize..."
                       oc annotate db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" \
                         db2u.databases.ibm.com/db2ckupgrade_hadr=initialize --overwrite

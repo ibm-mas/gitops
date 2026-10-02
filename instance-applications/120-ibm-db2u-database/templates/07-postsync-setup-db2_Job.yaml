@@ -424,6 +424,27 @@ spec:
                       db2 activate database ${DB2_DBNAME} || db2 connect to ${DB2_DBNAME} || true
                     " || true
 
+                    echo ""
+                    echo "================================================================================"
+                    echo "Waiting for db2uinstance spec.version and status.version to match..."
+                    echo "================================================================================"
+                    version_sync_count=0
+                    while true; do
+                      SPEC_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
+                      STATUS_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                      echo "... spec.version=${SPEC_VERSION}, status.version=${STATUS_VERSION} (attempt ${version_sync_count})"
+                      if [[ -n "${SPEC_VERSION}" && "${SPEC_VERSION}" == "${STATUS_VERSION}" ]]; then
+                        echo "db2uinstance versions are in sync. Proceeding."
+                        break
+                      fi
+                      version_sync_count=$((version_sync_count+1))
+                      if [ $version_sync_count -gt 60 ]; then
+                        echo "WARNING: Timeout waiting for db2uinstance spec.version and status.version to match after 600s. Proceeding anyway."
+                        break
+                      fi
+                      sleep 10
+                    done
+
                     oc patch configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --type=merge -p '{"data":{"primary_upgraded":"true"}}'
                     echo "Primary upgrade verified and marked in ConfigMap for Standby processing."
                   fi

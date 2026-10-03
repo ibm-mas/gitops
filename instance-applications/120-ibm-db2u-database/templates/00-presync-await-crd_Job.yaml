@@ -307,16 +307,24 @@ spec:
                       if oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
                         PRIMARY_UPGRADED=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.primary_upgraded}' 2>/dev/null || echo "false")
                         if [[ "${PRIMARY_UPGRADED}" == "true" ]]; then
-                          echo "Primary database upgrade verified (primary_upgraded=true). Proceeding with Standby sync."
-                          break
+                          PRIMARY_SPEC_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
+                          PRIMARY_STATUS_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                          PRIMARY_STATUS_STATE=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
+                          echo "Primary db2uinstance: spec.version=${PRIMARY_SPEC_VERSION}, status.version=${PRIMARY_STATUS_VERSION}, status.state=${PRIMARY_STATUS_STATE}"
+                          if [[ -n "${PRIMARY_SPEC_VERSION}" && "${PRIMARY_SPEC_VERSION}" == "${PRIMARY_STATUS_VERSION}" && "${PRIMARY_STATUS_STATE}" == "Ready" ]]; then
+                            echo "Primary database upgrade verified (primary_upgraded=true, versions in sync, state=Ready). Proceeding with Standby sync."
+                            break
+                          fi
                         fi
                       fi
 
-                      # Also check if primary db2uinstance is already updated to target version
+                      # Also check if primary db2uinstance is already updated to target version with versions in sync and state Ready
                       if oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-                        PRIMARY_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}')
-                        if [[ "${PRIMARY_VERSION}" == "${TARGET_DB2_VERSION}" ]] && ! oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-                          echo "Primary DB version is already at target (${TARGET_DB2_VERSION}) and upgrade ConfigMap is cleared. Proceeding with Standby sync."
+                        PRIMARY_SPEC_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
+                        PRIMARY_STATUS_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                        PRIMARY_STATUS_STATE=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
+                        if [[ "${PRIMARY_SPEC_VERSION}" == "${TARGET_DB2_VERSION}" && "${PRIMARY_SPEC_VERSION}" == "${PRIMARY_STATUS_VERSION}" && "${PRIMARY_STATUS_STATE}" == "Ready" ]] && ! oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                          echo "Primary DB version is at target (${TARGET_DB2_VERSION}), versions in sync, state=Ready, and upgrade ConfigMap is cleared. Proceeding with Standby sync."
                           break
                         fi
                       fi

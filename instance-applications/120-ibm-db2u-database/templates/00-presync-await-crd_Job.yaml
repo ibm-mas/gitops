@@ -220,13 +220,13 @@ spec:
                         fi
                         CHECK_FAIL=$(oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrFailure")].status}' 2>/dev/null || true)
                         if [ "${CHECK_FAIL}" = "True" ]; then
-                          echo "WARNING: Standby upgrade check reported failure. Check \${SUPPORTDIR}/db2_upgrade_check.log on standby pod."
-                          break
+                          echo "ERROR: Standby upgrade check reported failure (Db2CheckUpgradeHadrFailure=True). Check \${SUPPORTDIR}/db2_upgrade_check.log on standby pod."
+                          exit 1
                         fi
                         check_count=$((check_count+1))
                         if [ $check_count -gt 30 ]; then
-                          echo "WARNING: Timeout waiting for Standby Db2CheckUpgradeHadrSuccess condition after 300s, continuing..."
-                          break
+                          echo "ERROR: Timeout waiting for Standby Db2CheckUpgradeHadrSuccess condition after 300s."
+                          exit 1
                         fi
                         echo "... waiting for Db2CheckUpgradeHadrSuccess (attempt ${check_count}/30)..."
                         sleep 10

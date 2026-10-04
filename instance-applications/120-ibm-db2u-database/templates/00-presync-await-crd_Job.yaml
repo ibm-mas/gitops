@@ -238,30 +238,63 @@ spec:
                         echo "Database ${DB_NAME} is not in roll-forward pending state."
                       fi
 
-                      echo "Annotating Standby ${SDB_INSTANCE_NAME} with db2ckupgrade_hadr=initialize..."
-                      oc annotate db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" \
-                        db2u.databases.ibm.com/db2ckupgrade_hadr=initialize --overwrite
-
-                      echo "Waiting for Standby condition Db2CheckUpgradeHadrSuccess=True..."
-                      check_count=0
+                      MAX_UPGRADE_CHECK_RETRIES=5
+                      upgrade_check_attempt=0
                       while true; do
-                        CHECK_STATUS=$(oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrSuccess")].status}' 2>/dev/null || true)
-                        if [ "${CHECK_STATUS}" = "True" ]; then
-                          echo "Standby Db2CheckUpgradeHadrSuccess condition is True."
+                        upgrade_check_attempt=$((upgrade_check_attempt+1))
+                        echo "Annotating Standby ${SDB_INSTANCE_NAME} with db2ckupgrade_hadr=initialize (attempt ${upgrade_check_attempt}/${MAX_UPGRADE_CHECK_RETRIES})..."
+                        oc annotate db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" \
+                          db2u.databases.ibm.com/db2ckupgrade_hadr=initialize --overwrite
+
+                        echo "Waiting for Standby condition Db2CheckUpgradeHadrSuccess=True..."
+                        check_count=0
+                        upgrade_check_result=""
+                        while true; do
+                          CHECK_STATUS=$(oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrSuccess")].status}' 2>/dev/null || true)
+                          if [ "${CHECK_STATUS}" = "True" ]; then
+                            echo "Standby Db2CheckUpgradeHadrSuccess condition is True."
+                            upgrade_check_result="success"
+                            break
+                          fi
+                          CHECK_FAIL=$(oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrFailure")].status}' 2>/dev/null || true)
+                          if [ "${CHECK_FAIL}" = "True" ]; then
+                            echo "Standby upgrade check reported failure on attempt ${upgrade_check_attempt}/${MAX_UPGRADE_CHECK_RETRIES}."
+                            upgrade_check_result="failure"
+                            break
+                          fi
+                          check_count=$((check_count+1))
+                          if [ $check_count -gt 30 ]; then
+                            echo "Timeout waiting for Standby Db2CheckUpgradeHadrSuccess after 300s on attempt ${upgrade_check_attempt}/${MAX_UPGRADE_CHECK_RETRIES}."
+                            upgrade_check_result="timeout"
+                            break
+                          fi
+                          echo "... waiting for Db2CheckUpgradeHadrSuccess (attempt ${check_count}/30)..."
+                          sleep 10
+                        done
+
+                        if [ "${upgrade_check_result}" = "success" ]; then
                           break
                         fi
-                        CHECK_FAIL=$(oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrFailure")].status}' 2>/dev/null || true)
-                        if [ "${CHECK_FAIL}" = "True" ]; then
-                          echo "ERROR: Standby upgrade check reported failure (Db2CheckUpgradeHadrFailure=True). Check \${SUPPORTDIR}/db2_upgrade_check.log on standby pod."
+
+                        if [ ${upgrade_check_attempt} -ge ${MAX_UPGRADE_CHECK_RETRIES} ]; then
+                          echo "ERROR: Standby upgrade check did not succeed after ${MAX_UPGRADE_CHECK_RETRIES} attempts. Check \${SUPPORTDIR}/db2_upgrade_check.log on standby pod."
                           exit 1
                         fi
-                        check_count=$((check_count+1))
-                        if [ $check_count -gt 30 ]; then
-                          echo "ERROR: Timeout waiting for Standby Db2CheckUpgradeHadrSuccess condition after 300s."
-                          exit 1
+
+                        # db2ckupgrade stops HADR internally then tries to activate the database,
+                        # which can leave it in ROLL-FORWARD PENDING (SQL1117N). Resolve before retry.
+                        echo "Checking if standby database ${DB_NAME} is in roll-forward pending state after upgrade check failure..."
+                        RF_CHECK=$(oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 activate database ${DB_NAME} 2>&1 || true" 2>/dev/null || true)
+                        if echo "${RF_CHECK}" | grep -q "SQL1117N"; then
+                          echo "Database ${DB_NAME} is in roll-forward pending state. Rolling forward to end of logs and stopping..."
+                          oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                            db2 rollforward database ${DB_NAME} to end of logs and stop
+                          " || true
+                          echo "Roll-forward complete."
                         fi
-                        echo "... waiting for Db2CheckUpgradeHadrSuccess (attempt ${check_count}/30)..."
-                        sleep 10
+
+                        echo "Retrying annotation in 30s..."
+                        sleep 30
                       done
                       echo "Standby upgrade check step finished."
 

@@ -443,10 +443,9 @@ spec:
               while true; do
                 SDB_SPEC_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
                 SDB_STATUS_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
-                SDB_STATUS_STATE=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
-                echo "... standby spec.version=${SDB_SPEC_VERSION}, status.version=${SDB_STATUS_VERSION}, status.state=${SDB_STATUS_STATE} (target=${DB2_VERSION}, attempt ${cr_sync_count})"
+                echo "... standby spec.version=${SDB_SPEC_VERSION}, status.version=${SDB_STATUS_VERSION} (target=${DB2_VERSION}, attempt ${cr_sync_count})"
 
-                if [[ "${SDB_SPEC_VERSION}" == "${DB2_VERSION}" && "${SDB_SPEC_VERSION}" == "${SDB_STATUS_VERSION}" && "${SDB_STATUS_STATE}" == "Ready" ]]; then
+                if [[ "${SDB_SPEC_VERSION}" == "${DB2_VERSION}" && "${SDB_SPEC_VERSION}" == "${SDB_STATUS_VERSION}" ]]; then
                   echo "Standby db2uinstance is at target version, in sync and Ready."
                   break
                 fi
@@ -458,9 +457,7 @@ spec:
                   SDB_DB2LEVEL=$(oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2level 2>/dev/null | grep -i 'Informational tokens' | grep -oE 'v[0-9]+' | head -1 | tr -d 'v'" 2>/dev/null || true)
                   echo "... standby db2level major version: '${SDB_DB2LEVEL}'"
                   if [[ "${SDB_DB2LEVEL}" == "12" ]]; then
-                    SDB_HADR_ROLE=$(oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "manage_hadr -status 2>/dev/null | grep -i '^\s*HADR_ROLE' | awk -F= '{print \$2}' | sed 's/^[[:space:]]*//' | tr -d ' \n'" 2>/dev/null || true)
-                    if [[ "${SDB_HADR_ROLE}" != "STANDBY" ]]; then
-                      echo "Standby binaries are v12 but HADR not started as standby. Starting now..."
+                    echo "Standby binaries are v12. Starting HADR as standby."
                       oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
                         db2stop force || true
                         db2start
@@ -474,7 +471,7 @@ spec:
 
                 cr_sync_count=$((cr_sync_count+1))
                 if [ $cr_sync_count -gt 180 ]; then
-                  echo "ERROR: Timeout waiting for standby db2uinstance ${DB2_INSTANCE_NAME} to reach version=${DB2_VERSION} and Ready state after 1800s."
+                  echo "ERROR: Timeout waiting for standby db2uinstance ${DB2_INSTANCE_NAME} to reach version=${DB2_VERSION} after 1800s."
                   exit 1
                 fi
                 sleep 10

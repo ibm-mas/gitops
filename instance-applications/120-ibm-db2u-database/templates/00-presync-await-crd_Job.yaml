@@ -358,6 +358,23 @@ spec:
                       db2 deactivate database ${DB_NAME} || true
                     " 2>/dev/null || true
 
+                    # Clear HADR database configuration parameters on the standby pod so the
+                    # operator can configure them fresh for the v12 upgrade.
+                    echo "Clearing HADR database configuration parameters on standby c-${DB2_INSTANCE_NAME}-db2u-0..."
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                      db2start || true
+                      db2 connect to ${DB_NAME} || true
+                      db2 update db cfg for ${DB_NAME} using HADR_LOCAL_HOST '' || true
+                      db2 update db cfg for ${DB_NAME} using HADR_LOCAL_SVC '' || true
+                      db2 update db cfg for ${DB_NAME} using HADR_REMOTE_HOST '' || true
+                      db2 update db cfg for ${DB_NAME} using HADR_REMOTE_SVC '' || true
+                      db2 update db cfg for ${DB_NAME} using HADR_REMOTE_INST '' || true
+                      db2 terminate || true
+                      db2 deactivate database ${DB_NAME} || true
+                      db2stop force || true
+                    " 2>/dev/null || true
+                    echo "HADR configuration parameters cleared on standby."
+
                     wait_count=0
                     while true; do
                       if oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then

@@ -420,20 +420,20 @@ spec:
               # For the upgrade scenario: once the primary is at target version and Ready,
               # start HADR as primary so the standby operator can connect and proceed.
               UPGRADE_CM="hadr-upgrade-in-progress-${PRIMARY_DB2_INSTANCE_NAME}"
-              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-                echo ""
-                echo "================================================================================"
-                echo "Upgrade scenario: starting HADR as primary on ${PRIMARY_DB2_INSTANCE_NAME}..."
-                echo "================================================================================"
-                oc exec -n "${DB2_NAMESPACE}" "c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                  db2set DB2COMM=TCPIP,SSL
-                  db2stop force || true
-                  db2start
-                  sleep 30
-                  db2 start hadr on db ${DB2_DBNAME} as primary by force
-                " || true
-                echo "Primary HADR started."
-              fi
+              # if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+              #   echo ""
+              #   echo "================================================================================"
+              #   echo "Upgrade scenario: starting HADR as primary on ${PRIMARY_DB2_INSTANCE_NAME}..."
+              #   echo "================================================================================"
+              #   oc exec -n "${DB2_NAMESPACE}" "c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+              #     db2set DB2COMM=TCPIP,SSL
+              #     db2stop force || true
+              #     db2start
+              #     sleep 30
+              #     db2 start hadr on db ${DB2_DBNAME} as primary by force
+              #   " || true
+              #   echo "Primary HADR started."
+              # fi
 
               echo ""
               echo "================================================================================"
@@ -443,9 +443,10 @@ spec:
               while true; do
                 SDB_SPEC_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
                 SDB_STATUS_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                SDB_STATUS=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
                 echo "... standby spec.version=${SDB_SPEC_VERSION}, status.version=${SDB_STATUS_VERSION} (target=${DB2_VERSION}, attempt ${cr_sync_count})"
 
-                if [[ "${SDB_SPEC_VERSION}" == "${DB2_VERSION}" && "${SDB_SPEC_VERSION}" == "${SDB_STATUS_VERSION}" ]]; then
+                if [[ "${SDB_SPEC_VERSION}" == "${DB2_VERSION}" && "${SDB_SPEC_VERSION}" == "${SDB_STATUS_VERSION}" && "${SDB_STATUS}" == "Ready" ]]; then
                   echo "Standby db2uinstance is at target version, in sync and Ready."
                   break
                 fi
@@ -453,20 +454,20 @@ spec:
                 # During upgrade the operator replaces the Db2 binaries on the standby pod.
                 # Once db2level reports v12, the binary upgrade is done and we can start HADR
                 # as standby so the operator can proceed with the database upgrade.
-                if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-                  SDB_DB2LEVEL=$(oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2level 2>/dev/null | grep -i 'Informational tokens' | grep -oE 'v[0-9]+' | head -1 | tr -d 'v'" 2>/dev/null || true)
-                  echo "... standby db2level major version: '${SDB_DB2LEVEL}'"
-                  if [[ "${SDB_DB2LEVEL}" == "12" ]]; then
-                    echo "Standby binaries are v12. Starting HADR as standby."
-                      oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                        db2stop force || true
-                        db2start
-                        sleep 30
-                        db2 start hadr on db ${DB2_DBNAME} as standby
-                      " || true
-                      echo "Standby HADR start attempted."
-                  fi
-                fi
+                # if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                #   SDB_DB2LEVEL=$(oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2level 2>/dev/null | grep -i 'Informational tokens' | grep -oE 'v[0-9]+' | head -1 | tr -d 'v'" 2>/dev/null || true)
+                #   echo "... standby db2level major version: '${SDB_DB2LEVEL}'"
+                #   if [[ "${SDB_DB2LEVEL}" == "12" ]]; then
+                #     echo "Standby binaries are v12. Starting HADR as standby."
+                #       oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                #         db2stop force || true
+                #         db2start
+                #         sleep 30
+                #         db2 start hadr on db ${DB2_DBNAME} as standby
+                #       " || true
+                #       echo "Standby HADR start attempted."
+                #   fi
+                # fi
 
                 cr_sync_count=$((cr_sync_count+1))
                 if [ $cr_sync_count -gt 180 ]; then

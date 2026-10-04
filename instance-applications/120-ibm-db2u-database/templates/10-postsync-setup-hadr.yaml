@@ -397,21 +397,21 @@ spec:
 
               echo ""
               echo "================================================================================"
-              echo "Waiting for primary db2uinstance ${PRIMARY_DB2_INSTANCE_NAME} spec.version, status.version to match and state=Ready..."
+              echo "Waiting for primary db2uinstance ${PRIMARY_DB2_INSTANCE_NAME} to reach version=${DB2_VERSION}, versions in sync, state=Ready..."
               echo "================================================================================"
               cr_sync_count=0
               while true; do
                 PRI_SPEC_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
                 PRI_STATUS_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
                 PRI_STATUS_STATE=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
-                echo "... primary spec.version=${PRI_SPEC_VERSION}, status.version=${PRI_STATUS_VERSION}, status.state=${PRI_STATUS_STATE} (attempt ${cr_sync_count})"
-                if [[ -n "${PRI_SPEC_VERSION}" && "${PRI_SPEC_VERSION}" == "${PRI_STATUS_VERSION}" && "${PRI_STATUS_STATE}" == "Ready" ]]; then
-                  echo "Primary db2uinstance is in sync and Ready."
+                echo "... primary spec.version=${PRI_SPEC_VERSION}, status.version=${PRI_STATUS_VERSION}, status.state=${PRI_STATUS_STATE} (target=${DB2_VERSION}, attempt ${cr_sync_count})"
+                if [[ "${PRI_SPEC_VERSION}" == "${DB2_VERSION}" && "${PRI_SPEC_VERSION}" == "${PRI_STATUS_VERSION}" && "${PRI_STATUS_STATE}" == "Ready" ]]; then
+                  echo "Primary db2uinstance is at target version, in sync and Ready."
                   break
                 fi
                 cr_sync_count=$((cr_sync_count+1))
                 if [ $cr_sync_count -gt 180 ]; then
-                  echo "ERROR: Timeout waiting for primary db2uinstance ${PRIMARY_DB2_INSTANCE_NAME} to reach Ready state after 1800s."
+                  echo "ERROR: Timeout waiting for primary db2uinstance ${PRIMARY_DB2_INSTANCE_NAME} to reach version=${DB2_VERSION} and Ready state after 1800s."
                   exit 1
                 fi
                 sleep 10
@@ -419,21 +419,21 @@ spec:
 
               echo ""
               echo "================================================================================"
-              echo "Waiting for standby db2uinstance ${DB2_INSTANCE_NAME} spec.version, status.version to match and state=Ready..."
+              echo "Waiting for standby db2uinstance ${DB2_INSTANCE_NAME} to reach version=${DB2_VERSION}, versions in sync, state=Ready..."
               echo "================================================================================"
               cr_sync_count=0
               while true; do
                 SDB_SPEC_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
                 SDB_STATUS_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
                 SDB_STATUS_STATE=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
-                echo "... standby spec.version=${SDB_SPEC_VERSION}, status.version=${SDB_STATUS_VERSION}, status.state=${SDB_STATUS_STATE} (attempt ${cr_sync_count})"
-                if [[ -n "${SDB_SPEC_VERSION}" && "${SDB_SPEC_VERSION}" == "${SDB_STATUS_VERSION}" && "${SDB_STATUS_STATE}" == "Ready" ]]; then
-                  echo "Standby db2uinstance is in sync and Ready."
+                echo "... standby spec.version=${SDB_SPEC_VERSION}, status.version=${SDB_STATUS_VERSION}, status.state=${SDB_STATUS_STATE} (target=${DB2_VERSION}, attempt ${cr_sync_count})"
+                if [[ "${SDB_SPEC_VERSION}" == "${DB2_VERSION}" && "${SDB_SPEC_VERSION}" == "${SDB_STATUS_VERSION}" && "${SDB_STATUS_STATE}" == "Ready" ]]; then
+                  echo "Standby db2uinstance is at target version, in sync and Ready."
                   break
                 fi
                 cr_sync_count=$((cr_sync_count+1))
                 if [ $cr_sync_count -gt 180 ]; then
-                  echo "ERROR: Timeout waiting for standby db2uinstance ${DB2_INSTANCE_NAME} to reach Ready state after 1800s."
+                  echo "ERROR: Timeout waiting for standby db2uinstance ${DB2_INSTANCE_NAME} to reach version=${DB2_VERSION} and Ready state after 1800s."
                   exit 1
                 fi
                 sleep 10

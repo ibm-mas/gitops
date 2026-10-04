@@ -215,6 +215,29 @@ spec:
                         echo "Standby pod is already in standby mode. Proceeding with annotation."
                       fi
 
+                      # A previous failed PreSync run may have stopped HADR on the standby
+                      # (line below) without completing, leaving the database in ROLL-FORWARD
+                      # PENDING state (SQL1117N). db2ckupgrade's health check tries to activate
+                      # the database and fails with that error. Detect and resolve it before
+                      # annotating so the operator's job can activate the database cleanly.
+                      echo "Checking if standby database ${DB_NAME} is in roll-forward pending state..."
+                      RF_CHECK=$(oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 activate database ${DB_NAME} 2>&1 || true" 2>/dev/null || true)
+                      if echo "${RF_CHECK}" | grep -q "SQL1117N"; then
+                        echo "Database ${DB_NAME} is in roll-forward pending state. Rolling forward to end of logs and stopping..."
+                        oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                          db2 rollforward database ${DB_NAME} to end of logs and stop
+                        " || true
+                        echo "Verifying database can now be activated..."
+                        RF_CHECK=$(oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 activate database ${DB_NAME} 2>&1 || true" 2>/dev/null || true)
+                        if echo "${RF_CHECK}" | grep -q "SQL1117N"; then
+                          echo "ERROR: Database ${DB_NAME} is still in roll-forward pending state after rollforward attempt. Cannot proceed."
+                          exit 1
+                        fi
+                        echo "Database ${DB_NAME} is no longer in roll-forward pending state."
+                      else
+                        echo "Database ${DB_NAME} is not in roll-forward pending state."
+                      fi
+
                       echo "Annotating Standby ${SDB_INSTANCE_NAME} with db2ckupgrade_hadr=initialize..."
                       oc annotate db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" \
                         db2u.databases.ibm.com/db2ckupgrade_hadr=initialize --overwrite

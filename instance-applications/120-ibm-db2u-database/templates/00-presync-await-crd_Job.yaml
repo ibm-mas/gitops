@@ -298,6 +298,15 @@ spec:
                       done
                       echo "Standby upgrade check step finished."
 
+                      # Annotation check succeeded — clear HADR cfg params on the standby pod
+                      # so the operator can configure them fresh for the v12 upgrade.
+                      echo "Clearing HADR database configuration parameters on standby c-${SDB_INSTANCE_NAME}-db2u-0..."
+                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                        db2 \"UPDATE DB CFG FOR ${DB_NAME} USING HADR_LOCAL_HOST NULL HADR_LOCAL_SVC NULL HADR_REMOTE_HOST NULL HADR_REMOTE_SVC NULL HADR_REMOTE_INST NULL HADR_TARGET_LIST NULL\" || true
+                        db2 deactivate database ${DB_NAME} || true
+                      " 2>/dev/null || true
+                      echo "HADR configuration parameters cleared on standby."
+
                       echo "Stopping HADR and isolating Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
                       oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- sv stop governor 2>/dev/null || true
                       oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
@@ -357,17 +366,6 @@ spec:
                       db2 terminate
                       db2 deactivate database ${DB_NAME} || true
                     " 2>/dev/null || true
-
-                    # Clear HADR database configuration parameters on the standby pod so the
-                    # operator can configure them fresh for the v12 upgrade.
-                    echo "Clearing HADR database configuration parameters on standby c-${DB2_INSTANCE_NAME}-db2u-0..."
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                      db2start || true
-                      db2 \"UPDATE DB CFG FOR ${DB_NAME} USING HADR_LOCAL_HOST NULL HADR_LOCAL_SVC NULL HADR_REMOTE_HOST NULL HADR_REMOTE_SVC NULL HADR_REMOTE_INST NULL HADR_TARGET_LIST NULL\" || true
-                      db2 deactivate database ${DB_NAME} || true
-                      db2stop force || true
-                    " 2>/dev/null || true
-                    echo "HADR configuration parameters cleared on standby."
 
                     wait_count=0
                     while true; do

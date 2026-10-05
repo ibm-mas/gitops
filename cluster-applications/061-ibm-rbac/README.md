@@ -3,6 +3,10 @@ IBM Resource-Based Access Control (RBAC)
 Installs the IBM RBAC roles and role bindings. Groups are managed by the Group Sync Operator.
 
 <!--docs-include-start-->
+## Overview
+
+This chart provisions cluster-level RBAC resources required by IBM MAS operations, including `ClusterRole` and `ClusterRoleBinding` objects for MAS operators and service accounts.
+
 
 
 ## Configuration
@@ -114,6 +118,15 @@ This chart creates the following custom ClusterRoles:
 - Group Sync Operator installed and configured
 - Groups synchronized from IBM Security Verify or other identity provider
 - Groups must exist in OpenShift before bindings are created
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+# No additional values required.
+```
 
 ## Resources Created
 

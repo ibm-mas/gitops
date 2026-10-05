@@ -186,9 +186,6 @@ spec:
         namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
-          {{- if .Values.auto_delete }}
-          prune: true
-          {{- end }}
           selfHeal: true
         retry:
           limit: -1
@@ -198,7 +195,8 @@ spec:
           - ServerSideApply=true
   templatePatch: |
     {{ `{{- if (dig "auto_delete" ` }}{{ .Values.auto_delete }}{{ ` .) }}` }}
-    metadata:
-      annotations:
-        testing_auto_delete: true
+    spec:
+      syncPolicy:
+        automated:
+          prune: true
     {{ `{{- end }}` }}

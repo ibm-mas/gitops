@@ -3,7 +3,22 @@ IBM DB2U
 Deploy and configure db2 operator with configurable version
 
 <!--docs-include-start-->
+## Overview
 
+This chart installs the IBM Db2u Operator on the cluster, which is the prerequisite for creating Db2 database instances used by MAS applications such as Manage.
+
+
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_db2u:
+  channel: v110508.0
+  install_plan: Automatic
+```
 
 ## Resources Created
 

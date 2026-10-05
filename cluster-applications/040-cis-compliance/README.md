@@ -3,6 +3,10 @@ IBM CIS Compliance
 Installs IBM Compliance Operator into the `openshift-compliance` namespace and add disable rules in tailoredprofile for limitation on ROSA
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the OpenShift Compliance Operator into the `openshift-compliance` namespace and configures CIS benchmark scans with `TailoredProfile` resources tailored for ROSA environments that disable rules inapplicable to managed OpenShift services.
+
 
 
 ## Configuration
@@ -45,7 +49,8 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-### Usage Examples
+## Examples
+
 
 **Basic configuration with automatic updates:**
 ```yaml

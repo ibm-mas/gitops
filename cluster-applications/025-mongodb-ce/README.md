@@ -19,12 +19,21 @@ This chart provisions a MongoDB Community Operator and a 3-node MongoDB Communit
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |---|---|---|---|---|
+| `CustomResourceDefinition` | `mongodbcommunity.mongodbcommunity.mongodb.com` | - | Always | `cluster_admin_role` |
 | `Namespace` | `mongoce` | - | Always | `cluster_admin_role` |
-| `OperatorGroup` | `mongodb-operator-group` | `mongoce` | Always | `cluster_admin_role` |
-| `Subscription` | `mongodb-kubernetes-operator` | `mongoce` | Always | `cluster_admin_role` |
-| `Secret` | `admin-user-credentials` | `mongoce` | Always | `cluster_admin_role` |
+| `RoleBinding` | `mongodb-*` | `mongoce` | Always | `cluster_admin_role` |
+| `Role` | `mongodb-*` | `mongoce` | Always | `cluster_admin_role` |
+| `ServiceAccount` | `mongodb-*` | `mongoce` | Always | `cluster_admin_role` |
+| `Deployment` | `mongodb-kubernetes-operator` | `mongoce` | Always | `cluster_admin_role` |
+| `Job` | `mongodb-password-gen-*` | `mongoce` | Always | `cluster_admin_role` |
+| `Issuer` | `mongodb-*-issuer` | `mongoce` | Always | `cluster_admin_role` |
+| `Certificate` | `mongodb-*-cert` | `mongoce` | Always | `cluster_admin_role` |
+| `ConfigMap` | `mongodb-ca-configmap` | `mongoce` | Always | `cluster_admin_role` |
 | `MongoDBCommunity` | `mas-mongo-ce` | `mongoce` | Always | `cluster_admin_role` |
+| `NetworkPolicy` | `mongodb-network-policy` | `mongoce` | When `run_sync_hooks` and `cluster_admin_role` | `cluster_admin_role` |
 | `Secret` | `mongo-aws-creds` | `mongoce` | When `run_sync_hooks` and `cluster_admin_role` | `cluster_admin_role` |
+| `ClusterRole` | `mongodb-postsync-*` | - | When `run_sync_hooks` and `cluster_admin_role` | `cluster_admin_role` |
+| `ClusterRoleBinding` | `mongodb-postsync-*` | - | When `run_sync_hooks` and `cluster_admin_role` | `cluster_admin_role` |
 | `Job` | `postsync-mongo-update-sm-job-*` | `mongoce` | When `run_sync_hooks` and `cluster_admin_role` | `cluster_admin_role` |
 
 ## Configuration

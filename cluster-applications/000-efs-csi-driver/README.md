@@ -3,6 +3,10 @@ EFS CSI Driver
 
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the AWS EFS CSI Driver operator to enable EFS-backed persistent volumes in OpenShift. It creates the necessary `OperatorGroup`, `Subscription`, `ClusterCSIDriver`, IAM credential `Secret`, and optional custom `StorageClass` definitions.
+
 
 Installs the AWS EFS CSI Driver operator to enable EFS-backed persistent volumes in OpenShift.
 
@@ -74,7 +78,8 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-### Usage Examples
+## Examples
+
 
 **Basic configuration with IAM role:**
 ```yaml

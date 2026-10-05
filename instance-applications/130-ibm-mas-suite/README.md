@@ -3,7 +3,22 @@ MAS Core Platform
 Installs the `ibm-mas` operator and creates an instance of the `Suite`.
 
 <!--docs-include-start-->
+## Overview
 
+This chart installs and configures the IBM Maximo Application Suite (MAS) core operator and `Suite` CR, which is the foundation for all MAS applications and workspaces.
+
+
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_mas_suite:
+  mas_instance_id: inst1
+  mas_domain: mas.example.com
+```
 
 ## Resources Created
 

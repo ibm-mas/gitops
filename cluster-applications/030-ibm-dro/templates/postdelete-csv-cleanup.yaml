@@ -9,8 +9,7 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 {{- $sa_name     := "postdelete-delete-csv-sa" }}
 {{- $rb_name     := "postdelete-delete-csv-rb" }}
 {{- $job_label   := "postdelete-delete-csv-job" }}
-{{- $ns          := .Values.nfd_namespace }}
-{{- $sub_name    := "nfd-operator" }}
+{{- $ns          := .Values.dro_namespace }}
 
 ---
 apiVersion: v1
@@ -109,8 +108,6 @@ spec:
           env:
             - name: NAMESPACE
               value: {{ $ns }}
-            - name: SUBSCRIPTION_NAME
-              value: {{ $sub_name }}
           volumeMounts: []
           command:
             - /bin/sh
@@ -119,10 +116,12 @@ spec:
 
               set -e
 
-              echo "Deleting Subscription ${SUBSCRIPTION_NAME} in namespace ${NAMESPACE}"
-              set +e
-              oc delete subscription ${SUBSCRIPTION_NAME} -n ${NAMESPACE} --ignore-not-found --timeout=60s
-              set -e
+              for SUB in ibm-metrics-operator ibm-data-reporter-operator; do
+                echo "Deleting Subscription ${SUB} in namespace ${NAMESPACE}"
+                set +e
+                oc delete subscription ${SUB} -n ${NAMESPACE} --ignore-not-found --timeout=60s
+                set -e
+              done
 
               echo "Deleting ClusterServiceVersions in namespace ${NAMESPACE}"
               set +e

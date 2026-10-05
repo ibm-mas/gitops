@@ -90,6 +90,28 @@ fvt_gitops:
 - **No results in MongoDB** — ensure `devops_mongo_uri` is populated and the `NetworkPolicy` egress rule allows outbound traffic to the MongoDB endpoint.
 - **Image pull errors** — confirm `fvt_gitops_image_repo` / `fvt_gitops_image_tag` point to a valid, accessible image and that an appropriate `imagePullSecret` is configured on the cluster if the registry is private.
 
+## Development / Making Changes
+
+After modifying any file inside `sub-charts/fvt-gitops-runner/`, regenerate the packaged tarball locally before linting or templating:
+
+```bash
+helm dependency update instance-applications/600-ibm-post-sync-jobs
+```
+
+This command:
+1. Reads the `dependencies:` list in [`600-ibm-post-sync-jobs/Chart.yaml`](../../instance-applications/600-ibm-post-sync-jobs/Chart.yaml)
+2. Packages this sub-chart directory into a `.tgz`
+3. Writes it to `instance-applications/600-ibm-post-sync-jobs/charts/fvt-gitops-runner-1.0.0.tgz`
+4. Updates `Chart.lock` with the resolved version and digest
+
+You can verify the chart renders correctly after updating:
+
+```bash
+./build/bin/helm-lint.sh -p instance-applications/600-ibm-post-sync-jobs
+```
+
+> **Note:** Both `fvt-gitops-runner-*.tgz` and `Chart.lock` are gitignored — do not commit them. The `.tgz` is generated on demand locally and in CI via `helm dependency update`.
+
 ## Related Documentation
 
 - [fvt-gitops repository](https://github.com/ibm-mas/fvt-gitops)

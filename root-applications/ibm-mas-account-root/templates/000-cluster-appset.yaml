@@ -169,7 +169,7 @@ spec:
               - name: avp.values_varname
                 value: "{{ .Values.avp.values_varname }}"
               - name: auto_delete
-                value: '{{ `{{ dig "auto_delete" "` }}{{ .Values.auto_delete }}{{ `" . }}` }}'
+                value: "{{ .Values.auto_delete }}"
               - name: override_dns_cis_flags_to_false
                 value: "{{ .Values.override_dns_cis_flags_to_false }}"
 
@@ -184,6 +184,9 @@ spec:
         namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
+          {{- if .Values.auto_delete }}
+          prune: true
+          {{- end }}
           selfHeal: true
         retry:
           limit: -1
@@ -191,10 +194,3 @@ spec:
           - CreateNamespace=false
           - RespectIgnoreDifferences=true
           - ServerSideApply=true
-  templatePatch: |
-    {{ `{{- if (dig "auto_delete" ` }}{{ .Values.auto_delete }}{{ ` .) }}` }}
-    spec:
-      syncPolicy:
-        automated:
-          prune: true
-    {{ `{{- end }}` }}

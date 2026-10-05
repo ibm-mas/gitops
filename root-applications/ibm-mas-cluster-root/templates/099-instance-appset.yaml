@@ -215,7 +215,7 @@ spec:
               - name: avp.values_varname
                 value: "{{ .Values.avp.values_varname }}"
               - name: auto_delete
-                value: "{{ .Values.auto_delete }}"
+                value: '{{ `{{ dig "auto_delete" "` }}{{ .Values.auto_delete }}{{ `" . }}` }}'
               - name: devops.mongo_uri
                 value: "{{ .Values.devops.mongo_uri }}"
               - name: devops.build_number
@@ -241,16 +241,11 @@ spec:
               - name: "testing"
                 value: '{{ `{{ dig "source" "revision" "` }}{{ .Values.source.revision }}{{ `" . }}` }}'
 
-              - name: "testing_auto_delete"
-                value: '{{ `{{ dig "auto_delete" "` }}{{ .Values.auto_delete }}{{ `" . }}` }}'
       destination:
         server: 'https://kubernetes.default.svc'
         namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
-          {{- if .Values.auto_delete }}
-          prune: true
-          {{- end }}
           selfHeal: true
         syncOptions:
           - CreateNamespace=false
@@ -269,3 +264,10 @@ spec:
             - /spec
       # revisionHistoryLimit set to 1 due to size limit of what can be stored in etcd for anything larger
       revisionHistoryLimit: 1
+  templatePatch: |
+    {{ `{{- if (dig "auto_delete" ` }}{{ .Values.auto_delete }}{{ ` .) }}` }}
+    spec:
+      syncPolicy:
+        automated:
+          prune: true
+    {{ `{{- end }}` }}

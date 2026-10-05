@@ -115,5 +115,9 @@ group_sync_operator:
 | `Subscription` | `group-sync-operator` | `group-sync-operator` | Always | `cluster_admin_role` |
 | `Secret` | `isv-group-sync` | `group-sync-operator` | Always | `cluster_admin_role` |
 | `GroupSync` | `isv-group-sync` | `group-sync-operator` | Always | `cluster_admin_role` |
+| `ServiceAccount` | `postdelete-delete-csv-sa` | `group-sync-operator` | PostDelete hook | `cluster_admin_role` |
+| `Role` | `postdelete-delete-csv-r` | `group-sync-operator` | PostDelete hook | `cluster_admin_role` |
+| `RoleBinding` | `postdelete-delete-csv-rb` | `group-sync-operator` | PostDelete hook | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `group-sync-operator` | PostDelete hook | `cluster_admin_role` |
 
 **Note:** The GroupSync resource synchronizes groups from IBM Security Verify based on the configured schedule.

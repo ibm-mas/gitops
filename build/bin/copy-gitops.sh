@@ -38,6 +38,7 @@ rm -rvf ${TARGET}/instance-applications/*
 rm -rvf ${TARGET}/cluster-applications/*
 rm -rvf ${TARGET}/docs/*
 rm -rvf ${TARGET}/root-applications/*
+rm -rvf ${TARGET}/sls-applications/*
 rm -v README.md
 rm -v LICENSE
 

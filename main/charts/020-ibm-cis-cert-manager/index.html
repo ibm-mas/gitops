@@ -234,9 +234,13 @@
     <cds-select id="breadcrumbs-toc" inline="" placeholder="..." oninput="changeAnchor(this.value)">
     
     
+      <cds-select-item value="#overview">Overview</cds-select-item>
+    
       <cds-select-item value="#configuration">Configuration</cds-select-item>
     
       <cds-select-item value="#base-cluster-values">Base Cluster Values</cds-select-item>
+    
+      <cds-select-item value="#examples">Examples</cds-select-item>
     
       <cds-select-item value="#resources-created">Resources Created</cds-select-item>
     
@@ -250,6 +254,8 @@
             
             <h1 id="ibm-cis-cert-manager">IBM CIS Cert Manager<a class="headerlink" href="#ibm-cis-cert-manager" title="Permanent link">¤</a></h1>
 <p>Helm chart link: <a href="https://github.com/ibm-mas/gitops/blob/main/cluster-applications/020-ibm-cis-cert-manager">020-ibm-cis-cert-manager</a></p>
+<h3 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">¤</a></h3>
+<p>This chart deploys the IBM Cloud Internet Services (CIS) webhook for cert-manager on an OpenShift cluster. When <code>dns_provider</code> is set to <code>"cis"</code>, it provisions the webhook RBAC resources, PKI certificates, operator deployment, API service registration, CIS API key secret, and an optional public ingress controller. A placeholder <code>ConfigMap</code> is always created so ArgoCD has at least one resource to track when CIS is not enabled.</p>
 <h3 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">¤</a></h3>
 <h4 id="values">Values<a class="headerlink" href="#values" title="Permanent link">¤</a></h4>
 <pre><code class="language-yaml">ibm_cis_cert_manager:
@@ -325,6 +331,28 @@ sm:                             # Secrets Manager configuration
 <li><strong>Domain</strong> configured in IBM CIS</li>
 <li><strong>cert-manager</strong> operator installed (via redhat-cert-manager chart)</li>
 </ol>
+<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">¤</a></h3>
+<h4 id="minimal-cis-configuration">Minimal CIS configuration<a class="headerlink" href="#minimal-cis-configuration" title="Permanent link">¤</a></h4>
+<pre><code class="language-yaml">merge-key: "my-account/my-cluster"
+ibm_cis_cert_manager:
+  dns_provider: "cis"
+  ocp_cluster_domain: "apps.prod-cluster.example.com"
+  cis_apikey: "&lt;path:arn:aws:secretsmanager:us-west-2:123456789012:secret:my-account/my-cluster/cis#apikey&gt;"
+</code></pre>
+<h4 id="with-public-domain-and-ingress-controller">With public domain and ingress controller<a class="headerlink" href="#with-public-domain-and-ingress-controller" title="Permanent link">¤</a></h4>
+<pre><code class="language-yaml">merge-key: "my-account/my-cluster"
+ibm_cis_cert_manager:
+  dns_provider: "cis"
+  ocp_cluster_domain: "apps.prod-cluster.example.com"
+  ocp_public_cluster_domain: "public.example.com"
+  cis_apikey: "&lt;path:arn:aws:secretsmanager:us-west-2:123456789012:secret:my-account/my-cluster/cis#apikey&gt;"
+  ingress: true
+</code></pre>
+<h4 id="non-cis-dns-provider-placeholder-only">Non-CIS DNS provider (placeholder only)<a class="headerlink" href="#non-cis-dns-provider-placeholder-only" title="Permanent link">¤</a></h4>
+<pre><code class="language-yaml">merge-key: "my-account/my-cluster"
+ibm_cis_cert_manager:
+  dns_provider: "route53"
+</code></pre>
 <h3 id="resources-created">Resources Created<a class="headerlink" href="#resources-created" title="Permanent link">¤</a></h3>
 <table>
 <thead>
@@ -492,6 +520,11 @@ sm:                             # Secrets Manager configuration
         <div class="md-toc__title">On this page</div>
         <ul class="md-toc__list">
               <li class="md-toc__item">
+                <a href="#overview" class="md-toc__link" data-md-level="1">
+                  Overview
+                </a>
+              </li>
+              <li class="md-toc__item">
                 <a href="#configuration" class="md-toc__link" data-md-level="1">
                   Configuration
                 </a>
@@ -516,6 +549,28 @@ sm:                             # Secrets Manager configuration
                       <li class="md-toc__item">
                         <a href="#prerequisites" class="md-toc__link" data-md-level="2">
                           Prerequisites
+                        </a>
+                      </li>
+                  </ul>
+              </li>
+              <li class="md-toc__item">
+                <a href="#examples" class="md-toc__link" data-md-level="1">
+                  Examples
+                </a>
+                  <ul class="md-toc__list">
+                      <li class="md-toc__item">
+                        <a href="#minimal-cis-configuration" class="md-toc__link" data-md-level="2">
+                          Minimal CIS configuration
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#with-public-domain-and-ingress-controller" class="md-toc__link" data-md-level="2">
+                          With public domain and ingress controller
+                        </a>
+                      </li>
+                      <li class="md-toc__item">
+                        <a href="#non-cis-dns-provider-placeholder-only" class="md-toc__link" data-md-level="2">
+                          Non-CIS DNS provider (placeholder only)
                         </a>
                       </li>
                   </ul>

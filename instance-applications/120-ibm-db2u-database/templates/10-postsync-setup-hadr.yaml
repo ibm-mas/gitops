@@ -121,7 +121,9 @@ rules:
   resources:
     - db2uinstances
   verbs:
-    - "get"
+    - get
+    - patch
+    - update
 - apiGroups:
     - ""
   resources:
@@ -518,8 +520,24 @@ spec:
                 IS_FRESH_HADR_SETUP_STANDBY='false'
               fi
 
+              # After a version upgrade both databases already exist — no restore is needed.
+              # Detect the upgrade scenario: target version is v12 and the UPGRADE_CM has been
+              # cleaned up (postsync-setup-hadr runs after cleanup in the upgrade path).
+              # In this case skip the entire backup/copy/restore block and go straight to db2apply.
+              IS_POST_UPGRADE='false'
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]]; then
+                PRI_STATUS_VER=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                SDB_STATUS_VER=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                if [[ "${PRI_STATUS_VER}" == "${DB2_VERSION}" && "${SDB_STATUS_VER}" == "${DB2_VERSION}" ]]; then
+                  IS_POST_UPGRADE='true'
+                  echo "Post-upgrade scenario detected (primary=${PRI_STATUS_VER}, standby=${SDB_STATUS_VER}). Skipping backup/restore, proceeding to apply configs and start HADR."
+                fi
+              fi
+
               is_backup_file_available='false'
-              if [[ ! ($PRIMARY_HADR_ROLE == 'PRIMARY' && $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'CONNECTED') ]]; then
+              if [[ "${IS_POST_UPGRADE}" == 'true' ]]; then
+                echo "Post-upgrade: skipping restore block, applying configs and starting HADR directly."
+              elif [[ ! ($PRIMARY_HADR_ROLE == 'PRIMARY' && $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'CONNECTED') ]]; then
 
                 # If for some reason HADR got disconnected
                 if [[ $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'DISCONNECTED' ]]; then

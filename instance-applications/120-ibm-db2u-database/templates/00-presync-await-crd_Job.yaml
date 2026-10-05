@@ -403,6 +403,23 @@ spec:
                       echo "Waiting for Primary DB upgrade / ConfigMap ${UPGRADE_CM}... (${wait_count}/180 - $((wait_count*10))s elapsed)"
                       sleep 10
                     done
+
+                    # Primary upgrade is complete. Before ArgoCD applies the new version to the
+                    # standby db2uinstance CR, prepare the standby database:
+                    #  - rollforward to end of logs (clears any pending log apply state)
+                    #  - activate then deactivate cleanly so the operator starts from a clean state
+                    echo ""
+                    echo "================================================================================"
+                    echo "Preparing standby database ${DB_NAME} before CR upgrade..."
+                    echo "================================================================================"
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                      db2start || true
+                      db2 rollforward db ${DB_NAME} to end of logs and stop || true
+                      db2 activate db ${DB_NAME} || true
+                      db2 deactivate db ${DB_NAME} || true
+                      db2stop force || true
+                    " || true
+                    echo "Standby database prepared for upgrade."
                   fi
                 fi
               fi

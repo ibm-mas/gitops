@@ -64,6 +64,12 @@ spec:
             {{- if not (empty .Values.ibm_mas_suite) }}
             
             mas_channel: "{{ .Values.ibm_mas_suite.mas_channel }}"
+            {{- if .Values.ibm_mas_suite.routing_mode }}
+            mas_routing_mode: "{{ .Values.ibm_mas_suite.routing_mode }}"
+            {{- end }}
+            {{- if .Values.ibm_mas_suite.ingress_controller_name }}
+            mas_ingress_controller_name: "{{ .Values.ibm_mas_suite.ingress_controller_name }}"
+            {{- end }}
             mas_manual_cert_mgmt: {{ .Values.ibm_mas_suite.mas_manual_cert_mgmt   }}
             dns_provider: "{{ .Values.ibm_mas_suite.dns_provider }}"
             mas_workspace_id: "{{ .Values.ibm_mas_suite.mas_workspace_id }}"
@@ -104,10 +110,13 @@ spec:
             {{- $visualinspection_str := ternary "" "visualinspection" (empty $visualinspection) -}}
             {{- $optimizer_str := ternary "" "optimizer" (empty $optimizer) -}}
             {{- $facilities_str := ternary "" "facilities" (empty $facilities) -}}
+            {{- $cpd_public_str := ternary "cpd-public" "" (and (not (empty $core)) (not (empty .Values.ibm_cp4d)) (.Values.ibm_cp4d.cpd_public_route_enabled | default false)) -}}
 
-            {{- $list := list $health_str $iot_str $core_str $manage_str $reportdb_str $monitor_str $predict_str $visualinspection_str $optimizer_str $facilities_str | compact }}
+            {{- $list := list $health_str $iot_str $core_str $manage_str $reportdb_str $monitor_str $predict_str $visualinspection_str $optimizer_str $facilities_str $cpd_public_str | compact }}
             cis_entries_to_add: {{ printf "%s" (join "," $list) }}
-
+            {{- if and (not (empty .Values.ibm_cp4d)) .Values.ibm_cp4d.cpd_public_route_enabled }}
+            cpd_public_route_enabled: true
+            {{- end }}
             {{- if .Values.override_dns_cis_flags_to_false }}
             update_dns_entries: "false"
             delete_wildcards: "false"

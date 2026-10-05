@@ -80,5 +80,6 @@ The compliance scans run automatically based on the ScanSetting configuration an
 | `ServiceAccount` | compliance cleanup service accounts | `openshift-compliance` | Cleanup resources as applicable | `cluster_admin_role` |
 | `Role` | compliance cleanup roles | `openshift-compliance` | Cleanup resources as applicable | `cluster_admin_role` |
 | `RoleBinding` | compliance cleanup role bindings | `openshift-compliance` | Cleanup resources as applicable | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `openshift-compliance` | PostDelete hook | `cluster_admin_role` |
 
 **Note:** The TailoredProfiles disable specific rules that cannot be modified in ROSA environments (e.g., Kubelet config modifications).

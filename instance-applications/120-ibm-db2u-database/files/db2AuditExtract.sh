@@ -10,7 +10,9 @@
 #%  USAGE:  db2AuditExtract.sh <application_name> [dbname] [retention_days]
 #%
 #%  retention_days : Number of days to retain each S3 object under Object Lock
-#%                   COMPLIANCE mode. Must be a positive integer. Default: 365.
+#%                   COMPLIANCE mode. Must be a non-negative integer. Default: 365.
+#%                   Set to 0 to disable Object Lock entirely (e.g. dev/test
+#%                   environments where the bucket has no Object Lock enabled).
 #%
 #%  Steps:
 #%   1.  mkdir /tmp/auditarchive
@@ -18,13 +20,13 @@
 #%   3.  db2audit flush
 #%   4.  db2audit archive database BLUDB to /tmp/auditarchive
 #%   5.  db2audit archive to /tmp/auditarchive  (instance log)
-#%   8.  Copy db2audit.db.BLUDB.log.0.20*   from /mnt/blumeta0/audit → /tmp/auditarchive
-#%   9.  Copy db2audit.instance.log.0.20*   from /mnt/blumeta0/audit → /tmp/auditarchive
-#%  10.  Upload ALL files from /tmp/auditarchive to S3 with Object Lock
+#%   6.  Copy db2audit.db.BLUDB.log.0.20*   from /mnt/blumeta0/audit → /tmp/auditarchive
+#%   7.  Copy db2audit.instance.log.0.20*   from /mnt/blumeta0/audit → /tmp/auditarchive
+#%   8.  Upload ALL files from /tmp/auditarchive to S3 with Object Lock
 #%       (COMPLIANCE mode, retain for RETENTION_DAYS days)
-#%  11.  rm -rf /tmp/auditarchive
-#%  12.  Delete the *.log.0.20* source files from /mnt/blumeta0/audit
-#%  13.  (Conditional) Delete pre-existing *.del files from /mnt/blumeta0/audit
+#%   9.  rm -rf /tmp/auditarchive
+#%  10.  Delete the *.log.0.20* source files from /mnt/blumeta0/audit
+#%  11.  (Conditional) Delete pre-existing *.del files from /mnt/blumeta0/audit
 #%       (prints list before deleting)
 # ----------------------------------------------------------------------------
 
@@ -41,8 +43,8 @@ if [ -z "${APP_NAME}" ]; then
 fi
 
 RETENTION_DAYS="${3:-365}"  # 3rd arg from CronJob; defaults to 365 days
-if ! [[ "${RETENTION_DAYS}" =~ ^[1-9][0-9]*$ ]]; then
-  echo "ERROR :: retention_days must be a positive integer (got: '${RETENTION_DAYS}')"
+if ! [[ "${RETENTION_DAYS}" =~ ^(0|[1-9][0-9]*)$ ]]; then
+  echo "ERROR :: retention_days must be a non-negative integer (got: '${RETENTION_DAYS}')"
   echo "ERROR :: Usage: $0 <application_name> [dbname] [retention_days]"
   exit 1
 fi
@@ -92,7 +94,11 @@ log "INFO  :: DB2 Audit Extract — ${DT}"
 log "INFO  :: Application : ${APP_NAME} | Database : ${DBNAME}"
 log "INFO  :: Work dir    : ${ARCHIVE_DIR}"
 log "INFO  :: S3 target   : ${S3_TARGET}"
-log "INFO  :: Retention   : ${RETENTION_DAYS} day(s) (Object Lock COMPLIANCE)"
+if [ "${RETENTION_DAYS}" -eq 0 ]; then
+  log "INFO  :: Retention   : DISABLED (Object Lock skipped — dev/test mode)"
+else
+  log "INFO  :: Retention   : ${RETENTION_DAYS} day(s) (Object Lock COMPLIANCE)"
+fi
 log "INFO  :: ============================================================"
 
 # ============================================================================
@@ -137,13 +143,21 @@ cp "${AUDIT_BASE}"/db2audit.instance.log.0.20* "${ARCHIVE_DIR}/" 2>/dev/null \
   || log "WARN  ::     No matching db2audit.instance.log.0.20* files found — skipping"
 
 # ============================================================================
-# 10.  Upload ALL files from /tmp/auditarchive to S3 with Object Lock
+# 10.  Upload ALL files from /tmp/auditarchive to S3
+#       Object Lock (COMPLIANCE) is applied only when RETENTION_DAYS > 0.
+#       Set RETENTION_DAYS=0 for dev/test environments where the S3 bucket
+#       does not have Object Lock enabled.
 # ============================================================================
 log "INFO  :: [10] Uploading all files from ${ARCHIVE_DIR} to ${S3_TARGET}"
 
-# Calculate retention date once for all objects in this run
-RETENTION_DATE=$(date -u -d "+${RETENTION_DAYS} days" +"%Y-%m-%dT%H:%M:%SZ")
-log "INFO  ::      Object Lock : COMPLIANCE | RetainUntilDate : ${RETENTION_DATE}"
+# Calculate retention date once (only used when Object Lock is enabled)
+if [ "${RETENTION_DAYS}" -gt 0 ]; then
+  RETENTION_DATE=$(date -u -d "+${RETENTION_DAYS} days" +"%Y-%m-%dT%H:%M:%SZ")
+  log "INFO  ::      Object Lock : COMPLIANCE | RetainUntilDate : ${RETENTION_DATE}"
+else
+  RETENTION_DATE=""
+  log "INFO  ::      Object Lock : DISABLED (RETENTION_DAYS=0)"
+fi
 
 ALL_FILES=$(ls "${ARCHIVE_DIR}"/* 2>/dev/null || true)
 if [ -z "${ALL_FILES}" ]; then
@@ -154,15 +168,24 @@ else
     FILE_NAME=$(basename "${F}")
     S3_KEY="${S3_PREFIX}/${FILE_NAME}"
     log "INFO  ::      [s3] ${FILE_NAME} → s3://${S3_BUCKET}/${S3_KEY}"
-    log "INFO  ::           Retention : ${RETENTION_DAYS} day(s) until ${RETENTION_DATE}"
-    "${AWS_CLI}" s3api put-object \
-      --bucket  "${S3_BUCKET}" \
-      --key     "${S3_KEY}" \
-      --body    "${F}" \
-      --object-lock-mode COMPLIANCE \
-      --object-lock-retain-until-date "${RETENTION_DATE}" \
-      && log "INFO  ::           Upload confirmed" \
-      || { log "ERROR ::           Upload FAILED for ${FILE_NAME}"; ERRORS=$((ERRORS + 1)); }
+    if [ "${RETENTION_DAYS}" -gt 0 ]; then
+      log "INFO  ::           Retention : ${RETENTION_DAYS} day(s) until ${RETENTION_DATE}"
+      "${AWS_CLI}" s3api put-object \
+        --bucket  "${S3_BUCKET}" \
+        --key     "${S3_KEY}" \
+        --body    "${F}" \
+        --object-lock-mode COMPLIANCE \
+        --object-lock-retain-until-date "${RETENTION_DATE}" \
+        && log "INFO  ::           Upload confirmed" \
+        || { log "ERROR ::           Upload FAILED for ${FILE_NAME}"; ERRORS=$((ERRORS + 1)); }
+    else
+      "${AWS_CLI}" s3api put-object \
+        --bucket  "${S3_BUCKET}" \
+        --key     "${S3_KEY}" \
+        --body    "${F}" \
+        && log "INFO  ::           Upload confirmed (no Object Lock)" \
+        || { log "ERROR ::           Upload FAILED for ${FILE_NAME}"; ERRORS=$((ERRORS + 1)); }
+    fi
   done
   [ ${ERRORS} -gt 0 ] && { log "ERROR :: ${ERRORS} upload(s) failed"; exit 1; }
   log "INFO  ::      All files uploaded successfully"

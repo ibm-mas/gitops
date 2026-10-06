@@ -3,10 +3,6 @@ Instana Agent Operator
 Installs the Instana Agent Operator. Additionally, a cron job is installed that 
 
 <!--docs-include-start-->
-## Overview
-
-This chart installs the Instana Agent Operator and deploys an `InstanaAgent` CR that monitors all nodes. It also creates a `CronJob` that automatically discovers DB2 instances in the cluster and updates the Instana agent configuration with their connection details.
-
 
 is responsible for updating the Instana agent custom resource with the connection
 information for each DB2 instance in the cluster.
@@ -73,8 +69,7 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-## Examples
-
+### Usage Examples
 
 **Basic Instana agent installation:**
 ```yaml
@@ -137,6 +132,5 @@ This chart includes a CronJob that automatically discovers DB2 instances in the 
 | `RoleBinding` | `instana-agent-db2-config-sa-edit` | `instana-agent` | Always | `cluster_admin_role` |
 | `NetworkPolicy` | `instana-agent-db2-config-netpol` | `instana-agent` | Always | `cluster_admin_role` |
 | `CronJob` | `instana-agent-db2-config` | `instana-agent` | Always | `cluster_admin_role` |
-| `Job` | `postdelete-delete-csv-job` | `instana-agent` | PostDelete hook | `cluster_admin_role` |
 
 **Note:** The CronJob automatically updates the InstanaAgent configuration with DB2 instance connection details.

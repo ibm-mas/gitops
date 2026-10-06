@@ -28,10 +28,6 @@ Installs the Cluster Root ArgoCD ApplicationSet [`000-cluster-appset.yaml`](temp
   - [Sample Configuration File Structure](#sample-configuration-file-structure)
 
 <!--docs-include-start-->
-## Overview
-
-The IBM MAS Account Root Application is the top-level entry point of the GitOps App-of-Apps hierarchy. It installs the Cluster Root ArgoCD ApplicationSet which generates one IBM MAS Cluster Root Application per cluster defined in the configuration repository.
-
 
 This is the top-level application in the **App of Apps** hierarchy:
 
@@ -206,26 +202,6 @@ Each cluster configuration generates an application named: `cluster.{cluster.id}
 
 Where `{cluster.id}` comes from the `cluster.id` field in the configuration files.
 
-
-## Examples
-
-### Minimal values.yaml
-
-```yaml
-account:
-  id: "production"
-generator:
-  repo_url: "https://github.com/myorg/mas-config"
-  revision: "main"
-source:
-  repo_url: "https://github.com/ibm-mas/gitops"
-  revision: "main"
-argo:
-  namespace: "openshift-gitops"
-  projects:
-    rootapps: "mas"
-    apps: "mas"
-```
 ## Example Configuration
 
 ### Minimal values.yaml

@@ -3,22 +3,7 @@ IBM DB2U Database
 Create a Db2RDS database for a MAS app.
 
 <!--docs-include-start-->
-## Overview
 
-This chart provisions and configures an Amazon RDS database instance for use with IBM MAS, including the creation of the RDS instance, parameter groups, subnet groups, and Secrets Manager integration.
-
-
-
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-ibm_dbs_rds_database:
-  db_instance_class: db.t3.medium
-  engine_version: "14.10"
-```
 
 ## Resources Created
 

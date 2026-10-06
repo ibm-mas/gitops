@@ -3,10 +3,6 @@ IBM Maximo Operator Catalog
 Installs the `ibm-operator-catalog` `CatalogSource` into the `openshift-marketplace` namespace
 
 <!--docs-include-start-->
-## Overview
-
-This chart installs the `ibm-operator-catalog` `CatalogSource` into the `openshift-marketplace` namespace and creates the IBM entitlement key `Secret` required for pulling IBM container images.
-
 
 ## Configuration
 
@@ -54,8 +50,7 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-## Examples
-
+### Usage Examples
 
 **Basic configuration with entitlement key:**
 ```yaml

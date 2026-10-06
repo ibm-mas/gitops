@@ -3,10 +3,6 @@ Cluster Promotion
 Takes cluster level changes and promotes them to the next level
 
 <!--docs-include-start-->
-## Overview
-
-This chart manages cluster promotion workflows, enabling controlled promotion of MAS deployments from one environment to another (e.g. dev → staging → production) through GitOps automation.
-
 
 
 ## Configuration
@@ -141,15 +137,6 @@ target_pr_title: "Automated cluster promotion - Production"
 3. **Pull Request** - Optionally creates a PR for review before merging changes
 
 This enables automated promotion of cluster configurations from one environment to another (e.g., dev → staging → production).
-
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-# No additional values required.
-```
 
 ## Resources Created
 

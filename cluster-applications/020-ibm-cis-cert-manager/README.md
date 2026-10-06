@@ -3,10 +3,6 @@ IBM CIS Cert Manager
 Deploy and configure IBM CIS Cert Manager related resources
 
 <!--docs-include-start-->
-## Overview
-
-This chart deploys the IBM Cloud Internet Services (CIS) webhook for cert-manager on an OpenShift cluster. When `dns_provider` is set to `"cis"`, it provisions the webhook RBAC resources, PKI certificates, operator deployment, API service registration, CIS API key secret, and an optional public ingress controller. A placeholder `ConfigMap` is always created so ArgoCD has at least one resource to track when CIS is not enabled.
-
 
 
 ## Configuration
@@ -100,38 +96,6 @@ When using IBM CIS as the DNS provider:
    - DNS Zones: Read
 3. **Domain** configured in IBM CIS
 4. **cert-manager** operator installed (via redhat-cert-manager chart)
-
-## Examples
-
-### Minimal CIS configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-ibm_cis_cert_manager:
-  dns_provider: "cis"
-  ocp_cluster_domain: "apps.prod-cluster.example.com"
-  cis_apikey: "<path:arn:aws:secretsmanager:us-west-2:123456789012:secret:my-account/my-cluster/cis#apikey>"
-```
-
-### With public domain and ingress controller
-
-```yaml
-merge-key: "my-account/my-cluster"
-ibm_cis_cert_manager:
-  dns_provider: "cis"
-  ocp_cluster_domain: "apps.prod-cluster.example.com"
-  ocp_public_cluster_domain: "public.example.com"
-  cis_apikey: "<path:arn:aws:secretsmanager:us-west-2:123456789012:secret:my-account/my-cluster/cis#apikey>"
-  ingress: true
-```
-
-### Non-CIS DNS provider (placeholder only)
-
-```yaml
-merge-key: "my-account/my-cluster"
-ibm_cis_cert_manager:
-  dns_provider: "route53"
-```
 
 ## Resources Created
 

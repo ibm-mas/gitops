@@ -3,23 +3,8 @@ IBM Analytics Engine Powered by Apache Spark (Spark)
 Deploys and configures the CP4D Service, IBM Analytics Engine Powered by Apache Spark (Spark). Deploys the Spark operator and its dependencies.
 
 <!--docs-include-start-->
-## Overview
-
-This chart installs IBM Analytics Engine powered by Apache Spark on Cloud Pak for Data, enabling large-scale distributed data processing for MAS analytics and AI workloads.
-
 
 Spark extends jupyter notebooks features inside Watson Studio notebooks which can be leveraged by Maximo Predict data sets.
-
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-ibm_spark:
-  channel: v4.8
-  install_plan: Automatic
-```
 
 ## Resources Created
 

@@ -3,24 +3,8 @@ MAS Application Install
 Generic chart for installing a MAS Application.
 
 <!--docs-include-start-->
-## Overview
-
-This chart installs IBM MAS applications (Manage, Monitor, IoT, Assist, Visual Inspection, etc.) into a MAS instance by applying the application `Subscription` and `MasApp` custom resources.
-
 
 Certain templates are enabled only for specific MAS editions (`mas_edition`) and/or applications (`mas_app_id`).
-
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-ibm_mas_suite_app_install:
-  mas_instance_id: inst1
-  mas_app_id: manage
-  mas_app_channel: 9.0.x
-```
 
 ## Resources Created
 

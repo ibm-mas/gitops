@@ -3,10 +3,6 @@ MAS SaaS Job Cleaner
 
 
 <!--docs-include-start-->
-## Overview
-
-This chart installs a `CronJob` that periodically removes completed and failed `Job` resources from the cluster to prevent resource accumulation over time.
-
 
 Deploys the `mas-saas-job-cleaner-cron` CronJob, responsible for cleaning up orphaned Job resources in the cluster. It works by grouping Jobs in the cluster according to the `mas.ibm.com/job-cleanup-group` label, then deleting all Jobs from each group except for the one with the latest `creationTimestamp`.
 
@@ -24,15 +20,6 @@ The `mas-devops-saas-job-cleaner` command executed by this CronJob is defined in
 This chart has no configurable values. It deploys with default settings that work for all MAS SaaS environments.
 
 The CronJob runs on a schedule and automatically cleans up orphaned Job resources that have the `mas.ibm.com/job-cleanup-group` label.
-
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-# No additional values required.
-```
 
 ## Resources Created
 

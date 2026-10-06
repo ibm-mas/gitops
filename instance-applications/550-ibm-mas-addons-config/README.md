@@ -3,25 +3,11 @@ MAS Addons Configuration
 Instantiated by the [`550-ibm-mas-addons-config.yaml`](https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-instance-root/templates/550-ibm-mas-addons-config.yaml) root application.
 
 <!--docs-include-start-->
-## Overview
-
-This chart applies add-on configuration to IBM MAS applications, enabling optional feature modules and integration settings beyond the base application installation.
-
 
 
 Creates MAS add-on configuration custom resources for optional platform capabilities such as allow lists, additional VPN configuration, enhanced disaster recovery, extensions, replica databases, nonshared cluster settings, application configuration, additional resources, and production database access.
 
 This chart also includes a post-delete cleanup Job that removes generated `GenericAddon` custom resources when ArgoCD deletes the application and post-delete hooks are enabled.
-
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-ibm_mas_addons_config:
-  mas_instance_id: inst1
-```
 
 ## Resources Created
 

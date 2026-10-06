@@ -2,26 +2,6 @@
 
 This directory contains comprehensive unit tests for the Python scripts in `build/bin/`.
 
-## Configuration
-
-This directory contains pytest unit and integration tests for the Python scripts in `build/bin/`. No additional configuration is required — run `pytest` from the repository root.
-
-## Resources Created
-
-This is a test directory, not a Helm chart. No Kubernetes resources are created. The tests validate the build scripts themselves.
-
-## Examples
-
-### Run the full test suite
-
-```bash
-# From repository root
-pytest build/bin/tests/ -v
-
-# With coverage
-pytest build/bin/tests/ --cov=build/bin --cov-report=term
-```
-
 ## Overview
 
 The test suite provides coverage for:

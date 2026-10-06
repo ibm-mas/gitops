@@ -3,25 +3,11 @@ IBM Sync Jobs CP4D
 Instantiated by the [`101-ibm-sync-jobs-cp4d.yaml`](https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-instance-root/templates/101-ibm-sync-jobs-cp4d.yaml) root application.
 
 <!--docs-include-start-->
-## Overview
-
-This chart runs synchronization Jobs that transfer CP4D-specific configuration and credentials into AWS Secrets Manager before CP4D services are provisioned.
-
 
 
 Defines prerequisite catalog sources and a presync Job used to prepare Cloud Pak for Data (CP4D) dependencies before CP4D resources are installed for a MAS instance.
 
 The chart creates version-specific `CatalogSource` resources in the CP4D operators namespace and runs a presync Job that gathers operator dependency channel and version information for later use.
-
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-ibm_sync_jobs_cp4d:
-  run_sync_hooks: true
-```
 
 ## Resources Created
 

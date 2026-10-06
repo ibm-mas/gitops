@@ -3,22 +3,7 @@ IBM CommonServices Control (CS)
 Deploys and configures IBM CS Control that is required for IBM CPD
 
 <!--docs-include-start-->
-## Overview
 
-This chart installs IBM Common Services Control (CS Control), providing the foundational IBM Cloud Pak shared services including IAM, licensing, and monitoring prerequisites for MAS.
-
-
-
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-ibm_cs_control:
-  channel: v3
-  install_plan: Automatic
-```
 
 ## Resources Created
 

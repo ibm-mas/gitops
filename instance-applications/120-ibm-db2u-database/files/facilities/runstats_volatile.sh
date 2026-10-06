@@ -38,7 +38,7 @@ DATESTAMP=`date "+%Y-%m-%d-%H.%M.%S"`
 
 # Database and schema configuration
 DATABASE="BLUDB"
-SCHEMA={ db2_schema }
+SCHEMA="TRIDATA"
 
 # Loop through all databases (in case there are multiple)
 for db in `db2 list db directory | grep -B 5 Indirect | grep "Database name" | cut -d= -f2`

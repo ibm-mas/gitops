@@ -3,39 +3,6 @@ Maximo Application Suite GitOps
 
 A GitOps approach to managing Maximo Application Suite using ArgoCD and Helm.
 
-## Overview
-
-This repository contains all Helm charts, ArgoCD Application definitions, and supporting scripts for deploying and managing IBM Maximo Application Suite (MAS) using a GitOps approach with ArgoCD. It implements an **App of Apps** hierarchy that manages cluster prerequisites, MAS instances, Suite License Service, and AI Service deployments.
-
-## Configuration
-
-Configuration for each cluster and MAS instance is stored in a separate **config repository**. The GitOps charts in this repository consume those config files via ArgoCD ApplicationSet generators. See the [Configuration Repository](https://ibm-mas.github.io/gitops/configrepo/) documentation for details on the required file structure and field names.
-
-## Resources Created
-
-This repository does not deploy resources directly. Resources are deployed by the Helm charts in the `cluster-applications/`, `instance-applications/`, `sls-applications/`, and `root-applications/` directories. See the README in each chart directory for the specific resources it creates.
-
-## Examples
-
-### Deploy the Account Root Application
-
-```yaml
-# values.yaml passed to the ibm-mas-account-root chart
-account:
-  id: "production"
-generator:
-  repo_url: "https://github.com/myorg/mas-config"
-  revision: "main"
-source:
-  repo_url: "https://github.com/ibm-mas/gitops"
-  revision: "main"
-argo:
-  namespace: "openshift-gitops"
-  projects:
-    rootapps: "mas"
-    apps: "mas"
-```
-
 ## Repository Structure
 
 This repository is organized into several key directories that work together to deploy and manage MAS/SLS/AIService instances:

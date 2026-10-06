@@ -3,22 +3,9 @@ IBM DRO Public Route
 Expose the IBM Data Reporter Operator (DRO) metrics endpoint through a public OpenShift route.
 
 <!--docs-include-start-->
-## Overview
-
-This chart deploys the public-facing components of IBM Data Reporter Operator (DRO), enabling product usage reporting to IBM through the IBM Software Central endpoint.
-
 
 
 This chart creates the public `Route` used to expose DRO externally when IBM Cloud Internet Services (CIS) is the configured DNS provider. It is intended to be rendered by the cluster root application template [`031-ibm-dro-public.yaml`](https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-cluster-root/templates/031-ibm-dro-public.yaml).
-
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-# No additional values required.
-```
 
 ## Resources Created
 

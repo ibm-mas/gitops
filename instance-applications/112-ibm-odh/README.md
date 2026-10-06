@@ -3,26 +3,12 @@ IBM ODH
 Deploy and configure ODH with configurable version
 
 <!--docs-include-start-->
-## Overview
-
-This chart installs Open Data Hub (ODH) on the cluster, providing the open-source AI/ML platform components including Jupyter Hub, model serving, and data science pipeline infrastructure.
-
 
 ## Migration to RHOAI
 
 **Note**: OpenDataHub (ODH) is being replaced by Red Hat OpenShift AI (RHOAI). To migrate to RHOAI, see the [RHOAI Migration Guide](../116-ibm-rhoai/README.md#migration-from-odh-to-rhoai).
 
 Shared resources (aiservice namespace, ServiceMesh, Authorino, Serverless operators, and NetworkPolicies) have ArgoCD protection annotations that prevent deletion during ODH uninstallation, ensuring a safe migration path to RHOAI.
-
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-ibm_odh:
-  channel: fast
-```
 
 ## Resources Created
 

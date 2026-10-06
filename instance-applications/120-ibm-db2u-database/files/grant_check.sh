@@ -86,12 +86,11 @@ then
 	exit
 fi
 
-DB2_SCHEMA="${DB2_SCHEMA:-TRIDATA}"
 role=`db2 get db cfg for  $1 | grep "HADR database role" | cut -d= -f2 |sed 's/ //g'`
 if [ "$role" != "STANDBY" ]; then
 	db2 connect to $1
 	if [ $? -eq 0 ]; then
-		schemalist=(`db2 connect to $1 >/dev/null;db2 -x "select SCHEMANAME from syscat.SCHEMATA where SCHEMANAME in ('MAXIMO','${DB2_SCHEMA}','TRIRIGADC')"`)
+		schemalist=(`db2 connect to $1 >/dev/null;db2 -x "select SCHEMANAME from syscat.SCHEMATA where SCHEMANAME in ('MAXIMO','TRIDATA','TRIRIGADC')"`)
 		i=0
 		while [[ $i -lt ${#schemalist[*]} ]]
 		do	

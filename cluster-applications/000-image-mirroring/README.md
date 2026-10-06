@@ -3,10 +3,6 @@ MAS Image Mirroring
 
 
 <!--docs-include-start-->
-## Overview
-
-This chart establishes resources for MAS image mirroring via an `ImageDigestMirrorSet`. It deploys an ECR token rotator `CronJob` that refreshes the global pull-secret and an `ImageDigestMirrorSet` that redirects image pulls from `icr.io` and `cp.icr.io` to ECR.
-
 
 Establishes resources necessary to support image mirroring via an ImageDigestMirrorSet:
 
@@ -76,8 +72,7 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-## Examples
-
+### Usage Examples
 
 **Basic ECR mirroring configuration:**
 ```yaml

@@ -5,36 +5,6 @@ This directory contains RBAC configurations for MAS GitOps deployments. There ar
 1. **Automated (Recommended)**: Helm chart deployed via ArgoCD when `cluster_admin_role=true`
 2. **Manual**: Kustomize-based approach for pre-installation or custom scenarios
 
-## Overview
-
-This directory provides Kustomize-based namespace-scoped RBAC for MAS GitOps deployments running in Application Admin Mode (`cluster_admin_role=false`, `application_admin_role=true`). When using the automated approach with `cluster_admin_role=true`, the `600-application-admin-rbac` Helm chart handles RBAC automatically — this directory is only required when using the pre-install repository.
-
-## Configuration
-
-RBAC overlays are generated per MAS instance using `generate_rbac_overlays.py`. The script creates a `kustomize/overlays/<service-account>/` directory structure with one subdirectory per namespace. No additional Helm values are required.
-
-## Resources Created
-
-| Resource Type | Scope | Description |
-|---|---|---|
-| `Role` | Namespace-scoped | Full permissions for MAS resources in each instance namespace |
-| `RoleBinding` | Namespace-scoped | Binds the Role to the ArgoCD service account |
-| `ClusterRole` | Cluster-scoped (read-only) | Read access to CRDs, Subscriptions, ArgoCD Applications |
-| `ClusterRoleBinding` | Cluster-scoped | Binds the ClusterRole to the ArgoCD service account |
-
-## Examples
-
-### Generate and apply RBAC for a MAS instance
-
-```bash
-# Generate overlays for instance dev2
-./rbac/generate_rbac_overlays.py \
-    --service-account mas-argocd-argocd-application-controller dev2
-
-# Apply
-kubectl apply -k rbac/kustomize/overlays/mas-argocd-argocd-application-controller
-```
-
 ## Automated Approach (Recommended)
 
 When deploying with `cluster_admin_role=true`, RBAC is automatically installed via the Helm chart at [`instance-applications/600-application-admin-rbac/`](../../instance-applications/600-application-admin-rbac/).

@@ -11,15 +11,6 @@ This chart dynamically detects which namespaces exist for a MAS instance and app
 - **ClusterRole**: Provides read-only access to cluster-level resources (nodes, namespaces, storageclasses)
 - **ClusterRoleBinding**: Binds the ClusterRole to the ArgoCD service account
 
-## Examples
-
-### Minimal configuration
-
-```yaml
-merge-key: "my-account/my-cluster"
-# No additional values required.
-```
-
 ## Resources Created
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |

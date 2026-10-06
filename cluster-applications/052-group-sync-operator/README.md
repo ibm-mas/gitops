@@ -3,10 +3,6 @@ Group Sync Operator
 Installs the Group Sync Operator. Minimum required version: 0.0.31
 
 <!--docs-include-start-->
-## Overview
-
-This chart installs the Group Sync Operator (minimum version 0.0.31) and configures it to synchronize user groups from IBM Security Verify into OpenShift on a defined cron schedule.
-
 
 
 ## Configuration
@@ -63,8 +59,7 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-## Examples
-
+### Usage Examples
 
 **Basic group sync configuration:**
 ```yaml
@@ -120,9 +115,5 @@ group_sync_operator:
 | `Subscription` | `group-sync-operator` | `group-sync-operator` | Always | `cluster_admin_role` |
 | `Secret` | `isv-group-sync` | `group-sync-operator` | Always | `cluster_admin_role` |
 | `GroupSync` | `isv-group-sync` | `group-sync-operator` | Always | `cluster_admin_role` |
-| `ServiceAccount` | `postdelete-delete-csv-sa` | `group-sync-operator` | PostDelete hook | `cluster_admin_role` |
-| `Role` | `postdelete-delete-csv-r` | `group-sync-operator` | PostDelete hook | `cluster_admin_role` |
-| `RoleBinding` | `postdelete-delete-csv-rb` | `group-sync-operator` | PostDelete hook | `cluster_admin_role` |
-| `Job` | `postdelete-delete-csv-job` | `group-sync-operator` | PostDelete hook | `cluster_admin_role` |
 
 **Note:** The GroupSync resource synchronizes groups from IBM Security Verify based on the configured schedule.

@@ -105,32 +105,6 @@ See [`kustomize/README.md`](https://github.com/ibm-mas/gitops/tree/main/rbac/kus
 | `mas-{inst}-visualinspection` | `mas-dev2-visualinspection` |
 
 
-## Configuration
-
-RBAC overlays are generated using `generate_rbac_overlays.py`. No Helm values are required — overlays are committed to Git and applied via `kubectl apply -k`.
-
-## Resources Created
-
-| Resource Type | Scope | Description |
-|---|---|---|
-| `Role` | Namespace-scoped | Full permissions for MAS resources in each instance namespace |
-| `RoleBinding` | Namespace-scoped | Binds the Role to the ArgoCD service account |
-| `ClusterRole` | Cluster-scoped | Read-only access to cluster-level resources |
-| `ClusterRoleBinding` | Cluster-scoped | Binds the ClusterRole to the ArgoCD service account |
-
-## Examples
-
-### Generate and apply RBAC for a single MAS instance
-
-```bash
-# Generate overlays for instance dev2
-./rbac/generate_rbac_overlays.py \
-    --service-account mas-argocd-argocd-application-controller dev2
-
-# Apply the generated overlays
-kubectl apply -k rbac/kustomize/overlays/mas-argocd-argocd-application-controller
-```
-
 ## Permissions Included
 
 ### Namespace-scoped Resources

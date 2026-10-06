@@ -3,9 +3,24 @@ ObjectStorage Configuration for MAS Core Platform
 Create a ObjectStorageCfg CR instance and associated credentials secret for use by MAS.
 
 <!--docs-include-start-->
+## Overview
+
+This chart configures the object storage connection settings for a MAS instance, registering an IBM Cloud Object Storage or S3-compatible endpoint for use by MAS applications.
+
 
 
 Contains a post-delete hook (`postdelete-delete-cr.yaml`) that will ensure the config CR is deleted when the ArgoCD application managing this chart is deleted (this will not happen by default as the config CR is asserted to be owned by the `Suite` CR by the MAS entity managers).
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_objectstorage_config:
+  storage_provider: aws
+  bucket_name: mas-inst1
+```
 
 ## Resources Created
 

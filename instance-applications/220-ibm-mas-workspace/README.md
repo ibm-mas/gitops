@@ -3,7 +3,22 @@ MAS Core Platform workspace
 Installs the workspace needed for the `Suite`.
 
 <!--docs-include-start-->
+## Overview
 
+This chart creates and configures IBM MAS workspaces, which define the tenant-level logical grouping for users, applications, and data within a MAS instance.
+
+
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_mas_workspace:
+  mas_instance_id: inst1
+  mas_workspace_id: masdev
+```
 
 ## Resources Created
 

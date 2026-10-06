@@ -3,6 +3,10 @@ Redhat OpenShift cert-manager Operator
 Installs Redhat OpenShift cert-manager Operator in cert-manager-operator namespace
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the Red Hat OpenShift cert-manager Operator into the `cert-manager-operator` namespace. It creates the `OperatorGroup`, `Subscription`, cluster-scoped RBAC, and an optional post-sync `Job` that updates AWS Secrets Manager with cluster TLS information.
+
 
 
 ## Configuration
@@ -49,7 +53,8 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-### Usage Examples
+## Examples
+
 
 **Basic configuration with automatic updates:**
 ```yaml
@@ -85,6 +90,10 @@ redhat_cert_manager:
 | `ClusterRoleBinding` | cert-manager operator cluster role bindings | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `Secret` | cert-manager related secrets | `cert-manager` and `default` | Always and hook-driven as applicable | `cluster_admin_role` |
 | `ServiceAccount` | cert-manager hook service accounts | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
+| `ServiceAccount` | `postdelete-delete-csv-sa` | `cert-manager-operator` | PostDelete hook | `cluster_admin_role` |
+| `Role` | `postdelete-delete-csv-r` | `cert-manager-operator` | PostDelete hook | `cluster_admin_role` |
+| `RoleBinding` | `postdelete-delete-csv-rb` | `cert-manager-operator` | PostDelete hook | `cluster_admin_role` |
 | `Job` | `postsync-rhcm-update-sm-job-*` | `default` | When `run_sync_hooks` is true | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `cert-manager-operator` | PostDelete hook | `cluster_admin_role` |
 
 **Note:** The PostSync Job updates AWS Secrets Manager with cluster information for use by other charts.

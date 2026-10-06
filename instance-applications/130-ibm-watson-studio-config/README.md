@@ -3,7 +3,21 @@ WatsonStudio Configuration for MAS Core Platform
 Create a WatsonStudioCfg CR instance and associated credentials secret for use by MAS.
 
 <!--docs-include-start-->
+## Overview
 
+This chart configures the IBM Watson Studio connection for a MAS instance, enabling data science project integration and notebook-driven analytics within the MAS platform.
+
+
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_watson_studio_config:
+  watson_studio_url: "https://cpd.example.com/watson-studio"
+```
 
 ## Resources Created
 

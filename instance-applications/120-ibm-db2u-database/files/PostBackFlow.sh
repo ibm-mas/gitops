@@ -34,6 +34,8 @@ chmod 755 ${SCRIPT}
 # -- Execute customer-provided SQL file if present
 if [[ -f ${CUSTOMER_SQL} ]]; then
   echo "Executing customer SQL file: ${CUSTOMER_SQL} . . ."
+  db2 connect to bludb
   db2 -tvf ${CUSTOMER_SQL}
+  db2 connect reset 2>/dev/null
   echo "Post Backflow SQL script executed successfully."
 fi

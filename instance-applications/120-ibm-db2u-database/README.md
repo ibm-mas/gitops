@@ -452,3 +452,4 @@ cluster_domain: "<path:secrets/path:cluster_domain>"
 
 - [Instance Base Values Reference](../../docs/reference/instance-base-values.md)
 - [IBM Db2u Operator Documentation](https://www.ibm.com/docs/en/db2/11.5)
+

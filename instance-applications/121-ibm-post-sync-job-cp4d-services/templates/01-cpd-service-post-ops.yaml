@@ -25,7 +25,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -246,6 +246,15 @@ spec:
                 V2=$(echo "$2" | tr -d '.')
                 echo $(( $V1 - $V2 ))
               }
+
+              # For CPD 5.3.1+, CCS and OpenSearch are installed via Helm (not OLM).
+              # The CCS CR and OpenSearch CR managed by this post-sync job do not exist
+              # in that deployment model, so skip all OLM-specific post-sync patching.
+              COMP_531=$(compare_versions ${CPD_PRODUCT_VERSION} 5.3.1)
+              if [[ ${COMP_531} -ge 0 ]]; then
+                echo "CPD ${CPD_PRODUCT_VERSION} detected (>= 5.3.1) - CCS/OpenSearch installed via Helm, skipping OLM post-sync patching"
+                exit 0
+              fi
 
               echo
               echo "================================================================================"

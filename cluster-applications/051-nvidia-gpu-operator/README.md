@@ -3,6 +3,10 @@ Nvidia GPU Operator
 Installs the Nvidia GPU Operator
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the NVIDIA GPU Operator, which automates the management of GPU drivers, device plugins, and monitoring components required for GPU-accelerated workloads on OpenShift.
+
 
 
 ## Configuration
@@ -112,6 +116,15 @@ nvidia_gpu_operator:
 - OpenShift cluster with GPU-enabled nodes
 - Sufficient cluster resources for GPU workloads
 - Node Feature Discovery (NFD) operator (automatically installed by this chart)
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+# No additional values required.
+```
 
 ## Resources Created
 

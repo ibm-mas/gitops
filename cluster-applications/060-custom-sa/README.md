@@ -3,6 +3,10 @@ Custom Service Accounts
 Creates configurable service accounts with assigned rbac
 
 <!--docs-include-start-->
+## Overview
+
+This chart creates custom `ServiceAccount` resources required by MAS cluster operations. It provisions the service accounts and associated RBAC resources needed for privileged cluster tasks.
+
 
 
 ## Configuration
@@ -92,6 +96,15 @@ custom_sa:
 - `admin` - Full access within a namespace
 - `cluster-admin` - Full cluster access
 - `cluster-reader` - Read-only cluster access
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+# No additional values required.
+```
 
 ## Resources Created
 

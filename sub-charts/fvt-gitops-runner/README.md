@@ -25,7 +25,6 @@ fully deployed and functioning as expected.  Results are written to MongoDB usin
 | `devops_mongo_uri` | MongoDB connection string; leave empty to skip result recording | `""` |
 | `fvt_gitops_image_repo` | Container image repository for the `fvt-gitops` test image | `docker-na-public.artifactory.swg-devops.com/wiotp-docker-local/mas-devops/fvt-gitops` |
 | `fvt_gitops_image_tag` | Container image tag | `"latest"` |
-| `argo_namespace` | ArgoCD namespace | `"openshift-gitops"` |
 | `custom_labels` | Extra labels applied to all created resources | `{}` |
 
 ## Resources Created

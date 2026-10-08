@@ -43,6 +43,12 @@ spec:
         - name: instana-plugins
           mountPath: /opt/instana/agent/etc/instana/configuration-argocd.yaml
           subPath: configuration-argocd.yaml
+        - name: argocd-plugin
+          mountPath: /mnt/secrets/argocdUsername
+          subPath: argocdUsername
+        - name: argocd-plugin
+          mountPath: /mnt/secrets/argocdPassword
+          subPath: argocdPassword
 {{- end }}
       volumes:
         - name: tmp-volume
@@ -53,6 +59,11 @@ spec:
         - name: instana-plugins
           configMap:
             name: instana-plugins
+{{- if .Values.instana_agent_operator_argocd_plugin_enabled }}
+        - name: argocd-plugin
+          secret:
+            secretName: argocd-plugin
+{{- end }}
     configuration_yaml: |
       com.instana.ignore:
         arguments:

@@ -61,7 +61,11 @@ Applications are deployed in the following order (controlled by sync-wave annota
 2. **100-121: Dependencies** - SLS, Db2, CP4D, databases, and CP4D services
 3. **130: MAS Suite** - Core MAS suite installation and configurations
 4. **200: Workspaces** - MAS workspace creation
-5. **500-550: Applications** - MAS application installations and configurations
+5. **500-560: Applications** - MAS application installations and configurations
+   - **500**: Manage install (highest priority among MAS apps)
+   - **505**: Manage config
+   - **520**: SDB (Standby DB2/HADR) — after Manage, before all other app installs
+   - **521-560**: All other MAS app installs and configs (Facilities, Assist, VisualInspection, IoT, Health, Monitor, Optimizer, Predict, Addons)
 6. **600: RBAC & Post-Sync** - RBAC setup and post-deployment validation
 
 ## Configuration Files
@@ -218,16 +222,16 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`130-ibm-mas-suite-configs-app.yaml`](templates/130-ibm-mas-suite-configs-app.yaml) | mas_config_name | | ✓ | | 130 |
 | [`200-ibm-mas-workspaces.yaml`](templates/200-ibm-mas-workspaces.yaml) | workspace | | ✓ | | 200 |
 | [`500-ibm-mas-masapp-manage-install.yaml`](templates/500-ibm-mas-masapp-manage-install.yaml) | manage | | | ✓ | 500 |
-| [`505-ibm-mas-masapp-facilities-install.yaml`](templates/505-ibm-mas-masapp-facilities-install.yaml) | facilities | | | ✓ | 505 |
-| [`510-ibm-mas-masapp-assist-install.yaml`](templates/510-ibm-mas-masapp-assist-install.yaml) | assist | | | ✓ | 510 |
-| [`510-ibm-mas-masapp-iot-install.yaml`](templates/510-ibm-mas-masapp-iot-install.yaml) | iot | | | ✓ | 510 |
-| [`510-ibm-mas-masapp-visualinspection-install.yaml`](templates/510-ibm-mas-masapp-visualinspection-install.yaml) | visualinspection | | | ✓ | 510 |
-| [`510-550-ibm-mas-masapp-configs.yaml`](templates/510-550-ibm-mas-masapp-configs.yaml) | masapp-config | | ✓ | | 510-550 |
-| [`520-ibm-mas-masapp-health-install.yaml`](templates/520-ibm-mas-masapp-health-install.yaml) | health | | | ✓ | 520 |
-| [`520-ibm-mas-masapp-monitor-install.yaml`](templates/520-ibm-mas-masapp-monitor-install.yaml) | monitor | | | ✓ | 520 |
-| [`520-ibm-mas-masapp-optimizer-install.yaml`](templates/520-ibm-mas-masapp-optimizer-install.yaml) | optimizer | | | ✓ | 520 |
-| [`540-ibm-mas-masapp-predict-install.yaml`](templates/540-ibm-mas-masapp-predict-install.yaml) | predict | | | ✓ | 540 |
-| [`550-ibm-mas-addons-config.yaml`](templates/550-ibm-mas-addons-config.yaml) | addons | | ✓ | | 550 |
+| [`505-ibm-mas-masapp-facilities-install.yaml`](templates/505-ibm-mas-masapp-facilities-install.yaml) | facilities | | | ✓ | 521 |
+| [`510-ibm-mas-masapp-assist-install.yaml`](templates/510-ibm-mas-masapp-assist-install.yaml) | assist | | | ✓ | 525 |
+| [`510-ibm-mas-masapp-iot-install.yaml`](templates/510-ibm-mas-masapp-iot-install.yaml) | iot | | | ✓ | 525 (540 for channel ≥9.2) |
+| [`510-ibm-mas-masapp-visualinspection-install.yaml`](templates/510-ibm-mas-masapp-visualinspection-install.yaml) | visualinspection | | | ✓ | 525 |
+| [`510-550-ibm-mas-masapp-configs.yaml`](templates/510-550-ibm-mas-masapp-configs.yaml) | masapp-config | | ✓ | | 505-558 |
+| [`520-ibm-mas-masapp-health-install.yaml`](templates/520-ibm-mas-masapp-health-install.yaml) | health | | | ✓ | 540 |
+| [`520-ibm-mas-masapp-monitor-install.yaml`](templates/520-ibm-mas-masapp-monitor-install.yaml) | monitor | | | ✓ | 540 (525 for channel ≥9.2, co-wave with Assist and IoT default) |
+| [`520-ibm-mas-masapp-optimizer-install.yaml`](templates/520-ibm-mas-masapp-optimizer-install.yaml) | optimizer | | | ✓ | 540 |
+| [`540-ibm-mas-masapp-predict-install.yaml`](templates/540-ibm-mas-masapp-predict-install.yaml) | predict | | | ✓ | 555 |
+| [`550-ibm-mas-addons-config.yaml`](templates/550-ibm-mas-addons-config.yaml) | addons | | ✓ | | 560 |
 | [`600-application-admin-rbac-app.yaml`](templates/600-application-admin-rbac-app.yaml) | application-admin-rbac | | ✓ | | 600 |
 | [`600-ibm-post-sync-jobs.yaml`](templates/600-ibm-post-sync-jobs.yaml) | postsyncjobs | | | ✓ | 600 |
 

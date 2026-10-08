@@ -3,9 +3,23 @@ SLS Configuration for MAS Core Platform
 Create a SlsCfg CR instance and associated credentials secret for use by MAS.
 
 <!--docs-include-start-->
+## Overview
+
+This chart configures the IBM Suite License Service (SLS) connection for a MAS instance, registering the SLS endpoint and credentials so MAS can validate entitlements.
+
 
 
 Contains a post-delete hook (`postdelete-delete-cr.yaml`) that will ensure the config CR is deleted when the ArgoCD application managing this chart is deleted (this will not happen by default as the config CR is asserted to be owned by the `Suite` CR by the MAS entity managers).
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_mas_sls_config:
+  sls_url: "https://sls.example.com"
+```
 
 ## Resources Created
 

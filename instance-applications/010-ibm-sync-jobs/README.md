@@ -3,12 +3,26 @@ IBM MAS Sync Jobs
 Instantiated by the /gitops/root-applications/ibm-mas-instance-root/templates/91-ibm-sync-jobs.yaml root application.
 
 <!--docs-include-start-->
+## Overview
+
+This chart runs synchronization Jobs that transfer configuration and secrets into the cluster from AWS Secrets Manager before the main MAS installation proceeds.
+
 
 
 Defines Jobs to perform various tasks that need to happen before ibm-sls and the suite are installed, and after they are removed. It also performs various tasks for CP4D when it is set to be installed or upgraded.
 
 Supporting resources are defined in the 90-ibm-sync-resources chart which is managed by an application with a lower syncwave (90).
 This is to ensure that these resources perist long enough for any PostDelete hooks in this chart to complete.
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_sync_jobs:
+  run_sync_hooks: true
+```
 
 ## Resources Created
 

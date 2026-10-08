@@ -3,7 +3,22 @@ IBM Cloud Pak for Data (CP4D)
 Deploys and configures CP4D needed for `MAS Assist` and `MAS Predict`. Deploys the CP4D platform operator and its dependencies.
 
 <!--docs-include-start-->
+## Overview
 
+This chart installs IBM Cloud Pak for Data (CP4D) on the cluster, which serves as the AI and data platform foundation for MAS applications that require Watson services and advanced analytics.
+
+
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_cp4d:
+  channel: v4.8
+  install_plan: Automatic
+```
 
 ## Resources Created
 

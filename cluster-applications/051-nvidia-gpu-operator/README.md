@@ -3,6 +3,10 @@ Nvidia GPU Operator
 Installs the Nvidia GPU Operator
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the NVIDIA GPU Operator, which automates the management of GPU drivers, device plugins, and monitoring components required for GPU-accelerated workloads on OpenShift.
+
 
 
 ## Configuration
@@ -113,6 +117,15 @@ nvidia_gpu_operator:
 - Sufficient cluster resources for GPU workloads
 - Node Feature Discovery (NFD) operator (automatically installed by this chart)
 
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+# No additional values required.
+```
+
 ## Resources Created
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
@@ -121,3 +134,7 @@ nvidia_gpu_operator:
 | `Subscription` | `gpu-operator-certified` | `nvidia-gpu-operator` | Always | `cluster_admin_role` |
 | `ClusterPolicy` | `gpu-cluster-policy` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `SecurityContextConstraints` | `ibm-mas-customscc` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
+| `ServiceAccount` | `postdelete-delete-csv-sa` | `nvidia-gpu-operator` | PostDelete hook | `cluster_admin_role` |
+| `Role` | `postdelete-delete-csv-r` | `nvidia-gpu-operator` | PostDelete hook | `cluster_admin_role` |
+| `RoleBinding` | `postdelete-delete-csv-rb` | `nvidia-gpu-operator` | PostDelete hook | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `nvidia-gpu-operator` | PostDelete hook | `cluster_admin_role` |

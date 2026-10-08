@@ -3,7 +3,22 @@ IBM DB2U
 Deploy and configure db2 operator with configurable version
 
 <!--docs-include-start-->
+## Overview
 
+This chart installs the IBM Db2u Operator on the cluster, which is the prerequisite for creating Db2 database instances used by MAS applications such as Manage.
+
+
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_db2u:
+  channel: v110508.0
+  install_plan: Automatic
+```
 
 ## Resources Created
 
@@ -14,6 +29,10 @@ Deploy and configure db2 operator with configurable version
 | `Subscription` | DB2 operator subscription | DB2 operator namespace | Always | `application_admin_role` |
 | `Issuer` | DB2 CA issuer resources | DB2 operator namespace | Always | `application_admin_role` |
 | `Certificate` | DB2 CA certificate | DB2 operator namespace | Always | `application_admin_role` |
+| `ServiceAccount` | PostDelete job service account | DB2 operator namespace | When `use_postdelete_hooks` and `application_admin_role` are enabled | `application_admin_role` |
+| `Role` | PostDelete job role | DB2 operator namespace | When `use_postdelete_hooks` and `application_admin_role` are enabled | `application_admin_role` |
+| `RoleBinding` | PostDelete job role binding | DB2 operator namespace | When `use_postdelete_hooks` and `application_admin_role` are enabled | `application_admin_role` |
+| `Job` | PostDelete Subscription and CSV cleanup job | DB2 operator namespace | When `use_postdelete_hooks` and `application_admin_role` are enabled | `application_admin_role` |
 
 ## Configuration
 

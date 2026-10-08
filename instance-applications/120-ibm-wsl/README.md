@@ -3,7 +3,22 @@ IBM Watson Studio Local (WSL)
 Deploys and configures the CP4D Service, Watson Studio Local (WSL) needed for `MAS Predict`. Deploys WSL operator and its dependencies.
 
 <!--docs-include-start-->
+## Overview
 
+This chart installs IBM Watson Studio Local (WSL) on Cloud Pak for Data, providing an interactive data science environment with notebook authoring and model development capabilities.
+
+
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_wsl:
+  channel: v4.8
+  install_plan: Automatic
+```
 
 ## Resources Created
 

@@ -39,12 +39,20 @@ spec:
           mountPath: /tmp
         - name: instana-db2-jks
           mountPath: /jks/
+{{- if .Values.instana_agent_operator_argocd_plugin_enabled }}
+        - name: instana-plugins
+          mountPath: /opt/instana/agent/etc/instana/configuration-argocd.yaml
+          subPath: configuration-argocd.yaml
+{{- end }}
       volumes:
         - name: tmp-volume
           emptyDir: {}
         - name: instana-db2-jks
           persistentVolumeClaim:
             claimName: instana-db2-jks
+        - name: instana-plugins
+          configMap:
+            name: instana-plugins
     configuration_yaml: |
       com.instana.ignore:
         arguments:

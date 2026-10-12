@@ -1,0 +1,102 @@
+{{- /*
+TLS certificate chain for MongoDB Community — mirrors what the ansible-devops
+mongodb role creates in steps 7 of install-mongo.yml:
+  - issuer.yml        → mongo-issuer          (selfSigned Issuer)
+  - ca-cert.yml       → mongo-ca-crt          (CA Certificate → produces mongo-ca-secret)
+  - server-cert-issuer.yml → mongo-server-cert-issuer (Issuer backed by mongo-ca-secret)
+  - server-cert.yml   → mongo-server          (server Certificate → produces mongo-server-cert)
+  - tls.yml           → mas-mongo-ce-cert-map (ConfigMap with ca.crt extracted from mongo-server-cert)
+
+The MongoDBCommunity CR references:
+  security.tls.certificateKeySecretRef.name: mongo-server-cert
+  security.tls.caConfigMapRef.name:          mas-mongo-ce-cert-map
+*/}}
+{{- $ns := .Values.mongodb_namespace | default "mongoce" }}
+{{- $instance := .Values.mongodb_instance_name | default "mas-mongo-ce" }}
+
+---
+# Self-signed root Issuer
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: mongo-issuer
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "023"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  selfSigned: {}
+
+---
+# CA Certificate — cert-manager creates Secret 'mongo-ca-secret' from this
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mongo-ca-crt
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "023"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  isCA: true
+  commonName: mongo-ca-crt
+  secretName: mongo-ca-secret
+  duration: 175200h # 20 years
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  dnsNames:
+    - "*.{{ $instance }}-svc.{{ $ns }}.svc.cluster.local"
+    - "127.0.0.1"
+    - "localhost"
+  issuerRef:
+    name: mongo-issuer
+    kind: Issuer
+    group: cert-manager.io
+
+---
+# Server certificate Issuer — backed by the CA secret produced above
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: mongo-server-cert-issuer
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "024"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  ca:
+    secretName: mongo-ca-secret
+
+---
+# Server TLS Certificate — cert-manager creates Secret 'mongo-server-cert' from this
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mongo-server
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "024"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  duration: 8760h   # 365 days
+  renewBefore: 360h # 15 days
+  dnsNames:
+    - "*.{{ $instance }}-svc.{{ $ns }}.svc.cluster.local"
+    - "127.0.0.1"
+    - "localhost"
+  issuerRef:
+    name: mongo-server-cert-issuer
+  secretName: mongo-server-cert

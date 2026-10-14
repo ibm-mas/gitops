@@ -236,7 +236,7 @@ The following table lists all ArgoCD applications and ApplicationSets defined in
 | [`052-group-sync-operator-app.yaml`](templates/052-group-sync-operator-app.yaml) | group-sync-operator | ✓ | | |
 | [`053-falcon-operator-app.yaml`](templates/053-falcon-operator-app.yaml) | falcon-operator | ✓ | | |
 | [`054-cluster-logging-operator-app.yaml`](templates/054-cluster-logging-operator-app.yaml) | cluster-logging-operator | ✓ | | |
-| [`055-instana-agent-operator-app.yaml`](templates/055-instana-agent-operator-app.yaml) | instana-agent-operator | ✓ | | |
+| [`055-instana-agent-operator-app.yaml`](templates/055-instana-agent-operator-app.yaml) | instana-agent-operator (see [chart README](../../cluster-applications/055-instana-agent-operator/README.md) for ArgoCD plugin configuration) | ✓ | | |
 | [`060-custom-sa.yaml`](templates/060-custom-sa.yaml) | custom-sa | ✓ | | |
 | [`060-selenium-grid.yaml`](templates/060-selenium-grid.yaml) | selenium-grid | ✓ | | |
 | [`061-ibm-rbac-app.yaml`](templates/061-ibm-rbac-app.yaml) | ibm-rbac | ✓ | | |

@@ -20,7 +20,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v7" }}
+{{- $_job_version := "v8" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -103,6 +103,14 @@ rules:
       - idpcfgs
       - smtpcfgs
       - appcfgs
+  - verbs:
+      - get
+      - list
+      - watch
+    apiGroups:
+      - "addons.mas.ibm.com"
+    resources:
+      - genericaddons
 
 ---
 kind: ClusterRoleBinding
@@ -175,7 +183,7 @@ spec:
               set -e
               echo
               echo "================================================================================"
-              echo "PreDelete: waiting for all suite config CRs to be deleted"
+              echo "PreDelete: waiting for all suite config CRs and GenericAddon CRs to be deleted"
               echo "================================================================================"
               echo
               echo "ArgoCD namespace : ${ARGO_NAMESPACE}"
@@ -190,26 +198,27 @@ spec:
               while true; do
                 REMAINING=0
                 for CR_TYPE in \
-                  mongocfgs.config.mas.ibm.com \
-                  slscfgs.config.mas.ibm.com \
-                  bascfgs.config.mas.ibm.com \
-                  idpcfgs.config.mas.ibm.com \
-                  smtpcfgs.config.mas.ibm.com \
-                  appcfgs.config.mas.ibm.com; do
+                    mongocfgs.config.mas.ibm.com \
+                    slscfgs.config.mas.ibm.com \
+                    bascfgs.config.mas.ibm.com \
+                    idpcfgs.config.mas.ibm.com \
+                    smtpcfgs.config.mas.ibm.com \
+                    appcfgs.config.mas.ibm.com \
+                    genericaddons.addons.mas.ibm.com; do
                   COUNT=$(oc get "${CR_TYPE}" -n "${CORE_NS}" --no-headers 2>/dev/null | grep -v "^$" | wc -l || echo "0")
                   REMAINING=$(( REMAINING + COUNT ))
                 done
 
-                echo "Suite config CRs still present: ${REMAINING}"
+                echo "Suite config / GenericAddon CRs still present: ${REMAINING}"
 
                 if [ "${REMAINING}" -eq "0" ]; then
-                  echo "All suite config CRs have been deleted. Proceeding with Suite deletion."
+                  echo "All suite config and GenericAddon CRs have been deleted. Proceeding with Suite deletion."
                   exit 0
                 fi
 
                 wait_period=$(( wait_period + 30 ))
                 if [ "${wait_period}" -gt 3600 ]; then
-                  echo "Timed out after 60 minutes waiting for suite config CRs to be deleted."
+                  echo "Timed out after 60 minutes waiting for suite config / GenericAddon CRs to be deleted."
                   # If a config CR is stuck in Terminating, the responsible operator may not have picked up the deletionTimestamp.
                   # Restarting the operator pod via the ArgoCD UI will force a fresh reconcile and should unblock the deletion.
                   # As a last resort, the finalizer can be removed manually

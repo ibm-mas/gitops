@@ -28,7 +28,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v13" }}
+{{- $_job_version := "v12" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -419,23 +419,7 @@ spec:
                 sleep 10
               done
 
-              # For the upgrade scenario: once the primary is at target version and Ready,
-              # start HADR as primary so the standby operator can connect and proceed.
               UPGRADE_CM="hadr-upgrade-in-progress-${PRIMARY_DB2_INSTANCE_NAME}"
-              # if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-              #   echo ""
-              #   echo "================================================================================"
-              #   echo "Upgrade scenario: starting HADR as primary on ${PRIMARY_DB2_INSTANCE_NAME}..."
-              #   echo "================================================================================"
-              #   oc exec -n "${DB2_NAMESPACE}" "c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-              #     db2set DB2COMM=TCPIP,SSL
-              #     db2stop force || true
-              #     db2start
-              #     sleep 30
-              #     db2 start hadr on db ${DB2_DBNAME} as primary by force
-              #   " || true
-              #   echo "Primary HADR started."
-              # fi
 
               echo ""
               echo "================================================================================"
@@ -452,24 +436,6 @@ spec:
                   echo "Standby db2uinstance is at target version, in sync and Ready."
                   break
                 fi
-
-                # During upgrade the operator replaces the Db2 binaries on the standby pod.
-                # Once db2level reports v12, the binary upgrade is done and we can start HADR
-                # as standby so the operator can proceed with the database upgrade.
-                # if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-                #   SDB_DB2LEVEL=$(oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2level 2>/dev/null | grep -i 'Informational tokens' | grep -oE 'v[0-9]+' | head -1 | tr -d 'v'" 2>/dev/null || true)
-                #   echo "... standby db2level major version: '${SDB_DB2LEVEL}'"
-                #   if [[ "${SDB_DB2LEVEL}" == "12" ]]; then
-                #     echo "Standby binaries are v12. Starting HADR as standby."
-                #       oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                #         db2stop force || true
-                #         db2start
-                #         sleep 30
-                #         db2 start hadr on db ${DB2_DBNAME} as standby
-                #       " || true
-                #       echo "Standby HADR start attempted."
-                #   fi
-                # fi
 
                 cr_sync_count=$((cr_sync_count+1))
                 if [ $cr_sync_count -gt 180 ]; then
@@ -518,6 +484,27 @@ spec:
 
                 echo "Running post upgrade on Standby ${SDB_POD} (db2_update_upgrade --post-upgrade)..."
                 oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2_update_upgrade --post-upgrade" || exit $?
+
+                echo ""
+                echo "================================================================================"
+                echo "Post upgrade done. Verifying standby HADR state=PEER and connect status=CONNECTED..."
+                echo "================================================================================"
+                post_upgrade_hadr_count=0
+                while true; do
+                  SDB_HADR_STATE=$(oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *HADR_STATE' | cut -d= -f2 | tr -d ' '" 2>/dev/null || true)
+                  SDB_HADR_CONNECT=$(oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *HADR_CONNECT_STATUS ' | cut -d= -f2 | tr -d ' '" 2>/dev/null || true)
+                  echo "... hadr state=${SDB_HADR_STATE}, connect status=${SDB_HADR_CONNECT} (attempt ${post_upgrade_hadr_count})"
+                  if [[ "${SDB_HADR_STATE}" == "PEER" && "${SDB_HADR_CONNECT}" == "CONNECTED" ]]; then
+                    echo "Standby HADR is in PEER state and CONNECTED after post upgrade."
+                    break
+                  fi
+                  post_upgrade_hadr_count=$((post_upgrade_hadr_count+1))
+                  if [ $post_upgrade_hadr_count -gt 60 ]; then
+                    echo "ERROR: Timeout waiting for standby HADR PEER/CONNECTED after post upgrade (600s)."
+                    exit 1
+                  fi
+                  sleep 10
+                done
               fi
 
               # Cleanup HADR upgrade state ConfigMap and annotations once Standby setup starts

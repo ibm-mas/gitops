@@ -159,6 +159,8 @@ spec:
                 
                 sleep 10
                 
+                # Try to query db2uinstances - if CRD exists, this will succeed (even if no instances exist)
+                # If CRD doesn't exist, we'll get an error about unknown resource type
                 if oc get db2uinstances -n "${DB2_NAMESPACE}" --no-headers 2>/dev/null; then
                   echo "DB2 CRD db2uinstances.db2u.databases.ibm.com is available"
                   break
@@ -181,6 +183,14 @@ spec:
                     echo "================================================================================"
                     echo "HADR Version drift detected. Initiating PreSync upgrade preparation..."
                     echo "================================================================================"
+
+                    # The primary CR is still on the old version, so the primary has not been upgraded.
+                    # Any existing upgrade ConfigMap is stale (left over from a previous failed attempt)
+                    # and must be cleared so the standby does not proceed on stale state.
+                    if oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                      echo "Primary is not upgraded (spec.version=${CURRENT_VERSION}). Clearing stale ConfigMap ${UPGRADE_CM}..."
+                      oc delete configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --ignore-not-found=true
+                    fi
 
                     # 1. Process Standby-specific pre-upgrade check while HADR is connected
                     SDB_INSTANCE_NAME="${DB2_INSTANCE_NAME}-sdb"

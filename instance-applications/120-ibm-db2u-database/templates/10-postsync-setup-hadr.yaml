@@ -28,7 +28,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v12" }}
+{{- $_job_version := "v13" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -478,6 +478,47 @@ spec:
                 fi
                 sleep 10
               done
+
+              # Standby upgrade steps: run only in the v11 -> v12 upgrade scenario (upgrade ConfigMap still present)
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                SDB_POD="c-${DB2_INSTANCE_NAME}-db2u-0"
+                PDB_POD="c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
+
+                echo ""
+                echo "================================================================================"
+                echo "Running database upgrade on Standby ${SDB_POD} (db2_update_upgrade --databases)..."
+                echo "================================================================================"
+                oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2_update_upgrade --databases" || exit $?
+
+                echo ""
+                echo "================================================================================"
+                echo "Waiting for HADR state=PEER, connect status=CONNECTED and standby replay log file to match primary log file..."
+                echo "================================================================================"
+                hadr_peer_count=0
+                while true; do
+                  PDB_LOG_FILE=$(oc exec -n "${DB2_NAMESPACE}" "${PDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *PRIMARY_LOG_FILE' | cut -d= -f2 | cut -d, -f1 | tr -d ' '" 2>/dev/null || true)
+                  SDB_REPLAY_LOG_FILE=$(oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *STANDBY_REPLAY_LOG_FILE' | cut -d= -f2 | cut -d, -f1 | tr -d ' '" 2>/dev/null || true)
+                  SDB_HADR_STATE=$(oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *HADR_STATE' | cut -d= -f2 | tr -d ' '" 2>/dev/null || true)
+                  SDB_HADR_CONNECT=$(oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *HADR_CONNECT_STATUS ' | cut -d= -f2 | tr -d ' '" 2>/dev/null || true)
+                  echo "... primary log file=${PDB_LOG_FILE}, standby replay log file=${SDB_REPLAY_LOG_FILE}, hadr state=${SDB_HADR_STATE}, connect status=${SDB_HADR_CONNECT} (attempt ${hadr_peer_count})"
+                  if [[ -n "${PDB_LOG_FILE}" && "${PDB_LOG_FILE}" == "${SDB_REPLAY_LOG_FILE}" && "${SDB_HADR_STATE}" == "PEER" && "${SDB_HADR_CONNECT}" == "CONNECTED" ]]; then
+                    echo "Standby replay log file matches primary, HADR state is PEER and CONNECTED."
+                    break
+                  fi
+                  hadr_peer_count=$((hadr_peer_count+1))
+                  if [ $hadr_peer_count -gt 180 ]; then
+                    echo "ERROR: Timeout waiting for HADR PEER/CONNECTED and matching replay log file after 1800s."
+                    exit 1
+                  fi
+                  sleep 10
+                done
+
+                echo "Removing governor db2.yml on Standby ${SDB_POD}..."
+                oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "rm -f /mnt/blumeta0/home/db2inst1/governor/db2.yml" || exit $?
+
+                echo "Running post upgrade on Standby ${SDB_POD} (db2_update_upgrade --post-upgrade)..."
+                oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2_update_upgrade --post-upgrade" || exit $?
+              fi
 
               # Cleanup HADR upgrade state ConfigMap and annotations once Standby setup starts
               if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then

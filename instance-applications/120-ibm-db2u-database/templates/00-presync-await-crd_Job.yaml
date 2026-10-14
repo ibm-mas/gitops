@@ -215,28 +215,17 @@ spec:
                         echo "Standby pod is already in standby mode. Proceeding with annotation."
                       fi
 
-                      # A previous failed PreSync run may have stopped HADR on the standby
-                      # (line below) without completing, leaving the database in ROLL-FORWARD
-                      # PENDING state (SQL1117N). db2ckupgrade's health check tries to activate
-                      # the database and fails with that error. Detect and resolve it before
-                      # annotating so the operator's job can activate the database cleanly.
-                      echo "Checking if standby database ${DB_NAME} is in roll-forward pending state..."
-                      RF_CHECK=$(oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 activate database ${DB_NAME} 2>&1 || true" 2>/dev/null || true)
-                      if echo "${RF_CHECK}" | grep -q "SQL1117N"; then
-                        echo "Database ${DB_NAME} is in roll-forward pending state. Rolling forward to end of logs and stopping..."
-                        oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                          db2 rollforward database ${DB_NAME} to end of logs and stop
-                        " || true
-                        echo "Verifying database can now be activated..."
-                        RF_CHECK=$(oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 activate database ${DB_NAME} 2>&1 || true" 2>/dev/null || true)
-                        if echo "${RF_CHECK}" | grep -q "SQL1117N"; then
-                          echo "ERROR: Database ${DB_NAME} is still in roll-forward pending state after rollforward attempt. Cannot proceed."
-                          exit 1
-                        fi
-                        echo "Database ${DB_NAME} is no longer in roll-forward pending state."
-                      else
-                        echo "Database ${DB_NAME} is not in roll-forward pending state."
-                      fi
+                      # Before annotating the standby CR for the upgrade check, in both pdb and sdb:
+                      #  - create a non-empty governor db2.yml
+                      #  - stop the wolverine service (wvcli system disable)
+                      for UPGRADE_POD in "c-${DB2_INSTANCE_NAME}-db2u-0" "c-${SDB_INSTANCE_NAME}-db2u-0"; do
+                        echo "Creating governor db2.yml and disabling wolverine on ${UPGRADE_POD}..."
+                        oc exec -n "${DB2_NAMESPACE}" "${UPGRADE_POD}" -- su - db2inst1 -c "
+                          mkdir -p /mnt/blumeta0/home/db2inst1/governor
+                          printf '%s\n' '# Created by gitops for Db2 v11 to v12 upgrade' 'upgrade_in_progress: true' > /mnt/blumeta0/home/db2inst1/governor/db2.yml
+                          wvcli system disable
+                        " || exit $?
+                      done
 
                       MAX_UPGRADE_CHECK_RETRIES=5
                       upgrade_check_attempt=0
@@ -281,53 +270,11 @@ spec:
                           exit 1
                         fi
 
-                        # db2ckupgrade stops HADR internally then tries to activate the database,
-                        # which can leave it in ROLL-FORWARD PENDING (SQL1117N). Resolve before retry.
-                        echo "Checking if standby database ${DB_NAME} is in roll-forward pending state after upgrade check failure..."
-                        RF_CHECK=$(oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2 activate database ${DB_NAME} 2>&1 || true" 2>/dev/null || true)
-                        if echo "${RF_CHECK}" | grep -q "SQL1117N"; then
-                          echo "Database ${DB_NAME} is in roll-forward pending state. Rolling forward to end of logs and stopping..."
-                          oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                            db2 rollforward database ${DB_NAME} to end of logs and stop
-                          " || true
-                          echo "Roll-forward complete."
-                        fi
-
                         echo "Retrying annotation in 30s..."
                         sleep 30
                       done
                       echo "Standby upgrade check step finished."
-
-                      # Annotation check succeeded — clear HADR cfg params on the standby pod
-                      # so the operator can configure them fresh for the v12 upgrade.
-                      echo "Clearing HADR database configuration parameters on standby c-${SDB_INSTANCE_NAME}-db2u-0..."
-                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                        db2 \"UPDATE DB CFG FOR ${DB_NAME} USING HADR_LOCAL_HOST NULL HADR_LOCAL_SVC NULL HADR_REMOTE_HOST NULL HADR_REMOTE_SVC NULL HADR_REMOTE_INST NULL HADR_TARGET_LIST NULL\" || true
-                        db2 deactivate database ${DB_NAME} || true
-                      " 2>/dev/null || true
-                      echo "HADR configuration parameters cleared on standby."
-
-                      echo "Stopping HADR and isolating Standby (c-${SDB_INSTANCE_NAME}-db2u-0)..."
-                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- sv stop governor 2>/dev/null || true
-                      oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                        db2 stop hadr on db ${DB_NAME} || true
-                        db2set DB2COMM=''
-                        db2 force application all
-                        db2 terminate
-                        db2 deactivate database ${DB_NAME} || true
-                      " 2>/dev/null || true
                     fi
-
-                    # 2. Stop HADR on Primary, disable DB2COMM, and deactivate database so operator has exclusive access during rollout
-                    echo "Stopping HADR and isolating Primary (c-${DB2_INSTANCE_NAME}-db2u-0)..."
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- sv stop governor 2>/dev/null || true
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                      db2 stop hadr on db ${DB_NAME} || true
-                      db2set DB2COMM=''
-                      db2 force application all
-                      db2 terminate
-                      db2 deactivate database ${DB_NAME} || true
-                    " 2>/dev/null || true
 
                     # 3. Create upgrade state ConfigMap for PostSync jobs
                     echo "Recording upgrade state in ConfigMap ${UPGRADE_CM}..."
@@ -357,16 +304,6 @@ spec:
                     echo "Waiting for Primary DB (${PRIMARY_DB2_INSTANCE_NAME}) upgrade to complete..."
                     echo "================================================================================"
 
-                    # Isolate local standby database to prevent reconnection contention
-                    DB_NAME="${DB2_DBNAME:-BLUDB}"
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                      db2 stop hadr on db ${DB_NAME} || true
-                      db2set DB2COMM=''
-                      db2 force application all
-                      db2 terminate
-                      db2 deactivate database ${DB_NAME} || true
-                    " 2>/dev/null || true
-
                     wait_count=0
                     while true; do
                       if oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
@@ -383,17 +320,6 @@ spec:
                         fi
                       fi
 
-                      # Also check if primary db2uinstance is already updated to target version with versions in sync and state Ready
-                      if oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-                        PRIMARY_SPEC_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
-                        PRIMARY_STATUS_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
-                        PRIMARY_STATUS_STATE=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
-                        if [[ "${PRIMARY_SPEC_VERSION}" == "${TARGET_DB2_VERSION}" && "${PRIMARY_SPEC_VERSION}" == "${PRIMARY_STATUS_VERSION}" && "${PRIMARY_STATUS_STATE}" == "Ready" ]] && ! oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
-                          echo "Primary DB version is at target (${TARGET_DB2_VERSION}), versions in sync, state=Ready, and upgrade ConfigMap is cleared. Proceeding with Standby sync."
-                          break
-                        fi
-                      fi
-
                       wait_count=$((wait_count+1))
                       if [ $wait_count -gt 180 ]; then
                         echo "ERROR: Timeout waiting for Primary database upgrade after 1800s (30m)."
@@ -403,23 +329,6 @@ spec:
                       echo "Waiting for Primary DB upgrade / ConfigMap ${UPGRADE_CM}... (${wait_count}/180 - $((wait_count*10))s elapsed)"
                       sleep 10
                     done
-
-                    # Primary upgrade is complete. Before ArgoCD applies the new version to the
-                    # standby db2uinstance CR, prepare the standby database:
-                    #  - rollforward to end of logs (clears any pending log apply state)
-                    #  - activate then deactivate cleanly so the operator starts from a clean state
-                    echo ""
-                    echo "================================================================================"
-                    echo "Preparing standby database ${DB_NAME} before CR upgrade..."
-                    echo "================================================================================"
-                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
-                      db2start || true
-                      db2 rollforward db ${DB_NAME} to end of logs and stop || true
-                      db2 activate db ${DB_NAME} || true
-                      db2 deactivate db ${DB_NAME} || true
-                      db2stop force || true
-                    " || true
-                    echo "Standby database prepared for upgrade."
                   fi
                 fi
               fi

@@ -3,6 +3,10 @@ CrowdStrike Falcon Operator
 Installs the CrowdStrike Falcon Operator for node monitoring. See https://github.com/CrowdStrike/falcon-operator
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the CrowdStrike Falcon Operator and deploys a `FalconNodeSensor` on every cluster node for runtime threat detection and response. It requires a valid CrowdStrike Falcon API client ID and secret.
+
 
 
 ## Configuration
@@ -64,7 +68,8 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-### Usage Examples
+## Examples
+
 
 **Basic Falcon operator installation:**
 ```yaml
@@ -118,3 +123,7 @@ For more information, see the [CrowdStrike Falcon Operator documentation](https:
 | `OperatorGroup` | `falcon-operator` | `falcon-operator` | Always | `cluster_admin_role` |
 | `Subscription` | `falcon-operator` | `falcon-operator` | Always | `cluster_admin_role` |
 | `FalconNodeSensor` | `falcon-node-sensor` | `falcon-operator` | Always | `cluster_admin_role` |
+| `ServiceAccount` | `postdelete-delete-csv-sa` | `falcon-operator` | PostDelete hook | `cluster_admin_role` |
+| `Role` | `postdelete-delete-csv-r` | `falcon-operator` | PostDelete hook | `cluster_admin_role` |
+| `RoleBinding` | `postdelete-delete-csv-rb` | `falcon-operator` | PostDelete hook | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `falcon-operator` | PostDelete hook | `cluster_admin_role` |

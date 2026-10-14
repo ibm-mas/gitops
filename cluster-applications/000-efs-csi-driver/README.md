@@ -3,6 +3,10 @@ EFS CSI Driver
 
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the AWS EFS CSI Driver operator to enable EFS-backed persistent volumes in OpenShift. It creates the necessary `OperatorGroup`, `Subscription`, `ClusterCSIDriver`, IAM credential `Secret`, and optional custom `StorageClass` definitions.
+
 
 Installs the AWS EFS CSI Driver operator to enable EFS-backed persistent volumes in OpenShift.
 
@@ -74,7 +78,8 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-### Usage Examples
+## Examples
+
 
 **Basic configuration with IAM role:**
 ```yaml
@@ -128,3 +133,7 @@ storage_class_definitions:
 | `Subscription` | `aws-efs-csi-driver-operator` | `openshift-cluster-csi-drivers` | Always | `cluster_admin_role` |
 | `ClusterCSIDriver` | `efs.csi.aws.com` | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `StorageClass` | Custom EFS storage classes | N/A (cluster-scoped) | When `storage_class_definitions` provided | `cluster_admin_role` |
+| `ServiceAccount` | `postdelete-delete-csv-sa` | `openshift-cluster-csi-drivers` | PostDelete hook | `cluster_admin_role` |
+| `Role` | `postdelete-delete-csv-r` | `openshift-cluster-csi-drivers` | PostDelete hook | `cluster_admin_role` |
+| `RoleBinding` | `postdelete-delete-csv-rb` | `openshift-cluster-csi-drivers` | PostDelete hook | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `openshift-cluster-csi-drivers` | PostDelete hook | `cluster_admin_role` |

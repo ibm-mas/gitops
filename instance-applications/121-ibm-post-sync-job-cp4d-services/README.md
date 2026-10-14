@@ -3,11 +3,25 @@ IBM Post Sync Job CP4D Services
 Instantiated by the [`121-ibm-post-sync-job-cp4d-services.yaml`](https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-instance-root/templates/121-ibm-post-sync-job-cp4d-services.yaml) root application.
 
 <!--docs-include-start-->
+## Overview
+
+This chart runs post-sync Jobs that configure CP4D services after installation, including provisioning service instances and updating AWS Secrets Manager with connection credentials.
+
 
 
 Defines a post-sync Job used to perform CP4D service follow-up operations after selected CP4D services such as Watson Studio Local (WSL), Watson Machine Learning (WML), or SPSS Modeler are installed.
 
 The chart creates namespaced RBAC and a Job in the CP4D operators namespace. The Job waits for CP4D service resources to become ready and applies any required post-install adjustments.
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_post_sync_job_cp4d_services:
+  run_sync_hooks: true
+```
 
 ## Resources Created
 

@@ -3,7 +3,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:1dc8665fddb9546b84290b0615fc7c7017e19516082b35541d41b8ea82df347b" }}
+{{- $_cli_image_digest := "sha256:e8282c6134a059e258f6fb36bfe4c823a44713de0ca8ec60ac63bbf448f8ddf3" }}
 
 {{ $cr_name := .Values.mas_config_name }}
 {{ $cr_kind := .Values.mas_config_kind }}
@@ -99,7 +99,7 @@ spec:
 
                 echo "oc delete resource $RESOURCE in namespace $NAMESPACE "
 
-                # don't want a non-zero rc from oc delete to cause the job to fail (since we then want to try patching out the finalizers)
+                # don't want a non-zero rc from oc delete to cause the job to fail
                 # so, temporarily set +e
                 set +e
                 oc delete $RESOURCE -n $NAMESPACE --timeout=300s --wait=true
@@ -112,6 +112,7 @@ spec:
                 set +e
                 RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
                 set -e
+
                 if [[ -n "${RESOURCE_NAME}" ]]; then
                   echo "$RESOURCE still present, failing job"
                   exit 1
@@ -119,7 +120,6 @@ spec:
 
                 echo "... verified"
                 return 0
-                
               }
 
               

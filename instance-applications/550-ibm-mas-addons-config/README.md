@@ -11,7 +11,11 @@ This chart applies add-on configuration to IBM MAS applications, enabling option
 
 Creates MAS add-on configuration custom resources for optional platform capabilities such as allow lists, additional VPN configuration, enhanced disaster recovery, extensions, replica databases, nonshared cluster settings, application configuration, additional resources, and production database access.
 
-This chart also includes a PostDelete hook Job that removes **all** `GenericAddon` custom resources in the instance core namespace when ArgoCD deletes the application (i.e. full instance deprovision). The job fires only on full application deletion — not on sync-time prunes of individual addons. This ensures all GenericAddon finalizers are cleared before the Suite operator is torn down.
+This chart includes two hook Jobs that handle GenericAddon CR lifecycle:
+
+- **PreSync hook** — runs on every sync. Compares the set of GenericAddon CRs that should exist (based on current values) against what is present in the namespace, and deletes any CR that is no longer desired. This handles the case where an addon is disabled on a live instance (e.g. `cluster_nonshared` set to `false`) — ArgoCD would otherwise stop managing the CR without deleting it, leaving it drifting in the cluster.
+
+- **PostDelete hook** — runs when the entire ArgoCD application is deleted (i.e. full instance deprovision). Deletes all remaining `GenericAddon` CRs in the namespace so their operator-set finalizers are cleared before the Suite operator is torn down.
 
 ## Examples
 
@@ -36,6 +40,7 @@ ibm_mas_addons_config:
 | `GenericAddon` | `<instance_id>-addons-application-configuration` | `mas-<instance_id>-core` | When `application_configuration` is enabled | `application_admin_role` |
 | `GenericAddon` | `<instance_id>-addons-additional-resources` | `mas-<instance_id>-core` | When `additional_resources` is provided | `application_admin_role` |
 | `GenericAddon` | `<instance_id>-addons-production-db-access` | `mas-<instance_id>-core` | When supported production database access settings are present | `application_admin_role` |
+| `Job` | `presync-delete-disabled-addons-<hash>` | `mas-<instance_id>-core` | When `use_postdelete_hooks` and `application_admin_role` are true | `application_admin_role` |
 | `Job` | `postdelete-delete-genericaddons-<hash>` | `mas-<instance_id>-core` | When `use_postdelete_hooks` and `application_admin_role` are true | `application_admin_role` |
 
 ## Configuration

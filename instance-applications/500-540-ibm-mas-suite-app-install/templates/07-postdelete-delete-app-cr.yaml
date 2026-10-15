@@ -10,7 +10,7 @@ Subscription/CSV are only removed after both CRs are confirmed gone.
 Depends on SA/Role in 01-postdelete-crs-resources.yaml.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
-{{- $_cli_image_digest := "sha256:1d41883b658fbc3fc6216f5f7c5ef667c84844756ee2f5fe4cdb0ca4a10b274a" }}
+{{- $_cli_image_digest := "sha256:e8282c6134a059e258f6fb36bfe4c823a44713de0ca8ec60ac63bbf448f8ddf3" }}
 
 {{- $core_ns  := printf "mas-%s-core" .Values.instance_id }}
 {{- $app_ns   := .Values.mas_app_namespace }}
@@ -118,25 +118,41 @@ spec:
                 echo "App CR not found - already removed by operator"
               fi
 
-              # Wait for the AppWorkspace CR to be gone before removing Subscription/CSV.
+              # Delete the AppWorkspace CR so the operator processes its finalizer
               if [[ -n "${WS_CR_KIND}" ]]; then
                 echo "------------------------------------------------------------------"
-                echo "PostDelete: waiting for ${WS_CR_KIND} to be gone in ${CR_NAMESPACE}"
-                WAIT_SECS=0
-                while [[ ${WAIT_SECS} -lt 600 ]]; do
-                  set +e
-                  WS_NAME=$(oc get ${WS_CR_KIND} -n ${CR_NAMESPACE} \
-                    --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
-                  set -e
-                  [[ -z "${WS_NAME}" ]] && break
-                  echo "  ${WS_CR_KIND} still present - waiting for 510-550 postdelete job... ${WAIT_SECS}s elapsed"
-                  sleep 15
-                  WAIT_SECS=$((WAIT_SECS + 15))
-                done
+                echo "PostDelete: ${WS_CR_KIND}.${WS_CR_API_VERSION} in ${CR_NAMESPACE}"
+                set +e
+                WS_NAME=$(oc get ${WS_CR_KIND} -n ${CR_NAMESPACE} \
+                  --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+                set -e
+
                 if [[ -n "${WS_NAME}" ]]; then
-                  echo "WARNING: ${WS_CR_KIND} still present after ${WAIT_SECS}s - proceeding with OLM cleanup anyway"
+                  echo "Deleting ${WS_CR_KIND} ${WS_NAME}..."
+                  set +e
+                  oc delete ${WS_CR_KIND} "${WS_NAME}" \
+                    -n ${CR_NAMESPACE} --wait=false 2>/dev/null
+                  set -e
+
+                  echo "Waiting up to 600s for operator to process workspace finalizer..."
+                  WAIT_SECS=0
+                  while [[ ${WAIT_SECS} -lt 600 ]]; do
+                    set +e
+                    WS_NAME=$(oc get ${WS_CR_KIND} -n ${CR_NAMESPACE} \
+                      --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+                    set -e
+                    [[ -z "${WS_NAME}" ]] && break
+                    sleep 15
+                    WAIT_SECS=$((WAIT_SECS + 15))
+                    echo "  Still waiting... ${WAIT_SECS}s elapsed"
+                  done
+
+                  if [[ -n "${WS_NAME}" ]]; then
+                    echo "ERROR: ${WS_CR_KIND} still present after ${WAIT_SECS}s - operator did not release finalizer"
+                    exit 1
+                  fi
                 else
-                  echo "${WS_CR_KIND} gone - safe to remove OLM resources"
+                  echo "${WS_CR_KIND} not found - already removed"
                 fi
               fi
 

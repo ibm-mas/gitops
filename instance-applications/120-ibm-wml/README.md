@@ -3,8 +3,23 @@ IBM Watson Machine Learning (WML)
 Deploys and configures the CP4D Service, Watson Machine Learning (WML) needed for `MAS Predict`. Deploys WML operator and its dependencies.
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs IBM Watson Machine Learning (WML) on IBM Cloud Pak for Data as part of a MAS deployment, enabling ML model training, deployment, and inference capabilities for MAS applications.
 
 
+
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_wml:
+  channel: v4.8
+  install_plan: Automatic
+```
 
 ## Resources Created
 

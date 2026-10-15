@@ -3,6 +3,10 @@ Cluster Logging Operator
 Installs the Cluster Logging Operator. For further info see https://docs.openshift.com/container-platform/4.12/observability/logging/cluster-logging.html (replace version in URL with OpenShift version)
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the OpenShift Cluster Logging Operator and configures log collection and forwarding for cluster-level logs including application, infrastructure, and audit log streams.
+
 
 
 Also installs log forwarder for non-MCSP accounts or when indicated.
@@ -144,6 +148,15 @@ cluster_logging_operator:
 
 For more information, see the [OpenShift Cluster Logging documentation](https://docs.openshift.com/container-platform/latest/observability/logging/cluster-logging.html).
 
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+# No additional values required.
+```
+
 ## Resources Created
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
@@ -169,5 +182,8 @@ For more information, see the [OpenShift Cluster Logging documentation](https://
 | `ConfigMap` | `syslog-forwarder` | `openshift-logging` | When `setup_log_forwarding` is true | `cluster_admin_role` |
 | `Service` | `syslog-forwarder` | `openshift-logging` | When `setup_log_forwarding` is true | `cluster_admin_role` |
 | `Deployment` | `syslog-forwarder` | `openshift-logging` | When `setup_log_forwarding` is true | `cluster_admin_role` |
+| `Role` | `postdelete-delete-csv-r` | `openshift-logging` | PostDelete hook | `cluster_admin_role` |
+| `RoleBinding` | `postdelete-delete-csv-rb` | `openshift-logging` | PostDelete hook | `cluster_admin_role` |
+| `Job` | `postdelete-delete-csv-job` | `openshift-logging` | PostDelete hook | `cluster_admin_role` |
 
 **Note:** The syslog forwarder resources are only created when `setup_log_forwarding` is enabled. The `ClusterLogForwarder` resource is created for both supported operator version ranges, but the API group and collector RBAC differ between channel versions.

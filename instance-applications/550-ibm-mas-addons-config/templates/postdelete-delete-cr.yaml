@@ -1,22 +1,33 @@
-{{- if .Values.application_admin_role }}
-{{- if .Values.use_postdelete_hooks }}
+{{- if and (.Values.use_postdelete_hooks) (.Values.application_admin_role) }}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
 {{- $_cli_image_digest := "sha256:e8282c6134a059e258f6fb36bfe4c823a44713de0ca8ec60ac63bbf448f8ddf3" }}
 
-{{- $_addon_type := "additional-resources" }}
-{{- $_addon_cr_name := printf "%s-addons-%s" .Values.instance_id $_addon_type }}
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "postdelete-delete-genericaddons" }}
 
-{{ $job_name := printf "postdelete-delete-cr-job-%s" $_addon_cr_name }}
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a new hook resource to be created.
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
 
 # NOTE: depends on resources created in ibm-mas-suite chart (01-postdelete-crs-resources)
 # The values below must align with the values in that file
-{{ $role_name := "postdelete-delete-cr-r" }}
 {{ $sa_name :=   "postdelete-delete-cr-sa" }}
-{{ $rb_name :=   "postdelete-delete-cr-rb" }}
-{{ $np_name :=   "postdelete-delete-cr-np" }}
 {{ $job_label := "postdelete-delete-cr-job" }}
 {{ $ns := printf "mas-%s-core" .Values.instance_id }}
 
@@ -24,17 +35,16 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $job_name }}
+  name: {{ $_job_name }}
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PostDelete
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  ttlSecondsAfterFinished: 300
   template:
     metadata:
       labels:
@@ -57,56 +67,62 @@ spec:
           env:
             - name: CR_NAMESPACE
               value: {{ $ns }}
-            - name: CR_NAME
-              value: {{ $_addon_cr_name }}
-            - name: CR_API_VERSION
-              value: addons.mas.ibm.com/v1
-            - name: CR_KIND
-              value: GenericAddon
           command:
             - /bin/sh
             - -c
             - |
+
               set -e
-              function delete_oc_resource(){
-                RESOURCE=$1
-                NAMESPACE=$2
+              echo
+              echo "================================================================================"
+              echo "PostDelete: deleting all GenericAddon CRs in namespace ${CR_NAMESPACE}"
+              echo "================================================================================"
+              echo
+              echo "Note: this job fires only when the entire addons ArgoCD application is deleted"
+              echo "(i.e. full instance deprovision). All GenericAddons in the namespace must be"
+              echo "deleted so their operator-set finalizers are cleared before the Suite is torn down."
+              echo
+
+              # GenericAddons are optional — any subset (or none) may be present.
+              set +e
+              CR_NAMES=$(oc get genericaddons.addons.mas.ibm.com -n "${CR_NAMESPACE}" \
+                -o=jsonpath="{.items[*].metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -z "${CR_NAMES}" ]]; then
+                echo "No GenericAddon CRs found in ${CR_NAMESPACE}, nothing to delete."
+                exit 0
+              fi
+
+              echo "Found GenericAddon CRs: ${CR_NAMES}"
+
+              for CR_NAME in ${CR_NAMES}; do
                 echo
                 echo "------------------------------------------------------------------"
-                echo "Check if resource $RESOURCE is present in namespace $NAMESPACE "
-                # don't want a non-zero rc from oc delete to cause the job to fail
-                # so, temporarily set +e
+                echo "Deleting GenericAddon ${CR_NAME} in namespace ${CR_NAMESPACE}"
                 set +e
-                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
+                oc delete genericaddons.addons.mas.ibm.com "${CR_NAME}" \
+                  -n "${CR_NAMESPACE}" --timeout=300s --wait=true
                 set -e
-                if [[ -z "${RESOURCE_NAME}" ]]; then
-                  echo "$RESOURCE not found, skipping"
-                  return 0
-                fi
-                echo "oc delete resource $RESOURCE in namespace $NAMESPACE "
-                # don't want a non-zero rc from oc delete to cause the job to fail (since we then want to try patching out the finalizers)
-                # so, temporarily set +e
+
+                echo "Verifying GenericAddon ${CR_NAME} is absent..."
                 set +e
-                oc delete $RESOURCE -n $NAMESPACE --timeout=300s --wait=true
-                return_code=$?
+                STILL_PRESENT=$(oc get genericaddons.addons.mas.ibm.com "${CR_NAME}" \
+                  -n "${CR_NAMESPACE}" -o=jsonpath="{.metadata.name}" 2>/dev/null)
                 set -e
-                echo "Verify that resource $RESOURCE is now absent in namespace $NAMESPACE "
-                # don't want a non-zero rc from oc delete to cause the job to fail
-                # so, temporarily set +e
-                set +e
-                RESOURCE_NAME=$(oc get $RESOURCE -n $NAMESPACE -o=jsonpath="{.metadata.name}")
-                set -e
-                if [[ -n "${RESOURCE_NAME}" ]]; then
-                  echo "$RESOURCE still present, failing job"
+
+                if [[ -n "${STILL_PRESENT}" ]]; then
+                  echo "GenericAddon ${CR_NAME} still present, failing job"
                   exit 1
                 fi
                 echo "... verified"
-                return 0
-                
-              }
-              delete_oc_resource "${CR_KIND} ${CR_NAME}" "${CR_NAMESPACE}"
+              done
+
+              echo
+              echo "All GenericAddon CRs deleted successfully."
+
       restartPolicy: Never
       serviceAccountName: {{ $sa_name }}
+
   backoffLimit: 4
-{{- end }}
 {{- end }}

@@ -1,4 +1,15 @@
 {{- if and (.Values.use_postdelete_hooks) (.Values.application_admin_role) }}
+{{- /*
+PostSync hook — runs after every successful sync.
+Deletes any GenericAddon CR that is no longer rendered by the current values
+(i.e. the addon has been disabled). ArgoCD does not prune these CRs automatically
+when prune:false (non-deprovision mode), so without this hook a disabled addon
+would drift — gone from ArgoCD's managed state but still present in the cluster.
+
+This hook runs AFTER all desired CRs have been applied (sync-waves 551–559),
+so the operator has already reconciled the active addons before cleanup starts.
+If the sync itself fails, this hook does not run — desired state is never compromised.
+*/}}
 
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
@@ -8,7 +19,7 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 {{- /*
 Meaningful prefix for the job resource name. Must be under 52 chars to leave room for the 11 chars reserved for '-' and $_job_hash.
 */}}
-{{- $_job_name_prefix := "presync-delete-disabled-addons" }}
+{{- $_job_name_prefix := "postsync-delete-disabled-addons" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -90,7 +101,7 @@ metadata:
   name: {{ $_job_name }}
   namespace: {{ $ns }}
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
 {{- if .Values.custom_labels }}
   labels:
@@ -131,7 +142,7 @@ spec:
               set -e
               echo
               echo "================================================================================"
-              echo "PreSync: removing disabled GenericAddon CRs from namespace ${CR_NAMESPACE}"
+              echo "PostSync: removing disabled GenericAddon CRs from namespace ${CR_NAMESPACE}"
               echo "================================================================================"
               echo
               echo "Desired CRs : ${DESIRED_CR_NAMES}"

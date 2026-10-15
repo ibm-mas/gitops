@@ -10,7 +10,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:e8282c6134a059e258f6fb36bfe4c823a44713de0ca8ec60ac63bbf448f8ddf3" }}
+{{- $_cli_image_digest := "sha256:135f1a472791c97b13ec37b8a480ff2fa463ba17261fbebed53814528d9f2f89" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -27,7 +27,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v5" }}
+{{- $_job_version := "v8" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -130,6 +130,9 @@ spec:
             - name: CIS_SERVICE_NAME
               value: "{{ .Values.cis_service_name }}"
 
+            - name: DEVOPS_MONGO_URI
+              value: "{{ .Values.devops_mongo_uri }}"
+
             - name: UPDATE_DNS_ENTRIES
               value: "{{ .Values.update_dns_entries }}"
             - name: DELETE_WILDCARDS
@@ -167,8 +170,27 @@ spec:
               export CIS_APIKEY=$(cat /etc/mas/creds/suite_dns/cis_apikey)
               export SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/suite_dns/sm_aws_access_key_id)
               export SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/suite_dns/sm_aws_secret_access_key)
+              export DEVOPS_MONGO_URI=$(cat /etc/mas/creds/suite_dns/devops_mongo_uri 2>/dev/null || true)
               source /mascli/functions/gitops_utils
               sm_login
+
+              # If DEVOPS_MONGO_URI contains an unexpanded AWS Secrets Manager path reference (<path:...>), resolve it via SM
+              if [[ "${DEVOPS_MONGO_URI}" == *"<path:"* ]]; then
+                _sm_path=$(echo "${DEVOPS_MONGO_URI}" | sed -e 's/.*<path://' -e 's/>.*//')
+                if [[ "${_sm_path}" == *"#"* ]]; then
+                  _sm_secret_id="${_sm_path%%#*}"
+                  _sm_key="${_sm_path##*#}"
+                else
+                  _sm_secret_id="${_sm_path%:*}"
+                  _sm_key="${_sm_path##*:}"
+                fi
+                _sm_key=$(echo "${_sm_key}" | awk '{print $1}')
+                export DEVOPS_MONGO_URI=$(sm_get_secret_value "${_sm_secret_id}" "${_sm_key}" 2>/dev/null || true)
+              fi
+
+              if [[ -z "${DEVOPS_MONGO_URI}" ]]; then
+                export DEVOPS_MONGO_URI=$(sm_get_secret_value "${ACCOUNT_ID}${SECRETS_KEY_SEPERATOR}${CLUSTER_ID}${SECRETS_KEY_SEPERATOR}devops" "devops_mongo_uri" 2>/dev/null || true)
+              fi
 
               #if DNS name is set in AWS SM path account/cluster/public-elb (key=dns), set its value to OCP_INGRESS
               export PUBLIC_ELB_DNS_NAME_FILE="/tmp/public-elb-dns-name-file.json"
@@ -207,6 +229,7 @@ spec:
               echo "SM_AWS_REGION ....................... ${COLOR_MAGENTA}${SM_AWS_REGION}"
               echo "SM_AWS_ACCESS_KEY_ID ................ ${COLOR_MAGENTA}${SM_AWS_ACCESS_KEY_ID:0:4}<snip>"
               echo "SM_AWS_SECRET_ACCESS_KEY ............ ${COLOR_MAGENTA}${SM_AWS_SECRET_ACCESS_KEY:0:4}<snip>"
+              echo "Devops Mongo Uri .................... ${COLOR_MAGENTA}${DEVOPS_MONGO_URI:0:8}<snip>"
 
               echo ""
               echo "================================================================================"

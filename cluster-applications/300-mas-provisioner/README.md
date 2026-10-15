@@ -3,6 +3,10 @@ IBM MAS Provisioner (For Internal Use Only)
 Installs the MAS Provisioner service which sends a notification when an order comes through AWS market place. The MAS provisioner service broker is intended for internal use only.
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the MAS Provisioner, which automates the provisioning lifecycle for IBM Maximo Application Suite instances including installation, upgrade, and deprovisioning operations.
+
 
 
 ## Configuration
@@ -202,6 +206,15 @@ mas_provisioner:
 - **Security**: Always use mTLS in production environments
 - **Monitoring**: Enable Instana integration for production deployments
 - **Alerting**: Configure OCM alerts for critical notifications
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+# No additional values required.
+```
 
 ## Resources Created
 

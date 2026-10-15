@@ -7,6 +7,30 @@ Installs the `ibm-sls` operator and creates an instance of the `LicenseService`.
 
 Contains a job that runs last (`07-postsync-update-sm_Job.yaml`). This registers the `${ACCOUNT_ID}/${ICN}/${SAAS_SUB_ID}/sls` secret in the **Secrets Vault** used to share some information that is generated at runtime with other ArgoCD Applications.
 
+## Configuration
+
+### Values
+
+```yaml
+ibm_sls:
+  sls_namespace: ibm-sls
+  sls_channel: 3.x
+  sls_install_plan: Automatic
+```
+
+## Examples
+
+### Minimal SLS installation
+
+```yaml
+merge-key: "my-account/icn/my-cluster/sls1"
+ibm_sls:
+  sls_namespace: ibm-sls
+  sls_channel: 3.x
+  sls_install_plan: Automatic
+  mongo_admin_password: "<path:arn:aws:secretsmanager:us-east-1:123456789012:secret:my-account/my-cluster/mongo#password>"
+```
+
 ## Resources Created
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |

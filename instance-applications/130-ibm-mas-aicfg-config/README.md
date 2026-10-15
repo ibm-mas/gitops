@@ -3,9 +3,23 @@ AI Service Configuration for MAS Core Platform
 Create an AiCfg CR instance and associated credentials secret for use by MAS.
 
 <!--docs-include-start-->
+## Overview
+
+This chart configures the AI Service connection settings for a MAS instance, enabling MAS applications to integrate with the IBM AI broker service.
+
 
 
 Contains a post-delete hook (`postdelete-delete-cr.yaml`) that will ensure the config CR is deleted when the ArgoCD application managing this chart is deleted (this will not happen by default as the config CR is asserted to be owned by the `Suite` CR by the MAS entity managers).
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_mas_aicfg_config:
+  ai_service_url: "https://aiservice.example.com"
+```
 
 ## Resources Created
 

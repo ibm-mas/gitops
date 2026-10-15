@@ -3,7 +3,22 @@ IBM Cloud Pak for Data Operator (CPD)
 Deploys and configures CPD Platform Operator
 
 <!--docs-include-start-->
+## Overview
 
+This chart installs the IBM Cloud Pak for Data operators into the cluster, providing the operator framework required before CP4D and its services can be deployed.
+
+
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_cp4d_operators:
+  channel: v4.8
+  install_plan: Automatic
+```
 
 ## Resources Created
 

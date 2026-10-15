@@ -3,6 +3,10 @@ Group Sync Operator
 Installs the Group Sync Operator. Minimum required version: 0.0.31
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the Group Sync Operator (minimum version 0.0.31) and configures it to synchronize user groups from IBM Security Verify into OpenShift on a defined cron schedule.
+
 
 
 ## Configuration
@@ -59,7 +63,8 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-### Usage Examples
+## Examples
+
 
 **Basic group sync configuration:**
 ```yaml

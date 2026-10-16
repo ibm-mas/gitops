@@ -3,19 +3,34 @@ IBM Analytics Engine Powered by Apache Spark (Spark)
 Deploys and configures the CP4D Service, IBM Analytics Engine Powered by Apache Spark (Spark). Deploys the Spark operator and its dependencies.
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs IBM Analytics Engine powered by Apache Spark on Cloud Pak for Data, enabling large-scale distributed data processing for MAS analytics and AI workloads.
+
 
 Spark extends jupyter notebooks features inside Watson Studio notebooks which can be leveraged by Maximo Predict data sets.
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_spark:
+  channel: v4.8
+  install_plan: Automatic
+```
 
 ## Resources Created
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |
 |--------------|---------------|-----------|-----------|--------------|
-| `Subscription` | Spark operator subscription | CP4D instance namespace | Always | `application_admin_role` |
-| `AnalyticsEngine` | Spark service CR | CP4D instance namespace | Always | `application_admin_role` |
+| `Subscription` | Spark operator subscription | CP4D operators namespace | CPD < 5.3.1 | `application_admin_role` |
+| `AnalyticsEngine` | Spark service CR | CP4D instance namespace | CPD < 5.3.1 | `application_admin_role` |
 | `ServiceAccount` | Spark control-plane service account | CP4D instance namespace | When control-plane job is enabled | `application_admin_role` |
 | `ClusterRole` | Spark control-plane cluster roles | N/A (cluster-scoped) | When control-plane job is enabled | `application_admin_role` |
 | `ClusterRoleBinding` | Spark control-plane cluster role binding | N/A (cluster-scoped) | When control-plane job is enabled | `application_admin_role` |
-| `Job` | Spark control-plane job | CP4D instance namespace | When control-plane job is enabled | `application_admin_role` |
+| `Job` | Spark Helm install job | CP4D operators namespace | CPD >= 5.3.1 | `application_admin_role` |
 
 ## Configuration
 

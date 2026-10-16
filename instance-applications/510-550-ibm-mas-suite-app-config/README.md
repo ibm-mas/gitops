@@ -3,8 +3,23 @@ MAS Application Configuration
 Generic chart for configuring a workspace for a MAS application (a.k.a "activating" the MAS application).
 
 <!--docs-include-start-->
+## Overview
+
+This chart applies application-level configuration to IBM MAS applications (Manage, Monitor, IoT, etc.) after they have been installed, including workspace binding, database, and integration settings.
+
 
 Certain templates are enabled only for specific MAS applications (`mas_app_id`).
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_mas_suite_app_config:
+  mas_instance_id: inst1
+  mas_app_id: manage
+```
 
 ## Resources Created
 

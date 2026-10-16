@@ -3,9 +3,25 @@ SMTP Configuration for MAS Core Platform
 Create a SmtpCfg CR instance and associated credentials secret for use by MAS.
 
 <!--docs-include-start-->
+## Overview
+
+This chart configures the SMTP connection settings for IBM MAS, enabling the suite to send email notifications and alerts through an external mail server.
+
 
 
 Contains a post-delete hook (`postdelete-delete-cr.yaml`) that will ensure the config CR is deleted when the ArgoCD application managing this chart is deleted (this will not happen by default as the config CR is asserted to be owned by the `Suite` CR by the MAS entity managers).
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_mas_smtp_config:
+  smtp_host: smtp.example.com
+  smtp_port: "587"
+  from_address: mas@example.com
+```
 
 ## Resources Created
 

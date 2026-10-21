@@ -88,10 +88,10 @@ spec:
               - name: argo.instance
                 value: "{{ .Values.argo.instance }}"
 {{- end }}
-                {{- if and .Values.notifications .Values.notifications.slack_channel_id }}
+{{- if and .Values.notifications .Values.notifications.slack_channel_id }}
               - name: "notifications.slack_channel_id"
                 value: "{{ .Values.notifications.slack_channel_id }}"
-                {{- end }}
+{{- end }}
               - name: argo.projects.rootapps
                 value: "{{ .Values.argo.projects.rootapps }}"
               - name: argo.projects.apps
@@ -111,7 +111,9 @@ spec:
         namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
-          prune: {{ `{{ if (and .ibm_aiservice_tenant (hasKey .ibm_aiservice_tenant "auto_delete")) }}{{ .ibm_aiservice_tenant.auto_delete }}{{ else }}false{{ end }}` }}
+          {{- if .Values.auto_delete }}
+          prune: true
+          {{- end }}
           selfHeal: true
         syncOptions:
           - CreateNamespace=false

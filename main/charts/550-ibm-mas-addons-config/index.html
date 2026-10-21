@@ -257,7 +257,15 @@
 <h3 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">¤</a></h3>
 <p>This chart applies add-on configuration to IBM MAS applications, enabling optional feature modules and integration settings beyond the base application installation.</p>
 <p>Creates MAS add-on configuration custom resources for optional platform capabilities such as allow lists, additional VPN configuration, enhanced disaster recovery, extensions, replica databases, nonshared cluster settings, application configuration, additional resources, and production database access.</p>
-<p>This chart also includes a post-delete cleanup Job that removes generated <code>GenericAddon</code> custom resources when ArgoCD deletes the application and post-delete hooks are enabled.</p>
+<p>This chart includes two hook Jobs that handle GenericAddon CR lifecycle:</p>
+<ul>
+<li>
+<p><strong>PostSync hook</strong> — runs after every successful sync. First, ArgoCD applies all desired CRs (waves 551–559), then this job deletes any GenericAddon CR that is no longer rendered by the current values. This handles the case where an addon is disabled on a live instance (e.g. <code>cluster_nonshared</code> set to <code>false</code>) — ArgoCD would otherwise stop managing the CR without deleting it, leaving it drifting in the cluster. Running after the sync ensures the desired state is fully established before cleanup, and means a cleanup failure cannot block the sync itself.</p>
+</li>
+<li>
+<p><strong>PostDelete hook</strong> — runs when the entire ArgoCD application is deleted (i.e. full instance deprovision). Deletes all remaining <code>GenericAddon</code> CRs in the namespace so their operator-set finalizers are cleared before the Suite operator is torn down.</p>
+</li>
+</ul>
 <h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">¤</a></h3>
 <h4 id="minimal-configuration">Minimal configuration<a class="headerlink" href="#minimal-configuration" title="Permanent link">¤</a></h4>
 <pre><code class="language-yaml">merge-key: "my-account/my-cluster"
@@ -341,9 +349,16 @@ ibm_mas_addons_config:
 </tr>
 <tr>
 <td><code>Job</code></td>
-<td><code>postdelete-delete-cr-job-&lt;instance_id&gt;-addons-additional-resources</code></td>
+<td><code>postsync-delete-disabled-addons-&lt;hash&gt;</code></td>
 <td><code>mas-&lt;instance_id&gt;-core</code></td>
-<td>When <code>use_postdelete_hooks</code> is true</td>
+<td>When <code>use_postdelete_hooks</code> and <code>application_admin_role</code> are true</td>
+<td><code>application_admin_role</code></td>
+</tr>
+<tr>
+<td><code>Job</code></td>
+<td><code>postdelete-delete-genericaddons-&lt;hash&gt;</code></td>
+<td><code>mas-&lt;instance_id&gt;-core</code></td>
+<td>When <code>use_postdelete_hooks</code> and <code>application_admin_role</code> are true</td>
 <td><code>application_admin_role</code></td>
 </tr>
 </tbody>

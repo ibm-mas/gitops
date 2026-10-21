@@ -18,7 +18,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:e8282c6134a059e258f6fb36bfe4c823a44713de0ca8ec60ac63bbf448f8ddf3" }}
+{{- $_cli_image_digest := "sha256:d9b9e5151413d08b79a45a0b657ecf48ae4eee30cb3bc997e6ccba1a8eb8f958" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -35,8 +35,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-
-{{- $_job_version := "v24" }}
+{{- $_job_version := "v25" }}
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
 This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
@@ -323,6 +322,7 @@ spec:
                   echo ""
                   echo "... attempt ${c} of ${RETRIES}"
                   oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc '/db2u/scripts/apply-db2cfg-settings.sh --setting all | tee /tmp/apply-db2cfg-settings.log' db2inst1
+                  oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "/db2u/scripts/apply-db-cfg.sh -file /mnt/blumeta0/db2/scripts/db2u-db.cfg -db ${DB2_DBNAME} -online | tee /tmp/apply-db-cfg-online.log" db2inst1
                   # no useful info in return code of this script
 
                   rc=0

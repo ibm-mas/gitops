@@ -215,43 +215,38 @@ data:
 
     @pytest.fixture(scope="session")
     def mvi_host(mvi_route):
+      # Use the internal k8s service URL to avoid going through the external CIS proxy,
+      # which blocks requests from cluster egress IPs not in the CIS WAF allowlist.
+      # The route's spec.to.name gives us the backing service name.
       try:
-        yield mvi_route['spec']['host']
+        svc_name = mvi_route['spec']['to']['name']
+        yield f"{svc_name}.{mvi_namespace}.svc:8443"
       except KeyError as e:
-        assert False, f"Unable to determine MVI host; spec.host key not present in {mvi_route_name}/{mvi_namespace}: {mvi_route}. Error details: {e}"
+        assert False, f"Unable to determine MVI internal service; spec.to.name key not present in {mvi_route_name}/{mvi_namespace}: {mvi_route}. Error details: {e}"
 
     @pytest.fixture(scope="session")
     def mvi_host_ca_filepath(mvi_route):
 
-      # Read the certificate field from the MVI Route. 
-      # This may include CA certificates that we need in order to trust the certificates presented by the external MVI endpoint.
+      mvi_route_destinationCACertificate = None
+
+      # Use the destinationCACertificate from the route for internal service TLS verification.
+      # This is the CA that signed the internal service cert, needed when bypassing the
+      # external CIS proxy and hitting the k8s service directly.
       try:
-        mvi_route_certificate = mvi_route['spec']['tls']['certificate']
+        mvi_route_destinationCACertificate = mvi_route['spec']['tls']['destinationCACertificate']
       except KeyError as e:
         pass
 
-      # Read the caCertificate field from the MVI Route. 
-      # This may include CA certificates that we need in order to trust the certificates presented by the external MVI endpoint.
-      try:
-        mvi_route_caCertificate = mvi_route['spec']['tls']['caCertificate']
-      except KeyError as e:
-        pass
-
-      # Load default CA bundle. This will include certs for well-known CAs. This ensures that we will
-      # trust the certificates presented by the external MVI endpoints when MAS is configured to use
-      # an external frontend like CIS.
+      # Load default CA bundle as fallback for well-known CAs.
       with open(certifi.where(), 'rb') as default_ca:
         default_ca_content = default_ca.read()
 
-      # Combine all of the above into a single .pem file that we can use when issuing HTTP requests
+      # Combine into a single .pem file for HTTP requests
       chain_file = tempfile.NamedTemporaryFile(delete=False)
       try:
-        
-        if mvi_route_certificate:
-          chain_file.write(mvi_route_certificate.encode())
-        
-        if mvi_route_caCertificate:
-          chain_file.write(mvi_route_caCertificate.encode())
+
+        if mvi_route_destinationCACertificate:
+          chain_file.write(mvi_route_destinationCACertificate.encode())
 
         chain_file.write(default_ca_content)
 

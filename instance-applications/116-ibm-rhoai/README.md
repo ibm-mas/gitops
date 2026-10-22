@@ -3,6 +3,10 @@ IBM RHOAI (Red Hat OpenShift AI)
 Deploy and configure Red Hat OpenShift AI with configurable version
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs Red Hat OpenShift AI (RHOAI) on the cluster, providing a managed AI/ML platform with Jupyter notebooks, model serving, and data science pipeline capabilities.
+
 
 ## Migration from ODH to RHOAI
 
@@ -15,6 +19,16 @@ To migrate from OpenDataHub (ODH) to Red Hat OpenShift AI (RHOAI):
 5. **Sync RHOAI**: Sync the RHOAI application in ArgoCD
 
 **Note**: The migration is safe because shared resources (aiservice namespace, ServiceMesh, Authorino, Serverless operators, and NetworkPolicies) have ArgoCD protection annotations (`Prune=false,Delete=false`) that prevent deletion during ODH uninstallation. RHOAI will reuse these existing resources.
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_rhoai:
+  install: true
+```
 
 ## Resources Created
 

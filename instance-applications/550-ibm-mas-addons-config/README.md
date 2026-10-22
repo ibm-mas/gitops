@@ -3,11 +3,29 @@ MAS Addons Configuration
 Instantiated by the [`550-ibm-mas-addons-config.yaml`](https://github.com/ibm-mas/gitops/tree/main/root-applications/ibm-mas-instance-root/templates/550-ibm-mas-addons-config.yaml) root application.
 
 <!--docs-include-start-->
+## Overview
+
+This chart applies add-on configuration to IBM MAS applications, enabling optional feature modules and integration settings beyond the base application installation.
+
 
 
 Creates MAS add-on configuration custom resources for optional platform capabilities such as allow lists, additional VPN configuration, enhanced disaster recovery, extensions, replica databases, nonshared cluster settings, application configuration, additional resources, and production database access.
 
-This chart also includes a post-delete cleanup Job that removes generated `GenericAddon` custom resources when ArgoCD deletes the application and post-delete hooks are enabled.
+This chart includes two hook Jobs that handle GenericAddon CR lifecycle:
+
+- **PostSync hook** — runs after every successful sync. First, ArgoCD applies all desired CRs (waves 551–559), then this job deletes any GenericAddon CR that is no longer rendered by the current values. This handles the case where an addon is disabled on a live instance (e.g. `cluster_nonshared` set to `false`) — ArgoCD would otherwise stop managing the CR without deleting it, leaving it drifting in the cluster. Running after the sync ensures the desired state is fully established before cleanup, and means a cleanup failure cannot block the sync itself.
+
+- **PostDelete hook** — runs when the entire ArgoCD application is deleted (i.e. full instance deprovision). Deletes all remaining `GenericAddon` CRs in the namespace so their operator-set finalizers are cleared before the Suite operator is torn down.
+
+## Examples
+
+### Minimal configuration
+
+```yaml
+merge-key: "my-account/my-cluster"
+ibm_mas_addons_config:
+  mas_instance_id: inst1
+```
 
 ## Resources Created
 
@@ -22,7 +40,8 @@ This chart also includes a post-delete cleanup Job that removes generated `Gener
 | `GenericAddon` | `<instance_id>-addons-application-configuration` | `mas-<instance_id>-core` | When `application_configuration` is enabled | `application_admin_role` |
 | `GenericAddon` | `<instance_id>-addons-additional-resources` | `mas-<instance_id>-core` | When `additional_resources` is provided | `application_admin_role` |
 | `GenericAddon` | `<instance_id>-addons-production-db-access` | `mas-<instance_id>-core` | When supported production database access settings are present | `application_admin_role` |
-| `Job` | `postdelete-delete-cr-job-<instance_id>-addons-additional-resources` | `mas-<instance_id>-core` | When `use_postdelete_hooks` is true | `application_admin_role` |
+| `Job` | `postsync-delete-disabled-addons-<hash>` | `mas-<instance_id>-core` | When `use_postdelete_hooks` and `application_admin_role` are true | `application_admin_role` |
+| `Job` | `postdelete-delete-genericaddons-<hash>` | `mas-<instance_id>-core` | When `use_postdelete_hooks` and `application_admin_role` are true | `application_admin_role` |
 
 ## Configuration
 

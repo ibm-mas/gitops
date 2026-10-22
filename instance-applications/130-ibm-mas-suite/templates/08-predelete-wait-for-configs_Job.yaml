@@ -7,7 +7,9 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:020f1925421de13beaf439aa09181209875ed3791824bcaaf1daaf910c725266" }}
+
+{{- $_cli_image_digest := "sha256:d9b9e5151413d08b79a45a0b657ecf48ae4eee30cb3bc997e6ccba1a8eb8f958" }}
+
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -20,7 +22,9 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v6" }}
+
+{{- $_job_version := "v7" }}
+
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
@@ -48,7 +52,9 @@ metadata:
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PreDelete
+
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation,HookFailed
+
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -70,7 +76,9 @@ metadata:
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/hook: PreDelete
+
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation,HookFailed
+
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -85,6 +93,7 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: PreDelete
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation,HookFailed
+
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -112,6 +121,8 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: PreDelete
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation,HookFailed
+
+
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
@@ -190,12 +201,15 @@ spec:
               while true; do
                 REMAINING=0
                 for CR_TYPE in \
+
                   mongocfgs.config.mas.ibm.com \
                   slscfgs.config.mas.ibm.com \
                   bascfgs.config.mas.ibm.com \
                   idpcfgs.config.mas.ibm.com \
                   smtpcfgs.config.mas.ibm.com \
                   appcfgs.config.mas.ibm.com; do
+
+
                   COUNT=$(oc get "${CR_TYPE}" -n "${CORE_NS}" --no-headers 2>/dev/null | grep -v "^$" | wc -l || echo "0")
                   REMAINING=$(( REMAINING + COUNT ))
                 done
@@ -210,6 +224,10 @@ spec:
                 wait_period=$(( wait_period + 30 ))
                 if [ "${wait_period}" -gt 3600 ]; then
                   echo "Timed out after 60 minutes waiting for suite config CRs to be deleted."
+
+                  # If a config CR is stuck in Terminating, the responsible operator may not have picked up the deletionTimestamp.
+                  # Restarting the operator pod via the ArgoCD UI will force a fresh reconcile and should unblock the deletion.
+                  # As a last resort, the finalizer can be removed manually
                   exit 1
                 fi
 
@@ -218,4 +236,6 @@ spec:
               done
   backoffLimit: 2
 
+
 {{- end }}
+

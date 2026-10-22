@@ -9,6 +9,17 @@ Installs the `ibm-sls` operator and creates an instance of the `LicenseService`.
 
 Contains a job that runs last (`07-postsync-update-sm_Job.yaml`). This registers the `${ACCOUNT_ID}/${CLUSTER_ID}/${INSTANCE_ID}/sls` secret in the **Secrets Vault** used to share some information that is generated at runtime with other ArgoCD Applications.
 
+## Examples
+
+### Minimal SLS configuration
+
+```yaml
+merge-key: "my-account/my-cluster/inst1"
+ibm_sls:
+  sls_url: "https://sls.example.com"
+  sls_tls_crt_local_file_path: "/tmp/sls.crt"
+```
+
 ## Resources Created
 
 | Resource Type | Resource Name | Namespace | Condition | Installed By |

@@ -3,6 +3,10 @@ Redhat OpenShift cert-manager Operator
 Installs Redhat OpenShift cert-manager Operator in cert-manager-operator namespace
 
 <!--docs-include-start-->
+## Overview
+
+This chart installs the Red Hat OpenShift cert-manager Operator into the `cert-manager-operator` namespace. It creates the `OperatorGroup`, `Subscription`, cluster-scoped RBAC, and an optional post-sync `Job` that updates AWS Secrets Manager with cluster TLS information.
+
 
 
 ## Configuration
@@ -49,7 +53,8 @@ sm:                             # Secrets Manager configuration
 
 For complete documentation of all base cluster values including optional fields like `notifications`, `custom_labels`, `devops`, and `cli_image_repo`, see the [Cluster Base Values Reference](../../docs/reference/cluster-base-values.md).
 
-### Usage Examples
+## Examples
+
 
 **Basic configuration with automatic updates:**
 ```yaml

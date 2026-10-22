@@ -111,9 +111,7 @@ spec:
         namespace: {{ .Values.argo.namespace }}
       syncPolicy:
         automated:
-          {{- if (or (eq (toString .Values.auto_delete) "true") (and .Values.ibm_aiservice_tenant (eq (toString .Values.ibm_aiservice_tenant.auto_delete) "true"))) }}
-          prune: true
-          {{- end }}
+          prune: "{{ `{{ if and .ibm_aiservice_tenant (eq (.ibm_aiservice_tenant.auto_delete | toString | lower) 'true') }}true{{ else }}false{{ end }}` }}"
           selfHeal: true
         syncOptions:
           - CreateNamespace=false

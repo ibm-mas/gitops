@@ -62,10 +62,6 @@ customization_archive_secret_names:
 manage_logging_secret_name: string
 manage_logging_access_secret_key: string (secret reference)
 
-# Manage Attachment Storage Configuration (optional)
-manage_attachment_secret_name: string
-manage_attachment_access_secret_key: string (secret reference)
-
 # Global Secrets (optional)
 # Application-specific global secrets configuration
 
@@ -89,12 +85,6 @@ facilities_liberty_extensions_b64_secret_value: string (secret reference)
 #           region: string             # Customization archive region override
 #   settings:
 #     defaultRegion: string            # Global fallback region (mxe.defaults3region, e.g. "us-east-1")
-#     db:
-#       attachmentProvider:
-#         providerSourceType: cos      # or s3
-#         cos:
-#           providerCredentials:
-#             region: string           # DocLinks region override (mxe.cosregion, e.g. "us-east-1")
 #     deployment:
 #       loggingS3Destination:
 #         region: string               # Logging S3 region override (LOG_S3REGION, e.g. "us-east-1")

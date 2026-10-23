@@ -3,44 +3,9 @@ When inside the range loop below, make sure you prefix any references to chart v
 For example: {{ $.Values.account.id }} (instead of {{ .Values.account.id }} )
 */}}
 
-{{- /* Helper variables to check if app channels are >= 9.2 (same logic as 510-550-ibm-mas-masapp-configs.yaml) */ -}}
-{{- $iot_is_v92_or_higher := false -}}
-{{- if and .Values.ibm_suite_app_iot_install .Values.ibm_suite_app_iot_install.mas_app_channel -}}
-  {{- $iot_is_v92_or_higher = regexMatch "^9\\.(2|[3-9]|[1-9][0-9])\\..*" .Values.ibm_suite_app_iot_install.mas_app_channel -}}
-{{- end -}}
-
-{{- $monitor_is_v92_or_higher := false -}}
-{{- if and .Values.ibm_suite_app_monitor_install .Values.ibm_suite_app_monitor_install.mas_app_channel -}}
-  {{- $monitor_is_v92_or_higher = regexMatch "^9\\.(2|[3-9]|[1-9][0-9])\\..*" .Values.ibm_suite_app_monitor_install.mas_app_channel -}}
-{{- end -}}
-
 {{- range $i, $value := .Values.ibm_db2u_databases }}
 {{- if $.Values.application_admin_role }}
 {{- if not (contains "rds" $value.db2_instance_name) }}
-{{- /*
-Secondary (sdb) databases sync at the same wave as the config Application of the app they belong to, and a PreSync
-hook in the db2u-database chart then waits for that one config Application to be Healthy. This means a slow app only
-delays its own sdb; the sdb of every other app proceeds independently.
-Manage and all other apps use 527 (the Manage config at 505 has already completed by then, so its gate passes immediately
-and the Manage sdb does not hold up the other app installs at 525). IoT and Monitor follow their channel-based config waves.
-If the app has no config Application, fall back to wave 550.
-*/}}
-{{- $_sdb_wave := "550" }}
-{{- $_await_app_config_name := "" }}
-{{- if contains "sdb" $value.db2_instance_name }}
-{{-   range $c := $.Values.ibm_mas_masapp_configs }}
-{{-     if and (eq $_await_app_config_name "") (eq $c.mas_app_id $value.mas_application_id) }}
-{{-       $_await_app_config_name = printf "%s.%s.%s.%s" $c.mas_workspace_id $c.mas_app_id $.Values.cluster.id $.Values.instance.id }}
-{{-       if eq $c.mas_app_id "iot" }}
-{{-         $_sdb_wave = ternary "545" "527" $iot_is_v92_or_higher }}
-{{-       else if eq $c.mas_app_id "monitor" }}
-{{-         $_sdb_wave = ternary "527" "545" $monitor_is_v92_or_higher }}
-{{-       else }}
-{{-         $_sdb_wave = "527" }}
-{{-       end }}
-{{-     end }}
-{{-   end }}
-{{- end }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -57,7 +22,7 @@ metadata:
 {{ if not (contains "sdb" $value.db2_instance_name) }}
     argocd.argoproj.io/sync-wave: "120"
 {{ else }}
-    argocd.argoproj.io/sync-wave: "{{ $_sdb_wave }}"
+    argocd.argoproj.io/sync-wave: "550"
 {{ end }}
     {{- if and $.Values.notifications $.Values.notifications.slack_channel_id }}
     notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ $.Values.notifications.slack_channel_id }}
@@ -106,10 +71,6 @@ spec:
             {{-   end }}
             {{- end }}
             should_execute: {{ $_should_execute }}
-            argo_namespace: "{{ $.Values.argo.namespace }}"
-            {{- if $_await_app_config_name }}
-            await_app_config_name: "{{ $_await_app_config_name }}"
-            {{- end }}
             junitreporter:
               reporter_name: db2-db-{{ $.Values.instance.id }}-{{ $value.db2_instance_name | replace (cat "db2wh-" $.Values.instance.id "-" | replace " " "") "" }}
               cluster_id: "{{ $.Values.cluster.id }}"

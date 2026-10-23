@@ -10,8 +10,6 @@ This chart deploys and configures a Db2u database instance for use by a MAS appl
 
 Contains a presync hook (`00-presync-await-crd_Job.yaml`) that ensures we wait for the `db2uclusters` CRD to be installed before attempting to sync.
 
-For secondary (`sdb`) databases it also contains a presync hook (`00-presync-await-app-config_Job.yaml`) that waits for the config Application of the owning MAS app (`await_app_config_name`) to be `Healthy`. This makes a slow app delay only its own `sdb`; the `sdb` databases of other apps are not affected.
-
 Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers the `${ACCOUNT_ID}/${CLUSTER_ID}/${MAS_INSTANCE_ID}/db2/${DB2_INSTANCE_NAME}/config` secret in the **Secrets Vault** used to share some information that is generated at runtime with other ArgoCD Applications. This job also performs some special configuration steps that are required if the Db2u database is intended for use by the Manage MAS Application.
 
 ## Resources Created
@@ -34,8 +32,6 @@ Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers
 | `Secret` | Post-sync DB2 generated secret | DB2 application namespace | Always | `application_admin_role` |
 | `NetworkPolicy` | HADR network policy | DB2 application namespace | When HADR is enabled | `application_admin_role` |
 | `Job` | Pre/post-sync DB2 setup jobs | DB2 application namespace | Always | `application_admin_role` |
-| `Job` | Presync job awaiting the owning app's config Application | DB2 application namespace | `sdb` instances with `await_app_config_name` set | `application_admin_role` |
-| `Role` / `RoleBinding` | Allows the presync service account to `get` the owning app's config Application | ArgoCD namespace | `sdb` instances with `await_app_config_name` set | `application_admin_role` |
 | `Job` | DB2 audit policy setup job | DB2 application namespace | When `mas_application_id` is `manage`, `facilities`, `monitor`, or `iot` | `application_admin_role` |
 
 ## Configuration
@@ -52,10 +48,6 @@ db2_table_org: string
 db2_node_label: string
 db2_dedicated_node: string
 replica_db: string
-
-# Set by ibm-mas-instance-root for sdb instances only
-argo_namespace: string            # ArgoCD namespace (default: openshift-gitops)
-await_app_config_name: string     # Name of the ArgoCD config Application of the owning app, e.g. <workspace>.<app>.<cluster>.<instance>
 
 # Instance Registry Configuration
 db2_instance_registry:
@@ -348,7 +340,6 @@ cluster_domain: "<path:secrets/path:cluster_domain>"
 
 ## Troubleshooting
 
-- **`sdb` sync waiting** — the `presync-await-app-config-<instance>` Job waits up to 60 minutes for the app config Application named in `await_app_config_name` to be `Healthy`. Check that Application in ArgoCD.
 - **Presync job stuck** — verify the `db2uclusters` CRD is installed by the DB2U operator before the ArgoCD sync wave reaches this chart.
 - **Postsync job failing** — check the job logs in the DB2 namespace; common causes are missing S3 credentials or an unreachable backup bucket.
 - **Audit CronJob not running** — confirm `db2_backup_bucket_name` is set and the instance name does not contain `sdb` (audit cron is disabled for SDB instances).

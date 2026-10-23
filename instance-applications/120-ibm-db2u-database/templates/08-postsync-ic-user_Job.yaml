@@ -135,6 +135,8 @@ spec:
                   SQL_FILE=/tmp/\${IC_ROLE}_\${DATETIME}.sql && \
                   OUT_FILE=/tmp/\${IC_ROLE}_\${DATETIME}.out && \
                   > \${SQL_FILE} && \
+                  echo 'Connecting to database \${DB_NAME}...' && \
+                  db2 connect to \"\${DB_NAME}\" && \
                   echo '== Step 1: Check role ==' && \
                   EXISTING_ROLE=\$(db2 -x \"SELECT CHAR(ROLENAME,30) FROM SYSCAT.ROLES WHERE ROLENAME = '\${IC_ROLE}'\") && \
                   if echo \"\${EXISTING_ROLE}\" | grep -iqw \"\${IC_ROLE}\"; then \
@@ -144,7 +146,6 @@ spec:
                     echo \"CREATE ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
                   fi && \
                   echo '== Step 2: Check grants ==' && \
-                  db2 connect to \"\${DB_NAME}\" > /dev/null && \
                   GRANTS_COUNT=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.TABAUTH WHERE GRANTEE = '\${IC_ROLE}' AND GRANTEETYPE = 'R' AND TABSCHEMA = '\${DB_SCHEMA}' AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y' AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'\" | tr -d ' ') && \
                   if [ \"\${GRANTS_COUNT}\" = \"0\" ] || [ -z \"\${GRANTS_COUNT}\" ]; then \
                     echo \"Grants not found - assigning all privileges...\"; \

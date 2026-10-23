@@ -1,0 +1,316 @@
+{{- /*
+IC User Role setup job for InCluster DB2 (Manage only).
+
+Runs after the main postsync DB2 setup job (sync-wave 129) and the audit policy job
+(sync-wave 130), at sync-wave 131.
+
+Only executed when ALL of the following conditions are met:
+  1. production_database_access is set  <-- checked first; skips everything if not configured
+  2. application_admin_role: true
+  3. mas_application_id == "manage"
+  4. should_execute: true
+  5. db2_instance_name does not contain "sdb" (shared instances are excluded)
+
+When the production-database-access GenericAddon is configured this job will:
+  - Check if the IC_USER DB2 role already exists; create it if not.
+  - Grant all required Maximo table, sequence, catalog, and package privileges
+    to the IC_USER role (idempotent – safe to re-run).
+  - Grant CONNECT ON DATABASE and the IC_USER role to the IC DB user
+    (db_user passed as DB2_IC_USER env var, derived from DB2_USER = db2_<MAS_APP_ID>).
+*/}}
+{{- if .Values.production_database_access }}
+{{- if .Values.application_admin_role }}
+{{- if eq .Values.mas_application_id "manage" }}
+{{- if .Values.should_execute }}
+{{- if not (contains "sdb" .Values.db2_instance_name) }}
+
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars.
+*/}}
+{{- $_job_name_prefix := "postsync-ic-user" }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_digest := "sha256:e8282c6134a059e258f6fb36bfe4c823a44713de0ca8ec60ac63bbf448f8ddf3" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
+{{- $_job_cleanup_group := cat $_job_name_prefix .Values.db2_instance_name | sha1sum }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "131"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+            - name: DB2_DBNAME
+              value: "{{ .Values.db2_dbname }}"
+            - name: MAS_APP_ID
+              value: "{{ .Values.mas_application_id }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              source /mascli/functions/gitops_utils
+
+              export DB2_IC_USER="db2_${MAS_APP_ID}"
+              export DB2_SCHEMA="MAXIMO"
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "DB2_NAMESPACE ................. ${DB2_NAMESPACE}"
+              echo "DB2_INSTANCE_NAME ............. ${DB2_INSTANCE_NAME}"
+              echo "DB2_DBNAME .................... ${DB2_DBNAME}"
+              echo "MAS_APP_ID .................... ${MAS_APP_ID}"
+              echo "DB2_IC_USER ................... ${DB2_IC_USER}"
+              echo "DB2_SCHEMA .................... ${DB2_SCHEMA}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to report Ready=True (timeout 300s)"
+              echo "================================================================================"
+              oc wait --for=condition=Ready pod/c-${DB2_INSTANCE_NAME}-db2u-0 --timeout 300s -n ${DB2_NAMESPACE}
+
+              # -----------------------------------------------------------------------
+              # Generate the IC_USER role setup script to be executed inside db2u pod
+              # -----------------------------------------------------------------------
+              IC_USER_SETUP_SH_PATH="/tmp/ic_user_setup.sh"
+
+              echo ""
+              echo "Create ${IC_USER_SETUP_SH_PATH}"
+              echo "--------------------------------------------------------------------------------"
+
+              cat > ${IC_USER_SETUP_SH_PATH} << 'ENDOFSCRIPT'
+              #!/usr/bin/env bash
+              set -e
+
+              DB_NAME="${1}"
+              DB_SCHEMA="${2:-MAXIMO}"
+              IC_USER="${3}"
+              IC_ROLE="IC_USER"
+
+              echo "================================================================================"
+              echo "IC User Role Setup: DB=${DB_NAME}, SCHEMA=${DB_SCHEMA}, USER=${IC_USER}"
+              echo "================================================================================"
+
+              ~/sqllib/db2profile 2>/dev/null || true
+              . ~/sqllib/db2profile
+
+              db2 connect to "${DB_NAME}" > /dev/null
+
+              DATETIME=$(date +%Y%m%d_%H%M%S)
+              SQL_FILE="/tmp/${IC_ROLE}_${DATETIME}.sql"
+              OUT_FILE="/tmp/${IC_ROLE}_${DATETIME}.out"
+              > "${SQL_FILE}"
+
+              # ------------------------------------------------------------------
+              # Step 1: Create role only if missing
+              # ------------------------------------------------------------------
+              EXISTING_ROLE=$(db2 -x "SELECT CHAR(ROLENAME,30) FROM SYSCAT.ROLES WHERE ROLENAME = '${IC_ROLE}'")
+              if echo "${EXISTING_ROLE}" | grep -iqw "${IC_ROLE}"; then
+                echo "Role ${IC_ROLE} already exists – skipping creation."
+              else
+                echo "Role ${IC_ROLE} does not exist – creating..."
+                echo "CREATE ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+              fi
+
+              # ------------------------------------------------------------------
+              # Step 2: Grant privileges only if not already granted to role
+              # ------------------------------------------------------------------
+              GRANTS_COUNT=$(db2 -x "SELECT COUNT(*) FROM SYSCAT.TABAUTH
+                WHERE GRANTEE = '${IC_ROLE}' AND GRANTEETYPE = 'R'
+                AND TABSCHEMA = '${DB_SCHEMA}'
+                AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y'
+                AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'" | tr -d ' ')
+
+              if [[ "${GRANTS_COUNT}" == "0" || -z "${GRANTS_COUNT}" ]]; then
+                echo "Grants not found on role ${IC_ROLE} – assigning all privileges..."
+
+                # Database-level and system privileges
+                echo "GRANT CONNECT ON DATABASE TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+                echo "GRANT EXECUTE ON PROCEDURE SYSIBM.SQLCAMESSAGECCSID TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+                echo "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+                echo "GRANT SELECT ON TABLE SYSIBM.SYSDUMMY1 TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+                echo "GRANT SELECT ON TABLE SYSCAT.SCHEMATA TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+                echo "GRANT SELECT ON TABLE SYSCAT.TABLES TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+                echo "GRANT SELECT ON TABLE SYSCAT.COLUMNS TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+                echo "GRANT SELECT ON TABLE SYSCAT.INDEXES TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+                echo "GRANT SELECT ON TABLE SYSCAT.VIEWS TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+
+                # Maximo IC tables: SELECT, INSERT, UPDATE, DELETE
+                db2 "SELECT
+                  'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE '||
+                  RTRIM(TABSCHEMA)||'.\042'||RTRIM(TABNAME)||'\042 TO ROLE ${IC_ROLE};'
+                  FROM SYSCAT.TABLES
+                  WHERE TABSCHEMA = '${DB_SCHEMA}' AND TABNAME IN (
+                    'AUTOKEY','MAXSEQUENCE','SYNONYMDOMAIN','DEPLOYEDASSET','DPACCOMMDEVICE','DPACCPU',
+                    'DPACDISK','DPACDISPLAY','DPACIMAGEDEVICE','DPACMEDIAADAPTER','DPACNETADAPTER',
+                    'DPACNETDEVCARD','DPACOMMDEVICE','DPACOMPUTER','DPACOS','DPACPU','DPACSOFTWARE',
+                    'DPACSWSUITE','DPADISK','DPADISPLAY','DPAFILE','DPAIMAGEDEVICE','DPAIPX',
+                    'DPALOGICALDRIVE','DPAMADAPTER','DPAMADPTVARIANT','DPAMEDIAADAPTER','DPAMMANUFACTURER',
+                    'DPAMMANUVARIANT','DPAMOS','DPAMOSVARIANT','DPAMPROCESSOR','DPAMPROCVARIANT',
+                    'DPAMSOFTWARE','DPAMSWSUITE','DPAMSWSUITECOMP','DPAMSWUSAGE','DPAMSWUSAGERANGE',
+                    'DPAMSWVARIANT','DPANETADAPTER','DPANETDEVCARD','DPANETDEVICE','DPANETPRINTER',
+                    'DPAOS','DPASOFTWARE','DPASWSUITE','DPATCPIP','DPAUSERINFO','FSNCLASS',
+                    'FSNCLASSQUAL','FSNCLASSRELATION','FSNLASTSCAN','FSNMETHOD','FSNMETHODPARAM',
+                    'FSNMTHDPARAMQUAL','FSNMTHDQUAL','FSNOBJECT','FSNOBJPROPERTY','FSNOBJRELATION',
+                    'FSNPROPERTY','FSNPROPERTYQUAL','FSNPROVIDER','FSNQUALIFIER','FSNREFPROPERTY',
+                    'FSNSCHEMA','FSNSQLCOLUMN','FSNSQLTABLE','FSNTABLEQUAL','TAMITDPAHWM',
+                    'TLOAMDPAANCESTOR','TLOAMFSNEVENTLISTENER','TLOAMFSNRUNSTATUS','TLOAMSOFTWARE',
+                    'ALIASES','ATTRIBUTE_TYPES','CDM_VERSION','CHANGE_EVENTS','CLASS_TYPES',
+                    'DESIRED_SUPPORTED_ATTRS','DESIRED_SUPPORTED_MAP','ENUMERATIONS','INTERFACE_TYPES',
+                    'ME_ATTRIBUTES','METADATA_ASSN','MSS','MSS_ME','MSS_RELATIONSHIPS',
+                    'NAMING_IDENTIFIERS','NAMING_POLICIES','NAMING_RULES','RELATIONSHIP_TYPES',
+                    'RELATIONSHIPS','SUPERIORS','VALID_REL_TYPES','ASSETATTRIBUTE','CDMCITYPES',
+                    'CLASSANCESTOR','CLASSIFICATION','CLASSSPEC','CLASSSTRUCTURE','RELATION',
+                    'RELATIONRULES','ACTCI','ACTCIRELATION','ACTCISPEC','CCIDELETEDACTCI',
+                    'OMP','OMPCIRLN','MAXVARS','MAXLABELS','L_MAXLABELS','MAXMESSAGES',
+                    'TAMITSWPRTNUM','TLOAMSWCATALOG','TLOAMSWREL'
+                  )" | grep -i "GRANT SELECT, INSERT" >> "${SQL_FILE}"
+
+                # Maximo IC sequences: USAGE, ALTER
+                db2 "SELECT
+                  'GRANT USAGE, ALTER ON SEQUENCE '||
+                  RTRIM(SEQSCHEMA)||'.\042'||RTRIM(SEQNAME)||'\042 TO ROLE ${IC_ROLE};'
+                  FROM SYSCAT.SEQUENCES
+                  WHERE SEQSCHEMA = '${DB_SCHEMA}' AND SEQNAME IN (
+                    'ACTCIRELATIONSEQ','ACTCISEQ','ACTCISPECSEQ','ASSETATTRIBUTESEQ','AUTOKEYSEQ',
+                    'CCIDELETEDACTCISEQ','CDMCITYPESSEQ','CLASSANCESTORUSEQ','CLASSIFICATIONSEQ',
+                    'CLASSSPECSEQ','CLASSSTRUCTURESEQ','DEPLOYEDASSETSEQ','DPACOMMDEVICESEQ',
+                    'DPACOMPUTERSEQ','DPACPUSEQ','DPADISKSEQ','DPADISPLAYSEQ','DPAFILESEQ',
+                    'DPAIMAGEDEVICESEQ','DPAIPXSEQ','DPALOGICALDRIVESEQ','DPAMADAPTERSEQ',
+                    'DPAMADPTVARIANTSEQ','DPAMEDIAADAPTERSEQ','DPAMMANUFACTURERSEQ','DPAMMANUVARIANTSEQ',
+                    'DPAMOSSEQ','DPAMOSVARIANTSEQ','DPAMPROCESSORSEQ','DPAMPROCVARIANTSEQ',
+                    'DPAMSOFTWARESEQ','DPAMSWSUITECOMPSEQ','DPAMSWSUITESEQ','DPAMSWUSAGERANGESEQ',
+                    'DPAMSWUSAGESEQ','DPAMSWVARIANTSEQ','DPANETADAPTERSEQ','DPANETDEVCARDSEQ',
+                    'DPANETDEVICESEQ','DPANETPRINTERSEQ','DPAOSSEQ','DPASOFTWARESEQ',
+                    'DPASWSUITESEQ','DPATCPIPSEQ','DPAUSERINFOSEQ','L_MAXLABELSSEQ',
+                    'MAXLABELSSEQ','MAXMESSAGESSEQ','MAXSEQUENCESEQ','MAXVARSSEQ',
+                    'OMPCIRLNSEQ','OMPSEQ','RELATIONRULESSEQ','RELATIONSEQ',
+                    'SYNONYMDOMAINSEQ','TAMITDPAHWMSEQ','TAMITSWPRTNUMSEQ','TLOAMDPAANCESTORSEQ',
+                    'TLOAMFSNEVENTLISTENERSEQ','TLOAMFSNRUNSTATUSSEQ','TLOAMSOFTWARESEQ',
+                    'TLOAMSWCATALOGSEQ','TLOAMSWRELSEQ'
+                  )" | grep -i "GRANT USAGE, ALTER" >> "${SQL_FILE}"
+
+              else
+                echo "Grants already present on role ${IC_ROLE} (${GRANTS_COUNT} table grants found) – skipping."
+              fi
+
+              # ------------------------------------------------------------------
+              # Step 3: Execute SQL file if it has content
+              # ------------------------------------------------------------------
+              if [[ -s "${SQL_FILE}" ]]; then
+                echo "Executing ${SQL_FILE}..."
+                db2 -tvf "${SQL_FILE}" > "${OUT_FILE}" 2>&1
+                RC=$?
+                cat "${OUT_FILE}"
+                rm -f "${SQL_FILE}"
+                [ ${RC} -ne 0 ] && exit ${RC}
+              else
+                echo "Nothing to execute – role and grants already in place."
+                rm -f "${SQL_FILE}"
+              fi
+
+              # ------------------------------------------------------------------
+              # Step 4: Assign user to role only if not already assigned
+              # TODO: uncomment when IC user creation is handled by this job
+              # ------------------------------------------------------------------
+              # USER_ROLE=$(db2 -x "SELECT ROLENAME FROM SYSCAT.ROLEAUTH
+              #   WHERE GRANTEE = UPPER('${IC_USER}') AND GRANTEETYPE = 'U'
+              #   AND ROLENAME = '${IC_ROLE}'")
+              #
+              # if echo "${USER_ROLE}" | grep -iqw "${IC_ROLE}"; then
+              #   echo "User ${IC_USER} already has role ${IC_ROLE} – skipping assignment."
+              # else
+              #   echo "Assigning role ${IC_ROLE} to user ${IC_USER}..."
+              #   db2 "GRANT CONNECT ON DATABASE TO USER ${IC_USER}"
+              #   db2 "GRANT ROLE ${IC_ROLE} TO USER ${IC_USER}"
+              # fi
+
+              db2 terminate
+              echo "IC user role setup completed successfully."
+              ENDOFSCRIPT
+              # IMPORTANT: Do not make any changes to the "ENDOFSCRIPT" line above (including its indentation)
+
+              chmod +x ${IC_USER_SETUP_SH_PATH}
+
+              echo ""
+              echo "Copy ${IC_USER_SETUP_SH_PATH} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "--------------------------------------------------------------------------------"
+              oc cp ${IC_USER_SETUP_SH_PATH} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:${IC_USER_SETUP_SH_PATH} -c db2u || exit $?
+
+              echo ""
+              echo "================================================================================"
+              echo "Executing IC user role setup on c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "================================================================================"
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- \
+                su -lc "${IC_USER_SETUP_SH_PATH} ${DB2_DBNAME} ${DB2_SCHEMA} ${DB2_IC_USER} | tee /tmp/ic_user_setup.log" db2inst1 || exit $?
+
+              echo ""
+              echo "================================================================================"
+              echo "IC user role setup completed"
+              echo "================================================================================"
+
+      restartPolicy: Never
+
+      serviceAccountName: "postsync-sa-{{ .Values.db2_instance_name }}"
+      volumes: []
+  backoffLimit: 4
+
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

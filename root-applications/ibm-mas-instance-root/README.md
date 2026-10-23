@@ -68,7 +68,7 @@ Applications are deployed in the following order (controlled by sync-wave annota
    - **525**: All other MAS app installs, in parallel (Facilities, Assist, VisualInspection, Health, Optimizer, Predict; IoT and Monitor are version dependent, see below)
    - **527**: Non-Manage app configs
    - **540 / 545**: Version-dependent IoT and Monitor install (540) and config (545) waves
-   - **550**: Secondary (SDB / standby HADR) Db2 databases, after all apps
+   - **527 / 545**: Secondary (SDB / standby HADR) Db2 databases sync at the wave of their own app's config (527, or 545 for IoT/Monitor depending on channel; 550 if the app has no config). A presync hook waits for that one app's config Application to be Healthy, so a slow app only delays its own SDB
    - **560**: Addons config
 6. **600: RBAC & Post-Sync** - RBAC setup and post-deployment validation
 
@@ -215,7 +215,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`110-ibm-cp4d-operator-app.yaml`](templates/110-ibm-cp4d-operator-app.yaml) | cp4doperator | ✓ | | | 110 |
 | [`110-ibm-cs-control-app.yaml`](templates/110-ibm-cs-control-app.yaml) | cscontrol | ✓ | | | 110 |
 | [`110-ibm-db2u-app.yaml`](templates/110-ibm-db2u-app.yaml) | db2u | ✓ | | | 110 |
-| [`120-db2-databases-app.yaml`](templates/120-db2-databases-app.yaml) | db2-db | | ✓ | | 120 |
+| [`120-db2-databases-app.yaml`](templates/120-db2-databases-app.yaml) | db2-db | | ✓ | | 120 (`sdb`: 527, 545 for IoT/Monitor depending on channel, 550 if the app has no config) |
 | [`120-dbs-rds-databases-app.yaml`](templates/120-dbs-rds-databases-app.yaml) | dbs-rds-db | | | ✓ | 120 |
 | [`120-ibm-cognos-analytics-app.yaml`](templates/120-ibm-cognos-analytics-app.yaml) | cognos | ✓ | | | 120 |
 | [`120-ibm-spark-app.yaml`](templates/120-ibm-spark-app.yaml) | spark | ✓ | | | 120 |

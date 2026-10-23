@@ -1,0 +1,143 @@
+{{- if .Values.application_admin_role }}
+{{- /*
+Only created for secondary (sdb) databases that belong to an app with a config Application (await_app_config_name is
+set by the ibm-mas-instance-root 120-db2-databases-app.yaml template).
+
+The sdb Application is synced at the same wave as the config Application of its own app. This PreSync hook then holds
+the sdb sync until that single config Application is Healthy. As a result a slow or failing app only delays its own
+sdb; the sdb of every other app is not affected.
+*/}}
+{{- if and (contains "sdb" .Values.db2_instance_name) .Values.await_app_config_name }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:d9b9e5151413d08b79a45a0b657ecf48ae4eee30cb3bc997e6ccba1a8eb8f958" }}
+{{- $_argo_namespace := .Values.argo_namespace | default "openshift-gitops" }}
+
+---
+# Allow the presync service account to read (only) the config Application of the owning app
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "db2-database-presync-await-app-role-{{ .Values.db2_instance_name }}"
+  namespace: "{{ $_argo_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+- apiGroups:
+    - argoproj.io
+  resources:
+    - applications
+  resourceNames:
+    - "{{ .Values.await_app_config_name }}"
+  verbs:
+    - get
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "db2-database-presync-await-app-rb-{{ .Values.db2_instance_name }}"
+  namespace: "{{ $_argo_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: "presync-sa-{{ .Values.db2_instance_name }}"
+    namespace: "{{ .Values.db2_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: "db2-database-presync-await-app-role-{{ .Values.db2_instance_name }}"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "presync-await-app-config-{{ .Values.db2_instance_name }}"
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: ARGO_NAMESPACE
+              value: "{{ $_argo_namespace }}"
+            - name: APP_CONFIG_NAME
+              value: "{{ .Values.await_app_config_name }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+
+              echo
+              echo "================================================================================"
+              echo "PreSync: waiting for the app config Application to be Healthy before syncing ${DB2_INSTANCE_NAME}"
+              echo "================================================================================"
+              echo "ArgoCD namespace      : ${ARGO_NAMESPACE}"
+              echo "App config Application: ${APP_CONFIG_NAME}"
+              echo
+
+              wait_period=0
+              while true; do
+                HEALTH=$(oc get applications.argoproj.io "${APP_CONFIG_NAME}" -n "${ARGO_NAMESPACE}" -o jsonpath='{.status.health.status}' 2>/dev/null || true)
+                echo "Application ${APP_CONFIG_NAME} health: '${HEALTH}'"
+
+                if [ "${HEALTH}" = "Healthy" ]; then
+                  echo "App config Application is Healthy. Proceeding with the sync of ${DB2_INSTANCE_NAME}."
+                  exit 0
+                fi
+
+                wait_period=$(( wait_period + 30 ))
+                if [ "${wait_period}" -gt 3600 ]; then
+                  echo "Timed out after 60 minutes waiting for ${APP_CONFIG_NAME} to become Healthy."
+                  exit 1
+                fi
+
+                echo "Waiting 30 seconds before next check..."
+                sleep 30
+              done
+
+      restartPolicy: Never
+      serviceAccountName: "presync-sa-{{ .Values.db2_instance_name }}"
+      volumes: []
+  backoffLimit: 0
+{{- end }}
+{{- end }}

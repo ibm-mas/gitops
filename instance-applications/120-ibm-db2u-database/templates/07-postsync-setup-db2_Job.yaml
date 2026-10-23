@@ -160,6 +160,17 @@ rules:
     - db2uinstances
   verbs:
     - "get"
+- apiGroups:
+    - ""
+  resources:
+    - configmaps
+  verbs:
+    - create
+    - get
+    - list
+    - update
+    - patch
+    - delete
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -241,6 +252,8 @@ spec:
               value: "{{ .Values.db2_dbname }}"
             - name: DB2_TLS_VERSION
               value: "{{ .Values.db2_tls_version }}"
+            - name: DB2_VERSION
+              value: "{{ .Values.db2_version }}"
             - name: DB2_INSTANCE_HOME_PATH
               value: "{{ .Values.db2_instance_home_path }}"
 {{- if .Values.db2_backup_bucket_name }}
@@ -393,6 +406,91 @@ spec:
               echo "Waiting for service c-${DB2_INSTANCE_NAME}-db2u-engn-svc to be present before continuing (timeout 300s)"
               echo "================================================================================"
               wait_for_resource "svc" "c-${DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
+
+              # Check if HADR upgrade is in progress and mark Primary database upgrade as complete
+              UPGRADE_CM="hadr-upgrade-in-progress-${DB2_INSTANCE_NAME}"
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                REPLICA_DB_VAL=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.replica_db}' 2>/dev/null || echo "false")
+                if [[ "${REPLICA_DB_VAL}" == "true" ]]; then
+                  PRIMARY_UPGRADED=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.primary_upgraded}' 2>/dev/null || echo "false")
+                  if [[ "${PRIMARY_UPGRADED}" != "true" ]]; then
+                    echo ""
+                    echo "================================================================================"
+                    echo "Verifying Primary Db2 database readiness and restoring communications..."
+                    echo "================================================================================"
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                      # Restore communication protocols
+                      db2stop force || true
+                      db2set DB2COMM=TCPIP,SSL
+                      db2start
+                      db2 activate database ${DB2_DBNAME} || db2 connect to ${DB2_DBNAME} || true
+                    " || true
+
+                    echo ""
+                    echo "================================================================================"
+                    echo "Waiting for db2uinstance spec.version and status.version to match..."
+                    echo "================================================================================"
+                    version_sync_count=0
+                    while true; do
+                      SPEC_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
+                      STATUS_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                      STATUS_STATE=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
+                      echo "... spec.version=${SPEC_VERSION}, status.version=${STATUS_VERSION}, status.state=${STATUS_STATE} (attempt ${version_sync_count})"
+                      if [[ -n "${SPEC_VERSION}" && "${SPEC_VERSION}" == "${STATUS_VERSION}" && "${STATUS_STATE}" == "Ready" ]]; then
+                        echo "db2uinstance versions are in sync and state is Ready. Proceeding."
+                        break
+                      fi
+                      version_sync_count=$((version_sync_count+1))
+                      if [ $version_sync_count -gt 60 ]; then
+                        echo "ERROR: Timeout waiting for db2uinstance spec.version, status.version, and status.state=Ready after 600s."
+                        exit 1
+                      fi
+                      sleep 10
+                    done
+
+                    echo ""
+                    echo "================================================================================"
+                    echo "Running database upgrade on Primary c-${DB2_INSTANCE_NAME}-db2u-0 (db2_update_upgrade --databases)..."
+                    echo "================================================================================"
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2_update_upgrade --databases" || exit $?
+
+                    echo "Removing governor db2.yml on Primary c-${DB2_INSTANCE_NAME}-db2u-0..."
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "rm -f /mnt/blumeta0/home/db2inst1/governor/db2.yml" || exit $?
+
+                    echo "Running post upgrade on Primary c-${DB2_INSTANCE_NAME}-db2u-0 (db2_update_upgrade --post-upgrade)..."
+                    oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "db2_update_upgrade --post-upgrade" || exit $?
+
+                    oc patch configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --type=merge -p '{"data":{"primary_upgraded":"true"}}'
+                    echo "Primary upgrade verified and marked in ConfigMap for Standby processing."
+                  fi
+                else
+                  oc delete configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --ignore-not-found=true
+                fi
+              fi
+
+              # Apply Db2 License if Db2 version >= 12 and secret db2u-license-${DB2_INSTANCE_NAME} exists
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]]; then
+                echo ""
+                echo "================================================================================"
+                echo "Checking and applying Db2 License from secret for Db2 v12..."
+                echo "================================================================================"
+                LICENSE_SECRET="db2u-license-${DB2_INSTANCE_NAME}"
+                if oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                  echo "Found secret ${LICENSE_SECRET}. Extracting and applying license to c-${DB2_INSTANCE_NAME}-db2u-0..."
+                  oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.db2u-lic}' | base64 -d | sed '/^[[:space:]]*$/d' > /tmp/db2_apply_lic.lic
+                  oc cp /tmp/db2_apply_lic.lic "${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2_license.lic" -c db2u || true
+                  rm -f /tmp/db2_apply_lic.lic
+                  oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su -lc "
+                    if [ -f /tmp/db2_license.lic ]; then
+                      echo 'Applying license via db2licm...'
+                      db2licm -a /tmp/db2_license.lic || true
+                      rm -f /tmp/db2_license.lic
+                    fi
+                  " db2inst1 || true
+                else
+                  echo "No custom license secret found (${LICENSE_SECRET}). Skipping license registration."
+                fi
+              fi
 
               echo ""
               echo "Creating /mnt/backup/MIRRORLOGPATH in c-${DB2_INSTANCE_NAME}-db2u-0"

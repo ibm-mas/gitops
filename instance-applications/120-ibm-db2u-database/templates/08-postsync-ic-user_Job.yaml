@@ -133,155 +133,159 @@ spec:
               echo "--------------------------------------------------------------------------------"
 
               cat > ${IC_USER_SETUP_SH_PATH} << 'ENDOFSCRIPT'
-              #!/usr/bin/env bash
-              set -e
+#!/usr/bin/env bash
+set -e
 
-              DB_NAME="${1}"
-              DB_SCHEMA="${2:-MAXIMO}"
-              IC_USER="${3}"
-              IC_ROLE="IC_USER"
+DB_NAME="${1}"
+DB_SCHEMA="${2:-MAXIMO}"
+IC_USER="${3}"
+IC_ROLE="IC_USER"
 
-              echo "================================================================================"
-              echo "IC User Role Setup: DB=${DB_NAME}, SCHEMA=${DB_SCHEMA}, USER=${IC_USER}"
-              echo "================================================================================"
+echo "================================================================================"
+echo "IC User Role Setup: DB=${DB_NAME}, SCHEMA=${DB_SCHEMA}, USER=${IC_USER}"
+echo "================================================================================"
 
-              ~/sqllib/db2profile 2>/dev/null || true
-              . ~/sqllib/db2profile
+. ~/sqllib/db2profile
 
-              db2 connect to "${DB_NAME}" > /dev/null
+echo "Connecting to database ${DB_NAME}..."
+db2 connect to "${DB_NAME}"
+if [ $? -ne 0 ]; then
+  echo "ERROR: Failed to connect to ${DB_NAME}"
+  exit 1
+fi
 
-              DATETIME=$(date +%Y%m%d_%H%M%S)
-              SQL_FILE="/tmp/${IC_ROLE}_${DATETIME}.sql"
-              OUT_FILE="/tmp/${IC_ROLE}_${DATETIME}.out"
-              > "${SQL_FILE}"
+DATETIME=$(date +%Y%m%d_%H%M%S)
+SQL_FILE="/tmp/${IC_ROLE}_${DATETIME}.sql"
+OUT_FILE="/tmp/${IC_ROLE}_${DATETIME}.out"
+> "${SQL_FILE}"
 
-              # ------------------------------------------------------------------
-              # Step 1: Create role only if missing
-              # ------------------------------------------------------------------
-              EXISTING_ROLE=$(db2 -x "SELECT CHAR(ROLENAME,30) FROM SYSCAT.ROLES WHERE ROLENAME = '${IC_ROLE}'")
-              if echo "${EXISTING_ROLE}" | grep -iqw "${IC_ROLE}"; then
-                echo "Role ${IC_ROLE} already exists – skipping creation."
-              else
-                echo "Role ${IC_ROLE} does not exist – creating..."
-                echo "CREATE ROLE ${IC_ROLE};" >> "${SQL_FILE}"
-              fi
+# ------------------------------------------------------------------
+# Step 1: Create role only if missing
+# ------------------------------------------------------------------
+EXISTING_ROLE=$(db2 -x "SELECT CHAR(ROLENAME,30) FROM SYSCAT.ROLES WHERE ROLENAME = '${IC_ROLE}'")
+if echo "${EXISTING_ROLE}" | grep -iqw "${IC_ROLE}"; then
+  echo "Role ${IC_ROLE} already exists – skipping creation."
+else
+  echo "Role ${IC_ROLE} does not exist – creating..."
+  echo "CREATE ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+fi
 
-              # ------------------------------------------------------------------
-              # Step 2: Grant privileges only if not already granted to role
-              # ------------------------------------------------------------------
-              GRANTS_COUNT=$(db2 -x "SELECT COUNT(*) FROM SYSCAT.TABAUTH
-                WHERE GRANTEE = '${IC_ROLE}' AND GRANTEETYPE = 'R'
-                AND TABSCHEMA = '${DB_SCHEMA}'
-                AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y'
-                AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'" | tr -d ' ')
+# ------------------------------------------------------------------
+# Step 2: Grant privileges only if not already granted to role
+# ------------------------------------------------------------------
+GRANTS_COUNT=$(db2 -x "SELECT COUNT(*) FROM SYSCAT.TABAUTH
+  WHERE GRANTEE = '${IC_ROLE}' AND GRANTEETYPE = 'R'
+  AND TABSCHEMA = '${DB_SCHEMA}'
+  AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y'
+  AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'" | tr -d ' ')
 
-              if [[ "${GRANTS_COUNT}" == "0" || -z "${GRANTS_COUNT}" ]]; then
-                echo "Grants not found on role ${IC_ROLE} – assigning all privileges..."
+if [[ "${GRANTS_COUNT}" == "0" || -z "${GRANTS_COUNT}" ]]; then
+  echo "Grants not found on role ${IC_ROLE} – assigning all privileges..."
 
-                # Database-level and system privileges
-                echo "GRANT CONNECT ON DATABASE TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
-                echo "GRANT EXECUTE ON PROCEDURE SYSIBM.SQLCAMESSAGECCSID TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
-                echo "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
-                echo "GRANT SELECT ON TABLE SYSIBM.SYSDUMMY1 TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
-                echo "GRANT SELECT ON TABLE SYSCAT.SCHEMATA TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
-                echo "GRANT SELECT ON TABLE SYSCAT.TABLES TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
-                echo "GRANT SELECT ON TABLE SYSCAT.COLUMNS TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
-                echo "GRANT SELECT ON TABLE SYSCAT.INDEXES TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
-                echo "GRANT SELECT ON TABLE SYSCAT.VIEWS TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+  # Database-level and system privileges
+  echo "GRANT CONNECT ON DATABASE TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+  echo "GRANT EXECUTE ON PROCEDURE SYSIBM.SQLCAMESSAGECCSID TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+  echo "GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+  echo "GRANT SELECT ON TABLE SYSIBM.SYSDUMMY1 TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+  echo "GRANT SELECT ON TABLE SYSCAT.SCHEMATA TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+  echo "GRANT SELECT ON TABLE SYSCAT.TABLES TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+  echo "GRANT SELECT ON TABLE SYSCAT.COLUMNS TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+  echo "GRANT SELECT ON TABLE SYSCAT.INDEXES TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
+  echo "GRANT SELECT ON TABLE SYSCAT.VIEWS TO ROLE ${IC_ROLE};" >> "${SQL_FILE}"
 
-                # Maximo IC tables: SELECT, INSERT, UPDATE, DELETE
-                db2 "SELECT
-                  'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE '||
-                  RTRIM(TABSCHEMA)||'.\042'||RTRIM(TABNAME)||'\042 TO ROLE ${IC_ROLE};'
-                  FROM SYSCAT.TABLES
-                  WHERE TABSCHEMA = '${DB_SCHEMA}' AND TABNAME IN (
-                    'AUTOKEY','MAXSEQUENCE','SYNONYMDOMAIN','DEPLOYEDASSET','DPACCOMMDEVICE','DPACCPU',
-                    'DPACDISK','DPACDISPLAY','DPACIMAGEDEVICE','DPACMEDIAADAPTER','DPACNETADAPTER',
-                    'DPACNETDEVCARD','DPACOMMDEVICE','DPACOMPUTER','DPACOS','DPACPU','DPACSOFTWARE',
-                    'DPACSWSUITE','DPADISK','DPADISPLAY','DPAFILE','DPAIMAGEDEVICE','DPAIPX',
-                    'DPALOGICALDRIVE','DPAMADAPTER','DPAMADPTVARIANT','DPAMEDIAADAPTER','DPAMMANUFACTURER',
-                    'DPAMMANUVARIANT','DPAMOS','DPAMOSVARIANT','DPAMPROCESSOR','DPAMPROCVARIANT',
-                    'DPAMSOFTWARE','DPAMSWSUITE','DPAMSWSUITECOMP','DPAMSWUSAGE','DPAMSWUSAGERANGE',
-                    'DPAMSWVARIANT','DPANETADAPTER','DPANETDEVCARD','DPANETDEVICE','DPANETPRINTER',
-                    'DPAOS','DPASOFTWARE','DPASWSUITE','DPATCPIP','DPAUSERINFO','FSNCLASS',
-                    'FSNCLASSQUAL','FSNCLASSRELATION','FSNLASTSCAN','FSNMETHOD','FSNMETHODPARAM',
-                    'FSNMTHDPARAMQUAL','FSNMTHDQUAL','FSNOBJECT','FSNOBJPROPERTY','FSNOBJRELATION',
-                    'FSNPROPERTY','FSNPROPERTYQUAL','FSNPROVIDER','FSNQUALIFIER','FSNREFPROPERTY',
-                    'FSNSCHEMA','FSNSQLCOLUMN','FSNSQLTABLE','FSNTABLEQUAL','TAMITDPAHWM',
-                    'TLOAMDPAANCESTOR','TLOAMFSNEVENTLISTENER','TLOAMFSNRUNSTATUS','TLOAMSOFTWARE',
-                    'ALIASES','ATTRIBUTE_TYPES','CDM_VERSION','CHANGE_EVENTS','CLASS_TYPES',
-                    'DESIRED_SUPPORTED_ATTRS','DESIRED_SUPPORTED_MAP','ENUMERATIONS','INTERFACE_TYPES',
-                    'ME_ATTRIBUTES','METADATA_ASSN','MSS','MSS_ME','MSS_RELATIONSHIPS',
-                    'NAMING_IDENTIFIERS','NAMING_POLICIES','NAMING_RULES','RELATIONSHIP_TYPES',
-                    'RELATIONSHIPS','SUPERIORS','VALID_REL_TYPES','ASSETATTRIBUTE','CDMCITYPES',
-                    'CLASSANCESTOR','CLASSIFICATION','CLASSSPEC','CLASSSTRUCTURE','RELATION',
-                    'RELATIONRULES','ACTCI','ACTCIRELATION','ACTCISPEC','CCIDELETEDACTCI',
-                    'OMP','OMPCIRLN','MAXVARS','MAXLABELS','L_MAXLABELS','MAXMESSAGES',
-                    'TAMITSWPRTNUM','TLOAMSWCATALOG','TLOAMSWREL'
-                  )" | grep -i "GRANT SELECT, INSERT" >> "${SQL_FILE}"
+  # Maximo IC tables: SELECT, INSERT, UPDATE, DELETE
+  db2 "SELECT
+    'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE '||
+    RTRIM(TABSCHEMA)||'.\042'||RTRIM(TABNAME)||'\042 TO ROLE ${IC_ROLE};'
+    FROM SYSCAT.TABLES
+    WHERE TABSCHEMA = '${DB_SCHEMA}' AND TABNAME IN (
+      'AUTOKEY','MAXSEQUENCE','SYNONYMDOMAIN','DEPLOYEDASSET','DPACCOMMDEVICE','DPACCPU',
+      'DPACDISK','DPACDISPLAY','DPACIMAGEDEVICE','DPACMEDIAADAPTER','DPACNETADAPTER',
+      'DPACNETDEVCARD','DPACOMMDEVICE','DPACOMPUTER','DPACOS','DPACPU','DPACSOFTWARE',
+      'DPACSWSUITE','DPADISK','DPADISPLAY','DPAFILE','DPAIMAGEDEVICE','DPAIPX',
+      'DPALOGICALDRIVE','DPAMADAPTER','DPAMADPTVARIANT','DPAMEDIAADAPTER','DPAMMANUFACTURER',
+      'DPAMMANUVARIANT','DPAMOS','DPAMOSVARIANT','DPAMPROCESSOR','DPAMPROCVARIANT',
+      'DPAMSOFTWARE','DPAMSWSUITE','DPAMSWSUITECOMP','DPAMSWUSAGE','DPAMSWUSAGERANGE',
+      'DPAMSWVARIANT','DPANETADAPTER','DPANETDEVCARD','DPANETDEVICE','DPANETPRINTER',
+      'DPAOS','DPASOFTWARE','DPASWSUITE','DPATCPIP','DPAUSERINFO','FSNCLASS',
+      'FSNCLASSQUAL','FSNCLASSRELATION','FSNLASTSCAN','FSNMETHOD','FSNMETHODPARAM',
+      'FSNMTHDPARAMQUAL','FSNMTHDQUAL','FSNOBJECT','FSNOBJPROPERTY','FSNOBJRELATION',
+      'FSNPROPERTY','FSNPROPERTYQUAL','FSNPROVIDER','FSNQUALIFIER','FSNREFPROPERTY',
+      'FSNSCHEMA','FSNSQLCOLUMN','FSNSQLTABLE','FSNTABLEQUAL','TAMITDPAHWM',
+      'TLOAMDPAANCESTOR','TLOAMFSNEVENTLISTENER','TLOAMFSNRUNSTATUS','TLOAMSOFTWARE',
+      'ALIASES','ATTRIBUTE_TYPES','CDM_VERSION','CHANGE_EVENTS','CLASS_TYPES',
+      'DESIRED_SUPPORTED_ATTRS','DESIRED_SUPPORTED_MAP','ENUMERATIONS','INTERFACE_TYPES',
+      'ME_ATTRIBUTES','METADATA_ASSN','MSS','MSS_ME','MSS_RELATIONSHIPS',
+      'NAMING_IDENTIFIERS','NAMING_POLICIES','NAMING_RULES','RELATIONSHIP_TYPES',
+      'RELATIONSHIPS','SUPERIORS','VALID_REL_TYPES','ASSETATTRIBUTE','CDMCITYPES',
+      'CLASSANCESTOR','CLASSIFICATION','CLASSSPEC','CLASSSTRUCTURE','RELATION',
+      'RELATIONRULES','ACTCI','ACTCIRELATION','ACTCISPEC','CCIDELETEDACTCI',
+      'OMP','OMPCIRLN','MAXVARS','MAXLABELS','L_MAXLABELS','MAXMESSAGES',
+      'TAMITSWPRTNUM','TLOAMSWCATALOG','TLOAMSWREL'
+    )" | grep -i "GRANT SELECT, INSERT" >> "${SQL_FILE}"
 
-                # Maximo IC sequences: USAGE, ALTER
-                db2 "SELECT
-                  'GRANT USAGE, ALTER ON SEQUENCE '||
-                  RTRIM(SEQSCHEMA)||'.\042'||RTRIM(SEQNAME)||'\042 TO ROLE ${IC_ROLE};'
-                  FROM SYSCAT.SEQUENCES
-                  WHERE SEQSCHEMA = '${DB_SCHEMA}' AND SEQNAME IN (
-                    'ACTCIRELATIONSEQ','ACTCISEQ','ACTCISPECSEQ','ASSETATTRIBUTESEQ','AUTOKEYSEQ',
-                    'CCIDELETEDACTCISEQ','CDMCITYPESSEQ','CLASSANCESTORUSEQ','CLASSIFICATIONSEQ',
-                    'CLASSSPECSEQ','CLASSSTRUCTURESEQ','DEPLOYEDASSETSEQ','DPACOMMDEVICESEQ',
-                    'DPACOMPUTERSEQ','DPACPUSEQ','DPADISKSEQ','DPADISPLAYSEQ','DPAFILESEQ',
-                    'DPAIMAGEDEVICESEQ','DPAIPXSEQ','DPALOGICALDRIVESEQ','DPAMADAPTERSEQ',
-                    'DPAMADPTVARIANTSEQ','DPAMEDIAADAPTERSEQ','DPAMMANUFACTURERSEQ','DPAMMANUVARIANTSEQ',
-                    'DPAMOSSEQ','DPAMOSVARIANTSEQ','DPAMPROCESSORSEQ','DPAMPROCVARIANTSEQ',
-                    'DPAMSOFTWARESEQ','DPAMSWSUITECOMPSEQ','DPAMSWSUITESEQ','DPAMSWUSAGERANGESEQ',
-                    'DPAMSWUSAGESEQ','DPAMSWVARIANTSEQ','DPANETADAPTERSEQ','DPANETDEVCARDSEQ',
-                    'DPANETDEVICESEQ','DPANETPRINTERSEQ','DPAOSSEQ','DPASOFTWARESEQ',
-                    'DPASWSUITESEQ','DPATCPIPSEQ','DPAUSERINFOSEQ','L_MAXLABELSSEQ',
-                    'MAXLABELSSEQ','MAXMESSAGESSEQ','MAXSEQUENCESEQ','MAXVARSSEQ',
-                    'OMPCIRLNSEQ','OMPSEQ','RELATIONRULESSEQ','RELATIONSEQ',
-                    'SYNONYMDOMAINSEQ','TAMITDPAHWMSEQ','TAMITSWPRTNUMSEQ','TLOAMDPAANCESTORSEQ',
-                    'TLOAMFSNEVENTLISTENERSEQ','TLOAMFSNRUNSTATUSSEQ','TLOAMSOFTWARESEQ',
-                    'TLOAMSWCATALOGSEQ','TLOAMSWRELSEQ'
-                  )" | grep -i "GRANT USAGE, ALTER" >> "${SQL_FILE}"
+  # Maximo IC sequences: USAGE, ALTER
+  db2 "SELECT
+    'GRANT USAGE, ALTER ON SEQUENCE '||
+    RTRIM(SEQSCHEMA)||'.\042'||RTRIM(SEQNAME)||'\042 TO ROLE ${IC_ROLE};'
+    FROM SYSCAT.SEQUENCES
+    WHERE SEQSCHEMA = '${DB_SCHEMA}' AND SEQNAME IN (
+      'ACTCIRELATIONSEQ','ACTCISEQ','ACTCISPECSEQ','ASSETATTRIBUTESEQ','AUTOKEYSEQ',
+      'CCIDELETEDACTCISEQ','CDMCITYPESSEQ','CLASSANCESTORUSEQ','CLASSIFICATIONSEQ',
+      'CLASSSPECSEQ','CLASSSTRUCTURESEQ','DEPLOYEDASSETSEQ','DPACOMMDEVICESEQ',
+      'DPACOMPUTERSEQ','DPACPUSEQ','DPADISKSEQ','DPADISPLAYSEQ','DPAFILESEQ',
+      'DPAIMAGEDEVICESEQ','DPAIPXSEQ','DPALOGICALDRIVESEQ','DPAMADAPTERSEQ',
+      'DPAMADPTVARIANTSEQ','DPAMEDIAADAPTERSEQ','DPAMMANUFACTURERSEQ','DPAMMANUVARIANTSEQ',
+      'DPAMOSSEQ','DPAMOSVARIANTSEQ','DPAMPROCESSORSEQ','DPAMPROCVARIANTSEQ',
+      'DPAMSOFTWARESEQ','DPAMSWSUITECOMPSEQ','DPAMSWSUITESEQ','DPAMSWUSAGERANGESEQ',
+      'DPAMSWUSAGESEQ','DPAMSWVARIANTSEQ','DPANETADAPTERSEQ','DPANETDEVCARDSEQ',
+      'DPANETDEVICESEQ','DPANETPRINTERSEQ','DPAOSSEQ','DPASOFTWARESEQ',
+      'DPASWSUITESEQ','DPATCPIPSEQ','DPAUSERINFOSEQ','L_MAXLABELSSEQ',
+      'MAXLABELSSEQ','MAXMESSAGESSEQ','MAXSEQUENCESEQ','MAXVARSSEQ',
+      'OMPCIRLNSEQ','OMPSEQ','RELATIONRULESSEQ','RELATIONSEQ',
+      'SYNONYMDOMAINSEQ','TAMITDPAHWMSEQ','TAMITSWPRTNUMSEQ','TLOAMDPAANCESTORSEQ',
+      'TLOAMFSNEVENTLISTENERSEQ','TLOAMFSNRUNSTATUSSEQ','TLOAMSOFTWARESEQ',
+      'TLOAMSWCATALOGSEQ','TLOAMSWRELSEQ'
+    )" | grep -i "GRANT USAGE, ALTER" >> "${SQL_FILE}"
 
-              else
-                echo "Grants already present on role ${IC_ROLE} (${GRANTS_COUNT} table grants found) – skipping."
-              fi
+else
+  echo "Grants already present on role ${IC_ROLE} (${GRANTS_COUNT} table grants found) – skipping."
+fi
 
-              # ------------------------------------------------------------------
-              # Step 3: Execute SQL file if it has content
-              # ------------------------------------------------------------------
-              if [[ -s "${SQL_FILE}" ]]; then
-                echo "Executing ${SQL_FILE}..."
-                db2 -tvf "${SQL_FILE}" > "${OUT_FILE}" 2>&1
-                RC=$?
-                cat "${OUT_FILE}"
-                rm -f "${SQL_FILE}"
-                [ ${RC} -ne 0 ] && exit ${RC}
-              else
-                echo "Nothing to execute – role and grants already in place."
-                rm -f "${SQL_FILE}"
-              fi
+# ------------------------------------------------------------------
+# Step 3: Execute SQL file if it has content
+# ------------------------------------------------------------------
+if [[ -s "${SQL_FILE}" ]]; then
+  echo "Executing ${SQL_FILE}..."
+  db2 -tvf "${SQL_FILE}" > "${OUT_FILE}" 2>&1
+  RC=$?
+  cat "${OUT_FILE}"
+  rm -f "${SQL_FILE}"
+  [ ${RC} -ne 0 ] && exit ${RC}
+else
+  echo "Nothing to execute – role and grants already in place."
+  rm -f "${SQL_FILE}"
+fi
 
-              # ------------------------------------------------------------------
-              # Step 4: Assign user to role only if not already assigned
-              # TODO: uncomment when IC user creation is handled by this job
-              # ------------------------------------------------------------------
-              # USER_ROLE=$(db2 -x "SELECT ROLENAME FROM SYSCAT.ROLEAUTH
-              #   WHERE GRANTEE = UPPER('${IC_USER}') AND GRANTEETYPE = 'U'
-              #   AND ROLENAME = '${IC_ROLE}'")
-              #
-              # if echo "${USER_ROLE}" | grep -iqw "${IC_ROLE}"; then
-              #   echo "User ${IC_USER} already has role ${IC_ROLE} – skipping assignment."
-              # else
-              #   echo "Assigning role ${IC_ROLE} to user ${IC_USER}..."
-              #   db2 "GRANT CONNECT ON DATABASE TO USER ${IC_USER}"
-              #   db2 "GRANT ROLE ${IC_ROLE} TO USER ${IC_USER}"
-              # fi
+# ------------------------------------------------------------------
+# Step 4: Assign user to role only if not already assigned
+# TODO: uncomment when IC user creation is handled by this job
+# ------------------------------------------------------------------
+# USER_ROLE=$(db2 -x "SELECT ROLENAME FROM SYSCAT.ROLEAUTH
+#   WHERE GRANTEE = UPPER('${IC_USER}') AND GRANTEETYPE = 'U'
+#   AND ROLENAME = '${IC_ROLE}'")
+#
+# if echo "${USER_ROLE}" | grep -iqw "${IC_ROLE}"; then
+#   echo "User ${IC_USER} already has role ${IC_ROLE} – skipping assignment."
+# else
+#   echo "Assigning role ${IC_ROLE} to user ${IC_USER}..."
+#   db2 "GRANT CONNECT ON DATABASE TO USER ${IC_USER}"
+#   db2 "GRANT ROLE ${IC_ROLE} TO USER ${IC_USER}"
+# fi
 
-              db2 terminate
-              echo "IC user role setup completed successfully."
-              ENDOFSCRIPT
+db2 terminate
+echo "IC user role setup completed successfully."
+ENDOFSCRIPT
               # IMPORTANT: Do not make any changes to the "ENDOFSCRIPT" line above (including its indentation)
 
               chmod +x ${IC_USER_SETUP_SH_PATH}

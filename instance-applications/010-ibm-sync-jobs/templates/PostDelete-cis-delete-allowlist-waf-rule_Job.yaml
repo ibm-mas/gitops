@@ -71,7 +71,10 @@ spec:
                 exit 0
               fi
 
-              ibmcloud plugin install cloud-internet-services@1.19.2 -f || exit $?
+              echo "Installing CIS plugin if not already installed"
+              if ! ibmcloud plugin list | grep -q 'cis'; then
+                ibmcloud plugin install cis -f || exit $?
+              fi
               ibmcloud login --apikey "${CIS_APIKEY}" -q --no-region > /dev/null || exit $?
 
               CIS_DOMAIN_ID=$(ibmcloud cis domains -i "${CIS_SERVICE_NAME}" -o json | jq -r '.[0].id // empty')

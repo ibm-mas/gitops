@@ -11,6 +11,23 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 # Deletes the CIS custom WAF rule "mas-ip-allowlist-${MAS_DOMAIN}" (created by the suite_dns role when allow_list is set)
 # when the instance is deprovisioned. Nothing is done if the rule does not exist.
 
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cis-delete-allowlist-waf-rule
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/hook: "PostDelete"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  cis_apikey: {{ .Values.cis_apikey }}
+type: Opaque
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -45,7 +62,7 @@ spec:
             - name: CIS_APIKEY
               valueFrom:
                 secretKeyRef:
-                  name: ibm-suite-dns
+                  name: cis-delete-allowlist-waf-rule
                   key: cis_apikey
 
           command:
@@ -107,7 +124,6 @@ spec:
               echo "WAF allowlist rule '${RULE_DESC}' deleted successfully"
 
       restartPolicy: Never
-      serviceAccountName: ibm-suite-dns-job
   backoffLimit: 4
 {{- end }}
 {{- end }}

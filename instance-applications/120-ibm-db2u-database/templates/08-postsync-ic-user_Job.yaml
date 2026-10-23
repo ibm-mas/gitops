@@ -47,7 +47,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v1" }}
+{{- $_job_version := "v2" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -146,7 +146,7 @@ spec:
                     echo \"CREATE ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
                   fi && \
                   echo '== Step 2: Check grants ==' && \
-                  GRANTS_COUNT=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.TABAUTH WHERE GRANTEE = '\${IC_ROLE}' AND GRANTEETYPE = 'R' AND TABSCHEMA = '\${DB_SCHEMA}' AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y' AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'\" | tr -d ' ') && \
+                  GRANTS_COUNT=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.TABAUTH WHERE GRANTEE = '\${IC_ROLE}' AND GRANTEETYPE = 'R' AND TABSCHEMA = '\${DB_SCHEMA}' AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y' AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'\" | tr -d ' .') && \
                   if [ \"\${GRANTS_COUNT}\" = \"0\" ] || [ -z \"\${GRANTS_COUNT}\" ]; then \
                     echo \"Grants not found - assigning all privileges...\"; \
                     echo \"GRANT CONNECT ON DATABASE TO ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \

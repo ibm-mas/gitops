@@ -47,7 +47,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v4" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -165,7 +165,7 @@ spec:
                   fi && \
                   echo '== Step 3: Execute SQL ==' && \
                   if [ -s \"\${SQL_FILE}\" ]; then \
-                    db2 -tvf \"\${SQL_FILE}\" > \"\${OUT_FILE}\" 2>&1; RC=\$?; cat \"\${OUT_FILE}\"; rm -f \"\${SQL_FILE}\"; [ \${RC} -ne 0 ] && exit \${RC}; \
+                    db2 -tvf \"\${SQL_FILE}\" > \"\${OUT_FILE}\" 2>&1; RC=\$?; cat \"\${OUT_FILE}\"; rm -f \"\${SQL_FILE}\"; [ \${RC} -gt 4 ] && exit \${RC}; \
                   else \
                     echo 'Nothing to execute - role and grants already in place.'; rm -f \"\${SQL_FILE}\"; \
                   fi && \

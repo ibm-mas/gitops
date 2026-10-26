@@ -15,8 +15,11 @@ When the production-database-access GenericAddon is configured this job will:
   - Check if the IC_USER DB2 role already exists; create it if not.
   - Grant all required Maximo table, sequence, catalog, and package privileges
     to the IC_USER role (idempotent - safe to re-run).
-  - Grant CONNECT ON DATABASE and the IC_USER role to the IC DB user
-    (db_user passed as DB2_IC_USER env var, derived from DB2_USER = db2_<MAS_APP_ID>).
+  - Look for existing users whose name starts with "ic" (case-insensitive) and
+    grant the IC_USER role to each of them if not already assigned.
+  - Enable the USER_AUDIT audit policy (created by the audit policy job) for the
+    same users.
+  - Enable the USER_AUDIT audit policy for the IC_USER role.
 */}}
 {{- if .Values.production_database_access }}
 {{- if .Values.application_admin_role }}
@@ -47,7 +50,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v8" }}
+{{- $_job_version := "v15" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -101,7 +104,6 @@ spec:
               set -e
               source /mascli/functions/gitops_utils
 
-              export DB2_IC_USER="db2_${MAS_APP_ID}"
               export DB2_SCHEMA="MAXIMO"
 
               echo ""
@@ -112,7 +114,6 @@ spec:
               echo "DB2_INSTANCE_NAME ............. ${DB2_INSTANCE_NAME}"
               echo "DB2_DBNAME .................... ${DB2_DBNAME}"
               echo "MAS_APP_ID .................... ${MAS_APP_ID}"
-              echo "DB2_IC_USER ................... ${DB2_IC_USER}"
               echo "DB2_SCHEMA .................... ${DB2_SCHEMA}"
 
               echo ""
@@ -163,11 +164,57 @@ spec:
                   else \
                     echo \"Grants already present (\${GRANTS_COUNT} found) - skipping.\"; \
                   fi && \
-                  echo '== Step 3: Execute SQL ==' && \
+                  echo '== Step 3: Check users with ic prefix ==' && \
+                  IC_USERS=\$(getent passwd | cut -d: -f1 | grep -i '^ic' || true) && \
+                  if [ -z \"\${IC_USERS}\" ]; then \
+                    echo \"No user with prefix 'ic' found - skipping role assignment.\"; \
+                  else \
+                    for IC_DB_USER in \${IC_USERS}; do \
+                      IC_DB_USER_UC=\$(echo \"\${IC_DB_USER}\" | tr '[:lower:]' '[:upper:]') && \
+                      ROLE_ASSIGNED=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLEAUTH WHERE ROLENAME = '\${IC_ROLE}' AND GRANTEE = '\${IC_DB_USER_UC}' AND GRANTEETYPE = 'U'\" | tr -d ' .') && \
+                      if [ \"\${ROLE_ASSIGNED}\" = \"0\" ] || [ -z \"\${ROLE_ASSIGNED}\" ]; then \
+                        echo \"Role \${IC_ROLE} not assigned to \${IC_DB_USER_UC} - granting...\"; \
+                        echo \"GRANT ROLE \${IC_ROLE} TO USER \${IC_DB_USER_UC};\" >> \${SQL_FILE}; \
+                      else \
+                        echo \"Role \${IC_ROLE} already assigned to \${IC_DB_USER_UC} - skipping.\"; \
+                      fi; \
+                    done; \
+                  fi && \
+                  echo '== Step 4: Execute SQL ==' && \
                   if [ -s \"\${SQL_FILE}\" ]; then \
-                    db2 -tvf \"\${SQL_FILE}\" > \"\${OUT_FILE}\" 2>&1; RC=\$?; cat \"\${OUT_FILE}\"; rm -f \"\${SQL_FILE}\"; [ \${RC} -gt 4 ] && exit \${RC}; \
+                    db2 -tvf \"\${SQL_FILE}\" > \"\${OUT_FILE}\" 2>&1; RC=\$?; cat \"\${OUT_FILE}\"; rm -f \"\${SQL_FILE}\"; [ \${RC} -le 4 ] || exit \${RC}; \
                   else \
                     echo 'Nothing to execute - role and grants already in place.'; rm -f \"\${SQL_FILE}\"; \
+                  fi && \
+                  echo '== Step 5: Enable USER_AUDIT policy for users with ic prefix ==' && \
+                  POLICY_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME = 'USER_AUDIT'\" | tr -d ' .') && \
+                  if [ -z \"\${IC_USERS}\" ]; then \
+                    echo \"No user with prefix 'ic' found - skipping user audit.\"; \
+                  elif [ \"\${POLICY_EXISTS}\" = \"0\" ] || [ -z \"\${POLICY_EXISTS}\" ]; then \
+                    echo \"Audit policy USER_AUDIT not found - skipping user audit.\"; \
+                  else \
+                    for IC_DB_USER in \${IC_USERS}; do \
+                      IC_DB_USER_UC=\$(echo \"\${IC_DB_USER}\" | tr '[:lower:]' '[:upper:]') && \
+                      AUDIT_ASSIGNED=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE AUDITPOLICYNAME = 'USER_AUDIT' AND OBJECTTYPE = 'i' AND SUBOBJECTTYPE = 'U' AND OBJECTNAME = '\${IC_DB_USER_UC}'\" | tr -d ' .') && \
+                      if [ \"\${AUDIT_ASSIGNED}\" = \"0\" ] || [ -z \"\${AUDIT_ASSIGNED}\" ]; then \
+                        echo \"Enabling USER_AUDIT for \${IC_DB_USER_UC}...\"; \
+                        db2 \"AUDIT USER \${IC_DB_USER_UC} USING POLICY USER_AUDIT\" || echo \"WARNING: could not assign USER_AUDIT to \${IC_DB_USER_UC} (another audit policy may already be in use).\"; \
+                      else \
+                        echo \"USER_AUDIT already enabled for \${IC_DB_USER_UC} - skipping.\"; \
+                      fi; \
+                    done; \
+                  fi && \
+                  echo \"== Step 6: Enable USER_AUDIT policy for role \${IC_ROLE} ==\" && \
+                  if [ \"\${POLICY_EXISTS}\" = \"0\" ] || [ -z \"\${POLICY_EXISTS}\" ]; then \
+                    echo \"Audit policy USER_AUDIT not found - skipping role audit.\"; \
+                  else \
+                    ROLE_AUDIT_ASSIGNED=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE AUDITPOLICYNAME = 'USER_AUDIT' AND OBJECTTYPE = 'i' AND SUBOBJECTTYPE = 'R' AND OBJECTNAME = '\${IC_ROLE}'\" | tr -d ' .') && \
+                    if [ \"\${ROLE_AUDIT_ASSIGNED}\" = \"0\" ] || [ -z \"\${ROLE_AUDIT_ASSIGNED}\" ]; then \
+                      echo \"Enabling USER_AUDIT for role \${IC_ROLE}...\"; \
+                      db2 \"AUDIT ROLE \${IC_ROLE} USING POLICY USER_AUDIT\" || echo \"WARNING: could not assign USER_AUDIT to role \${IC_ROLE} (another audit policy may already be in use).\"; \
+                    else \
+                      echo \"USER_AUDIT already enabled for role \${IC_ROLE} - skipping.\"; \
+                    fi; \
                   fi && \
                   db2 terminate || true && \
                   echo 'IC user role setup completed successfully.'" \

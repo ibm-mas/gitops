@@ -22,6 +22,7 @@ Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers
 | `RoleBinding` | Pre/post-sync DB2 job role bindings | DB2 application namespace and related namespaces | Always | `application_admin_role` |
 | `Issuer` | DB2 TLS issuers | DB2 application namespace | Always | `application_admin_role` |
 | `Certificate` | DB2 TLS certificates | DB2 application namespace | Always | `application_admin_role` |
+| `Secret` | Db2 license secret | DB2 application namespace | When `db2_license_file` is provided | `application_admin_role` |
 | `Db2uInstance` | Db2u instance CR | DB2 application namespace | Always | `application_admin_role` |
 | `CronJob` | Db2 backup cron job | DB2 application namespace | When backups are enabled | `application_admin_role` |
 | `CronJob` | Db2 audit extract cron job | DB2 application namespace | When audit bucket is enabled (`db2_audit_bucket_name` set) | `application_admin_role` |
@@ -48,6 +49,7 @@ db2_table_org: string
 db2_node_label: string
 db2_dedicated_node: string
 replica_db: string
+db2_license_file: string (secret reference, optional)
 
 # Instance Registry Configuration
 db2_instance_registry:

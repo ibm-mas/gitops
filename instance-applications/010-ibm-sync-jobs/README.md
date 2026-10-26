@@ -32,6 +32,7 @@ ibm_sync_jobs:
 | `Job` | AWS DocDB add/remove user jobs | Instance-specific namespaces | When DocDB integration is configured | `application_admin_role` |
 | `Job` | IBM MAS suite cert sync job | Instance-specific namespace | When suite certificate sync is enabled | `application_admin_role` |
 | `Job` | CIS delete allowlist WAF rule job (PostDelete hook) | Instance-specific namespace | When `dns_provider` is `cis` and manual cert management is disabled | `application_admin_role` |
+| `Secret` | `cis-delete-allowlist-waf-rule` (PostDelete hook, holds the CIS API key for the job above) | Instance-specific namespace | When `dns_provider` is `cis` and manual cert management is disabled | `application_admin_role` |
 
 ## Configuration
 

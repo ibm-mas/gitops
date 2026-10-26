@@ -56,7 +56,8 @@ customization_archive_secret_names:
   - secret_name: string
     password: string (secret reference, optional)
     username: string (secret reference, optional)
-    access_secret_key: string (secret reference for S3 customization archive, optional)
+manage_customization_s3_secret_name: string (optional)
+manage_customization_s3_access_secret_key: string (secret reference for S3 customization archive, optional)
 
 # Manage Logging Configuration (optional)
 manage_logging_secret_name: string

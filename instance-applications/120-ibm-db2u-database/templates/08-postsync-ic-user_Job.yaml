@@ -16,7 +16,9 @@ When the production-database-access GenericAddon is configured this job will:
   - Grant all required Maximo table, sequence, catalog, and package privileges
     to the IC_USER role (idempotent - safe to re-run).
   - Look for existing users whose name starts with "ic" (case-insensitive) and
-    grant the IC_USER role to each of them if not already assigned.
+    grant the IC_USER role to each of them if not already assigned. Users are
+    found from the local OS user list (getent) and from SYSCAT.DBAUTH, because
+    users served by SSSD can be looked up by name but are not listed by getent.
   - Enable the USER_AUDIT audit policy (created by the audit policy job) for the
     same users.
   - Enable the USER_AUDIT audit policy for the IC_USER role.
@@ -50,7 +52,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v15" }}
+{{- $_job_version := "v16" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -165,7 +167,7 @@ spec:
                     echo \"Grants already present (\${GRANTS_COUNT} found) - skipping.\"; \
                   fi && \
                   echo '== Step 3: Check users with ic prefix ==' && \
-                  IC_USERS=\$(getent passwd | cut -d: -f1 | grep -i '^ic' || true) && \
+                  IC_USERS=\$( ( getent passwd | cut -d: -f1 | grep -i '^ic' || true; db2 -x \"SELECT RTRIM(GRANTEE) FROM SYSCAT.DBAUTH WHERE GRANTEETYPE = 'U' AND GRANTEE LIKE 'IC%'\" || true ) | tr '[:lower:]' '[:upper:]' | tr -d ' ' | grep -v '^\$' | sort -u || true ) && \
                   if [ -z \"\${IC_USERS}\" ]; then \
                     echo \"No user with prefix 'ic' found - skipping role assignment.\"; \
                   else \

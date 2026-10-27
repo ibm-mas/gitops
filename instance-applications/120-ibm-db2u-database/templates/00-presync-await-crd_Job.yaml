@@ -2,7 +2,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:e8282c6134a059e258f6fb36bfe4c823a44713de0ca8ec60ac63bbf448f8ddf3" }}
+{{- $_cli_image_digest := "sha256:d9b9e5151413d08b79a45a0b657ecf48ae4eee30cb3bc997e6ccba1a8eb8f958" }}
 
 ---
 # Service account that is authorized to read k8s secrets (needed by the job)
@@ -41,6 +41,34 @@ rules:
   verbs:
     - get
     - list
+    - patch
+    - update
+- apiGroups:
+    - ""
+  resources:
+    - pods
+  verbs:
+    - get
+    - list
+- apiGroups:
+    - ""
+  resources:
+    - pods/exec
+  verbs:
+    - create
+    - get
+    - list
+- apiGroups:
+    - ""
+  resources:
+    - configmaps
+  verbs:
+    - create
+    - get
+    - list
+    - update
+    - patch
+    - delete
 
 
 
@@ -98,7 +126,17 @@ spec:
             requests:
               cpu: 10m
               memory: 64Mi
-          env: []
+          env:
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+            - name: TARGET_DB2_VERSION
+              value: "{{ .Values.db2_version }}"
+            - name: REPLICA_DB
+              value: "{{ .Values.replica_db | default false }}"
+            - name: DB2_DBNAME
+              value: "{{ .Values.db2_dbname }}"
           volumeMounts: []
           command:
             - /bin/sh
@@ -107,12 +145,10 @@ spec:
 
               set -e
 
-              
-
               # Wait for DB2 CRD to be available by checking if we can query the resource
               # This approach uses namespace-scoped permissions instead of cluster-scoped CRD access
               wait_period=0
-              
+
               echo "Waiting for DB2 CRD (db2uinstances) to be available..."
               
               while true
@@ -127,15 +163,187 @@ spec:
                 
                 # Try to query db2uinstances - if CRD exists, this will succeed (even if no instances exist)
                 # If CRD doesn't exist, we'll get an error about unknown resource type
-                if oc get db2uinstances -n {{ .Values.db2_namespace }} --no-headers 2>/dev/null; then
+                if oc get db2uinstances -n "${DB2_NAMESPACE}" --no-headers 2>/dev/null; then
                   echo "DB2 CRD db2uinstances.db2u.databases.ibm.com is available"
                   break
                 fi
                 
                 echo "DB2 CRD not yet available, waiting... (${wait_period}s elapsed)"
               done
-              
               echo "DB2 CRD is ready"
+
+              # Check if HADR Primary DB version upgrade is being initiated
+              if [[ "${DB2_INSTANCE_NAME}" != *"sdb"* ]] && [[ -n "${TARGET_DB2_VERSION}" ]] && [[ "${REPLICA_DB}" == "true" ]]; then
+                UPGRADE_CM="hadr-upgrade-in-progress-${DB2_INSTANCE_NAME}"
+                DB_NAME="${DB2_DBNAME:-BLUDB}"
+
+                if oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                  CURRENT_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}')
+                  echo "Checking Db2 version: Current=${CURRENT_VERSION}, Target=${TARGET_DB2_VERSION}"
+
+                  if [[ -n "${CURRENT_VERSION}" ]] && [[ "${CURRENT_VERSION}" != "${TARGET_DB2_VERSION}" ]] && [[ "${TARGET_DB2_VERSION}" == "s12."* || "${TARGET_DB2_VERSION}" == "12."* ]]; then
+                    echo "================================================================================"
+                    echo "HADR Version drift detected. Initiating PreSync upgrade preparation..."
+                    echo "================================================================================"
+
+                    # The primary CR is still on the old version, so the primary has not been upgraded.
+                    # Any existing upgrade ConfigMap is stale (left over from a previous failed attempt)
+                    # and must be cleared so the standby does not proceed on stale state.
+                    if oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                      echo "Primary is not upgraded (spec.version=${CURRENT_VERSION}). Clearing stale ConfigMap ${UPGRADE_CM}..."
+                      oc delete configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --ignore-not-found=true
+                    fi
+
+                    # 1. Process Standby-specific pre-upgrade check while HADR is connected
+                    SDB_INSTANCE_NAME="${DB2_INSTANCE_NAME}-sdb"
+                    if oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                      DB_NAME="${DB2_DBNAME:-BLUDB}"
+
+                      # Use manage_hadr -status as the authoritative check — this is the same
+                      # command db2ckupgrade uses internally to verify standby role.
+                      # db2pd -hadr can report a stale role even when HADR is not actively running.
+                      echo "Checking if standby pod c-${SDB_INSTANCE_NAME}-db2u-0 is in HADR standby mode (via manage_hadr)..."
+                      STANDBY_HADR_ROLE=$(oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "manage_hadr -status | grep -i hadr_role | awk -F= '{print \$2}' | sed 's/^[[:space:]]*//' | tr -d '\n'" 2>/dev/null || true)
+                      echo "Standby HADR role (manage_hadr): '${STANDBY_HADR_ROLE}'"
+
+                      if [[ "${STANDBY_HADR_ROLE}" != "STANDBY" ]]; then
+                        echo "Standby pod is not in standby mode (role='${STANDBY_HADR_ROLE}'). Starting HADR in standby mode..."
+                        oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "
+                          db2stop force || true
+                          db2start
+                          sleep 60
+                          db2 start hadr on db ${DB_NAME} as standby
+                        " || true
+
+                        echo "HADR standby start attempted. Re-checking role via manage_hadr..."
+                        STANDBY_HADR_ROLE=$(oc exec -n "${DB2_NAMESPACE}" "c-${SDB_INSTANCE_NAME}-db2u-0" -- su - db2inst1 -c "manage_hadr -status | grep -i hadr_role | awk -F= '{print \$2}' | sed 's/^[[:space:]]*//' | tr -d '\n'" 2>/dev/null || true)
+                        echo "Standby HADR role after start attempt: '${STANDBY_HADR_ROLE}'"
+
+                        if [[ "${STANDBY_HADR_ROLE}" != "STANDBY" ]]; then
+                          echo "ERROR: Standby pod is still not in standby mode after start attempt (role='${STANDBY_HADR_ROLE}'). Cannot proceed with annotation."
+                          exit 1
+                        fi
+                      else
+                        echo "Standby pod is already in standby mode. Proceeding with annotation."
+                      fi
+
+                      # Before annotating the standby CR for the upgrade check, in both pdb and sdb:
+                      #  - create a non-empty governor db2.yml
+                      #  - stop the wolverine service (wvcli system disable)
+                      for UPGRADE_POD in "c-${DB2_INSTANCE_NAME}-db2u-0" "c-${SDB_INSTANCE_NAME}-db2u-0"; do
+                        echo "Creating governor db2.yml and disabling wolverine on ${UPGRADE_POD}..."
+                        oc exec -n "${DB2_NAMESPACE}" "${UPGRADE_POD}" -- su - db2inst1 -c "
+                          mkdir -p /mnt/blumeta0/home/db2inst1/governor
+                          printf '%s\n' '# Created by gitops for Db2 v11 to v12 upgrade' 'upgrade_in_progress: true' > /mnt/blumeta0/home/db2inst1/governor/db2.yml
+                          wvcli system disable
+                        " || exit $?
+                      done
+
+                      MAX_UPGRADE_CHECK_RETRIES=5
+                      upgrade_check_attempt=0
+                      while true; do
+                        upgrade_check_attempt=$((upgrade_check_attempt+1))
+                        echo "Annotating Standby ${SDB_INSTANCE_NAME} with db2ckupgrade_hadr=initialize (attempt ${upgrade_check_attempt}/${MAX_UPGRADE_CHECK_RETRIES})..."
+                        oc annotate db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" \
+                          db2u.databases.ibm.com/db2ckupgrade_hadr=initialize --overwrite
+
+                        echo "Waiting for Standby condition Db2CheckUpgradeHadrSuccess=True..."
+                        check_count=0
+                        upgrade_check_result=""
+                        while true; do
+                          CHECK_STATUS=$(oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrSuccess")].status}' 2>/dev/null || true)
+                          if [ "${CHECK_STATUS}" = "True" ]; then
+                            echo "Standby Db2CheckUpgradeHadrSuccess condition is True."
+                            upgrade_check_result="success"
+                            break
+                          fi
+                          CHECK_FAIL=$(oc get db2uinstance "${SDB_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.conditions[?(@.type=="Db2CheckUpgradeHadrFailure")].status}' 2>/dev/null || true)
+                          if [ "${CHECK_FAIL}" = "True" ]; then
+                            echo "Standby upgrade check reported failure on attempt ${upgrade_check_attempt}/${MAX_UPGRADE_CHECK_RETRIES}."
+                            upgrade_check_result="failure"
+                            break
+                          fi
+                          check_count=$((check_count+1))
+                          if [ $check_count -gt 30 ]; then
+                            echo "Timeout waiting for Standby Db2CheckUpgradeHadrSuccess after 300s on attempt ${upgrade_check_attempt}/${MAX_UPGRADE_CHECK_RETRIES}."
+                            upgrade_check_result="timeout"
+                            break
+                          fi
+                          echo "... waiting for Db2CheckUpgradeHadrSuccess (attempt ${check_count}/30)..."
+                          sleep 10
+                        done
+
+                        if [ "${upgrade_check_result}" = "success" ]; then
+                          break
+                        fi
+
+                        if [ ${upgrade_check_attempt} -ge ${MAX_UPGRADE_CHECK_RETRIES} ]; then
+                          echo "ERROR: Standby upgrade check did not succeed after ${MAX_UPGRADE_CHECK_RETRIES} attempts. Check \${SUPPORTDIR}/db2_upgrade_check.log on standby pod."
+                          exit 1
+                        fi
+
+                        echo "Retrying annotation in 30s..."
+                        sleep 30
+                      done
+                      echo "Standby upgrade check step finished."
+                    fi
+
+                    # 3. Create upgrade state ConfigMap for PostSync jobs
+                    echo "Recording upgrade state in ConfigMap ${UPGRADE_CM}..."
+                    oc create configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" \
+                      --from-literal=target_version="${TARGET_DB2_VERSION}" \
+                      --from-literal=primary_upgraded="false" \
+                      --from-literal=standby_upgraded="false" \
+                      --from-literal=replica_db="${REPLICA_DB}" \
+                      --dry-run=client -o yaml | oc apply -f -
+                    echo "PreSync upgrade preparation completed successfully."
+                  else
+                    echo "Db2 version matches target (${TARGET_DB2_VERSION}). No upgrade preparation needed."
+                  fi
+                fi
+              fi
+
+              # If running for standby (sdb) during HADR upgrade, wait for primary database upgrade to complete
+              if [[ "${DB2_INSTANCE_NAME}" == *"sdb"* ]] && [[ "${REPLICA_DB}" == "true" ]] && [[ "${TARGET_DB2_VERSION}" == "s12."* || "${TARGET_DB2_VERSION}" == "12."* ]]; then
+                PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
+                UPGRADE_CM="hadr-upgrade-in-progress-${PRIMARY_DB2_INSTANCE_NAME}"
+
+                if oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                  CURRENT_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}')
+                  if [[ -n "${CURRENT_VERSION}" ]] && [[ "${CURRENT_VERSION}" == "s11."* || "${CURRENT_VERSION}" == "11."* ]] && [[ "${TARGET_DB2_VERSION}" == "s12."* || "${TARGET_DB2_VERSION}" == "12."* ]]; then
+                    echo "================================================================================"
+                    echo "Standby HADR upgrade detected (Current=${CURRENT_VERSION}, Target=${TARGET_DB2_VERSION})."
+                    echo "Waiting for Primary DB (${PRIMARY_DB2_INSTANCE_NAME}) upgrade to complete..."
+                    echo "================================================================================"
+
+                    wait_count=0
+                    while true; do
+                      if oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                        PRIMARY_UPGRADED=$(oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.primary_upgraded}' 2>/dev/null || echo "false")
+                        if [[ "${PRIMARY_UPGRADED}" == "true" ]]; then
+                          PRIMARY_SPEC_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
+                          PRIMARY_STATUS_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                          PRIMARY_STATUS_STATE=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
+                          echo "Primary db2uinstance: spec.version=${PRIMARY_SPEC_VERSION}, status.version=${PRIMARY_STATUS_VERSION}, status.state=${PRIMARY_STATUS_STATE} (target=${TARGET_DB2_VERSION})"
+                          if [[ "${PRIMARY_SPEC_VERSION}" == "${TARGET_DB2_VERSION}" && "${PRIMARY_SPEC_VERSION}" == "${PRIMARY_STATUS_VERSION}" && "${PRIMARY_STATUS_STATE}" == "Ready" ]]; then
+                            echo "Primary database upgrade verified (primary_upgraded=true, version=${TARGET_DB2_VERSION}, versions in sync, state=Ready). Proceeding with Standby sync."
+                            break
+                          fi
+                        fi
+                      fi
+
+                      wait_count=$((wait_count+1))
+                      if [ $wait_count -gt 180 ]; then
+                        echo "ERROR: Timeout waiting for Primary database upgrade after 1800s (30m)."
+                        exit 1
+                      fi
+
+                      echo "Waiting for Primary DB upgrade / ConfigMap ${UPGRADE_CM}... (${wait_count}/180 - $((wait_count*10))s elapsed)"
+                      sleep 10
+                    done
+                  fi
+                fi
+              fi
 
       restartPolicy: Never
 

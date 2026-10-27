@@ -4,7 +4,7 @@
 {{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
-{{- $_cli_image_digest := "sha256:e8282c6134a059e258f6fb36bfe4c823a44713de0ca8ec60ac63bbf448f8ddf3" }}
+{{- $_cli_image_digest := "sha256:d9b9e5151413d08b79a45a0b657ecf48ae4eee30cb3bc997e6ccba1a8eb8f958" }}
 
 {{ $ns               :=  .Values.mas_app_namespace }}
 {{ $np_name          :=  "postsync-sanity-mvi-np" }}
@@ -215,25 +215,23 @@ data:
 
     @pytest.fixture(scope="session")
     def mvi_host(mvi_route):
+      # Use the internal k8s service URL to avoid going through the external CIS proxy
       try:
-        yield mvi_route['spec']['host']
+        svc_name = mvi_route['spec']['to']['name']
+        yield f"{svc_name}.{mvi_namespace}.svc:8443"
       except KeyError as e:
-        assert False, f"Unable to determine MVI host; spec.host key not present in {mvi_route_name}/{mvi_namespace}: {mvi_route}. Error details: {e}"
+        assert False, f"Unable to determine MVI internal service; spec.to.name key not present in {mvi_route_name}/{mvi_namespace}: {mvi_route}. Error details: {e}"
 
     @pytest.fixture(scope="session")
     def mvi_host_ca_filepath(mvi_route):
 
-      # Read the certificate field from the MVI Route. 
-      # This may include CA certificates that we need in order to trust the certificates presented by the external MVI endpoint.
-      try:
-        mvi_route_certificate = mvi_route['spec']['tls']['certificate']
-      except KeyError as e:
-        pass
+      mvi_route_destinationCACertificate = None
 
-      # Read the caCertificate field from the MVI Route. 
-      # This may include CA certificates that we need in order to trust the certificates presented by the external MVI endpoint.
+      # Use the destinationCACertificate from the route for internal service TLS verification.
+      # This is the CA that signed the internal service cert, needed when bypassing the
+      # external CIS proxy and hitting the k8s service directly.
       try:
-        mvi_route_caCertificate = mvi_route['spec']['tls']['caCertificate']
+        mvi_route_destinationCACertificate = mvi_route['spec']['tls']['destinationCACertificate']
       except KeyError as e:
         pass
 
@@ -246,12 +244,9 @@ data:
       # Combine all of the above into a single .pem file that we can use when issuing HTTP requests
       chain_file = tempfile.NamedTemporaryFile(delete=False)
       try:
-        
-        if mvi_route_certificate:
-          chain_file.write(mvi_route_certificate.encode())
-        
-        if mvi_route_caCertificate:
-          chain_file.write(mvi_route_caCertificate.encode())
+
+        if mvi_route_destinationCACertificate:
+          chain_file.write(mvi_route_destinationCACertificate.encode())
 
         chain_file.write(default_ca_content)
 

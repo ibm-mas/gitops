@@ -11,7 +11,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:e8282c6134a059e258f6fb36bfe4c823a44713de0ca8ec60ac63bbf448f8ddf3" }}
+{{- $_cli_image_digest := "sha256:d9b9e5151413d08b79a45a0b657ecf48ae4eee30cb3bc997e6ccba1a8eb8f958" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -28,7 +28,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v11" }}
+{{- $_job_version := "v12" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -110,11 +110,31 @@ rules:
   verbs:
     - "get"
 - apiGroups:
+    - ""
+  resources:
+    - secrets
+  verbs:
+    - get
+    - list
+- apiGroups:
     - db2u.databases.ibm.com
   resources:
     - db2uinstances
   verbs:
-    - "get"
+    - get
+    - patch
+    - update
+- apiGroups:
+    - ""
+  resources:
+    - configmaps
+  verbs:
+    - create
+    - get
+    - list
+    - update
+    - patch
+    - delete
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -182,6 +202,8 @@ spec:
               value: "{{ .Values.db2_instance_name }}"
             - name: DB2_DBNAME
               value: "{{ .Values.db2_dbname }}"
+            - name: DB2_VERSION
+              value: "{{ .Values.db2_version }}"
             - name: AUTO_BACKUP
               value: "{{ .Values.auto_backup }}"
           command:
@@ -375,6 +397,146 @@ spec:
               echo "================================================================================"
               wait_for_resource "svc" "c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-engn-svc" "${DB2_NAMESPACE}"
 
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for primary db2uinstance ${PRIMARY_DB2_INSTANCE_NAME} to reach version=${DB2_VERSION}, versions in sync, state=Ready..."
+              echo "================================================================================"
+              cr_sync_count=0
+              while true; do
+                PRI_SPEC_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
+                PRI_STATUS_VERSION=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                PRI_STATUS_STATE=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
+                echo "... primary spec.version=${PRI_SPEC_VERSION}, status.version=${PRI_STATUS_VERSION}, status.state=${PRI_STATUS_STATE} (target=${DB2_VERSION}, attempt ${cr_sync_count})"
+                if [[ "${PRI_SPEC_VERSION}" == "${DB2_VERSION}" && "${PRI_SPEC_VERSION}" == "${PRI_STATUS_VERSION}" && "${PRI_STATUS_STATE}" == "Ready" ]]; then
+                  echo "Primary db2uinstance is at target version, in sync and Ready."
+                  break
+                fi
+                cr_sync_count=$((cr_sync_count+1))
+                if [ $cr_sync_count -gt 180 ]; then
+                  echo "ERROR: Timeout waiting for primary db2uinstance ${PRIMARY_DB2_INSTANCE_NAME} to reach version=${DB2_VERSION} and Ready state after 1800s."
+                  exit 1
+                fi
+                sleep 10
+              done
+
+              UPGRADE_CM="hadr-upgrade-in-progress-${PRIMARY_DB2_INSTANCE_NAME}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for standby db2uinstance ${DB2_INSTANCE_NAME} to reach version=${DB2_VERSION}, versions in sync, state=Ready..."
+              echo "================================================================================"
+              cr_sync_count=0
+              while true; do
+                SDB_SPEC_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.spec.version}' 2>/dev/null || true)
+                SDB_STATUS_VERSION=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                SDB_STATUS=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.state}' 2>/dev/null || true)
+                echo "... standby spec.version=${SDB_SPEC_VERSION}, status.version=${SDB_STATUS_VERSION} (target=${DB2_VERSION}, attempt ${cr_sync_count})"
+
+                if [[ "${SDB_SPEC_VERSION}" == "${DB2_VERSION}" && "${SDB_SPEC_VERSION}" == "${SDB_STATUS_VERSION}" && "${SDB_STATUS}" == "Ready" ]]; then
+                  echo "Standby db2uinstance is at target version, in sync and Ready."
+                  break
+                fi
+
+                cr_sync_count=$((cr_sync_count+1))
+                if [ $cr_sync_count -gt 180 ]; then
+                  echo "ERROR: Timeout waiting for standby db2uinstance ${DB2_INSTANCE_NAME} to reach version=${DB2_VERSION} after 1800s."
+                  exit 1
+                fi
+                sleep 10
+              done
+
+              # Standby upgrade steps: run only in the v11 -> v12 upgrade scenario (upgrade ConfigMap still present)
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                SDB_POD="c-${DB2_INSTANCE_NAME}-db2u-0"
+                PDB_POD="c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0"
+
+                echo ""
+                echo "================================================================================"
+                echo "Running database upgrade on Standby ${SDB_POD} (db2_update_upgrade --databases)..."
+                echo "================================================================================"
+                oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2_update_upgrade --databases" || exit $?
+
+                echo ""
+                echo "================================================================================"
+                echo "Waiting for HADR state=PEER, connect status=CONNECTED and standby replay log file to match primary log file..."
+                echo "================================================================================"
+                hadr_peer_count=0
+                while true; do
+                  PDB_LOG_FILE=$(oc exec -n "${DB2_NAMESPACE}" "${PDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *PRIMARY_LOG_FILE' | cut -d= -f2 | cut -d, -f1 | tr -d ' '" 2>/dev/null || true)
+                  SDB_REPLAY_LOG_FILE=$(oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *STANDBY_REPLAY_LOG_FILE' | cut -d= -f2 | cut -d, -f1 | tr -d ' '" 2>/dev/null || true)
+                  SDB_HADR_STATE=$(oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *HADR_STATE' | cut -d= -f2 | tr -d ' '" 2>/dev/null || true)
+                  SDB_HADR_CONNECT=$(oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *HADR_CONNECT_STATUS ' | cut -d= -f2 | tr -d ' '" 2>/dev/null || true)
+                  echo "... primary log file=${PDB_LOG_FILE}, standby replay log file=${SDB_REPLAY_LOG_FILE}, hadr state=${SDB_HADR_STATE}, connect status=${SDB_HADR_CONNECT} (attempt ${hadr_peer_count})"
+                  if [[ -n "${PDB_LOG_FILE}" && "${PDB_LOG_FILE}" == "${SDB_REPLAY_LOG_FILE}" && "${SDB_HADR_STATE}" == "PEER" && "${SDB_HADR_CONNECT}" == "CONNECTED" ]]; then
+                    echo "Standby replay log file matches primary, HADR state is PEER and CONNECTED."
+                    break
+                  fi
+                  hadr_peer_count=$((hadr_peer_count+1))
+                  if [ $hadr_peer_count -gt 180 ]; then
+                    echo "ERROR: Timeout waiting for HADR PEER/CONNECTED and matching replay log file after 1800s."
+                    exit 1
+                  fi
+                  sleep 10
+                done
+
+                echo "Removing governor db2.yml on Standby ${SDB_POD}..."
+                oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "rm -f /mnt/blumeta0/home/db2inst1/governor/db2.yml" || exit $?
+
+                echo "Running post upgrade on Standby ${SDB_POD} (db2_update_upgrade --post-upgrade)..."
+                oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2_update_upgrade --post-upgrade" || exit $?
+
+                echo ""
+                echo "================================================================================"
+                echo "Post upgrade done. Verifying standby HADR state=PEER and connect status=CONNECTED..."
+                echo "================================================================================"
+                post_upgrade_hadr_count=0
+                while true; do
+                  SDB_HADR_STATE=$(oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *HADR_STATE' | cut -d= -f2 | tr -d ' '" 2>/dev/null || true)
+                  SDB_HADR_CONNECT=$(oc exec -n "${DB2_NAMESPACE}" "${SDB_POD}" -- su - db2inst1 -c "db2pd -db ${DB2_DBNAME} -hadr | grep -m1 '^ *HADR_CONNECT_STATUS ' | cut -d= -f2 | tr -d ' '" 2>/dev/null || true)
+                  echo "... hadr state=${SDB_HADR_STATE}, connect status=${SDB_HADR_CONNECT} (attempt ${post_upgrade_hadr_count})"
+                  if [[ "${SDB_HADR_STATE}" == "PEER" && "${SDB_HADR_CONNECT}" == "CONNECTED" ]]; then
+                    echo "Standby HADR is in PEER state and CONNECTED after post upgrade."
+                    break
+                  fi
+                  post_upgrade_hadr_count=$((post_upgrade_hadr_count+1))
+                  if [ $post_upgrade_hadr_count -gt 60 ]; then
+                    echo "ERROR: Timeout waiting for standby HADR PEER/CONNECTED after post upgrade (600s)."
+                    exit 1
+                  fi
+                  sleep 10
+                done
+              fi
+
+              # Cleanup HADR upgrade state ConfigMap once Standby setup starts
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]] && oc get configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                oc delete configmap "${UPGRADE_CM}" -n "${DB2_NAMESPACE}" --ignore-not-found=true
+                echo "HADR upgrade state ConfigMap ${UPGRADE_CM} cleaned up."
+              fi
+
+              # Apply Db2 License if Db2 version >= 12 using Primary secret db2u-license-${PRIMARY_DB2_INSTANCE_NAME}
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]]; then
+                echo ""
+                echo "================================================================================"
+                echo "Checking and applying Db2 License from secret for Standby Db2 v12..."
+                echo "================================================================================"
+                PRIMARY_DB2_INSTANCE_NAME=${DB2_INSTANCE_NAME:0:-4}
+                LICENSE_SECRET="db2u-license-${PRIMARY_DB2_INSTANCE_NAME}"
+                if oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" >/dev/null 2>&1; then
+                  echo "Found secret ${LICENSE_SECRET}. Extracting and applying license to Standby c-${DB2_INSTANCE_NAME}-db2u-0..."
+                  oc get secret "${LICENSE_SECRET}" -n "${DB2_NAMESPACE}" -o jsonpath='{.data.db2u-lic}' | base64 -d | sed '/^[[:space:]]*$/d' > /tmp/db2_apply_lic.lic
+                  oc cp /tmp/db2_apply_lic.lic "${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/db2_license.lic" -c db2u || true
+                  rm -f /tmp/db2_apply_lic.lic
+                  oc exec -n "${DB2_NAMESPACE}" "c-${DB2_INSTANCE_NAME}-db2u-0" -- su -lc "
+                    if [ -f /tmp/db2_license.lic ]; then
+                      echo 'Applying license via db2licm on Standby...'
+                      db2licm -a /tmp/db2_license.lic || true
+                      rm -f /tmp/db2_license.lic
+                    fi
+                  " db2inst1 || true
+                else
+                  echo "No custom license secret found (${LICENSE_SECRET}). Skipping license registration."
+                fi
+              fi
 
               # Get HADR ROLE and CONNECT STATUS for Primary and Standby
               get_existing_hadr_config
@@ -385,8 +547,24 @@ spec:
                 IS_FRESH_HADR_SETUP_STANDBY='false'
               fi
 
+              # After a version upgrade both databases already exist — no restore is needed.
+              # Detect the upgrade scenario: target version is v12 and the UPGRADE_CM has been
+              # cleaned up (postsync-setup-hadr runs after cleanup in the upgrade path).
+              # In this case skip the entire backup/copy/restore block and go straight to db2apply.
+              IS_POST_UPGRADE='false'
+              if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]]; then
+                PRI_STATUS_VER=$(oc get db2uinstance "${PRIMARY_DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                SDB_STATUS_VER=$(oc get db2uinstance "${DB2_INSTANCE_NAME}" -n "${DB2_NAMESPACE}" -o jsonpath='{.status.version}' 2>/dev/null || true)
+                if [[ "${PRI_STATUS_VER}" == "${DB2_VERSION}" && "${SDB_STATUS_VER}" == "${DB2_VERSION}" ]]; then
+                  IS_POST_UPGRADE='true'
+                  echo "Post-upgrade scenario detected (primary=${PRI_STATUS_VER}, standby=${SDB_STATUS_VER}). Skipping backup/restore, proceeding to apply configs and start HADR."
+                fi
+              fi
+
               is_backup_file_available='false'
-              if [[ ! ($PRIMARY_HADR_ROLE == 'PRIMARY' && $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'CONNECTED') ]]; then
+              if [[ "${IS_POST_UPGRADE}" == 'true' ]]; then
+                echo "Post-upgrade: skipping restore block, applying configs and starting HADR directly."
+              elif [[ ! ($PRIMARY_HADR_ROLE == 'PRIMARY' && $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'CONNECTED') ]]; then
 
                 # If for some reason HADR got disconnected
                 if [[ $STANDBY_HADR_ROLE == 'STANDBY' && $STANDBY_HADR_STATUS == 'DISCONNECTED' ]]; then
@@ -571,6 +749,11 @@ spec:
                 echo "Copying keystore from primary to standby"
                 KEYSTORE_GENERATION_SCRIPT='/tmp/keystore_generation.sh'
 
+                GSK_CMD="gsk8capicmd_64"
+                if [[ "${DB2_VERSION}" == "s12."* || "${DB2_VERSION}" == "12."* ]]; then
+                  GSK_CMD="gsk9certutil_64"
+                fi
+
                 cat > ${KEYSTORE_GENERATION_SCRIPT} << EOF
                   #!/bin/bash
                   db2 connect to ${DB2_DBNAME};
@@ -579,7 +762,7 @@ spec:
                     exit 1
                   fi
                   label=\$(db2 -x "select MASTER_KEY_LABEL from TABLE(SYSPROC.ADMIN_GET_ENCRYPTION_INFO()) where OBJECT_NAME='${DB2_DBNAME}' and OBJECT_TYPE='DATABASE'")
-                  gsk8capicmd_64 -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label ${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'
+                  ${GSK_CMD} -cert -export -db /mnt/blumeta0/db2/keystore/keystore.p12  -stashed -label \${label} -target /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 -target_pw 'CDS0n&Up'
 
               EOF
 
@@ -596,7 +779,7 @@ spec:
                 oc exec -n ${DB2_NAMESPACE} c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0 -- su -lc "mkdir -p /tmp/keystore; cp /mnt/blumeta0/home/db2inst1/migrate_hadr.p12 /tmp/keystore; chmod -R 777 /tmp/keystore" db2inst1 || exit $?
                 oc rsync ${DB2_NAMESPACE}/c-${PRIMARY_DB2_INSTANCE_NAME}-db2u-0:/tmp/keystore /tmp
                 oc rsync /tmp/keystore ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "gsk8capicmd_64 -cert -import -db /tmp/keystore/migrate_hadr.p12 -pw 'CDS0n&Up' -target /mnt/blumeta0/db2/keystore/keystore.p12 -target_stashed" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "${GSK_CMD} -cert -import -db /tmp/keystore/migrate_hadr.p12 -pw 'CDS0n&Up' -target /mnt/blumeta0/db2/keystore/keystore.p12 -target_stashed" db2inst1 || exit $?
 
                 # Restore in standby
                 echo ""

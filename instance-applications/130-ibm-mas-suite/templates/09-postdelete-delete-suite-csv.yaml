@@ -5,7 +5,8 @@
 PostDelete job: deletes the ibm-mas-operator Subscription and CSV from the core
 namespace after the ArgoCD Application is removed, so OLM does not keep the Suite
 operator running and the namespace can terminate cleanly.
-Depends on SA/Role/RoleBinding in 01-postdelete-crs-resources.yaml.
+NOTE: uses its own dedicated SA/Role/RoleBinding
+because that SA is deleted by resources-finalizer before PostDelete hooks run.
 Use build/bin/set-cli-image-digest.sh to update the image digest below.
 */}}
 {{- $_cli_image_digest := "sha256:020f1925421de13beaf439aa09181209875ed3791824bcaaf1daaf910c725266" }}
@@ -14,8 +15,93 @@ Use build/bin/set-cli-image-digest.sh to update the image digest below.
 {{- $name_hash := $core_ns | sha256sum | trunc 6 }}
 {{- $job_name  := printf "postdelete-suite-csv-%s" $name_hash }}
 
-{{ $sa_name   := "postdelete-delete-cr-sa" }}
-{{ $job_label := "postdelete-delete-cr-job" }}
+{{ $sa_name   := "postdelete-suite-csv-sa" }}
+{{ $role_name := "postdelete-suite-csv-r" }}
+{{ $rb_name   := printf "postdelete-suite-csv-rb-%s" .Values.instance_id }}
+{{ $np_name   := "postdelete-suite-csv-np" }}
+{{ $job_label := "postdelete-suite-csv-job" }}
+
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - delete
+      - get
+      - list
+    apiGroups:
+      - operators.coreos.com
+    resources:
+      - clusterserviceversions
+      - subscriptions
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $core_ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
 
 ---
 apiVersion: batch/v1

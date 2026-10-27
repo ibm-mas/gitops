@@ -80,6 +80,14 @@ rules:
     resources:
       - clusterserviceversions
       - subscriptions
+  - verbs:
+      - delete
+      - get
+      - list
+    apiGroups:
+      - core.mas.ibm.com
+    resources:
+      - suites
 
 ---
 kind: RoleBinding
@@ -141,12 +149,51 @@ spec:
           env:
             - name: CORE_NAMESPACE
               value: {{ $core_ns }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
           volumeMounts: []
           command:
             - /bin/sh
             - -c
             - |
               set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete Suite CR in ${CORE_NAMESPACE}"
+
+              set +e
+              SUITE_NAME=$(oc get suite -n ${CORE_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+              set -e
+
+              if [[ -z "${SUITE_NAME}" ]]; then
+                echo "Suite CR not found - already removed"
+              else
+                echo "Deleting Suite: ${SUITE_NAME}"
+                set +e
+                oc delete suite "${SUITE_NAME}" \
+                  -n ${CORE_NAMESPACE} --wait=false 2>/dev/null
+                set -e
+
+                echo "Waiting up to 600s for operator to process Suite finalizer..."
+                WAIT_SECS=0
+                while [[ ${WAIT_SECS} -lt 600 ]]; do
+                  set +e
+                  SUITE_NAME=$(oc get suite -n ${CORE_NAMESPACE} \
+                    --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+                  set -e
+                  [[ -z "${SUITE_NAME}" ]] && break
+                  sleep 15
+                  WAIT_SECS=$((WAIT_SECS + 15))
+                  echo "  Still waiting... ${WAIT_SECS}s elapsed"
+                done
+
+                if [[ -n "${SUITE_NAME}" ]]; then
+                  echo "ERROR: Suite CR still present after ${WAIT_SECS}s - operator did not release finalizer"
+                  exit 1
+                fi
+                echo "Suite CR gone - safe to remove OLM resources"
+              fi
+
               echo "------------------------------------------------------------------"
               echo "PostDelete: delete ibm-mas-operator Subscription in ${CORE_NAMESPACE}"
               set +e

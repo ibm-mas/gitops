@@ -52,7 +52,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v18" }}
+{{- $_job_version := "v19" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -140,7 +140,7 @@ spec:
                   > \${SQL_FILE} && \
                   echo \"Connecting to database \${DB_NAME}...\" && \
                   db2 connect to \"\${DB_NAME}\" && \
-                  echo '== Step 1: Check role ==' && \
+                  echo '' && echo '== Step 1: Check role ==' && \
                   EXISTING_ROLE=\$(db2 -x \"SELECT CHAR(ROLENAME,30) FROM SYSCAT.ROLES WHERE ROLENAME = '\${IC_ROLE}'\" || true) && \
                   if echo \"\${EXISTING_ROLE}\" | grep -iqw \"\${IC_ROLE}\"; then \
                     echo \"Role \${IC_ROLE} already exists - skipping creation.\"; \
@@ -148,7 +148,7 @@ spec:
                     echo \"Role \${IC_ROLE} does not exist - creating...\"; \
                     echo \"CREATE ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
                   fi && \
-                  echo '== Step 2: Check grants ==' && \
+                  echo '' && echo '== Step 2: Check grants ==' && \
                   GRANTS_COUNT=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.TABAUTH WHERE GRANTEE = '\${IC_ROLE}' AND GRANTEETYPE = 'R' AND TABSCHEMA = '\${DB_SCHEMA}' AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y' AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'\" | tr -d ' .') && \
                   if [ \"\${GRANTS_COUNT}\" = \"0\" ] || [ -z \"\${GRANTS_COUNT}\" ]; then \
                     echo \"Grants not found - assigning all privileges...\"; \
@@ -166,7 +166,7 @@ spec:
                   else \
                     echo \"Grants already present (\${GRANTS_COUNT} found) - skipping.\"; \
                   fi && \
-                  echo '== Step 3: Check users with ic prefix ==' && \
+                  echo '' && echo '== Step 3: Check users with ic prefix ==' && \
                   OS_USERS=\$(getent passwd | cut -d: -f1 | grep -i '^ic' || true) && \
                   DB_USERS=\$(db2 -x \"SELECT RTRIM(GRANTEE) FROM SYSCAT.DBAUTH WHERE GRANTEETYPE = 'U' AND GRANTEE LIKE 'IC%'\" | tr -d ' ' || true) && \
                   IC_USERS=\$( (echo \"\${OS_USERS}\"; echo \"\${DB_USERS}\") | tr '[:lower:]' '[:upper:]' | grep -E '^IC[A-Z0-9_#@\$]*\$' | sort -u || true ) && \
@@ -186,13 +186,13 @@ spec:
                       fi; \
                     done; \
                   fi && \
-                  echo '== Step 4: Execute SQL ==' && \
+                  echo '' && echo '== Step 4: Execute SQL ==' && \
                   if [ -s \"\${SQL_FILE}\" ]; then \
                     db2 -tvf \"\${SQL_FILE}\" > \"\${OUT_FILE}\" 2>&1; RC=\$?; cat \"\${OUT_FILE}\"; rm -f \"\${SQL_FILE}\"; [ \${RC} -le 4 ] || exit \${RC}; \
                   else \
                     echo 'Nothing to execute - role and grants already in place.'; rm -f \"\${SQL_FILE}\"; \
                   fi && \
-                  echo '== Step 5: Enable USER_AUDIT policy for users with ic prefix ==' && \
+                  echo '' && echo '== Step 5: Enable USER_AUDIT policy for users with ic prefix ==' && \
                   POLICY_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME = 'USER_AUDIT'\" | tr -d ' .') && \
                   if [ -z \"\${IC_USERS}\" ]; then \
                     echo \"No user whose name starts with 'ic' was found - skipping user audit.\"; \
@@ -214,7 +214,7 @@ spec:
                       fi; \
                     done; \
                   fi && \
-                  echo \"== Step 6: Enable USER_AUDIT policy for role \${IC_ROLE} ==\" && \
+                  echo '' && echo \"== Step 6: Enable USER_AUDIT policy for role \${IC_ROLE} ==\" && \
                   if [ \"\${POLICY_EXISTS}\" = \"0\" ] || [ -z \"\${POLICY_EXISTS}\" ]; then \
                     echo \"Audit policy USER_AUDIT not found - skipping role audit.\"; \
                   else \
@@ -230,13 +230,12 @@ spec:
                       echo \"USER_AUDIT already enabled for role \${IC_ROLE} - skipping.\"; \
                     fi; \
                   fi && \
-                  db2 terminate || true && \
-                  echo 'IC user role setup completed successfully.'" \
+                  db2 terminate || true" \
                 db2inst1 || exit $?
 
               echo ""
               echo "================================================================================"
-              echo "IC user role setup completed"
+              echo "IC user role setup completed successfully"
               echo "================================================================================"
 
       restartPolicy: Never

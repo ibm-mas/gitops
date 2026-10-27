@@ -52,7 +52,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v16" }}
+{{- $_job_version := "v18" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -167,10 +167,14 @@ spec:
                     echo \"Grants already present (\${GRANTS_COUNT} found) - skipping.\"; \
                   fi && \
                   echo '== Step 3: Check users with ic prefix ==' && \
-                  IC_USERS=\$( ( getent passwd | cut -d: -f1 | grep -i '^ic' || true; db2 -x \"SELECT RTRIM(GRANTEE) FROM SYSCAT.DBAUTH WHERE GRANTEETYPE = 'U' AND GRANTEE LIKE 'IC%'\" || true ) | tr '[:lower:]' '[:upper:]' | tr -d ' ' | grep -v '^\$' | sort -u || true ) && \
+                  OS_USERS=\$(getent passwd | cut -d: -f1 | grep -i '^ic' || true) && \
+                  DB_USERS=\$(db2 -x \"SELECT RTRIM(GRANTEE) FROM SYSCAT.DBAUTH WHERE GRANTEETYPE = 'U' AND GRANTEE LIKE 'IC%'\" | tr -d ' ' || true) && \
+                  IC_USERS=\$( (echo \"\${OS_USERS}\"; echo \"\${DB_USERS}\") | tr '[:lower:]' '[:upper:]' | grep -E '^IC[A-Z0-9_#@\$]*\$' | sort -u || true ) && \
                   if [ -z \"\${IC_USERS}\" ]; then \
-                    echo \"No user with prefix 'ic' found - skipping role assignment.\"; \
+                    echo \"No user whose name starts with 'ic' was found (checked OS users and database authorizations).\"; \
+                    echo \"Skipping role assignment because ic user not found.\"; \
                   else \
+                    echo \"Found user(s) whose name starts with 'ic': \$(echo \${IC_USERS})\"; \
                     for IC_DB_USER in \${IC_USERS}; do \
                       IC_DB_USER_UC=\$(echo \"\${IC_DB_USER}\" | tr '[:lower:]' '[:upper:]') && \
                       ROLE_ASSIGNED=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLEAUTH WHERE ROLENAME = '\${IC_ROLE}' AND GRANTEE = '\${IC_DB_USER_UC}' AND GRANTEETYPE = 'U'\" | tr -d ' .') && \
@@ -191,7 +195,7 @@ spec:
                   echo '== Step 5: Enable USER_AUDIT policy for users with ic prefix ==' && \
                   POLICY_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME = 'USER_AUDIT'\" | tr -d ' .') && \
                   if [ -z \"\${IC_USERS}\" ]; then \
-                    echo \"No user with prefix 'ic' found - skipping user audit.\"; \
+                    echo \"No user whose name starts with 'ic' was found - skipping user audit.\"; \
                   elif [ \"\${POLICY_EXISTS}\" = \"0\" ] || [ -z \"\${POLICY_EXISTS}\" ]; then \
                     echo \"Audit policy USER_AUDIT not found - skipping user audit.\"; \
                   else \
@@ -200,7 +204,11 @@ spec:
                       AUDIT_ASSIGNED=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE AUDITPOLICYNAME = 'USER_AUDIT' AND OBJECTTYPE = 'i' AND SUBOBJECTTYPE = 'U' AND OBJECTNAME = '\${IC_DB_USER_UC}'\" | tr -d ' .') && \
                       if [ \"\${AUDIT_ASSIGNED}\" = \"0\" ] || [ -z \"\${AUDIT_ASSIGNED}\" ]; then \
                         echo \"Enabling USER_AUDIT for \${IC_DB_USER_UC}...\"; \
-                        db2 \"AUDIT USER \${IC_DB_USER_UC} USING POLICY USER_AUDIT\" || echo \"WARNING: could not assign USER_AUDIT to \${IC_DB_USER_UC} (another audit policy may already be in use).\"; \
+                        if db2 \"AUDIT USER \${IC_DB_USER_UC} USING POLICY USER_AUDIT\"; then \
+                          echo \"OK: USER_AUDIT is now enabled for user \${IC_DB_USER_UC}.\"; \
+                        else \
+                          echo \"WARNING: could not enable USER_AUDIT for user \${IC_DB_USER_UC} (another audit policy may already be in use).\"; \
+                        fi; \
                       else \
                         echo \"USER_AUDIT already enabled for \${IC_DB_USER_UC} - skipping.\"; \
                       fi; \
@@ -213,7 +221,11 @@ spec:
                     ROLE_AUDIT_ASSIGNED=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE AUDITPOLICYNAME = 'USER_AUDIT' AND OBJECTTYPE = 'i' AND SUBOBJECTTYPE = 'R' AND OBJECTNAME = '\${IC_ROLE}'\" | tr -d ' .') && \
                     if [ \"\${ROLE_AUDIT_ASSIGNED}\" = \"0\" ] || [ -z \"\${ROLE_AUDIT_ASSIGNED}\" ]; then \
                       echo \"Enabling USER_AUDIT for role \${IC_ROLE}...\"; \
-                      db2 \"AUDIT ROLE \${IC_ROLE} USING POLICY USER_AUDIT\" || echo \"WARNING: could not assign USER_AUDIT to role \${IC_ROLE} (another audit policy may already be in use).\"; \
+                      if db2 \"AUDIT ROLE \${IC_ROLE} USING POLICY USER_AUDIT\"; then \
+                        echo \"OK: USER_AUDIT is now enabled for role \${IC_ROLE}.\"; \
+                      else \
+                        echo \"WARNING: could not enable USER_AUDIT for role \${IC_ROLE} (another audit policy may already be in use).\"; \
+                      fi; \
                     else \
                       echo \"USER_AUDIT already enabled for role \${IC_ROLE} - skipping.\"; \
                     fi; \

@@ -1,0 +1,193 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+PostDelete job: deletes the MAS Workspace CR after the ArgoCD Application is removed.
+The Workspace CR carries helm.sh/resource-policy: keep so ArgoCD's resources-finalizer
+skips it. This job deletes it and waits for the operator to process
+workspace.core.mas.ibm.com/finalizer naturally
+Use build/bin/set-cli-image-digest.sh to update the image digest below.
+*/}}
+{{- $_cli_image_digest := "sha256:d9b9e5151413d08b79a45a0b657ecf48ae4eee30cb3bc997e6ccba1a8eb8f958" }}
+
+{{- $core_ns   := printf "mas-%s-core" .Values.instance_id }}
+{{- $ws_name   := printf "%s-%s" .Values.instance_id .Values.mas_workspace_id }}
+{{- $name_hash := $ws_name | sha256sum | trunc 6 }}
+{{- $job_name  := printf "postdelete-cr-job-ws-%s-%s" ($ws_name | trunc 32) $name_hash }}
+
+{{ $sa_name   := "postdelete-workspace-sa" }}
+{{ $role_name := "postdelete-workspace-r" }}
+{{ $rb_name   := printf "postdelete-workspace-rb-%s" .Values.instance_id }}
+{{ $np_name   := "postdelete-workspace-np" }}
+{{ $job_label := "postdelete-workspace-job" }}
+
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - delete
+      - get
+      - list
+      - patch
+    apiGroups:
+      - core.mas.ibm.com
+    resources:
+      - workspaces
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $core_ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CORE_NAMESPACE
+              value: {{ $core_ns }}
+            - name: WS_NAME
+              value: {{ $ws_name }}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete Workspace CR ${WS_NAME} in ${CORE_NAMESPACE}"
+
+              set +e
+              WS=$(oc get workspace "${WS_NAME}" -n ${CORE_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null)
+              set -e
+
+              if [[ -z "${WS}" ]]; then
+                echo "Workspace CR not found - already removed"
+                exit 0
+              fi
+
+              echo "Deleting Workspace: ${WS_NAME}"
+              set +e
+              oc delete workspace "${WS_NAME}" -n ${CORE_NAMESPACE} --wait=false 2>/dev/null
+              set -e
+
+              echo "Waiting up to 120s for operator to process Workspace finalizer..."
+              WAIT_SECS=0
+              while [[ ${WAIT_SECS} -lt 120 ]]; do
+                set +e
+                WS=$(oc get workspace "${WS_NAME}" -n ${CORE_NAMESPACE} \
+                  --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null)
+                set -e
+                [[ -z "${WS}" ]] && break
+                sleep 15
+                WAIT_SECS=$((WAIT_SECS + 15))
+                echo "  Still waiting... ${WAIT_SECS}s elapsed"
+              done
+
+              if [[ -n "${WS}" ]]; then
+                echo "Operator did not release Workspace finalizer after ${WAIT_SECS}s - forcing removal"
+                oc patch workspace "${WS_NAME}" -n ${CORE_NAMESPACE} \
+                  --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+                sleep 5
+              fi
+              echo "Workspace CR gone"
+      volumes: []
+  backoffLimit: 4
+{{- end }}
+{{- end }}

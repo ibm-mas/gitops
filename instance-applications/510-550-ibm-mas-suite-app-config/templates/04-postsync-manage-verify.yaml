@@ -51,6 +51,25 @@ the catalog version or other tracked values change.
 
 
 ---
+# Non-hook ConfigMap whose content tracks mas_catalog_version.
+# Because this is a normal sync resource (no argocd.argoproj.io/hook annotation),
+# ArgoCD includes it in the diff. When mas_catalog_version changes, this ConfigMap
+# changes, the app goes OutOfSync, automated selfHeal triggers a sync, and the
+# PostSync hooks (including the verify job) are executed.
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: postsync-verify-manage-trigger-cm
+  namespace: {{ $ns }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+immutable: false
+data:
+  mas_catalog_version: "{{ .Values.mas_catalog_version }}"
+
+---
 # Permit outbound communication by the Job pod
 # (Needed to communicate with the K8S HTTP API, PyPI, manage Route)
 kind: NetworkPolicy

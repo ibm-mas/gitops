@@ -6,7 +6,35 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 */}}
 {{- $_cli_image_digest := "sha256:e6c8f8a02b4bd44026dac280b1d006e60d55e15ee189fce18be7c6922879f8b6" }}
 
-# A verify test is one that is non disruptive i.e. it won't create new users, i won't call authenticated apis, and it won't creates resources 
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars in length to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "postsync-verify-manage-job" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job.
+Any change to these values will cause the job name to change, forcing ArgoCD to create a new Job resource and re-run it.
+mas_catalog_version is included so that a catalog version change always triggers a re-run.
+*/}}
+{{- $_job_config_values := pick .Values "mas_catalog_version" "instance_id" "mas_workspace_id" "mas_app_channel" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource (e.g. adding a new env var).
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- /*
+10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest.
+This ensures ArgoCD creates a new Job resource (instead of attempting to patch an immutable one) whenever
+the catalog version or other tracked values change.
+*/}}
+{{- $_job_hash := print ( $_job_config_values | toYaml ) $_cli_image_digest $_job_version | adler32sum }}
+
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
+
+{{- $_job_cleanup_group := $_job_name_prefix | sha1sum }}
+
+# A verify test is one that is non disruptive i.e. it won't create new users, i won't call authenticated apis, and it won't creates resources
 # in the application. This type of test is run on every environment and allows a layer of verification of the app
 
 {{ $ns               :=  .Values.mas_app_namespace }}
@@ -19,7 +47,6 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 {{ $crb_name         :=  "postsync-verify-manage-crb" }}
 {{ $tests_cm_name    :=  "postsync-verify-tests-manage-cm" }}
 {{ $record_cm_name   :=  "postsync-verify-tests-manage-record-cm" }}
-{{ $job_name         :=  "postsync-verify-manage-job" }}
 
 
 
@@ -500,21 +527,22 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $job_name }}
+  name: {{ $_job_name }}
   namespace: {{ $ns }}
   annotations:
     argocd.argoproj.io/sync-wave: "605"
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
-{{- if .Values.custom_labels }}
   labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
   template:
     metadata:
       labels:
-        app: {{ $job_name }}
+        app: {{ $_job_name }}
 {{- if .Values.custom_labels }}
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}

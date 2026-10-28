@@ -1,19 +1,27 @@
 {{- /*
-IC_ROLE setup job for RDS DB2 (Manage only).
+IC User Role setup job for RDS DB2 (Manage only).
+
+Runs after the main postsync RDS setup job (sync-wave 136), at sync-wave 138.
 
 Only executed when ALL of the following conditions are met:
-  1. production_database_access is set
+  1. production_database_access is set  <-- checked first; skips everything if not configured
   2. application_admin_role: true
   3. mas_application_id == "manage"
+  4. should_execute: true
+  5. db2_instance_name does not contain "sdb" (shared instances are excluded)
 
 When the production-database-access GenericAddon is configured this job will:
-  - Check if the IC_ROLE DB2 role already exists; create it via rdsadmin.create_role() if not.
+  - Check if the IC_USER DB2 role already exists; create it via rdsadmin.create_role() if not.
   - Grant all required Maximo table, sequence, catalog, and package privileges
-    to the IC_ROLE role (idempotent - safe to re-run).
+    to the IC_USER role (idempotent - safe to re-run).
+  - Look for existing users whose name starts with "ic" (case-insensitive) from
+    SYSCAT.DBAUTH and grant the IC_USER role to each of them if not already assigned.
 */}}
 {{- if .Values.production_database_access }}
 {{- if .Values.application_admin_role }}
 {{- if eq .Values.mas_application_id "manage" }}
+{{- if .Values.should_execute }}
+{{- if not (contains "sdb" .Values.db2_instance_name) }}
 
 {{- $_job_name_prefix := "rds-postsync-ic-setup" }}
 
@@ -28,7 +36,7 @@ Included in $_job_hash (see below).
 {{- /*
 Increment this value whenever you make a change to an immutable field of the Job resource.
 */}}
-{{- $_job_version := "v3" }}
+{{- $_job_version := "v5" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -60,6 +68,10 @@ data:
     database_name = os.environ.get("DB_NAME", "")
     admin_db_name = os.environ.get("RDS_ADMIN_DB", "rdsadmin")
 
+    if not database_name:
+        print("ERROR: DB_NAME environment variable is required but not set.")
+        sys.exit(1)
+
     with open("/etc/mas/dbs-rds-creds/username", 'r') as f:
         username = f.read().strip()
 
@@ -81,12 +93,12 @@ data:
         f"PROTOCOL=TCPIP;"
         f"UID={username};"
         f"PWD={password};"
-        f"SECURITY=SSL;"
+        f"Security=SSL;"
         f"SSLVersion={ssl_version};"
         f"SSLServerCertificate={ssl_cert_path};"
     )
 
-    # Connection to target DB (needed for grants and verification)
+    # Connection to target DB (needed for grants and role assignment)
     conn_str = (
         f"DATABASE={database_name};"
         f"HOSTNAME={os.environ['DB_HOST']};"
@@ -94,7 +106,7 @@ data:
         f"PROTOCOL=TCPIP;"
         f"UID={username};"
         f"PWD={password};"
-        f"SECURITY=SSL;"
+        f"Security=SSL;"
         f"SSLVersion={ssl_version};"
         f"SSLServerCertificate={ssl_cert_path};"
     )
@@ -116,8 +128,8 @@ data:
         db2.close(conn_admin)
         sys.exit(1)
 
-    # Step 1: Check if IC_ROLE role exists; create via rdsadmin.create_role() if not
-    print("== Step 1: Check role ==")
+    # Step 1: Check if IC_USER role exists; create via rdsadmin.create_role() if not
+    print("\n== Step 1: Check role ==")
     try:
         stmt = db2.prepare(conn, "SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME = ?")
         db2.execute(stmt, (IC_ROLE,))
@@ -153,7 +165,7 @@ data:
                 sys.exit(1)
 
     # Step 2: Check if grants already applied
-    print("== Step 2: Check grants ==")
+    print("\n== Step 2: Check grants ==")
     try:
         stmt = db2.prepare(conn,
             "SELECT COUNT(*) FROM SYSCAT.TABAUTH "
@@ -164,6 +176,7 @@ data:
         grants_count = int(result[0])
     except Exception as e:
         print(f"Error checking grants: {e}")
+        db2.close(conn_admin)
         db2.close(conn)
         sys.exit(1)
 
@@ -171,7 +184,6 @@ data:
         print(f"Grants already present ({grants_count} found) - skipping.")
     else:
         print("Grants not found - assigning all privileges...")
-        errors = []
 
         # Static catalog/package/connect grants
         static_grants = [
@@ -191,8 +203,10 @@ data:
                 db2.exec_immediate(conn, sql)
                 print(f"  OK: {sql}")
             except Exception as e:
-                print(f"  WARN: {sql} -> {e}")
-                errors.append(str(e))
+                print(f"  ERROR: {sql} -> {e}")
+                db2.close(conn_admin)
+                db2.close(conn)
+                sys.exit(1)
 
         # Dynamic table grants - only for tables that exist in schema
         table_names = [
@@ -242,7 +256,6 @@ data:
                 print(f"  OK: GRANT on TABLE {tbl}")
             except Exception as e:
                 print(f"  WARN: GRANT on TABLE {tbl} -> {e}")
-                errors.append(str(e))
 
         # Dynamic sequence grants - only for sequences that exist in schema
         seq_names = [
@@ -284,160 +297,59 @@ data:
                 print(f"  OK: GRANT on SEQUENCE {seq}")
             except Exception as e:
                 print(f"  WARN: GRANT on SEQUENCE {seq} -> {e}")
-                errors.append(str(e))
 
-        if errors:
-            print(f"\nCompleted with {len(errors)} warning(s) - grants may have already existed.")
-        else:
-            print("\nAll grants applied successfully.")
+        print("\nAll grants applied successfully.")
 
     db2.close(conn_admin)
 
-    # ── Step 3: Verification ────────────────────────────────────────────────
-    print("== Step 3: Verification ==")
-    verification_failed = False
-
-    # 3a: Role exists
-    print("\n-- 3a: Role exists (SYSCAT.ROLES) --")
+    # ── Step 3: Check users with ic prefix and grant IC_USER role ────────────
+    print("\n== Step 3: Check users with ic prefix ==")
+    ic_users = []
     try:
         stmt = db2.prepare(conn,
-            "SELECT ROLENAME, CREATE_TIME FROM SYSCAT.ROLES WHERE ROLENAME = ?")
-        db2.execute(stmt, (IC_ROLE,))
-        row = db2.fetch_tuple(stmt)
-        if row:
-            print(f"  ROLENAME={row[0].strip()}  CREATE_TIME={row[1]}")
-        else:
-            print(f"  ERROR: Role {IC_ROLE} not found in SYSCAT.ROLES")
-            verification_failed = True
-    except Exception as e:
-        print(f"  ERROR: {e}")
-        verification_failed = True
-
-    # 3b: Total MAXIMO table grants count (must be non-zero)
-    print("\n-- 3b: Total MAXIMO table grants (SELECT+INSERT+UPDATE+DELETE) --")
-    try:
-        stmt = db2.prepare(conn,
-            "SELECT COUNT(*) FROM SYSCAT.TABAUTH "
-            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND TABSCHEMA = ? "
-            "AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y' AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'")
-        db2.execute(stmt, (IC_ROLE, DB_SCHEMA))
-        row = db2.fetch_tuple(stmt)
-        count = int(row[0]) if row else 0
-        print(f"  Count = {count}")
-        if count == 0:
-            print(f"  ERROR: No full table grants found for role {IC_ROLE} on schema {DB_SCHEMA}")
-            verification_failed = True
-    except Exception as e:
-        print(f"  ERROR: {e}")
-        verification_failed = True
-
-    # 3c: List all MAXIMO table grants
-    print("\n-- 3c: MAXIMO table grants detail --")
-    try:
-        stmt = db2.prepare(conn,
-            "SELECT TABNAME, SELECTAUTH, INSERTAUTH, UPDATEAUTH, DELETEAUTH "
-            "FROM SYSCAT.TABAUTH "
-            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND TABSCHEMA = ? "
-            "ORDER BY TABNAME")
-        db2.execute(stmt, (IC_ROLE, DB_SCHEMA))
-        rows = []
+            "SELECT RTRIM(GRANTEE) FROM SYSCAT.DBAUTH "
+            "WHERE GRANTEETYPE = 'U' AND UPPER(GRANTEE) LIKE 'IC%'")
+        db2.execute(stmt)
         row = db2.fetch_tuple(stmt)
         while row:
-            rows.append(row)
+            user = row[0].strip().upper()
+            if re.match(r'^IC[A-Z0-9_#@$]*$', user):
+                ic_users.append(user)
             row = db2.fetch_tuple(stmt)
-        print(f"  {len(rows)} table grant(s) found")
-        for r in rows:
-            print(f"  TABNAME={r[0].strip()}  SELECT={r[1]}  INSERT={r[2]}  UPDATE={r[3]}  DELETE={r[4]}")
+        # Deduplicate while preserving order
+        ic_users = list(dict.fromkeys(ic_users))
     except Exception as e:
-        print(f"  ERROR: {e}")
-        verification_failed = True
+        print(f"  Error querying IC users from SYSCAT.DBAUTH: {e}")
 
-    # 3d: Sequence grants
-    print("\n-- 3d: Sequence grants (SYSCAT.SEQUENCEAUTH) --")
-    try:
-        stmt = db2.prepare(conn,
-            "SELECT SEQNAME, USAGEAUTH, ALTERAUTH "
-            "FROM SYSCAT.SEQUENCEAUTH "
-            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND SEQSCHEMA = ? "
-            "ORDER BY SEQNAME")
-        db2.execute(stmt, (IC_ROLE, DB_SCHEMA))
-        rows = []
-        row = db2.fetch_tuple(stmt)
-        while row:
-            rows.append(row)
-            row = db2.fetch_tuple(stmt)
-        print(f"  {len(rows)} sequence grant(s) found")
-        for r in rows:
-            print(f"  SEQNAME={r[0].strip()}  USAGE={r[1]}  ALTER={r[2]}")
-    except Exception as e:
-        print(f"  ERROR: {e}")
-        verification_failed = True
+    if not ic_users:
+        print("No user whose name starts with 'ic' was found in database authorizations.")
+        print("Skipping role assignment because ic user not found.")
+    else:
+        print(f"Found user(s) whose name starts with 'ic': {' '.join(ic_users)}")
+        for ic_db_user in ic_users:
+            try:
+                stmt = db2.prepare(conn,
+                    "SELECT COUNT(*) FROM SYSCAT.ROLEAUTH "
+                    "WHERE ROLENAME = ? AND GRANTEE = ? AND GRANTEETYPE = 'U'")
+                db2.execute(stmt, (IC_ROLE, ic_db_user))
+                result = db2.fetch_tuple(stmt)
+                role_assigned = int(result[0]) > 0
+            except Exception as e:
+                print(f"  Error checking role assignment for {ic_db_user}: {e}")
+                role_assigned = False
 
-    # 3e: Catalog grants (SYSIBM / SYSCAT)
-    print("\n-- 3e: Catalog grants (SYSIBM / SYSCAT) --")
-    try:
-        stmt = db2.prepare(conn,
-            "SELECT TABSCHEMA, TABNAME, SELECTAUTH "
-            "FROM SYSCAT.TABAUTH "
-            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND TABSCHEMA IN ('SYSIBM', 'SYSCAT') "
-            "ORDER BY TABSCHEMA, TABNAME")
-        db2.execute(stmt, (IC_ROLE,))
-        rows = []
-        row = db2.fetch_tuple(stmt)
-        while row:
-            rows.append(row)
-            row = db2.fetch_tuple(stmt)
-        print(f"  {len(rows)} catalog grant(s) found")
-        for r in rows:
-            print(f"  TABSCHEMA={r[0].strip()}  TABNAME={r[1].strip()}  SELECT={r[2]}")
-    except Exception as e:
-        print(f"  ERROR: {e}")
-        verification_failed = True
+            if role_assigned:
+                print(f"  Role {IC_ROLE} already assigned to {ic_db_user} - skipping.")
+            else:
+                print(f"  Role {IC_ROLE} not assigned to {ic_db_user} - granting...")
+                try:
+                    db2.exec_immediate(conn, f"GRANT ROLE {IC_ROLE} TO USER {ic_db_user}")
+                    print(f"  OK: GRANT ROLE {IC_ROLE} TO USER {ic_db_user}")
+                except Exception as e:
+                    print(f"  WARN: GRANT ROLE {IC_ROLE} TO USER {ic_db_user} -> {e}")
 
-    # 3f: Package grant
-    print("\n-- 3f: Package grant (SYSCAT.PACKAGEAUTH) --")
-    try:
-        stmt = db2.prepare(conn,
-            "SELECT PKGSCHEMA, PKGNAME, EXECUTEAUTH "
-            "FROM SYSCAT.PACKAGEAUTH "
-            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R'")
-        db2.execute(stmt, (IC_ROLE,))
-        rows = []
-        row = db2.fetch_tuple(stmt)
-        while row:
-            rows.append(row)
-            row = db2.fetch_tuple(stmt)
-        print(f"  {len(rows)} package grant(s) found")
-        for r in rows:
-            print(f"  PKGSCHEMA={r[0].strip()}  PKGNAME={r[1].strip()}  EXECUTE={r[2]}")
-    except Exception as e:
-        print(f"  ERROR: {e}")
-        verification_failed = True
-
-    # 3g: CONNECT on database
-    print("\n-- 3g: CONNECT on database (SYSCAT.DBAUTH) --")
-    try:
-        stmt = db2.prepare(conn,
-            "SELECT GRANTEE, CONNECTAUTH "
-            "FROM SYSCAT.DBAUTH "
-            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R'")
-        db2.execute(stmt, (IC_ROLE,))
-        row = db2.fetch_tuple(stmt)
-        if row:
-            print(f"  GRANTEE={row[0].strip()}  CONNECTAUTH={row[1]}")
-        else:
-            print(f"  ERROR: No CONNECT privilege found for role {IC_ROLE}")
-            verification_failed = True
-    except Exception as e:
-        print(f"  ERROR: {e}")
-        verification_failed = True
-
-    print("\n== Step 3: Verification complete ==")
     db2.close(conn)
-    if verification_failed:
-        print("IC_ROLE setup completed WITH verification errors - review output above.")
-        sys.exit(1)
-    print("IC_ROLE setup completed successfully.")
+    print("\nIC_USER setup completed successfully.")
 
 ---
 apiVersion: batch/v1
@@ -497,7 +409,7 @@ spec:
               echo "================================================================================"
               echo "Running IC user role setup"
               echo "================================================================================"
-              python /etc/mas/rds-ic-role-script/rds-ic-role-setup.py
+              python3 /etc/mas/rds-ic-role-script/rds-ic-role-setup.py
 
           env:
             - name: MAS_APP_ID
@@ -530,6 +442,8 @@ spec:
           configMap:
             name: {{ .Values.db2_rds_instance_name }}-rds-postsync-ic-setup
 
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

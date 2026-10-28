@@ -75,7 +75,6 @@ rules:
       - delete
       - get
       - list
-      - patch
     apiGroups:
       - core.mas.ibm.com
     resources:
@@ -167,9 +166,9 @@ spec:
               oc delete workspace "${WS_NAME}" -n ${CORE_NAMESPACE} --wait=false 2>/dev/null
               set -e
 
-              echo "Waiting up to 120s for operator to process Workspace finalizer..."
+              echo "Waiting up to 600s for operator to process Workspace finalizer..."
               WAIT_SECS=0
-              while [[ ${WAIT_SECS} -lt 120 ]]; do
+              while [[ ${WAIT_SECS} -lt 600 ]]; do
                 set +e
                 WS=$(oc get workspace "${WS_NAME}" -n ${CORE_NAMESPACE} \
                   --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null)
@@ -181,10 +180,8 @@ spec:
               done
 
               if [[ -n "${WS}" ]]; then
-                echo "Operator did not release Workspace finalizer after ${WAIT_SECS}s - forcing removal"
-                oc patch workspace "${WS_NAME}" -n ${CORE_NAMESPACE} \
-                  --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
-                sleep 5
+                echo "ERROR: Workspace CR still present after ${WAIT_SECS}s - operator did not release finalizer"
+                exit 1
               fi
               echo "Workspace CR gone"
       volumes: []

@@ -7,7 +7,7 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
-{{- $_cli_image_digest := "sha256:d9b9e5151413d08b79a45a0b657ecf48ae4eee30cb3bc997e6ccba1a8eb8f958" }}
+{{- $_cli_image_digest := "sha256:1c5701a24c9796e02b33036f56babbe74032831e1db733ce9228a46dce4a870b" }}
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -24,7 +24,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v2" }}
+{{- $_job_version := "v3" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -105,21 +105,16 @@ spec:
 
               echo "patching default sa..."
               oc secrets link -n ${CPD_INSTANCE_NAMESPACE} --for=pull default ibm-entitlement-key
-              
-              echo "patching zen-admin-sa sa..."
-              oc secrets link -n ${CPD_INSTANCE_NAMESPACE} --for=pull zen-admin-sa ibm-entitlement-key
-              
-              echo "patching zen-editor-sa sa..."
-              oc secrets link -n ${CPD_INSTANCE_NAMESPACE} --for=pull zen-editor-sa ibm-entitlement-key
-              
-              echo "patching zen-norbac-sa sa..."
-              oc secrets link -n ${CPD_INSTANCE_NAMESPACE} --for=pull zen-norbac-sa ibm-entitlement-key
-              
-              echo "patching zen-runtime-sa sa..."
-              oc secrets link -n ${CPD_INSTANCE_NAMESPACE} --for=pull zen-runtime-sa ibm-entitlement-key
-              
-              echo "patching zen-viewer-sa sa..."
-              oc secrets link -n ${CPD_INSTANCE_NAMESPACE} --for=pull zen-viewer-sa ibm-entitlement-key
+
+              for ZEN_SA in zen-admin-sa zen-editor-sa zen-norbac-sa zen-runtime-sa zen-viewer-sa; do
+                RESOURCE_NAME=$(oc get serviceaccount ${ZEN_SA} -n ${CPD_INSTANCE_NAMESPACE} -o=jsonpath="{.metadata.name}" --ignore-not-found)
+                if [[ -z "${RESOURCE_NAME}" ]]; then
+                  echo "skipping ${ZEN_SA} sa (not found yet)..."
+                else
+                  echo "patching ${ZEN_SA} sa..."
+                  oc secrets link -n ${CPD_INSTANCE_NAMESPACE} --for=pull ${ZEN_SA} ibm-entitlement-key
+                fi
+              done
 
               RESOURCE_NAME=$(oc get serviceaccount runtime-assemblies-operator -n ${CPD_INSTANCE_NAMESPACE} -o=jsonpath="{.metadata.name}" --ignore-not-found)
               if [[ -z "${RESOURCE_NAME}" ]]; then

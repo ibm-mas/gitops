@@ -35,7 +35,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v24" }}
+{{- $_job_version := "v25" }}
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
 This is to ensure ArgoCD will create a new job resource intead of attempting (and failing) to update an
@@ -367,7 +367,10 @@ spec:
               if [[ -n $BUCKET_NAME ]]; then
                 export DB2_BACKUP_BUCKET_ACCESS_KEY=$(cat /etc/mas/creds/aws/db2_backup_bucket_access_key)
                 export DB2_BACKUP_BUCKET_SECRET_KEY=$(cat /etc/mas/creds/aws/db2_backup_bucket_secret_key)
-                export ICD_AUTH_KEY=$(cat /etc/mas/creds/aws/icd_auth_key)
+                export ICD_AUTH_KEY=""
+                      if [[ -r /etc/mas/creds/aws/icd_auth_key ]]; then
+                        ICD_AUTH_KEY=$(cat /etc/mas/creds/aws/icd_auth_key)  
+                      fi
               fi
              
               echo ""
@@ -884,7 +887,7 @@ spec:
                 echo "Copy ${PROPS_FILE_NAME} to ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0"
                 echo "--------------------------------------------------------------------------------"
                 oc cp /tmp/${PROPS_FILE_NAME} ${DB2_NAMESPACE}/c-${DB2_INSTANCE_NAME}-db2u-0:/tmp/${PROPS_FILE_NAME} -c db2u || exit $?
-                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "sudo mv /tmp/${PROPS_FILE_NAME} /mnt/backup/bin/${PROPS_FILE_NAME}" db2inst1 || exit $?
+                oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- su -lc "sudo install -o db2inst1 -g db2iadm1 -m 600 /tmp/${PROPS_FILE_NAME} /mnt/backup/bin/${PROPS_FILE_NAME} && sudo rm -f /tmp/${PROPS_FILE_NAME}" db2inst1 || exit $?
 
                 SET_COS_STORAGE_SH_PATH="${INSTHOME}/Managed/Set_DB_COS_Storage.sh"
 

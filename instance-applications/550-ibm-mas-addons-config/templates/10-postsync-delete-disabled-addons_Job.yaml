@@ -1,0 +1,207 @@
+{{- if and (.Values.use_postdelete_hooks) (.Values.application_admin_role) }}
+{{- /*
+PostSync hook — runs after every successful sync.
+Deletes any GenericAddon CR that is no longer rendered by the current values
+(i.e. the addon has been disabled). ArgoCD does not prune these CRs automatically
+when prune:false (non-deprovision mode), so without this hook a disabled addon
+would drift — gone from ArgoCD's managed state but still present in the cluster.
+
+This hook runs AFTER all desired CRs have been applied (sync-waves 551–559),
+so the operator has already reconciled the active addons before cleanup starts.
+If the sync itself fails, this hook does not run — desired state is never compromised.
+*/}}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:e6c8f8a02b4bd44026dac280b1d006e60d55e15ee189fce18be7c6922879f8b6" }}
+
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars to leave room for the 11 chars reserved for '-' and $_job_hash.
+*/}}
+{{- $_job_name_prefix := "postsync-delete-disabled-addons" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a new hook resource to be created.
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+*/}}
+{{- $_job_version := "v1" }}
+
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
+
+{{- /*
+Build the list of GenericAddon CR names that SHOULD exist given current values.
+These mirror the conditions in each CR template exactly.
+The PreSync job uses this list to identify and delete any CR that is no longer desired.
+*/}}
+{{- $desired := list }}
+
+{{- /* 01-allowlist-cr.yaml: rendered when allow_list is non-empty */}}
+{{- if not (empty .Values.allow_list) }}
+{{- $desired = append $desired (printf "%s-addons-allowlist" .Values.instance_id) }}
+{{- end }}
+
+{{- /* 02-additional-vpn-cr.yaml: rendered when additional_vpn is truthy */}}
+{{- if .Values.additional_vpn }}
+{{- $desired = append $desired (printf "%s-addons-additionalvpn" .Values.instance_id) }}
+{{- end }}
+
+{{- /* 03-enhanced-dr-cr.yaml: rendered when enhanced_dr is truthy */}}
+{{- if .Values.enhanced_dr }}
+{{- $desired = append $desired (printf "%s-addons-enhanceddr" .Values.instance_id) }}
+{{- end }}
+
+{{- /* 04-extensions-cr.yaml: rendered when extensions is truthy */}}
+{{- if .Values.extensions }}
+{{- $desired = append $desired (printf "%s-addons-extensions" .Values.instance_id) }}
+{{- end }}
+
+{{- /* 05-replica-db-cr.yaml: rendered when databases is non-empty */}}
+{{- if not (empty .Values.databases) }}
+{{- $desired = append $desired (printf "%s-addons-replica-db" .Values.instance_id) }}
+{{- end }}
+
+{{- /* 06-nonshared-cluster-cr.yaml: rendered when cluster_nonshared=true AND operational_mode != nonproduction */}}
+{{- if and (eq .Values.cluster_nonshared true) (ne .Values.operational_mode "nonproduction") }}
+{{- $desired = append $desired (printf "%s-addons-nonsharedcluster" .Values.instance_id) }}
+{{- end }}
+
+{{- /* 07-application-configuration-cr.yaml: rendered when application_configuration is truthy */}}
+{{- if .Values.application_configuration }}
+{{- $desired = append $desired (printf "%s-addons-saas-maf-enablement" .Values.instance_id) }}
+{{- end }}
+
+{{- /* 08-additional-resources-cr.yaml: rendered when additional_resources is truthy */}}
+{{- if .Values.additional_resources }}
+{{- $desired = append $desired (printf "%s-addons-additional-resources" .Values.instance_id) }}
+{{- end }}
+
+{{- /* 09-production_db_access-cr.yaml: rendered when production_database_access is truthy */}}
+{{- if .Values.production_database_access }}
+{{- $desired = append $desired (printf "%s-addons-production-database-access" .Values.instance_id) }}
+{{- end }}
+
+# NOTE: reuses the SA, Role, RoleBinding and NetworkPolicy created in ibm-mas-suite chart
+# (01-postdelete-crs-resources.yaml). Those resources must exist before this hook runs.
+{{ $sa_name :=   "postdelete-delete-cr-sa" }}
+{{ $job_label := "postdelete-delete-cr-job" }}
+{{ $ns :=        printf "mas-%s-core" .Values.instance_id }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: {{ $ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CR_NAMESPACE
+              value: {{ $ns }}
+            - name: DESIRED_CR_NAMES
+              # Space-separated list of GenericAddon CR names that should exist
+              # after this sync. Any CR in the namespace NOT in this list is deleted.
+              value: {{ join " " $desired | quote }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              set -e
+              echo
+              echo "================================================================================"
+              echo "PostSync: removing disabled GenericAddon CRs from namespace ${CR_NAMESPACE}"
+              echo "================================================================================"
+              echo
+              echo "Desired CRs : ${DESIRED_CR_NAMES}"
+              echo
+
+              # Retrieve all GenericAddon CR names currently present in the namespace.
+              set +e
+              EXISTING=$(oc get genericaddons.addons.mas.ibm.com -n "${CR_NAMESPACE}" \
+                -o=jsonpath="{.items[*].metadata.name}" 2>/dev/null)
+              set -e
+
+              if [[ -z "${EXISTING}" ]]; then
+                echo "No GenericAddon CRs present in ${CR_NAMESPACE} — nothing to do."
+                exit 0
+              fi
+
+              echo "Existing CRs: ${EXISTING}"
+              echo
+
+              for CR_NAME in ${EXISTING}; do
+                # Check whether this CR is in the desired set.
+                IS_DESIRED=false
+                for DESIRED_NAME in ${DESIRED_CR_NAMES}; do
+                  if [[ "${CR_NAME}" == "${DESIRED_NAME}" ]]; then
+                    IS_DESIRED=true
+                    break
+                  fi
+                done
+
+                if [[ "${IS_DESIRED}" == "true" ]]; then
+                  echo "CR ${CR_NAME}: desired — skipping"
+                  continue
+                fi
+
+                echo "------------------------------------------------------------------"
+                echo "CR ${CR_NAME}: no longer desired — deleting"
+                set +e
+                oc delete genericaddons.addons.mas.ibm.com "${CR_NAME}" \
+                  -n "${CR_NAMESPACE}" --timeout=300s --wait=true
+                set -e
+
+                echo "Verifying ${CR_NAME} is absent..."
+                set +e
+                STILL_PRESENT=$(oc get genericaddons.addons.mas.ibm.com "${CR_NAME}" \
+                  -n "${CR_NAMESPACE}" -o=jsonpath="{.metadata.name}" 2>/dev/null)
+                set -e
+
+                if [[ -n "${STILL_PRESENT}" ]]; then
+                  echo "ERROR: ${CR_NAME} still present after deletion — failing job"
+                  exit 1
+                fi
+                echo "... verified"
+              done
+
+              echo
+              echo "PreSync cleanup complete."
+
+      restartPolicy: Never
+      serviceAccountName: {{ $sa_name }}
+
+  backoffLimit: 4
+{{- end }}

@@ -9,11 +9,11 @@ Only executed when ALL of the following conditions are met:
   3. mas_application_id == "manage"
 
 When the production-database-access GenericAddon is configured this job will:
-  - Check if the IC_ROLE DB2 role already exists; create it via rdsadmin.create_role() if not.
+  - Check if the IC_USER DB2 role already exists; create it via rdsadmin.create_role() if not.
   - Grant all required Maximo table, sequence, catalog, and package privileges
-    to the IC_ROLE role (idempotent - safe to re-run).
+    to the IC_USER role (idempotent - safe to re-run).
   - Look for existing users whose name starts with "ic" (case-insensitive) from
-    SYSCAT.DBAUTH and grant the IC_ROLE role to each of them if not already assigned.
+    SYSCAT.DBAUTH and grant the IC_USER role to each of them if not already assigned.
 */}}
 {{- if .Values.production_database_access }}
 {{- if .Values.application_admin_role }}
@@ -32,7 +32,7 @@ Included in $_job_hash (see below).
 {{- /*
 Increment this value whenever you make a change to an immutable field of the Job resource.
 */}}
-{{- $_job_version := "v5" }}
+{{- $_job_version := "v6" }}
 
 {{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
 {{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
@@ -57,7 +57,7 @@ data:
     import re
 
     DB_SCHEMA = "MAXIMO"
-    IC_ROLE = "MAS_IC_ROLE1"
+    IC_ROLE = "IC_USER"
 
     ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
     jdbc_connection_url = os.environ.get("JDBC_CONNECTION_URL", "")
@@ -124,7 +124,7 @@ data:
         db2.close(conn_admin)
         sys.exit(1)
 
-    # Step 1: Check if MAS_IC_ROLE role exists; create via rdsadmin.create_role() if not
+    # Step 1: Check if IC_USER role exists; create via rdsadmin.create_role() if not
     print("\n== Step 1: Check role ==")
     try:
         stmt = db2.prepare(conn, "SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME = ?")
@@ -362,7 +362,7 @@ data:
 
     db2.close(conn_admin)
 
-    # ── Step 3: Check users with ic prefix and grant IC_ROLE role ────────────
+    # ── Step 3: Check users with ic prefix and grant IC_USER role ────────────
     print("\n== Step 3: Check users with ic prefix ==")
     ic_users = []
     try:

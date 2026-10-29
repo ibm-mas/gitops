@@ -49,7 +49,7 @@ else
 fi
 
 # -- Debug Mode 
- set -x;      # Uncomment to debug this shell script
+# set -x;      # Uncomment to debug this shell script
 # set -n;      # Uncomment to check your syntax, without execution.
 
 # -- Source the PROPS file       

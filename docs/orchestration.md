@@ -67,7 +67,7 @@ Configuration tasks have to be performed at various points during the MAS synchr
 
 
 ### PreSync Hooks
-Jobs that must execute **before** an Application begins syncing are defined as `PreSync` hooks. These are used, for example, to verify that cluster CRDs are present before proceeding with an installation (e.g. {{ gitops_repo_file_link("instance-applications/120-ibm-db2u-database/templates/00-presync-await-crd_Job.yaml", "00-presync-await-crd_Job") }}).
+Jobs that must execute **before** an Application begins syncing are defined as `PreSync` hooks. These are used, for example, to perform setup before proceeding with an installation (e.g. {{ gitops_repo_file_link("instance-applications/130-ibm-jdbc-config/templates/00-presync-create-db2-user_Job.yaml", "00-presync-create-db2-user_Job") }}).
 
 
 ### PostSync Hooks

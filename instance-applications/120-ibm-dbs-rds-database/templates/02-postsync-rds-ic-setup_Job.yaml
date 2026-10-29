@@ -57,7 +57,7 @@ data:
     import re
 
     DB_SCHEMA = "MAXIMO"
-    IC_ROLE = "IC_ROLE"
+    IC_ROLE = "MAS_IC_ROLE"
 
     ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
     jdbc_connection_url = os.environ.get("JDBC_CONNECTION_URL", "")
@@ -160,28 +160,25 @@ data:
                 db2.close(conn_admin)
                 sys.exit(1)
 
-    # Step 2: Check if grants already applied
-    print("\n== Step 2: Check grants ==")
+    # Step 2a: CONNECT and catalog/package grants (checked via SYSCAT.DBAUTH)
+    print("\n== Step 2a: Check database CONNECT grant ==")
     try:
         stmt = db2.prepare(conn,
-            "SELECT COUNT(*) FROM SYSCAT.TABAUTH "
-            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND TABSCHEMA = ? "
-            "AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y' AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'")
-        db2.execute(stmt, (IC_ROLE, DB_SCHEMA))
+            "SELECT COUNT(*) FROM SYSCAT.DBAUTH "
+            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND CONNECTAUTH = 'Y'")
+        db2.execute(stmt, (IC_ROLE,))
         result = db2.fetch_tuple(stmt)
-        grants_count = int(result[0])
+        connect_count = int(result[0])
     except Exception as e:
-        print(f"Error checking grants: {e}")
+        print(f"Error checking CONNECT grant: {e}")
         db2.close(conn_admin)
         db2.close(conn)
         sys.exit(1)
 
-    if grants_count > 0:
-        print(f"Grants already present ({grants_count} found) - skipping.")
+    if connect_count > 0:
+        print(f"CONNECT and catalog/package grants already present - skipping.")
     else:
-        print("Grants not found - assigning all privileges...")
-
-        # Static catalog/package/connect grants
+        print("CONNECT grant not found - assigning static grants...")
         static_grants = [
             f"GRANT CONNECT ON DATABASE TO ROLE {IC_ROLE}",
             f"GRANT EXECUTE ON PROCEDURE SYSIBM.SQLCAMESSAGECCSID TO ROLE {IC_ROLE}",
@@ -193,7 +190,6 @@ data:
             f"GRANT SELECT ON TABLE SYSCAT.INDEXES TO ROLE {IC_ROLE}",
             f"GRANT SELECT ON TABLE SYSCAT.VIEWS TO ROLE {IC_ROLE}",
         ]
-
         for sql in static_grants:
             try:
                 db2.exec_immediate(conn, sql)
@@ -203,6 +199,28 @@ data:
                 db2.close(conn_admin)
                 db2.close(conn)
                 sys.exit(1)
+        print("Static grants applied successfully.")
+
+    # Step 2b: Check table grants independently
+    print("\n== Step 2b: Check table grants ==")
+    try:
+        stmt = db2.prepare(conn,
+            "SELECT COUNT(*) FROM SYSCAT.TABAUTH "
+            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND TABSCHEMA = ? "
+            "AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y' AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'")
+        db2.execute(stmt, (IC_ROLE, DB_SCHEMA))
+        result = db2.fetch_tuple(stmt)
+        table_grants_count = int(result[0])
+    except Exception as e:
+        print(f"Error checking table grants: {e}")
+        db2.close(conn_admin)
+        db2.close(conn)
+        sys.exit(1)
+
+    if table_grants_count > 0:
+        print(f"Table grants already present ({table_grants_count} found) - skipping.")
+    else:
+        print("Table grants not found - assigning all table privileges...")
 
         # Dynamic table grants - only for tables that exist in schema
         table_names = [
@@ -253,6 +271,29 @@ data:
             except Exception as e:
                 print(f"  WARN: GRANT on TABLE {tbl} -> {e}")
 
+        print("\nTable grants applied successfully.")
+
+    # Step 2c: Check sequence grants independently
+    print("\n== Step 2c: Check sequence grants ==")
+    try:
+        stmt = db2.prepare(conn,
+            "SELECT COUNT(*) FROM SYSCAT.SEQUENCEAUTH "
+            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND SEQSCHEMA = ? "
+            "AND USAGEAUTH = 'Y' AND ALTERAUTH = 'Y'")
+        db2.execute(stmt, (IC_ROLE, DB_SCHEMA))
+        result = db2.fetch_tuple(stmt)
+        seq_grants_count = int(result[0])
+    except Exception as e:
+        print(f"Error checking sequence grants: {e}")
+        db2.close(conn_admin)
+        db2.close(conn)
+        sys.exit(1)
+
+    if seq_grants_count > 0:
+        print(f"Sequence grants already present ({seq_grants_count} found) - skipping.")
+    else:
+        print("Sequence grants not found - assigning all sequence privileges...")
+
         # Dynamic sequence grants - only for sequences that exist in schema
         seq_names = [
             'ACTCIRELATIONSEQ','ACTCISEQ','ACTCISPECSEQ','ASSETATTRIBUTESEQ','AUTOKEYSEQ',
@@ -294,7 +335,7 @@ data:
             except Exception as e:
                 print(f"  WARN: GRANT on SEQUENCE {seq} -> {e}")
 
-        print("\nAll grants applied successfully.")
+        print("\nSequence grants applied successfully.")
 
     db2.close(conn_admin)
 

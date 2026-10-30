@@ -1,0 +1,377 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>MASCORE-20742 — Remaining Findings Audit</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px;
+    line-height: 1.6; color: #1f2328; background: #fff; margin: 0; padding: 24px 16px; }
+  .wrap { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+  .subtitle { color: #57606a; font-size: 13px; margin: 0 0 20px; }
+  h2 { font-size: 14px; font-weight: 700; margin: 28px 0 8px; border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 4px; }
+  h3 { font-size: 13px; font-weight: 600; margin: 14px 0 4px; }
+  p { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px; padding-left: 20px; }
+  li { margin-bottom: 3px; }
+  code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px;
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 3px; padding: 1px 4px; }
+  pre { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 4px; padding: 10px 12px;
+    font-size: 12px; overflow-x: auto; margin: 6px 0 10px; white-space: pre-wrap; }
+  .finding { border: 1px solid #e5e7eb; border-radius: 5px; margin: 10px 0 14px; overflow: hidden; }
+  .finding-header { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px;
+    border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; }
+  .finding-body { padding: 10px 12px; }
+  .finding-body p:first-child { margin-top: 0; }
+  .badge { font-size: 11px; font-weight: 700; border-radius: 3px; padding: 2px 7px;
+    white-space: nowrap; flex-shrink: 0; }
+  .high     { background: #fef3c7; color: #92400e; }
+  .medium   { background: #dbeafe; color: #1e40af; }
+  .low      { background: #dcfce7; color: #166534; }
+  .ext      { background: #f3e8ff; color: #6b21a8; }
+  .fid { font-weight: 700; font-size: 13px; }
+  .loc { font-size: 12px; color: #57606a; font-family: "SFMono-Regular", Consolas, monospace; }
+  .verdict { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px;
+    border-radius: 3px; font-size: 12px; font-weight: 600; }
+  .pass   { background: #dcfce7; color: #166534; }
+  .concern { background: #fef3c7; color: #92400e; }
+  .fail2 { background: #fee2e2; color: #991b1b; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0 12px; }
+  th { text-align: left; background: #f7f8fa; border: 1px solid #e5e7eb;
+    padding: 5px 8px; font-weight: 600; }
+  td { border: 1px solid #e5e7eb; padding: 5px 8px; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .summary-box { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 5px;
+    padding: 12px 14px; margin-bottom: 20px; }
+  .conflict-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 5px;
+    padding: 12px 14px; margin: 20px 0; }
+  .order-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 5px;
+    padding: 12px 14px; margin-top: 24px; }
+  .order-box strong { color: #1e40af; }
+  footer { border-top: 1px solid #e5e7eb; margin-top: 32px; padding-top: 8px;
+    text-align: center; font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>MASCORE-20742 — Remaining Findings Audit</h1>
+<p class="subtitle">Read-only audit of F-01, F-03, F-04, F-05, F-08, F-09, F-11, F-12, F-13, F-14 — no files modified, no cluster accessed.</p>
+
+<div class="summary-box">
+<table style="margin-top:4px">
+  <tr><th>Finding</th><th>Sev</th><th>Area</th><th>Verdict after re-read</th></tr>
+  <tr><td>F-12</td><td><span class="badge high">HIGH</span></td><td>Backup: encrypt-failure leaves silent manifest gap</td><td><span class="verdict concern">Confirmed — fix needed</span></td></tr>
+  <tr><td>F-03</td><td><span class="badge medium">MEDIUM</span></td><td>Backup: encrypt-failure not in .skips.jsonl</td><td><span class="verdict concern">Confirmed — same fix as F-12</span></td></tr>
+  <tr><td>F-08</td><td><span class="badge medium">MEDIUM</span></td><td>manual_blockers not enforced by apply</td><td><span class="verdict concern">Confirmed — two blockers should gate --execute; design choice for rest</span></td></tr>
+  <tr><td>F-11</td><td><span class="badge medium">MEDIUM</span></td><td>skipped_exists counts as ok for required Secrets</td><td><span class="verdict concern">Confirmed — ok field misleading for required items</span></td></tr>
+  <tr><td>F-09</td><td><span class="badge medium">MEDIUM</span></td><td>Cross-stage dependency order advisory-only</td><td><span class="verdict concern">Partially confirmed — problems[] does block apply, but only after stage-sort reordering</span></td></tr>
+  <tr><td>F-04</td><td><span class="badge medium">MEDIUM</span></td><td>Encrypted payload not verify-decryptable</td><td><span class="verdict pass">Design constraint — document, no code change needed</span></td></tr>
+  <tr><td>F-05</td><td><span class="badge medium">MEDIUM</span></td><td>SHA256SUMS: integrity vs corruption only</td><td><span class="verdict pass">Document threat model in README</span></td></tr>
+  <tr><td>F-01</td><td><span class="badge low">LOW</span></td><td>Test gap: --store-reference-secrets sentinel</td><td><span class="verdict concern">Confirmed — easy test addition</span></td></tr>
+  <tr><td>F-13</td><td><span class="badge low">LOW</span></td><td>Test gap: partial encrypt failure; thread safety</td><td><span class="verdict concern">Confirmed — easy test addition</span></td></tr>
+  <tr><td>F-14</td><td><span class="badge ext">EXTERNAL</span></td><td>saas-envs tls.key files in git</td><td><span class="verdict fail2">URGENT — real Let's Encrypt private keys in version control, no encryption</span></td></tr>
+</table>
+</div>
+
+
+<h2>F-12 + F-03 (combined) — Encrypt failure leaves a silent manifest gap</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge high">HIGH</span>
+    <span class="fid">F-12 / F-03</span>
+    <span class="loc">backup-suite-manage.sh:111–112  |  dr_lib.py:619–624  |  dr_lib.py:593–643 (validate_manifest)</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Failure mode (exact trace):</strong></p>
+    <p>When <code>python3 "$LIB" store</code> exits non-zero (line 111) — due to an encrypt failure, a Python exception, or a <code>SystemExit</code> — the shell at line 112 only increments <code>FAILED</code> and prints an ERROR to stderr. It does <em>not</em> call <code>record-skip</code>. The object therefore appears in neither <code>.records.jsonl</code> nor <code>.skips.jsonl</code>.</p>
+    <p>At manifest time, <code>validate_manifest</code> (line 593) checks required resources through the skips array at line 622–624:</p>
+    <pre>for s in manifest["skipped"]:
+    if s["required"] and s["status"] != "skipped_policy":
+        errors.append(f"required resource {s['id']} not backed up: {s['reason']}")</pre>
+    <p>Because the failed object is not in <code>.skips.jsonl</code>, this loop cannot fire for it. The inventory completeness check at line 632–635 <em>can</em> catch it <strong>only when <code>--discover</code> was used</strong>; without discovery, no completeness check runs.</p>
+    <p><strong>Concrete scenario:</strong> an encrypt command fails on <code>main-manage-encryption-secret</code> (required). <code>FAILED</code> becomes 1 → the backup exits 2. But <code>manifest["validation"]["ok"]</code> is <code>true</code>, and the manifest's <code>skipped</code> list contains no trace of the failure. Any downstream consumer that only checks the JSON manifest (e.g. an automation that reads <code>"ok": true</code>) would see a clean manifest for an incomplete backup.</p>
+    <p><strong>The two findings share one root cause:</strong> the shell error handler at line 112 does not call <code>record-skip</code>. Fixing that one line resolves both F-03 (audit trail) and F-12 (manifest accuracy).</p>
+    <p><strong>Precise fix location:</strong></p>
+    <pre># backup-suite-manage.sh line 111-112 (current)
+    printf '%s' "$json" | python3 "$LIB" store --out "$OUT" --required "$required" --source "$source" ||
+      { FAILED=$((FAILED + 1)); echo "ERROR: could not store $kind/$name" &gt;&amp;2; }
+
+# proposed change: record the failure in .skips.jsonl so manifest can see it
+    printf '%s' "$json" | python3 "$LIB" store --out "$OUT" --required "$required" --source "$source" || {
+      FAILED=$((FAILED + 1))
+      echo "ERROR: could not store $kind/$name" &gt;&amp;2
+      python3 "$LIB" record-skip --out "$OUT" --kind "$kind" --name "$name" --namespace "$ns" \
+        --required "$required" --status "failed" \
+        --reason "store command failed (encrypt error or Python exception)" --source "$source"
+    }</pre>
+    <p>After this fix, <code>validate_manifest</code>'s existing check at line 622–624 will catch the required-resource failure in the manifest, producing <code>"ok": false</code>.</p>
+    <p><strong>New test required:</strong> run a backup with an encrypt command that succeeds on the first few objects and fails on a required one; assert <code>proc.returncode == 2</code>, <code>manifest["validation"]["ok"] == False</code>, and the required resource appears in <code>manifest["skipped"]</code>.</p>
+  </div>
+</div>
+
+
+<h2>F-08 — manual_blockers not enforced by apply --execute</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-08</span>
+    <span class="loc">restore.py:128–143 (_blockers)  |  restore.py:259–295 (apply_plan)</span>
+  </div>
+  <div class="finding-body">
+    <p><code>_blockers</code> at line 128 assembles a list that is displayed in the plan but never checked by <code>apply_plan</code>. There are four kinds of blocker; they are not equally important:</p>
+    <table>
+      <tr><th>Blocker text</th><th>Risk if --execute proceeds</th><th>Recommended gate?</th></tr>
+      <tr><td>"backup is plaintext; do not move it off the source workstation"</td><td>High: plaintext Secrets are being piped to a target cluster over a network connection or from a shared path</td><td><strong>Yes — block --execute</strong></td></tr>
+      <tr><td>"CA key pairs were NOT exported (policy)"</td><td>Medium: cert-manager will mint a new CA; this is an architectural decision, not a data-loss risk during the apply itself</td><td>Warn, do not block</td></tr>
+      <tr><td>"CA key pairs are in the backup but not selected"</td><td>Low: user simply needs --include-optin; caught before this point</td><td>No change needed</td></tr>
+      <tr><td>"operator adoption of restored Secrets and Manage data decryption are unproven"</td><td>Low: always present; blocking --execute forever is not useful</td><td>No — keep as advisory</td></tr>
+    </table>
+    <p><strong>Only one blocker needs to become a hard gate:</strong> the plaintext blocker. The current code at line 130 is:</p>
+    <pre>if not manifest["encryption"]["secrets_and_files_encrypted"]:
+    b.append("backup is plaintext; do not move it off the source workstation")</pre>
+    <p>This produces a visible warning in the printed plan. But <code>apply_plan</code> at line 259 only gates on <code>preflight</code> errors and <code>plan["problems"]</code>. A plaintext backup can reach <code>--execute</code> without any additional obstacle.</p>
+    <p><strong>Precise fix:</strong> in <code>apply_plan</code>, check <code>manifest["encryption"]["secrets_and_files_encrypted"]</code> when <code>execute=True</code> and raise <code>RestoreError</code> before any <code>oc create</code> is attempted:</p>
+    <pre># restore.py — add inside apply_plan, after the plan["problems"] check (line 267):
+if execute and not manifest["encryption"]["secrets_and_files_encrypted"]:
+    raise RestoreError(
+        "--execute refused: backup is plaintext. Re-run backup with DR_ENCRYPT_CMD set "
+        "before applying to a target cluster."
+    )</pre>
+    <p><strong>Conflict to note:</strong> this would make the existing test <code>test_apply_execute_uses_create_and_never_overwrites</code> (line 663) fail, because it uses a plaintext backup with <code>execute=True</code>. That test would need to use an encrypted backup fixture for the execute=True path, OR the test and the production flow need separate treatment (dry-run is unaffected; the gate only applies when <code>execute=True</code>).</p>
+    <p><strong>New test required:</strong> assert that <code>apply_plan(..., execute=True)</code> raises <code>RestoreError</code> matching "plaintext" when the manifest has <code>secrets_and_files_encrypted: false</code>. Separately, a dry-run with a plaintext backup must still succeed.</p>
+  </div>
+</div>
+
+
+<h2>F-11 — skipped_exists silently passes for required Secrets</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-11</span>
+    <span class="loc">restore.py:287–289 (apply_plan)  |  restore.py:294–295 (apply_plan return)</span>
+  </div>
+  <div class="finding-body">
+    <p>The return value at line 294–295:</p>
+    <pre>return {"executed": execute, "overwrite": overwrite, "results": results,
+        "ok": all(r["result"] in ("created", "dry-run-ok", "skipped_exists") for r in results)}</pre>
+    <p>counts <code>skipped_exists</code> as a success. The problem is not that skipping an already-present object is wrong — it is a legitimate choice when <code>--overwrite</code> is not given. The problem is that the <code>ok</code> field does not distinguish between "everything was created fresh" and "some required objects were silently skipped because they already existed."</p>
+    <p><strong>Scenario:</strong> a previous failed restore left a stale <code>main-manage-encryption-secret</code> on the target with the wrong key material. A new restore run sees <code>AlreadyExists</code>, records <code>skipped_exists</code>, and returns <code>"ok": true</code>. The operator reads "apply: OK" in the terminal and believes the restore succeeded. The Manage data may be unreadable.</p>
+    <p><strong>There is no conflict with the existing test</strong> (line 663–672). That test asserts <code>skipped_exists</code> for a required Secret and does not assert <code>rep["ok"]</code> as True for a complete restore — it only checks that the per-item result is <code>skipped_exists</code>. The fix must not break that.</p>
+    <p><strong>Recommended fix — two-part:</strong></p>
+    <ol>
+      <li>Add an <code>ok_no_skips</code> boolean to the report: <code>all(r["result"] in ("created", "dry-run-ok") for r in results)</code>. This is a new field and is backward compatible.</li>
+      <li>When any step with <code>skipped_exists</code> is for a <code>required</code> entry (cross-reference with <code>manifest["entries"]</code>), add a warning to the report. The plan already carries <code>entry["required"]</code>, so the check is a single loop.</li>
+    </ol>
+    <p>Alternatively, consider making <code>skipped_exists</code> on a <em>required</em> resource a non-ok result. That would force the operator to either use <code>--overwrite</code> or manually verify the existing resource before running again. This is a stricter but safer posture.</p>
+    <p><strong>New test required:</strong> assert that when <code>execute=True</code> and a required entry (e.g. <code>main-manage-encryption-secret</code>) is already present, the report either has <code>ok_no_skips=False</code>, or that the final summary message clearly surfaces the skip.</p>
+  </div>
+</div>
+
+
+<h2>F-09 — Cross-stage dependency ordering: advisory vs. blocking</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-09</span>
+    <span class="loc">restore.py:166–175 (build_plan)  |  restore.py:263–267 (apply_plan)  |  tests/test_dr.py:495–510</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Re-read clarification:</strong> the original review was correct in identifying the mechanics, but the severity needs a precision adjustment. The <code>problems</code> list IS checked by <code>apply_plan</code> at line 266–267:</p>
+    <pre>if plan["problems"]:
+    raise RestoreError("plan has ordering problems:\n  " + "\n  ".join(plan["problems"]))</pre>
+    <p>So <code>problems</code> already blocks <code>apply</code>. The actual gap is in the sequence of operations:</p>
+    <ol>
+      <li><code>order_entries(items)</code> runs Kahn topological sort (correct order, dependencies first).</li>
+      <li><code>ordered.sort(key=lambda i: i["stage"])</code> then <em>re-sorts</em> by stage — stable, so topological order within a stage is preserved, but cross-stage order can be violated.</li>
+      <li>The <code>problems</code> detection loop at line 171–175 runs <em>after</em> the re-sort and correctly identifies cross-stage violations. Those violations then block <code>apply</code>.</li>
+    </ol>
+    <p><strong>The actual defect:</strong> the stage-sort at step 2 can create violations that are correctly detected at step 3, causing the plan to be <em>unusable</em> for any manifest where a restorable object at a lower stage has a dependency on a restorable object at a higher stage. Neither of those cases exists in today's test data (all restorable items are Secrets/ConfigMaps → stage 5; their dependencies are also Secrets/ConfigMaps → stage 5). The defect is latent, not currently triggerable.</p>
+    <p><strong>Why it matters:</strong> if a future resource type (e.g. a custom CR restored to stage 7) depends on a restorable Secret (stage 5), the stage-sort would put the Secret before the CR (correct), but if the order were reversed (CR at stage 3, Secret at stage 5), the plan would emit a problem and refuse to run — which is the safe outcome. The real danger is the opposite direction: a Secret that depends on a higher-stage CR would never be caught until a real test exposes it, because today's test only confirms <code>plan["problems"] == []</code>.</p>
+    <p><strong>Current status of the blocking gate:</strong> the gate is present and works. The issue is that the stage-sort can render a semantically valid dependency graph unexecutable. The fix is to remove the post-topological stage-sort and instead assign stage as a tiebreak key <em>inside</em> the topological ordering, or to validate before sorting that no stage-boundary violations exist in the dependency graph.</p>
+    <p><strong>Recommended minimal fix:</strong> replace the post-topological <code>sorted()</code> call with a sort that uses <code>max(stage, stage_of_all_ancestors)</code> as the effective stage for each item, preserving dependencies. Alternatively, simply document the constraint that no restorable item may have a higher-stage dependency and add a test that constructs such a plan and verifies <code>problems != []</code>.</p>
+    <p><strong>New test required:</strong> construct a plan where a stage-5 item depends on a stage-7 item; assert <code>plan["problems"] != []</code> and that <code>apply_plan</code> raises <code>RestoreError</code>.</p>
+  </div>
+</div>
+
+
+<h2>F-04 — Encrypted payload not verified as decryptable</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-04</span>
+    <span class="loc">dr_lib.py:598–612 (validate_manifest)  |  dr_lib.py:640–642</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Re-read confirms the design constraint:</strong> the tool explicitly skips content-validation for encrypted files and emits a warning (line 641: <code>"N encrypted files not content-validated (decrypt needed)"</code>). The README acknowledges this under "Encryption and sensitive data". The fix here is purely documentation, not code.</p>
+    <p><strong>What the code does correctly:</strong> checksum covers ciphertext (bit-rot detected); file permission checked (mode 600 enforced); MANIFEST entry records <code>encrypted: true</code>. The warning is always present so an operator running <code>verify</code> will see it.</p>
+    <p><strong>Gap remaining:</strong> there is no <em>offline-decryptable</em> smoke test. If <code>DR_DECRYPT_CMD</code> is available at verify time, the tool could optionally decrypt-and-validate. Without a team-approved encryption mechanism this is a design decision, not a bug.</p>
+    <p><strong>Documentation addition needed:</strong> add one sentence to README.md under "Encryption and sensitive data" clarifying that <code>dr_lib.py verify</code> cannot prove decryptability — the operator must manually decrypt one file after backup to confirm the key/command work before the backup is relied upon for recovery.</p>
+    <p><strong>No code change needed.</strong></p>
+  </div>
+</div>
+
+
+<h2>F-05 — SHA256SUMS: integrity vs. corruption only (threat-model gap)</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-05</span>
+    <span class="loc">dr_lib.py:583–589 (build_manifest)  |  dr_lib.py:667–683 (verify_sha256sums)</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Re-read confirms the scope:</strong> SHA256SUMS is computed over all stored files plus MANIFEST.json. An attacker with write access to the backup directory can replace any file and recompute SHA256SUMS in one pass — there is no HMAC or signature. This is consistent with the design (no approved encryption/signing standard exists), but the threat model is not documented.</p>
+    <p><strong>What the code does correctly:</strong> accidental bit-rot, partial writes, and tampering by anyone <em>without</em> access to the backup directory (e.g. git commit, network transfer) are all detected.</p>
+    <p><strong>Threat model that SHA256SUMS does NOT cover:</strong> an adversary (or a bug in the backup script itself) with write access to the same filesystem path after backup completes.</p>
+    <p><strong>Mitigation already in place:</strong> mode 700 on the directory and mode 600 on all files limit write access to the owning user, so the threat requires privilege escalation — not just directory access.</p>
+    <p><strong>Recommended action:</strong> add one sentence to the README noting this boundary: "SHA256SUMS detects accidental corruption and any modification by a process that does not hold write access to the backup directory. It does not protect against an attacker or process running as the same user who performed the backup."</p>
+    <p><strong>No code change needed.</strong></p>
+  </div>
+</div>
+
+
+<h2>F-01 — Test gap: --store-reference-secrets + sentinel check</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge low">LOW</span>
+    <span class="fid">F-01</span>
+    <span class="loc">tests/test_dr.py:362–369 (test_secret_values_never_in_stdout_stderr_or_reports)  |  dr_lib.py:466–474 (cmd_store policy skip)</span>
+  </div>
+  <div class="finding-body">
+    <p>The existing sentinel test at line 362 runs the backup with <code>--discover</code> but without <code>--store-reference-secrets</code>. With that flag absent, reference Secrets are skipped by policy and never reach <code>yaml.safe_dump</code>. The concern is whether a reference Secret's <code>data</code> could appear in a stored YAML file when <code>--store-reference-secrets</code> is given.</p>
+    <p>Looking at the code path: <code>cmd_store</code> at line 478 calls <code>sanitize(obj, MODE_REFERENCE)</code> for reference objects. <code>sanitize</code> does <em>not</em> pop the <code>data</code> field — Secret <code>data</code> is preserved in the reference copy. So when <code>--store-reference-secrets</code> is used, the stored YAML file for a reference Secret <strong>does contain <code>data:</code> with base64-encoded values</strong>. This is intentional (it is a "break-glass copy"), but the sentinel test does not cover this path.</p>
+    <p><strong>Required test:</strong></p>
+    <pre>def test_break_glass_sentinel_not_in_stored_yaml_files(self):
+    proc, out = self.run_backup("--allow-plaintext-local", "--store-reference-secrets")
+    for root, _, files in os.walk(out):
+        for f in files:
+            if f.endswith(".yaml"):
+                with open(os.path.join(root, f)) as fh:
+                    content = fh.read()
+                # SENTINEL_B64 (the base64-encoded sentinel) WILL appear in data: fields;
+                # the plain SENTINEL string must not appear anywhere outside data fields.
+                self.assertNotIn(fakes.SENTINEL, content.replace(fakes.SENTINEL_B64, ""))</pre>
+    <p><strong>Note:</strong> the test correctly uses <code>.replace(SENTINEL_B64, "")</code> to ignore the data field itself — the invariant is that the raw string never leaks <em>outside</em> a properly encoded data field (e.g. not in a label, annotation, or <code>last-applied-configuration</code>). The existing test at line 372–378 already does this correctly for its scope; the new test extends it to the <code>--store-reference-secrets</code> path.</p>
+  </div>
+</div>
+
+
+<h2>F-13 — Test gaps: partial encrypt failure and thread-safety</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge low">LOW</span>
+    <span class="fid">F-13</span>
+    <span class="loc">tests/test_dr.py:246–273 (BackupEndToEndTests)  |  tests/test_dr.py:490–492</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Gap 1: partial encrypt failure.</strong> The existing test at line 490 uses an encrypt command that <em>always</em> fails. It does not exercise the case where encryption succeeds for some objects and fails on a specific required one — which is the scenario that F-12 is about. After F-12's fix, a test is needed that:</p>
+    <ul>
+      <li>Provides an encrypt command that fails only on the first Secret (by counting calls, or by detecting the resource name in the input via a helper script).</li>
+      <li>Asserts exit 2, and that the required resource appears in <code>manifest["skipped"]</code> with a recognisable reason.</li>
+      <li>Asserts <code>manifest["validation"]["ok"] == False</code>.</li>
+    </ul>
+    <p>A simpler proxy: use an encrypt command that always succeeds, but patch <code>cmd_store</code> to raise on a named resource. Since the test setup is end-to-end (shell → subprocess), the practical approach is a helper script that exits 0 for the first N calls and exits 3 for call N+1, using a counter file in <code>$TMPDIR</code>. That is somewhat complex; a simpler approach is to test the failure recording path at the unit level by calling <code>record-skip</code> directly and then checking <code>build_manifest</code>.</p>
+    <p><strong>Gap 2: thread safety of _cache.</strong> The class-level <code>_cache = {}</code> at line 246 and the fixture counter at line 240 (<code>len(os.listdir(self.tmp))</code>) are race-prone under parallel execution. <code>unittest</code> is single-threaded by default, so this is not a live bug. No code change needed; a comment noting the limitation is sufficient.</p>
+    <p><strong>Gap 3: no test for the ordering-violation blocking gate (F-09 test).</strong> After F-09 is addressed, add a test that builds a plan with a known cross-stage dependency and asserts it is either reordered correctly or surfaced as a problem that blocks apply.</p>
+  </div>
+</div>
+
+
+<h2>F-14 — saas-envs: real Let's Encrypt private keys committed to git (URGENT)</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge ext">EXTERNAL / URGENT</span>
+    <span class="fid">F-14</span>
+    <span class="loc">saas-envs/gitops/aws-dev/us-east-2/fvtsaas/fvtsaas*/manual-certs/*/tls.key</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>What was found (without reading key material):</strong></p>
+    <ul>
+      <li>20 <code>tls.key</code> files exist across two <code>fvtsaas</code> instance directories.</li>
+      <li>The header of one file (one line only) reads <code>-----BEGIN RSA PRIVATE KEY-----</code>, confirming PEM-encoded RSA private key material.</li>
+      <li>The co-located <code>tls.crt</code> has subject <code>CN=admin.fvtsaas.ibmmasfvt.com</code>, issuer <code>Let's Encrypt YR1</code>, validity window <code>2026-08-24 to 2026-11-22</code>. <strong>These are real, Let's Encrypt-signed certificates for a live IBM FVT SaaS domain — not self-signed test material.</strong></li>
+      <li>The files are tracked in git with 766 commits of history. There is no <code>.gitignore</code> suppressing them, no <code>.pre-commit-config.yaml</code>, and no <code>detect-secrets</code> baseline in this repository.</li>
+      <li>File permissions on disk are <code>-rw-r--r--</code> (world-readable), consistent with a normal git checkout.</li>
+    </ul>
+    <p><strong>Risk assessment:</strong> any user with read access to the <code>saas-envs</code> repository (and its git history) can extract these private keys. The corresponding certificates are valid until November 2026. An attacker with the private key can impersonate <code>admin.fvtsaas.ibmmasfvt.com</code> and any other hostnames in the certificate's SANs until expiry or revocation.</p>
+    <p><strong>This is outside the scope of the DR POC code</strong>, but it is directly relevant to the DR project: if the goal is to protect sensitive key material in backups, the team is already committing equivalent material to a repository without encryption.</p>
+    <p><strong>Recommended immediate actions (by the saas-envs owners, not by this POC):</strong></p>
+    <ol>
+      <li>Revoke the Let's Encrypt certificates immediately using the ACME revoke endpoint.</li>
+      <li>Rotate the private keys and reissue the certificates.</li>
+      <li>Remove the key files from git history using <code>git filter-repo</code> or BFG Repo Cleaner.</li>
+      <li>Add a <code>.gitignore</code> entry for <code>*.key</code> under <code>manual-certs/</code>.</li>
+      <li>Add a <code>detect-secrets</code> pre-commit baseline that would have caught this.</li>
+    </ol>
+    <p><strong>This audit does not open, print, or expose the key bodies. The above assessment is based on file headers, certificate metadata, and git log only.</strong></p>
+  </div>
+</div>
+
+
+<h2>Conflicts between requirements</h2>
+
+<div class="conflict-box">
+  <h3>Conflict A: F-08 (plaintext gate on --execute) vs. existing test_apply_execute_uses_create_and_never_overwrites</h3>
+  <p>The existing test at <code>test_dr.py:663</code> calls <code>apply_plan(..., execute=True)</code> using a plaintext backup produced by <code>plan_for()</code>. If F-08 is fixed by gating <code>--execute</code> on encryption, this test will fail. Resolution: change <code>plan_for()</code> to produce an encrypted backup (using <code>self.enc</code> + <code>self.dec</code>), or add a separate test for the execute-with-encrypted path and update <code>plan_for()</code> to use an encrypted fixture for all execute=True tests.</p>
+
+  <h3>Conflict B: F-11 (skipped_exists as non-ok for required) vs. existing test_apply_execute_uses_create_and_never_overwrites</h3>
+  <p>That same test at line 669 explicitly asserts <code>skipped_exists</code> for a required Secret. If fixing F-11 makes <code>skipped_exists</code> on a required resource a non-ok result, the test assertion at line 669 will need updating to reflect the new expected behaviour. The test is currently verifying the code behaviour, not the desired outcome — so the assertion itself needs updating, not weakening.</p>
+
+  <h3>Conflict C: F-09 (cross-stage ordering) vs. test_plan_is_deterministic (line 504)</h3>
+  <p>The test at line 504 asserts <code>plan["problems"] == []</code>. If the fix for F-09 changes the stage-sort logic, the test data must be verified to still produce an empty problems list with the new logic. The current test data (all restorable items are stage-5 Secrets) is unaffected by any reasonable fix.</p>
+
+  <h3>Conflict D: F-08 plaintext gate vs. encryption-not-approved blocker</h3>
+  <p>The encryption standard is explicitly <strong>not approved</strong> by the team (README, POC-RESULTS.md). Gating <code>--execute</code> on encryption would mean that no real restore can be executed until the team approves an encryption mechanism and key custody. This is actually the correct outcome — the POC should not be usable for a real restore of a plaintext backup — but it must be documented clearly so the team understands that approving encryption is a prerequisite for running <code>apply --execute</code>.</p>
+</div>
+
+
+<h2>Recommended minimal fix order</h2>
+
+<div class="order-box">
+<ol>
+  <li>
+    <strong>F-12 / F-03 (combined) — fix first; 1 shell line + 1 new test.</strong><br />
+    Add <code>python3 "$LIB" record-skip ...</code> in the <code>fetch_store</code> error handler (<code>backup-suite-manage.sh:112</code>). This closes both findings in one edit. Add the partial-encrypt-failure test from F-13 Gap 1 at the same time.
+  </li>
+  <li>
+    <strong>F-08 — gate --execute on encrypted backup; 3 lines in apply_plan + update 1 existing test + 2 new tests.</strong><br />
+    Depends on: none. Must update <code>plan_for()</code> or the execute=True tests to use an encrypted fixture. Document that encryption approval is a prerequisite for <code>apply --execute</code>.
+  </li>
+  <li>
+    <strong>F-11 — add ok_no_skips and warn on required skipped_exists; 1 line return value change + 1 new test.</strong><br />
+    Depends on: none. Backward-compatible if <code>ok_no_skips</code> is a new field.
+  </li>
+  <li>
+    <strong>F-01 + F-13 test gaps — add 2–3 targeted tests.</strong><br />
+    The <code>--store-reference-secrets</code> sentinel test (F-01) and the cross-stage ordering test (F-09 / F-13 Gap 3) can be added in the same pass. No production code changes needed.
+  </li>
+  <li>
+    <strong>F-09 — latent ordering defect; 1 logic change in build_plan + 1 new test.</strong><br />
+    Address after the test is in place so the fix can be verified. Current data does not trigger the defect; this is defensive hardening.
+  </li>
+  <li>
+    <strong>F-04 + F-05 — README documentation only; no code change.</strong><br />
+    Add two sentences to README.md (verify-decryptability recommendation, SHA256SUMS threat model). Can be done in a single pass at any point.
+  </li>
+  <li>
+    <strong>F-14 — escalate to saas-envs owners immediately, separately from this POC.</strong><br />
+    Certificate revocation and key rotation must happen independently of this codebase. The DR POC should not be blocked on this, but the team must be notified before this review is closed.
+  </li>
+</ol>
+</div>
+
+<footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>

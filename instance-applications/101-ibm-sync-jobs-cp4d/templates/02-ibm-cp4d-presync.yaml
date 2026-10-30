@@ -223,23 +223,29 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
-              echo 
+              echo
               echo "================================================================================"
               echo "Storing CP4D Dependencies' Channel and Version info in AWS Secret Manager"
               echo "================================================================================"
 
-              
+                            
               echo
-              echo "Fetching channel for namespace scope from PackageManifest"
+              echo "Fetching channel for namespace scope from olm-utils-cm ConfigMap"
               echo "================================================================================"
 
-              export NAMESPACE_SCOPE_CHANNEL=$((oc get PackageManifest ibm-namespace-scope-operator -n ${CPD_OPERATORS_NAMESPACE} -o json) | jq -r '[.status.channels | .[].name] | last')
+              export NAMESPACE_SCOPE_CR_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.["ibm-namespace-scope-operator"].cr_version')
+              if [[ -z "${NAMESPACE_SCOPE_CR_VERSION}" || "${NAMESPACE_SCOPE_CR_VERSION}" == "null" ]]; then
+                echo "Failed to fetch namespace scope cr_version"
+                exit 1
+              fi
+              # Derive channel from major.minor of cr_version (e.g. 4.3.6 -> v4.3)
+              export NAMESPACE_SCOPE_CHANNEL="v$(echo "${NAMESPACE_SCOPE_CR_VERSION}" | cut -d'.' -f1,2)"
               if [[ -z "${NAMESPACE_SCOPE_CHANNEL}" ]]; then
                 echo "Failed to fetch namespace scope channel"
                 exit 1
               fi
 
-              echo 
+              echo
               echo "Fetching values from olm-utils-cm config map"
               echo "================================================================================"
               echo "Fetching IBM Licensing Channel..."

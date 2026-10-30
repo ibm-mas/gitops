@@ -54,8 +54,10 @@ mas_workspace_id: string
 # Customization Archives (optional)
 customization_archive_secret_names:
   - secret_name: string
-    password: string (secret reference)
-    username: string (secret reference)
+    access_key: string (secret reference for S3 archive, optional)
+    access_secret_key: string (secret reference for S3 archive, optional)
+    password: string (secret reference for basic auth, optional)
+    username: string (secret reference for basic auth, optional)
 
 # Manage Logging Configuration (optional)
 manage_logging_secret_name: string
@@ -76,8 +78,23 @@ facilities_vault_secret_value: string (secret reference)
 facilities_liberty_extensions_secret_name: string
 facilities_liberty_extensions_b64_secret_value: string (secret reference)
 
-# Application Workspace Specification
-# Application-specific workspace configuration varies by MAS app
+# Application Workspace Specification (mas_appws_spec)
+# Application-specific workspace configuration varies by MAS app.
+# For Manage (MAS 9.0+), S3 and Cloud Object Storage (COS) regions can be configured:
+# mas_appws_spec:
+#   settings:
+#     defaultRegion: string            # Global fallback region (mxe.defaults3region, e.g. "us-east-1")
+#     customizationList:
+#       - customizationArchiveName: string
+#         customizationArchiveUrl: string
+#         useS3:
+#           accessKey: string
+#           region: string             # Customization archive region override
+#           s3Credentials:
+#             secretName: string
+#     deployment:
+#       loggingS3Destination:
+#         region: string               # Logging S3 region override (LOG_S3REGION, e.g. "us-east-1")
 
 # Certificate Management
 mas_manual_cert_mgmt: boolean

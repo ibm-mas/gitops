@@ -2,6 +2,7 @@
 {{ $cpd_operators_ns := .Values.ibm_cp4d.cpd_operators_namespace }}
 {{ $cpd_instance_ns := .Values.ibm_cp4d.cpd_instance_namespace }}
 {{ $cpd_version := .Values.ibm_cp4d.cpd_product_version | default "0.0.0" | toString }}
+{{ $is540 := not (lt (semver "5.4.0" | (semver $cpd_version).Compare) 0) }}
 {{ $is531 := not (lt (semver "5.3.1" | (semver $cpd_version).Compare) 0) }}
 {{- if not $is531 }}
 ---
@@ -102,11 +103,11 @@ spec:
 {{- if $olmUtils }}
 {{- $meta = $olmUtils.data.release_components_meta | fromYaml }}
 {{- end }}
-{{- $opensearchVersion   := .Values.ibm_wsl.opensearch_chart_version   | default ((index $meta "opencontent_opensearch" | default dict).case_version | default "1.2.0") }}
-{{- $ccsVersion          := .Values.ibm_wsl.ccs_chart_version          | default ((index $meta "ccs"                    | default dict).case_version | default "12.1.0") }}
-{{- $datarefineryVersion := .Values.ibm_wsl.datarefinery_chart_version | default ((index $meta "datarefinery"           | default dict).case_version | default "12.1.0") }}
-{{- $wsRuntimesVersion   := .Values.ibm_wsl.ws_runtimes_chart_version  | default ((index $meta "ws_runtimes"            | default dict).case_version | default "12.1.0") }}
-{{- $wsVersion           := .Values.ibm_wsl.ws_chart_version           | default ((index $meta "ws"                     | default dict).case_version | default "12.1.0") }}
+{{- $opensearchVersion   := .Values.ibm_wsl.opensearch_chart_version   | default ((index $meta "opencontent_opensearch" | default dict).case_version | default (ternary "1.4.3" "1.2.0" $is540)) }}
+{{- $ccsVersion          := .Values.ibm_wsl.ccs_chart_version          | default ((index $meta "ccs"                    | default dict).case_version | default (ternary "13.0.0" "12.1.0" $is540)) }}
+{{- $datarefineryVersion := .Values.ibm_wsl.datarefinery_chart_version | default ((index $meta "datarefinery"           | default dict).case_version | default (ternary "13.0.0" "12.1.0" $is540)) }}
+{{- $wsRuntimesVersion   := .Values.ibm_wsl.ws_runtimes_chart_version  | default ((index $meta "ws_runtimes"            | default dict).case_version | default (ternary "13.0.0" "12.1.0" $is540)) }}
+{{- $wsVersion           := .Values.ibm_wsl.ws_chart_version           | default ((index $meta "ws"                     | default dict).case_version | default (ternary "13.0.0" "12.1.0" $is540)) }}
 ---
 # CPD >= 5.3.1 — native ArgoCD Helm Apps (no K8s Jobs)
 # Wave 115: opencontent-opensearch cluster-scoped (CRDs + ClusterRoles)

@@ -243,6 +243,7 @@ rules:
       - jobs
       - subscriptions
       - clusterserviceversions
+      - catalogsources
       - operandregistries
       - operandconfigs
       - namespacescopes
@@ -255,6 +256,30 @@ rules:
     resources:
       - packagemanifests
       - clusters
+  - verbs:
+      - get
+      - list
+      - create
+      - patch
+      - update
+    apiGroups:
+      - ''
+    resources:
+      - namespaces
+  - verbs:
+      - get
+      - list
+      - create
+      - patch
+      - update
+      - watch
+    apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -274,3 +299,23 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: presync-cpd-prereq-role-{{ .Values.instance_id }}
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: "cpd-sa-cluster-admin-rbac-{{ .Values.instance_id }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "083"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: cpd-sa
+    namespace: "{{ .Values.cpd_operators_namespace }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin

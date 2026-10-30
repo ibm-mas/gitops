@@ -7,7 +7,9 @@ Meaningful prefix for the job resource name. Must be under 52 chars in length to
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 Included in $_job_hash (see below).
 */}}
+
 {{- $_cli_image_digest := "sha256:e6c8f8a02b4bd44026dac280b1d006e60d55e15ee189fce18be7c6922879f8b6" }}
+
 
 {{- /*
 A dict of values that influence the behaviour of the job in some way.
@@ -55,7 +57,7 @@ are required here.
 */}}
 {{- $_job_cleanup_group := cat $_job_name_prefix | sha1sum }}
 
-
+{{- if lt (semver "5.4.0" | (semver (.Values.cpd_product_version | default "0.0.0" | toString)).Compare) 0 }}
 ---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
@@ -184,3 +186,4 @@ spec:
       restartPolicy: Never
       serviceAccountName: cpd-sa
   backoffLimit: 4
+{{- end }}

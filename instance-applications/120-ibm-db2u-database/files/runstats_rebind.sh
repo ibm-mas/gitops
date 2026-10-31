@@ -17,30 +17,30 @@
 #            Skip the tables which are ongoing with reorg
 #        09-08-2023      Fu Le Qing (Roking)
 #            Update for MAS
+#       21-11-2025      Prudhviraj P
+#           Modified to run daily runstats and weekly rebinds
 #
 # ***************************************************************************
 #
 # ***************************************************************************
-
-# -- Source the Props file 
-if [ -f /mnt/backup/bin/.PROPS ]
-then
-    . /mnt/backup/bin/.PROPS
-    DOW=$(date | awk '{print $1}')
-    if [ ${DOW} != ${DAYOFFULL} ]
-    then
-        echo "Runstats runs only on Day of Full backup. . . !!! Exiting !"
-        exit 0
-    fi
-fi
 
 # -- Standard Parameters
-INSTANCE=$(whoami)
-INSTANCE_HOME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${INSTANCE}" | awk -F ',' '{print $5}'| sed 's/\/sqllib//')
-mkdir -p ${INSTANCE_HOME}/maintenance/logs
-DATESTAMP=$(date "+%Y-%m-%d-%H.%M.%S")
 
-pidfile="${INSTANCE_HOME}/.$(basename ${0}).pid"
+INSTNAME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | awk -F, '{print $4}')
+INSTHOME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${INSTNAME}" | awk -F ',' '{print $5}'| sed 's/\/sqllib//')
+
+mkdir -p ${INSTHOME}/maintenance/logs
+DATESTAMP=$(date "+%F-%H%M%S")
+DOW=$(date | awk '{print $1}')
+
+# -- Source the PROPS file       
+if [[ "${INSTHOME}" =~ "blumeta" ]]; then 
+   . /mnt/backup/bin/.PROPS
+else
+   . ${INSTHOME}/bin/.PROPS
+fi
+
+pidfile="${INSTHOME}/.$(basename ${0}).pid"
 if [ -e ${pidfile} ] && $kill -0 $(cat ${pidfile}) 2>/dev/null
 then
     exit 0
@@ -49,24 +49,25 @@ fi
 echo $$ > ${pidfile}
 trap "rm -f ${pidfile}; exit" SIGHUP SIGINT SIGQUIT SIGABRT SIGTERM EXIT
 
-if [ ! -f "${INSTANCE_HOME}/sqllib/db2profile" ]
+if [ ! -f "${INSTHOME}/sqllib/db2profile" ]
 then
-   echo "ERROR - ${INSTANCE_HOME}/sqllib/db2profile not found"
+   echo "ERROR - ${INSTHOME}/sqllib/db2profile not found"
    exit 1
 else
-   . ${INSTANCE_HOME}/sqllib/db2profile
+   . ${INSTHOME}/sqllib/db2profile
 fi
 
 # -- Debug Mode 
 # set -x;       # Uncomment to debug this shell script
 # set -n;       # Uncomment to check your syntax, without execution.
 
-RUNSTATS_TMP_FILE="${INSTANCE_HOME}/bin/.runstats.sql"
-REBIND_TMP_FILE="${INSTANCE_HOME}/bin/.rebind.sql"
+RUNSTATS_TMP_FILE="/tmp/.runstats.sql"
+REBIND_TMP_FILE="/tmp/.rebind.sql"
+DBS=$(db2 list db directory | grep -B5 "Indirect" | grep "Database name" |  awk '{ print $4 }' | sort -u )
 
-for DB in $(db2 list db directory | grep -B 5 Indirect | grep "Database name" | cut -d= -f2)
+for DB in "${DBS}"
 do
-    RUNSTATS_REBIND_LOG="${INSTANCE_HOME}/maintenance/logs/runstats_rebind_${DB}_${DATESTAMP}.log"
+    RUNSTATS_REBIND_LOG="${INSTHOME}/maintenance/logs/runstats_rebind_${DB}_${DATESTAMP}.log"
 
     role=$(db2 get db cfg for ${DB} | grep "HADR database role" | cut -d= -f2 |sed 's/ //g')
     if [ "$role" != "STANDBY" ]; then
@@ -81,8 +82,8 @@ do
         if [[ $? -eq 0 ]]; then
             # -- Runstats of the tables 
             db2 -x "select 'RUNSTATS ON TABLE \"' ||rtrim(tab.tabschema)||'\".\"'|| tab.tabname ||'\" ON ALL COLUMNS WITH DISTRIBUTION ON ALL COLUMNS AND DETAILED INDEXES ALL ALLOW WRITE ACCESS;' \
-            from syscat.tables tab left join sysibmadm.SNAPTAB_REORG reg on tab.tabschema=reg.TABSCHEMA and tab.tabname=reg.TABNAME \
-            and reg.REORG_STATUS not in ('COMPLETED','STOPPED') where tab.type='T' and reg.tabname is null" > ${RUNSTATS_TMP_FILE}
+            from syscat.tables tab left join sysibmadm.SNAPTAB_REORG reg on tab.tabschema=reg.TABSCHEMA and tab.tabname=reg.TABNAME and reg.REORG_STATUS not in ('COMPLETED','STOPPED') \
+            where tab.type='T' and reg.tabname is null order by tab.tabschema,tab.tabname" > ${RUNSTATS_TMP_FILE}
             
             # -- Execution of runstats
             echo -e "Begin processing of runstats @ ${DATESTAMP} ...\n" | tee -a ${RUNSTATS_REBIND_LOG}
@@ -90,17 +91,20 @@ do
             echo -e "\nEnd processing of runstats @ ${DATESTAMP}" | tee -a ${RUNSTATS_REBIND_LOG}
             rm ${RUNSTATS_TMP_FILE}
 
-            # -- Rebind of the packages 
-            db2 -x "select 'rebind package \"' ||rtrim(PKGSCHEMA)||'\".\"'|| PKGNAME ||'\";' from syscat.packages 
-            where PKGSCHEMA not like 'SYSIBM%' and PKGSCHEMA not like 'NULL%' " > ${REBIND_TMP_FILE}
-            
-            # -- Execution of Rebind 
-            echo -e "\n ----------------------------------------------- " | tee -a ${RUNSTATS_REBIND_LOG}
-            echo -e "Begin processing of rebind @ ${DATESTAMP} ...\n" | tee -a ${RUNSTATS_REBIND_LOG}
-            db2 -txvf ${REBIND_TMP_FILE} | tee -a ${RUNSTATS_REBIND_LOG}
-            echo -e "\nEnd processing of rebind @ ${DATESTAMP}" | tee -a ${RUNSTATS_REBIND_LOG}
+            if [[ "${DOW}" == "${DAYOFFULL}" ]]; then
+
+                # -- Rebind of the packages 
+                db2 -x "select 'rebind package \"' ||rtrim(PKGSCHEMA)||'\".\"'|| PKGNAME ||'\";' from syscat.packages 
+                where PKGSCHEMA not like 'SYSIBM%' and PKGSCHEMA not like 'NULL%' " > ${REBIND_TMP_FILE}
                 
-            rm ${REBIND_TMP_FILE}
+                # -- Execution of Rebind 
+                echo -e "\n ----------------------------------------------- " | tee -a ${RUNSTATS_REBIND_LOG}
+                echo -e "Begin processing of rebind @ ${DATESTAMP} ...\n" | tee -a ${RUNSTATS_REBIND_LOG}
+                db2 -txvf ${REBIND_TMP_FILE} | tee -a ${RUNSTATS_REBIND_LOG}
+                echo -e "\nEnd processing of rebind @ ${DATESTAMP}" | tee -a ${RUNSTATS_REBIND_LOG}
+                    
+                rm ${REBIND_TMP_FILE}
+            fi
             db2 terminate
         fi
     fi

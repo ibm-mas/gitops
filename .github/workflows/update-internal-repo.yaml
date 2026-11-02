@@ -1,53 +1,40 @@
-name: Update Internal GHE Repo
+name: Update Internal GHE Mirror
+
 on:
   push:
     branches:
       - '**'
-    tags-ignore:
+    tags:
       - '**'
+  schedule:
+    # Daily reconciliation at 02:00 UTC to prune deleted branches/tags
+    - cron: '0 2 * * *'
+  workflow_dispatch:
 
-env:
-  GITHUB_BRANCH: ${{ github.ref_name }}
-  REMOTE_REPO: automation-paas-cd-pipeline/mas-gitops
+concurrency:
+  group: ghe-mirror-sync
+  cancel-in-progress: false
 
 jobs:
-  update-repo:
+  mirror:
+    name: Mirror to Internal GHE
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout local repo
-        uses: actions/checkout@v4
-        with:
-          path: source
-
-      - name: Checkout remote repo
-        id: checkout_remote
-        continue-on-error: true
-        uses: actions/checkout@v4
-        with:
-          github-server-url: https://github.ibm.com
-          repository: ${{ env.REMOTE_REPO }}
-          ref: ${{ env.GITHUB_BRANCH }}
-          token:  ${{ secrets.ACTIONS_GITHUB_TOKEN }}
-          path: target
-
-      - name: Copy over files
-        if: ${{ steps.checkout_remote.outcome == 'success' }}
-        run: $GITHUB_WORKSPACE/source/build/bin/copy-gitops.sh -s $GITHUB_WORKSPACE/source -t $GITHUB_WORKSPACE/target
-
-      - name: Commit changes to remote repo 
-        if: ${{ steps.checkout_remote.outcome == 'success' }}
+      - name: Mirror repository
+        env:
+          SOURCE_REPO: ${{ github.repository }}
+          TARGET_REPO: automation-paas-cd-pipeline/mas-gitops
+          PUBLIC_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHE_TOKEN: ${{ secrets.ACTIONS_GITHUB_TOKEN }}
         run: |
-          cd $GITHUB_WORKSPACE/target
-          git config user.name "GitHub Actions Bot"
-          git config user.email "<>"
+          set -e
 
-          echo "git: Adding all files in $$GITHUB_WORKSPACE/target directory"
-          export FILES_ADDED=$(git add -v . | wc -l | xargs)
-          echo "git: Added ${FILES_ADDED} files"
-          if [ "$FILES_ADDED" != "0" ]; then
-            echo "git: Committing files"
-            git commit -m "Synch commit between ibm-mas/gitops and $REMOTE_REPO"
-          fi
+          echo "Cloning source repository (bare)..."
+          git clone --bare "https://x-access-token:${PUBLIC_TOKEN}@github.com/${SOURCE_REPO}.git" repo.git
+          cd repo.git
 
-          echo "Push changes to ${{ env.GITHUB_BRANCH }} branch of https://github.ibm.com/${{ env.REMOTE_REPO }}"
-          git push origin ${{ env.GITHUB_BRANCH }}
+          echo "Pushing mirror refs to https://github.ibm.com/${TARGET_REPO}..."
+          # Explicitly push heads and tags; avoid pushing internal GitHub pull-request refs
+          git push --prune --force "https://x-access-token:${GHE_TOKEN}@github.ibm.com/${TARGET_REPO}.git" "refs/heads/*:refs/heads/*" "refs/tags/*:refs/tags/*"
+
+          echo "Mirror sync completed successfully."

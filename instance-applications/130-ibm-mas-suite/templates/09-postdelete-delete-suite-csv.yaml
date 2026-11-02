@@ -1,0 +1,233 @@
+{{- if .Values.application_admin_role }}
+{{- if .Values.use_postdelete_hooks }}
+
+{{- /*
+PostDelete job: deletes the ibm-mas-operator Subscription and CSV from the core
+namespace after the ArgoCD Application is removed, so OLM does not keep the Suite
+operator running and the namespace can terminate cleanly.
+NOTE: uses its own dedicated SA/Role/RoleBinding
+because that SA is deleted by resources-finalizer before PostDelete hooks run.
+Use build/bin/set-cli-image-digest.sh to update the image digest below.
+*/}}
+{{- $_cli_image_digest := "sha256:e6c8f8a02b4bd44026dac280b1d006e60d55e15ee189fce18be7c6922879f8b6" }}
+
+{{- $core_ns   := printf "mas-%s-core" .Values.instance_id }}
+{{- $name_hash := $core_ns | sha256sum | trunc 6 }}
+{{- $job_name  := printf "postdelete-suite-csv-%s" $name_hash }}
+
+{{ $sa_name   := "postdelete-suite-csv-sa" }}
+{{ $role_name := "postdelete-suite-csv-r" }}
+{{ $rb_name   := printf "postdelete-suite-csv-rb-%s" .Values.instance_id }}
+{{ $np_name   := "postdelete-suite-csv-np" }}
+{{ $job_label := "postdelete-suite-csv-job" }}
+
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ $np_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $job_label }}
+  egress:
+    - {}
+  policyTypes:
+    - Egress
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - delete
+      - get
+      - list
+    apiGroups:
+      - operators.coreos.com
+    resources:
+      - clusterserviceversions
+      - subscriptions
+  - verbs:
+      - delete
+      - get
+      - list
+    apiGroups:
+      - core.mas.ibm.com
+    resources:
+      - suites
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $rb_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $core_ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $job_name }}
+  namespace: {{ $core_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ $job_label }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ $sa_name }}
+      restartPolicy: Never
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: CORE_NAMESPACE
+              value: {{ $core_ns }}
+            - name: INSTANCE_ID
+              value: {{ .Values.instance_id }}
+          volumeMounts: []
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete Suite CR in ${CORE_NAMESPACE}"
+
+              set +e
+              SUITE_NAME=$(oc get suite -n ${CORE_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+              set -e
+
+              if [[ -z "${SUITE_NAME}" ]]; then
+                echo "Suite CR not found - already removed"
+              else
+                echo "Deleting Suite: ${SUITE_NAME}"
+                set +e
+                oc delete suite "${SUITE_NAME}" \
+                  -n ${CORE_NAMESPACE} --wait=false 2>/dev/null
+                set -e
+
+                echo "Waiting up to 600s for operator to process Suite finalizer..."
+                WAIT_SECS=0
+                while [[ ${WAIT_SECS} -lt 600 ]]; do
+                  set +e
+                  SUITE_NAME=$(oc get suite -n ${CORE_NAMESPACE} \
+                    --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | head -1)
+                  set -e
+                  [[ -z "${SUITE_NAME}" ]] && break
+                  sleep 15
+                  WAIT_SECS=$((WAIT_SECS + 15))
+                  echo "  Still waiting... ${WAIT_SECS}s elapsed"
+                done
+
+                if [[ -n "${SUITE_NAME}" ]]; then
+                  echo "ERROR: Suite CR still present after ${WAIT_SECS}s - operator did not release finalizer"
+                  exit 1
+                fi
+                echo "Suite CR gone - safe to remove OLM resources"
+              fi
+
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete ibm-mas-operator Subscription in ${CORE_NAMESPACE}"
+              set +e
+              SUB_NAME=$(oc get subscription -n ${CORE_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep "^ibm-mas-operator$")
+              set -e
+              if [[ -z "${SUB_NAME}" ]]; then
+                echo "No ibm-mas-operator Subscription found - skipping"
+              else
+                echo "Deleting Subscription: ${SUB_NAME}"
+                oc delete subscription "${SUB_NAME}" -n ${CORE_NAMESPACE} \
+                  --timeout=60s --wait=true 2>/dev/null || true
+                echo "Subscription deleted"
+              fi
+
+              echo "------------------------------------------------------------------"
+              echo "PostDelete: delete ibm-mas CSV in ${CORE_NAMESPACE}"
+              set +e
+              CSV_NAME=$(oc get csv -n ${CORE_NAMESPACE} \
+                --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+                | grep "^ibm-mas\.")
+              set -e
+              if [[ -z "${CSV_NAME}" ]]; then
+                echo "No ibm-mas CSV found - skipping"
+              else
+                echo "Deleting CSV: ${CSV_NAME}"
+                oc delete csv "${CSV_NAME}" -n ${CORE_NAMESPACE} \
+                  --timeout=60s --wait=true 2>/dev/null || true
+                echo "CSV deleted"
+              fi
+
+              echo "PostDelete: Suite OLM cleanup complete"
+      volumes: []
+  backoffLimit: 4
+{{- end }}
+{{- end }}

@@ -1,0 +1,45 @@
+{{- if not (lt (semver "5.4.0" | (semver (.Values.cpd_product_version | default "0.0.0" | toString)).Compare) 0) }}
+---
+# zen-ca-cert-secret pre-creation for fresh CPD 5.4.0 installs
+#
+# Root cause: Fresh CPD 5.4.0 (non_olm_deploy=true) creates CommonService in both
+# instance and operators namespaces. CPFS bootstraps OperandRegistry common-service
+# in the instance namespace which does NOT have ibm-platformui-operator registered.
+# The Zen 6.10.0 operator (0010-infra role) creates zen-ca-operand-request requesting
+# the protected-ca-cert binding from ibm-platformui-operator, but ODLM cannot fulfil
+# it because ibm-platformui-operator is missing from the registry in that namespace.
+# zen-ca-cert-secret is never created and Zen fails at 3% with:
+#   "CA CERT FAILURE. zen-ca-cert-secret not created yet"
+#
+# Fix: pre-create zen-ca-cert-secret at sync-wave 084 (before the platform helm
+# install job at 085) using cs-ca-issuer which CPFS always creates in the instance
+# namespace. This bypasses the broken ODLM binding entirely.
+#
+# Clusters upgraded from 5.3.x are unaffected: their OperandRegistry was correctly
+# bootstrapped in the operators namespace during the prior OLM-based install and
+# ibm-platformui-operator is already registered there.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: zen-ca-certificate
+  namespace: "{{ .Values.cpd_instance_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  secretName: zen-ca-cert-secret
+  isCA: true
+  commonName: zen-ca
+  duration: 87600h
+  renewBefore: 360h
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: cs-ca-issuer
+    kind: Issuer
+{{- end }}

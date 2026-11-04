@@ -1,0 +1,507 @@
+{{- /*
+IC User Role setup job for RDS DB2 (Manage only).
+
+Runs after the main postsync RDS setup job (sync-wave 136), at sync-wave 138.
+
+Only executed when ALL of the following conditions are met:
+  1. production_database_access is set  <-- checked first; skips everything if not configured
+  2. application_admin_role: true
+  3. mas_application_id == "manage"
+
+When the production-database-access GenericAddon is configured this job will:
+  - Check if the IC_USER DB2 role already exists; create it via rdsadmin.create_role() if not.
+  - Grant all required Maximo table, sequence, catalog, and package privileges
+    to the IC_USER role (idempotent - safe to re-run).
+  - Look for existing users whose name starts with "ic" (case-insensitive) from
+    SYSCAT.DBAUTH and grant the IC_USER role to each of them if not already assigned.
+*/}}
+{{- if .Values.production_database_access }}
+{{- if .Values.application_admin_role }}
+{{- if eq .Values.mas_application_id "manage" }}
+
+{{- $_job_name_prefix := "rds-postsync-ic-setup" }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_digest := "sha256:e6c8f8a02b4bd44026dac280b1d006e60d55e15ee189fce18be7c6922879f8b6" }}
+
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+*/}}
+{{- $_job_version := "v6" }}
+
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
+{{- $_job_cleanup_group := cat $_job_name_prefix .Values.db2_rds_instance_name | sha1sum }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.db2_rds_instance_name }}-rds-postsync-ic-setup
+  annotations:
+    argocd.argoproj.io/sync-wave: "137"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  rds-ic-role-setup.py: |
+    import ibm_db as db2
+    import os
+    import sys
+    import re
+
+    DB_SCHEMA = "MAXIMO"
+    IC_ROLE = "IC_USER"
+
+    ssl_cert_path = os.environ.get("SSL_CERT_PATH", "/etc/mas/rds-ssl/global-bundle.pem")
+    jdbc_connection_url = os.environ.get("JDBC_CONNECTION_URL", "")
+    database_name = os.environ.get("DB_NAME", "")
+    admin_db_name = os.environ.get("RDS_ADMIN_DB", "rdsadmin")
+
+    if not database_name:
+        print("ERROR: DB_NAME environment variable is required but not set.")
+        sys.exit(1)
+
+    with open("/etc/mas/dbs-rds-creds/username", 'r') as f:
+        username = f.read().strip()
+
+    with open("/etc/mas/dbs-rds-creds/password", 'r') as f:
+        password = f.read().strip()
+
+    # Extract SSL version from JDBC URL if provided
+    ssl_version = 'TLSv1.2'
+    if jdbc_connection_url:
+        ssl_version_match = re.search(r'sslVersion=([^;]+)', jdbc_connection_url, re.IGNORECASE)
+        if ssl_version_match:
+            ssl_version = ssl_version_match.group(1)
+
+    # Connection to rdsadmin DB (needed for rdsadmin.create_role procedure)
+    conn_str_admin = (
+        f"DATABASE={admin_db_name};"
+        f"HOSTNAME={os.environ['DB_HOST']};"
+        f"PORT={os.environ['DB_PORT']};"
+        f"PROTOCOL=TCPIP;"
+        f"UID={username};"
+        f"PWD={password};"
+        f"Security=SSL;"
+        f"SSLVersion={ssl_version};"
+        f"SSLServerCertificate={ssl_cert_path};"
+    )
+
+    # Connection to target DB (needed for grants and role assignment)
+    conn_str = (
+        f"DATABASE={database_name};"
+        f"HOSTNAME={os.environ['DB_HOST']};"
+        f"PORT={os.environ['DB_PORT']};"
+        f"PROTOCOL=TCPIP;"
+        f"UID={username};"
+        f"PWD={password};"
+        f"Security=SSL;"
+        f"SSLVersion={ssl_version};"
+        f"SSLServerCertificate={ssl_cert_path};"
+    )
+
+    print(f"Connecting to admin database: {admin_db_name}")
+    try:
+        conn_admin = db2.connect(conn_str_admin, "", "")
+        print("Connected to admin database successfully")
+    except Exception as e:
+        print(f"Admin connection failed: {e}")
+        sys.exit(1)
+
+    print(f"Connecting to target database: {database_name}")
+    try:
+        conn = db2.connect(conn_str, "", "")
+        print("Connected to target database successfully")
+    except Exception as e:
+        print(f"Target connection failed: {e}")
+        db2.close(conn_admin)
+        sys.exit(1)
+
+    # Step 1: Check if IC_USER role exists; create via rdsadmin.create_role() if not
+    print("\n== Step 1: Check role ==")
+    try:
+        stmt = db2.prepare(conn, "SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME = ?")
+        db2.execute(stmt, (IC_ROLE,))
+        result = db2.fetch_tuple(stmt)
+        role_exists = int(result[0]) > 0
+    except Exception as e:
+        print(f"Error checking role: {e}")
+        db2.close(conn)
+        db2.close(conn_admin)
+        sys.exit(1)
+
+    if role_exists:
+        print(f"Role {IC_ROLE} already exists - skipping creation.")
+    else:
+        print(f"Role {IC_ROLE} does not exist - creating via rdsadmin.create_role()...")
+        try:
+            db2.exec_immediate(conn_admin, "CALL DBMS_OUTPUT.ENABLE()")
+            db2.exec_immediate(conn_admin, f"CALL rdsadmin.create_role('{database_name}', '{IC_ROLE}')")
+            db2.exec_immediate(conn_admin, "CALL DBMS_OUTPUT.DISABLE()")
+            print(f"Role {IC_ROLE} created successfully.")
+        except Exception as e:
+            error_msg = str(e)
+            try:
+                db2.exec_immediate(conn_admin, "CALL DBMS_OUTPUT.DISABLE()")
+            except Exception:
+                pass
+            if "already exists" in error_msg.lower() or "SQL0601N" in error_msg:
+                print(f"Role {IC_ROLE} already exists (detected during creation) - continuing.")
+            else:
+                print(f"Error creating role: {error_msg}")
+                db2.close(conn)
+                db2.close(conn_admin)
+                sys.exit(1)
+
+        # RDS creates roles asynchronously - wait until visible in SYSCAT.ROLES
+        import time
+        print(f"Waiting for role {IC_ROLE} to become visible in SYSCAT.ROLES...")
+        max_retries = 12
+        retry_delay = 5
+        for attempt in range(max_retries):
+            time.sleep(retry_delay)
+            try:
+                stmt = db2.prepare(conn, "SELECT COUNT(*) FROM SYSCAT.ROLES WHERE ROLENAME = ?")
+                db2.execute(stmt, (IC_ROLE,))
+                result = db2.fetch_tuple(stmt)
+                if int(result[0]) > 0:
+                    print(f"Role {IC_ROLE} is now visible (verified after {(attempt + 1) * retry_delay}s).")
+                    break
+            except Exception:
+                pass
+            print(f"  Attempt {attempt + 1}/{max_retries}: Role not yet visible, waiting {retry_delay}s...")
+        else:
+            print(f"ERROR: Role {IC_ROLE} not visible in SYSCAT.ROLES after {max_retries * retry_delay}s.")
+            db2.close(conn)
+            db2.close(conn_admin)
+            sys.exit(1)
+
+    # Step 2a: CONNECT and catalog/package grants (checked via SYSCAT.DBAUTH)
+    print("\n== Step 2a: Check database CONNECT grant ==")
+    try:
+        stmt = db2.prepare(conn,
+            "SELECT COUNT(*) FROM SYSCAT.DBAUTH "
+            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND CONNECTAUTH = 'Y'")
+        db2.execute(stmt, (IC_ROLE,))
+        result = db2.fetch_tuple(stmt)
+        connect_count = int(result[0])
+    except Exception as e:
+        print(f"Error checking CONNECT grant: {e}")
+        db2.close(conn_admin)
+        db2.close(conn)
+        sys.exit(1)
+
+    if connect_count > 0:
+        print(f"CONNECT and catalog/package grants already present - skipping.")
+    else:
+        print("CONNECT grant not found - assigning static grants...")
+        static_grants = [
+            f"GRANT CONNECT ON DATABASE TO ROLE {IC_ROLE}",
+            f"GRANT EXECUTE ON PROCEDURE SYSIBM.SQLCAMESSAGECCSID TO ROLE {IC_ROLE}",
+            f"GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE {IC_ROLE}",
+            f"GRANT SELECT ON TABLE SYSIBM.SYSDUMMY1 TO ROLE {IC_ROLE}",
+            f"GRANT SELECT ON TABLE SYSCAT.SCHEMATA TO ROLE {IC_ROLE}",
+            f"GRANT SELECT ON TABLE SYSCAT.TABLES TO ROLE {IC_ROLE}",
+            f"GRANT SELECT ON TABLE SYSCAT.COLUMNS TO ROLE {IC_ROLE}",
+            f"GRANT SELECT ON TABLE SYSCAT.INDEXES TO ROLE {IC_ROLE}",
+            f"GRANT SELECT ON TABLE SYSCAT.VIEWS TO ROLE {IC_ROLE}",
+        ]
+        for sql in static_grants:
+            try:
+                db2.exec_immediate(conn, sql)
+                print(f"  OK: {sql}")
+            except Exception as e:
+                print(f"  ERROR: {sql} -> {e}")
+                db2.close(conn_admin)
+                db2.close(conn)
+                sys.exit(1)
+        print("Static grants applied successfully.")
+
+    # Step 2b: Check table grants independently
+    print("\n== Step 2b: Check table grants ==")
+    try:
+        stmt = db2.prepare(conn,
+            "SELECT COUNT(*) FROM SYSCAT.TABAUTH "
+            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND TABSCHEMA = ? "
+            "AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y' AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'")
+        db2.execute(stmt, (IC_ROLE, DB_SCHEMA))
+        result = db2.fetch_tuple(stmt)
+        table_grants_count = int(result[0])
+    except Exception as e:
+        print(f"Error checking table grants: {e}")
+        db2.close(conn_admin)
+        db2.close(conn)
+        sys.exit(1)
+
+    if table_grants_count > 0:
+        print(f"Table grants already present ({table_grants_count} found) - skipping.")
+    else:
+        print("Table grants not found - assigning all table privileges...")
+
+        # Dynamic table grants - only for tables that exist in schema
+        table_names = [
+            'AUTOKEY','MAXSEQUENCE','SYNONYMDOMAIN','DEPLOYEDASSET','DPACCOMMDEVICE','DPACCPU',
+            'DPACDISK','DPACDISPLAY','DPACIMAGEDEVICE','DPACMEDIAADAPTER','DPACNETADAPTER',
+            'DPACNETDEVCARD','DPACOMMDEVICE','DPACOMPUTER','DPACOS','DPACPU','DPACSOFTWARE',
+            'DPACSWSUITE','DPADISK','DPADISPLAY','DPAFILE','DPAIMAGEDEVICE','DPAIPX',
+            'DPALOGICALDRIVE','DPAMADAPTER','DPAMADPTVARIANT','DPAMEDIAADAPTER','DPAMMANUFACTURER',
+            'DPAMMANUVARIANT','DPAMOS','DPAMOSVARIANT','DPAMPROCESSOR','DPAMPROCVARIANT',
+            'DPAMSOFTWARE','DPAMSWSUITE','DPAMSWSUITECOMP','DPAMSWUSAGE','DPAMSWUSAGERANGE',
+            'DPAMSWVARIANT','DPANETADAPTER','DPANETDEVCARD','DPANETDEVICE','DPANETPRINTER',
+            'DPAOS','DPASOFTWARE','DPASWSUITE','DPATCPIP','DPAUSERINFO','FSNCLASS','FSNCLASSQUAL',
+            'FSNCLASSRELATION','FSNLASTSCAN','FSNMETHOD','FSNMETHODPARAM','FSNMTHDPARAMQUAL',
+            'FSNMTHDQUAL','FSNOBJECT','FSNOBJPROPERTY','FSNOBJRELATION','FSNPROPERTY',
+            'FSNPROPERTYQUAL','FSNPROVIDER','FSNQUALIFIER','FSNREFPROPERTY','FSNSCHEMA',
+            'FSNSQLCOLUMN','FSNSQLTABLE','FSNTABLEQUAL','TAMITDPAHWM','TLOAMDPAANCESTOR',
+            'TLOAMFSNEVENTLISTENER','TLOAMFSNRUNSTATUS','TLOAMSOFTWARE','ALIASES',
+            'ATTRIBUTE_TYPES','CDM_VERSION','CHANGE_EVENTS','CLASS_TYPES','DESIRED_SUPPORTED_ATTRS',
+            'DESIRED_SUPPORTED_MAP','ENUMERATIONS','INTERFACE_TYPES','ME_ATTRIBUTES','METADATA_ASSN',
+            'MSS','MSS_ME','MSS_RELATIONSHIPS','NAMING_IDENTIFIERS','NAMING_POLICIES','NAMING_RULES',
+            'RELATIONSHIP_TYPES','RELATIONSHIPS','SUPERIORS','VALID_REL_TYPES','ASSETATTRIBUTE',
+            'CDMCITYPES','CLASSANCESTOR','CLASSIFICATION','CLASSSPEC','CLASSSTRUCTURE','RELATION',
+            'RELATIONRULES','ACTCI','ACTCIRELATION','ACTCISPEC','CCIDELETEDACTCI','OMP','OMPCIRLN',
+            'MAXVARS','MAXLABELS','L_MAXLABELS','MAXMESSAGES','TAMITSWPRTNUM','TLOAMSWCATALOG',
+            'TLOAMSWREL'
+        ]
+
+        # Build IN clause placeholders
+        placeholders = ','.join(['?' for _ in table_names])
+        try:
+            stmt = db2.prepare(conn,
+                f"SELECT TABNAME FROM SYSCAT.TABLES WHERE TABSCHEMA = ? AND TABNAME IN ({placeholders})")
+            db2.execute(stmt, tuple([DB_SCHEMA] + table_names))
+            existing_tables = []
+            row = db2.fetch_tuple(stmt)
+            while row:
+                existing_tables.append(row[0].strip())
+                row = db2.fetch_tuple(stmt)
+            print(f"  Found {len(existing_tables)} MAXIMO tables to grant")
+        except Exception as e:
+            print(f"  Error querying tables: {e}")
+            existing_tables = []
+
+        for tbl in existing_tables:
+            try:
+                db2.exec_immediate(conn, f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {DB_SCHEMA}."{tbl}" TO ROLE {IC_ROLE}')
+                print(f"  OK: GRANT on TABLE {tbl}")
+            except Exception as e:
+                print(f"  WARN: GRANT on TABLE {tbl} -> {e}")
+
+        print("\nTable grants applied successfully.")
+
+    # Step 2c: Check sequence grants independently
+    print("\n== Step 2c: Check sequence grants ==")
+    try:
+        stmt = db2.prepare(conn,
+            "SELECT COUNT(*) FROM SYSCAT.SEQUENCEAUTH "
+            "WHERE GRANTEE = ? AND GRANTEETYPE = 'R' AND SEQSCHEMA = ? "
+            "AND USAGEAUTH = 'Y' AND ALTERAUTH = 'Y'")
+        db2.execute(stmt, (IC_ROLE, DB_SCHEMA))
+        result = db2.fetch_tuple(stmt)
+        seq_grants_count = int(result[0])
+    except Exception as e:
+        print(f"Error checking sequence grants: {e}")
+        db2.close(conn_admin)
+        db2.close(conn)
+        sys.exit(1)
+
+    if seq_grants_count > 0:
+        print(f"Sequence grants already present ({seq_grants_count} found) - skipping.")
+    else:
+        print("Sequence grants not found - assigning all sequence privileges...")
+
+        # Dynamic sequence grants - only for sequences that exist in schema
+        seq_names = [
+            'ACTCIRELATIONSEQ','ACTCISEQ','ACTCISPECSEQ','ASSETATTRIBUTESEQ','AUTOKEYSEQ',
+            'CCIDELETEDACTCISEQ','CDMCITYPESSEQ','CLASSANCESTORUSEQ','CLASSIFICATIONSEQ',
+            'CLASSSPECSEQ','CLASSSTRUCTURESEQ','DEPLOYEDASSETSEQ','DPACOMMDEVICESEQ',
+            'DPACOMPUTERSEQ','DPACPUSEQ','DPADISKSEQ','DPADISPLAYSEQ','DPAFILESEQ',
+            'DPAIMAGEDEVICESEQ','DPAIPXSEQ','DPALOGICALDRIVESEQ','DPAMADAPTERSEQ',
+            'DPAMADPTVARIANTSEQ','DPAMEDIAADAPTERSEQ','DPAMMANUFACTURERSEQ','DPAMMANUVARIANTSEQ',
+            'DPAMOSSEQ','DPAMOSVARIANTSEQ','DPAMPROCESSORSEQ','DPAMPROCVARIANTSEQ',
+            'DPAMSOFTWARESEQ','DPAMSWSUITECOMPSEQ','DPAMSWSUITESEQ','DPAMSWUSAGERANGESEQ',
+            'DPAMSWUSAGESEQ','DPAMSWVARIANTSEQ','DPANETADAPTERSEQ','DPANETDEVCARDSEQ',
+            'DPANETDEVICESEQ','DPANETPRINTERSEQ','DPAOSSEQ','DPASOFTWARESEQ','DPASWSUITESEQ',
+            'DPATCPIPSEQ','DPAUSERINFOSEQ','L_MAXLABELSSEQ','MAXLABELSSEQ','MAXMESSAGESSEQ',
+            'MAXSEQUENCESEQ','MAXVARSSEQ','OMPCIRLNSEQ','OMPSEQ','RELATIONRULESSEQ','RELATIONSEQ',
+            'SYNONYMDOMAINSEQ','TAMITDPAHWMSEQ','TAMITSWPRTNUMSEQ','TLOAMDPAANCESTORSEQ',
+            'TLOAMFSNEVENTLISTENERSEQ','TLOAMFSNRUNSTATUSSEQ','TLOAMSOFTWARESEQ',
+            'TLOAMSWCATALOGSEQ','TLOAMSWRELSEQ'
+        ]
+
+        placeholders = ','.join(['?' for _ in seq_names])
+        try:
+            stmt = db2.prepare(conn,
+                f"SELECT SEQNAME FROM SYSCAT.SEQUENCES WHERE SEQSCHEMA = ? AND SEQNAME IN ({placeholders})")
+            db2.execute(stmt, tuple([DB_SCHEMA] + seq_names))
+            existing_seqs = []
+            row = db2.fetch_tuple(stmt)
+            while row:
+                existing_seqs.append(row[0].strip())
+                row = db2.fetch_tuple(stmt)
+            print(f"  Found {len(existing_seqs)} MAXIMO sequences to grant")
+        except Exception as e:
+            print(f"  Error querying sequences: {e}")
+            existing_seqs = []
+
+        for seq in existing_seqs:
+            try:
+                db2.exec_immediate(conn, f'GRANT USAGE, ALTER ON SEQUENCE {DB_SCHEMA}."{seq}" TO ROLE {IC_ROLE}')
+                print(f"  OK: GRANT on SEQUENCE {seq}")
+            except Exception as e:
+                print(f"  WARN: GRANT on SEQUENCE {seq} -> {e}")
+
+        print("\nSequence grants applied successfully.")
+
+    db2.close(conn_admin)
+
+    # ── Step 3: Check users with ic prefix and grant IC_USER role ────────────
+    print("\n== Step 3: Check users with ic prefix ==")
+    ic_users = []
+    try:
+        stmt = db2.prepare(conn,
+            "SELECT RTRIM(GRANTEE) FROM SYSCAT.DBAUTH "
+            "WHERE GRANTEETYPE = 'U' AND UPPER(GRANTEE) LIKE 'IC%'")
+        db2.execute(stmt)
+        row = db2.fetch_tuple(stmt)
+        while row:
+            user = row[0].strip().upper()
+            if re.match(r'^IC[A-Z0-9_#@$]*$', user):
+                ic_users.append(user)
+            row = db2.fetch_tuple(stmt)
+        # Deduplicate while preserving order
+        ic_users = list(dict.fromkeys(ic_users))
+    except Exception as e:
+        print(f"  Error querying IC users from SYSCAT.DBAUTH: {e}")
+
+    if not ic_users:
+        print("No user whose name starts with 'ic' was found in database authorizations.")
+        print("Skipping role assignment because ic user not found.")
+    else:
+        print(f"Found user(s) whose name starts with 'ic': {' '.join(ic_users)}")
+        for ic_db_user in ic_users:
+            try:
+                stmt = db2.prepare(conn,
+                    "SELECT COUNT(*) FROM SYSCAT.ROLEAUTH "
+                    "WHERE ROLENAME = ? AND GRANTEE = ? AND GRANTEETYPE = 'U'")
+                db2.execute(stmt, (IC_ROLE, ic_db_user))
+                result = db2.fetch_tuple(stmt)
+                role_assigned = int(result[0]) > 0
+            except Exception as e:
+                print(f"  Error checking role assignment for {ic_db_user}: {e}")
+                role_assigned = False
+
+            if role_assigned:
+                print(f"  Role {IC_ROLE} already assigned to {ic_db_user} - skipping.")
+            else:
+                print(f"  Role {IC_ROLE} not assigned to {ic_db_user} - granting...")
+                try:
+                    db2.exec_immediate(conn, f"GRANT ROLE {IC_ROLE} TO USER {ic_db_user}")
+                    print(f"  OK: GRANT ROLE {IC_ROLE} TO USER {ic_db_user}")
+                except Exception as e:
+                    print(f"  WARN: GRANT ROLE {IC_ROLE} TO USER {ic_db_user} -> {e}")
+
+    db2.close(conn)
+    print("\nIC_ROLE setup completed successfully.")
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "138"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  backoffLimit: 4
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: quay.io/ibmmas/cli@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "DB_HOST ...................... ${DB_HOST}"
+              echo "DB_PORT ...................... ${DB_PORT}"
+              echo "DB_NAME ...................... ${DB_NAME}"
+              echo "MAS_APP_ID ................... ${MAS_APP_ID}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Downloading RDS SSL certificate"
+              echo "================================================================================"
+              mkdir -p /etc/mas/rds-ssl
+              curl -sSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/mas/rds-ssl/global-bundle.pem
+              echo "Certificate downloaded"
+
+              echo ""
+              echo "================================================================================"
+              echo "Running IC user role setup"
+              echo "================================================================================"
+              python3 /etc/mas/rds-ic-role-script/rds-ic-role-setup.py
+
+          env:
+            - name: MAS_APP_ID
+              value: {{ .Values.mas_application_id | quote }}
+            - name: DB_HOST
+              value: {{ .Values.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.dbname | default "" | quote }}
+            - name: RDS_ADMIN_DB
+              value: {{ .Values.rds_admin_db_name | quote }}
+            - name: JDBC_CONNECTION_URL
+              value: {{ .Values.jdbc_connection_url | quote }}
+            - name: SSL_CERT_PATH
+              value: "/etc/mas/rds-ssl/global-bundle.pem"
+          volumeMounts:
+            - name: dbs-rds-secret-store
+              mountPath: /etc/mas/dbs-rds-creds/
+            - name: rds-ic-role-script
+              mountPath: /etc/mas/rds-ic-role-script/
+      restartPolicy: Never
+      volumes:
+        - name: dbs-rds-secret-store
+          secret:
+            secretName: {{ .Values.db2_rds_instance_name }}-secret-store
+            defaultMode: 420
+            optional: false
+        - name: rds-ic-role-script
+          configMap:
+            name: {{ .Values.db2_rds_instance_name }}-rds-postsync-ic-setup
+
+{{- end }}
+{{- end }}
+{{- end }}

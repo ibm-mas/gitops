@@ -1,0 +1,133 @@
+{{- if .Values.application_admin_role }}
+{{- if and (eq .Values.dns_provider "cis") (not .Values.mas_manual_cert_mgmt) }}
+---
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:e6c8f8a02b4bd44026dac280b1d006e60d55e15ee189fce18be7c6922879f8b6" }}
+
+
+# Deletes the CIS custom WAF rule "mas-ip-allowlist-${MAS_DOMAIN}" (created by the suite_dns role when allow_list is set)
+# when the instance is deprovisioned. Nothing is done if the rule does not exist.
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cis-delete-allowlist-waf-rule
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/hook: "PostDelete"
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+stringData:
+  cis_apikey: {{ .Values.cis_apikey }}
+type: Opaque
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cis-delete-allowlist-waf-rule
+  namespace: mas-{{ .Values.instance_id }}-syncres
+  annotations:
+    argocd.argoproj.io/hook: "PostDelete"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: "sync-job"
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: cis-delete-allowlist-waf-rule
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MAS_INSTANCE_ID
+              value: "{{ .Values.instance_id }}"
+            - name: MAS_DOMAIN
+              value: "{{ .Values.cis_mas_domain }}"
+            - name: CIS_SERVICE_NAME
+              value: "{{ .Values.cis_service_name }}"
+            - name: CIS_APIKEY
+              valueFrom:
+                secretKeyRef:
+                  name: cis-delete-allowlist-waf-rule
+                  key: cis_apikey
+            - name: IBMCLOUD_HOME
+              value: /tmp/bluemix
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+
+              RULE_DESC="mas-ip-allowlist-${MAS_DOMAIN}"
+
+              echo
+              echo "================================================================================"
+              echo "Deleting CIS WAF allowlist rule for MAS instance ${MAS_INSTANCE_ID}"
+              echo "================================================================================"
+              echo "Params:"
+              echo "    - MAS_INSTANCE_ID  ................... ${MAS_INSTANCE_ID}"
+              echo "    - MAS_DOMAIN       ................... ${MAS_DOMAIN}"
+              echo "    - CIS_SERVICE_NAME ................... ${CIS_SERVICE_NAME}"
+              echo "    - RULE_DESC        ................... ${RULE_DESC}"
+              echo
+
+              if [ -z "${MAS_DOMAIN}" ] || [ -z "${CIS_SERVICE_NAME}" ]; then
+                echo "MAS_DOMAIN or CIS_SERVICE_NAME is not set, nothing to delete"
+                exit 0
+              fi
+
+              mkdir -p "${IBMCLOUD_HOME}"
+
+              echo "Installing CIS plugin if not already installed"
+              if ! ibmcloud plugin list | grep -q 'cis'; then
+                ibmcloud plugin install cis -f || exit $?
+              fi
+              ibmcloud login --apikey "${CIS_APIKEY}" -q --no-region > /dev/null || exit $?
+
+              CIS_DOMAIN_ID=$(ibmcloud cis domains -i "${CIS_SERVICE_NAME}" -o json | jq -r '.[0].id // empty')
+              if [ -z "${CIS_DOMAIN_ID}" ]; then
+                echo "Failed to look up the CIS domain id in CIS service '${CIS_SERVICE_NAME}'"
+                exit 1
+              fi
+              echo "CIS domain id ........................ ${CIS_DOMAIN_ID}"
+
+              RULES_JSON=$(ibmcloud cis custom-waf rules "${CIS_DOMAIN_ID}" -i "${CIS_SERVICE_NAME}" --output json) || exit $?
+              RULE_ID=$(echo "${RULES_JSON}" | jq -r --arg desc "${RULE_DESC}" '[(.rules // [])[] | select(.description == $desc) | .id] | first // empty')
+
+              if [ -z "${RULE_ID}" ]; then
+                echo "No WAF allowlist rule '${RULE_DESC}' found, nothing to delete"
+                exit 0
+              fi
+
+              echo "Deleting WAF rule ${RULE_ID} ('${RULE_DESC}')"
+              retries=5
+              index=0
+              until ibmcloud cis custom-waf rule-delete "${CIS_DOMAIN_ID}" "${RULE_ID}" -i "${CIS_SERVICE_NAME}" --force; do
+                index=$((index+1))
+                if [ ${index} -ge ${retries} ]; then
+                  echo "Failed to delete WAF rule ${RULE_ID} after ${retries} attempts"
+                  exit 1
+                fi
+                echo "Delete failed, retrying in 30s (${index}/${retries})"
+                sleep 30
+              done
+              echo "WAF allowlist rule '${RULE_DESC}' deleted successfully"
+
+      restartPolicy: Never
+  backoffLimit: 4
+{{- end }}
+{{- end }}

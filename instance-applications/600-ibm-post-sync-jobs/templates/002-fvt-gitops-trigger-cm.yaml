@@ -1,0 +1,25 @@
+{{- if .Values.mas_catalog_version }}
+{{- /*
+The fvt-gitops Job (fvt-gitops-runner sub-chart) is an ArgoCD PostSync hook. ArgoCD only runs
+PostSync hooks when it performs a sync, and hook resources are ignored when deciding whether an
+Application is OutOfSync. Every resource in this Application is a hook, so a change to
+catalog.version (tag or digest) in cluster-params.yaml would not cause a sync and the FVT GitOps
+tests would not re-run.
+
+This ConfigMap is deliberately NOT a hook (no argocd.argoproj.io/hook annotation). Its content
+tracks the catalog version, so when it changes the Application goes OutOfSync, automated sync runs
+and the PostSync fvt-gitops Job is executed again.
+*/}}
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: fvt-gitops-trigger-cm
+  namespace: mas-{{ .Values.instance_id }}-postsyncjobs
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  mas_catalog_version: "{{ .Values.mas_catalog_version }}"
+{{- end }}

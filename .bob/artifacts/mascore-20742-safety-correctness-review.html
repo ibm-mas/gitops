@@ -1,0 +1,389 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>MASCORE-20742 — Safety &amp; Correctness Review</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px;
+    line-height: 1.6; color: #1f2328; background: #fff; margin: 0; padding: 24px 16px; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+  .subtitle { color: #57606a; font-size: 13px; margin: 0 0 20px; }
+  h2 { font-size: 14px; font-weight: 700; margin: 28px 0 8px; border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 4px; }
+  h3 { font-size: 13px; font-weight: 600; margin: 14px 0 4px; }
+  p { margin: 4px 0 8px; }
+  code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px;
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 3px; padding: 1px 4px; }
+  pre { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 4px; padding: 10px 12px;
+    font-size: 12px; overflow-x: auto; margin: 6px 0 10px; white-space: pre-wrap; }
+  .finding { border: 1px solid #e5e7eb; border-radius: 5px; margin: 10px 0 14px; overflow: hidden; }
+  .finding-header { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px;
+    border-bottom: 1px solid #e5e7eb; }
+  .finding-body { padding: 10px 12px; }
+  .finding-body p:first-child { margin-top: 0; }
+  .badge { font-size: 11px; font-weight: 700; border-radius: 3px; padding: 2px 7px;
+    white-space: nowrap; flex-shrink: 0; }
+  .critical { background: #fee2e2; color: #991b1b; }
+  .high     { background: #fef3c7; color: #92400e; }
+  .medium   { background: #dbeafe; color: #1e40af; }
+  .low      { background: #dcfce7; color: #166534; }
+  .fid { font-weight: 700; font-size: 13px; }
+  .loc { font-size: 12px; color: #57606a; font-family: "SFMono-Regular", Consolas, monospace; }
+  .verdict { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px;
+    border-radius: 3px; font-size: 12px; font-weight: 600; }
+  .pass { background: #dcfce7; color: #166534; }
+  .concern { background: #fef3c7; color: #92400e; }
+  .fail2 { background: #fee2e2; color: #991b1b; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0 12px; }
+  th { text-align: left; background: #f7f8fa; border: 1px solid #e5e7eb;
+    padding: 5px 8px; font-weight: 600; }
+  td { border: 1px solid #e5e7eb; padding: 5px 8px; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .summary-box { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 5px;
+    padding: 12px 14px; margin-bottom: 20px; }
+  .next-action { background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 5px;
+    padding: 12px 14px; margin-top: 24px; }
+  .next-action strong { color: #1e40af; }
+  footer { border-top: 1px solid #e5e7eb; margin-top: 32px; padding-top: 8px;
+    text-align: center; font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>MASCORE-20742 — Safety &amp; Correctness Review</h1>
+<p class="subtitle">Scope: <code>poc/suite-resource-dr/</code> — dr_lib.py, discover.py, backup-suite-manage.sh, restore.py, tests/fakes.py, tests/test_dr.py, README.md, POC-RESULTS.md</p>
+
+<div class="summary-box">
+  <strong>10-point review summary</strong>
+  <table style="margin-top:8px">
+    <tr><th>#</th><th>Area</th><th>Result</th></tr>
+    <tr><td>1</td><td>Discovery — no Secret values in output</td><td><span class="verdict pass">PASS</span></td></tr>
+    <tr><td>2</td><td>Encryption: fail-closed, hook validation</td><td><span class="verdict concern">CONCERN ×3</span></td></tr>
+    <tr><td>3</td><td>Checksum coverage and tamper detection</td><td><span class="verdict concern">CONCERN ×1</span></td></tr>
+    <tr><td>4</td><td>Source-cluster anti-targeting</td><td><span class="verdict concern">CONCERN ×2</span></td></tr>
+    <tr><td>5</td><td>Dry-run default; --execute bypass paths</td><td><span class="verdict concern">CONCERN ×1</span></td></tr>
+    <tr><td>6</td><td>Operator/GitOps-owned resource strategy</td><td><span class="verdict pass">PASS with caveats</span></td></tr>
+    <tr><td>7</td><td>Ordering, finalizers, CA Secrets, dependent Secrets</td><td><span class="verdict concern">CONCERN ×2</span></td></tr>
+    <tr><td>8</td><td>Partial failures — misleading success</td><td><span class="verdict concern">CONCERN ×2</span></td></tr>
+    <tr><td>9</td><td>Test failure cases; no real cluster contact</td><td><span class="verdict pass">PASS with gap ×1</span></td></tr>
+    <tr><td>10</td><td>Documentation accuracy</td><td><span class="verdict pass">PASS</span></td></tr>
+  </table>
+  <p style="margin:6px 0 0">Total: <strong>0 Critical</strong>   <strong>2 High</strong>   <strong>7 Medium</strong>   <strong>4 Low</strong></p>
+</div>
+
+
+<h2>Area 1 — Discovery: Secret values never printed</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge low">LOW</span>
+    <span class="fid">F-01</span>
+    <span class="loc">discover.py:52-56  |  dr_lib.py:477  |  tests/test_dr.py:362-369</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Finding (no action required before live discovery):</strong> Secret <code>data</code>/<code>stringData</code> is popped in <code>discover.py</code> at lines 53–55 before any classification or serialisation. The <code>dr_lib.py store</code> command records only <code>data_keys</code> (line 477). The sentinel test at <code>test_dr.py:362-369</code> asserts the raw SENTINEL value and its base64 form never appear in stdout, stderr, MANIFEST.json, inventory.json, inventory.txt, README.txt or SHA256SUMS.</p>
+    <p><strong>Gap (Low):</strong> The sentinel test reads every report file with <code>open(..., "rb").read().decode("utf-8", "replace")</code>, so binary-encoded ciphertext is checked. However, the in-memory flow through <code>yaml.safe_dump(clean)</code> in <code>dr_lib.py:478</code> is not separately validated to confirm the Secret <code>data</code> field survives in cleaned reference copies when <code>--store-reference-secrets</code> is active. Reference copies do not call <code>sanitize</code> in <code>MODE_RESTORE</code>, so <code>data</code> passes through. The test at line 362 uses <code>--discover</code> but does not also use <code>--store-reference-secrets</code>. A targeted test for that combination would close the gap, though the code path is straightforward.</p>
+    <p>Overall: the primary protection is solid. This is a test-coverage gap only.</p>
+  </div>
+</div>
+
+
+<h2>Area 2 — Backup encryption: fail-closed; hook validation</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge high">HIGH</span>
+    <span class="fid">F-02</span>
+    <span class="loc">dr_lib.py:356-364 (encrypt_bytes)  |  dr_lib.py:367-372 (decrypt_bytes)</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Decrypt hook does not check for empty output.</strong></p>
+    <pre>def decrypt_bytes(data: bytes, cmd: str) -&gt; bytes:
+    proc = subprocess.run(shlex.split(cmd), input=data, capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"decrypt command failed (rc={proc.returncode})")
+    return proc.stdout  # ← no emptiness check</pre>
+    <p><code>encrypt_bytes</code> raises <code>RuntimeError</code> if <code>proc.stdout</code> is empty (line 362–363). <code>decrypt_bytes</code> does not. A decrypt command that exits 0 but writes nothing would cause <code>yaml.safe_load(b"")</code> → <code>None</code> in <code>restore.py:67</code>, which then passes <code>None</code> into <code>api_available(None.get("apiVersion", ""), ...)</code> and raises an <code>AttributeError</code>. That would surface as an unhandled exception — not as a clean <code>RestoreError</code> — during a real restore apply. The test at <code>test_dr.py:490</code> only covers a non-zero exit code for <em>encrypt</em>, not for decrypt.</p>
+    <p><strong>Recommended fix:</strong> Add the same guard to <code>decrypt_bytes</code>: <code>if not proc.stdout: raise RuntimeError("decrypt command produced no output")</code>.</p>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-03</span>
+    <span class="loc">dr_lib.py:479-484 (cmd_store)  |  backup-suite-manage.sh:99-101</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Encryption failure exits the Python store subprocess with status 1, but the shell silently discards FAILED items when they are "optional".</strong></p>
+    <p>When <code>encrypt_bytes</code> raises (line 484), the <code>cmd_store</code> function propagates as an unhandled exception and the Python process exits non-zero. The shell wrapper at line 100–101:</p>
+    <pre>printf '%s' "$json" | python3 "$LIB" store ... || \
+  { FAILED=$((FAILED + 1)); echo "ERROR: could not store $kind/$name" &gt;&amp;2; }</pre>
+    <p>increments <code>FAILED</code> and prints an ERROR. The final gate at line 229:</p>
+    <pre>if [[ $rc -ne 0 || $REQUIRED_MISSING -gt 0 || $FAILED -gt 0 ]]; then
+  echo "RESULT: FAILED validation" &gt;&amp;2; exit 2; fi</pre>
+    <p>correctly causes the overall backup to exit 2 when any <em>required</em> object fails, and also when <em>any</em> fetch/store failure (FAILED &gt; 0) occurs. So the fail-closed property holds. The test at <code>test_dr.py:490-492</code> verifies exit 2 for an encrypt failure.</p>
+    <p><strong>Gap (Medium):</strong> A missed file is recorded in <code>FAILED</code> and the run exits 2, but the object is <em>not</em> added to <code>.skips.jsonl</code>; it simply does not appear in <code>.records.jsonl</code> either. Therefore <code>build_manifest</code> has no trace of the attempted-but-failed store, which means <code>validate_manifest</code> can only flag it if discovery was run (via the <code>inventory["entries"]</code> completeness check). Without discovery, a failed encryption write on an optional resource produces a run that exits 2 but the manifest carries no record of the gap — it could be confused with a transient error after the fact. Adding a <code>record-skip</code> call in the shell error handler would give a complete audit trail.</p>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-04</span>
+    <span class="loc">dr_lib.py:606-610 (validate_manifest)  |  tests/test_dr.py:477-488</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Encrypted files are checksummed as ciphertext, not validated for content or structure.</strong></p>
+    <p>The validation loop at line 597 correctly skips content checks for encrypted entries (<code>continue</code> after incrementing <code>enc_files</code> at line 609). A warning is emitted (line 640). The SHA256 on disk covers the ciphertext, so bit-rot is detected. However:</p>
+    <ul>
+      <li>There is no facility to decrypt-and-validate during <code>dr_lib.py verify</code> even when <code>DR_DECRYPT_CMD</code> is available. A corrupt or incorrectly encrypted file is not detected until a restore attempt.</li>
+      <li>The manifest's <code>data_keys</code> field for an encrypted Secret cannot be cross-checked against the decrypted payload.</li>
+    </ul>
+    <p>This is by design for now (the README acknowledges it), but it means an encrypted backup could hold unreadable files and still pass <code>verify</code>. It is rated Medium because the operator is already warned, and the encrypted test at line 477 confirms the plumbing, not the decryptability.</p>
+  </div>
+</div>
+
+
+<h2>Area 3 — Checksum coverage and tamper detection</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-05</span>
+    <span class="loc">dr_lib.py:583-587 (build_manifest)  |  dr_lib.py:665-681 (verify_sha256sums)</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>MANIFEST.json is checksummed in SHA256SUMS but is not covered by the in-manifest checksums, creating a circular trust dependency.</strong></p>
+    <p>The build sequence is: (1) compute per-file sha256 → embed in MANIFEST.json, (2) write MANIFEST.json, (3) compute sha256 of MANIFEST.json → append to SHA256SUMS. So <code>verify_sha256sums</code> does check MANIFEST.json's hash. However:</p>
+    <ul>
+      <li>An attacker who can modify files on the backup host can replace both a YAML file and recalculate SHA256SUMS in one pass, since SHA256SUMS is a flat file with no signing.</li>
+      <li>There is no MAC or digital signature over the whole backup. This is consistent with the design (no encryption standard decided), but the documentation does not warn that SHA256SUMS provides integrity only against accidental corruption, not against an adversary with write access to the backup directory.</li>
+    </ul>
+    <p>The tamper-detection test at <code>test_dr.py:411-417</code> correctly verifies that file modification is caught. This finding is about the documentation boundary, not a code bug. Rating: Medium (documentation/threat-model gap).</p>
+  </div>
+</div>
+
+
+<h2>Area 4 — Source-cluster anti-targeting</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge high">HIGH</span>
+    <span class="fid">F-06</span>
+    <span class="loc">restore.py:212-233 (preflight)  |  tests/test_dr.py:561-584</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>The source-context check can be bypassed if the backup's <code>source_context</code> is empty.</strong></p>
+    <pre>if ctx.strip() and manifest.get("source_context") and ctx.strip() == manifest["source_context"]:
+    errs.append("current context equals the backup's source context; restore there is forbidden")</pre>
+    <p>This check is short-circuited when <code>manifest["source_context"]</code> is falsy (empty string). In <code>backup-suite-manage.sh</code> at line 84:</p>
+    <pre>--source-context "$(oc config current-context 2&gt;/dev/null || true)"</pre>
+    <p>If <code>oc config current-context</code> fails (no kubeconfig context, older oc, minimal env), the value is an empty string, and <code>cmd_init</code> writes <code>"source_context": ""</code> to <code>.dr-config.json</code>. A restore operator who then runs against any cluster would not trigger the context guard — only the server URL guard applies.</p>
+    <p><strong>The server URL guard is the primary defence and remains active:</strong> it checks that the typed <code>--target-server</code> equals the logged-in server AND that the logged-in server is not the backup's source server. If the server URL was also empty (e.g. the backup was taken from a mis-configured kubeconfig), both guards would be weakened simultaneously.</p>
+    <p>Test coverage at line 561-578 covers both source-URL and source-context refusal; both pass. But neither test exercises the empty-source-context bypass path.</p>
+    <p><strong>Recommended fix:</strong> Emit a warning (or error) from <code>cmd_init</code> and from <code>preflight</code> when <code>source_server</code> or <code>source_context</code> is empty, since that means the safety net is degraded.</p>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-07</span>
+    <span class="loc">restore.py:218-220 (preflight)  |  restore.py:293 (CLI)</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>The <code>--target-server</code> typed confirmation uses trailing-slash normalisation but no scheme/hostname normalisation.</strong></p>
+    <pre>if target_server.rstrip("/") != server.rstrip("/"):
+    errs.append("--target-server ... does not equal the logged-in server ...")</pre>
+    <p>This correctly requires the operator to type the URL exactly as returned by <code>oc whoami --show-server</code>, which is a good deliberate friction mechanism. The mismatch will catch most accidents. However, semantically equivalent variants (scheme capitalisation, extra path segment, IPv6 vs hostname, DNS alias) would pass the server guard but fail the typed-confirmation guard — meaning the result is a confusing "does not equal" error rather than a safety silence. This is not a bypass; it is a usability friction point with a safety-adjacent consequence.</p>
+    <p>Tests at line 574-578 confirm the mismatch error. No bypass is possible through this path.</p>
+    <p><strong>Note:</strong> the test at line 561 also confirms that no <code>create</code>/<code>apply</code> call is made when preflight fails — verified by checking <code>run.calls</code>.</p>
+  </div>
+</div>
+
+
+<h2>Area 5 — Dry-run as default; --execute bypass paths</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-08</span>
+    <span class="loc">restore.py:244-280 (apply_plan)  |  restore.py:296-306 (main)</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Dry-run is the default and <code>--execute</code> cannot bypass integrity, preflight, or ordering checks. However, <code>plan["manual_blockers"]</code> is displayed but does not block <code>apply</code>.</strong></p>
+    <p>The call sequence is: <code>load_backup</code> (integrity check + checksum verification) → <code>build_plan</code> → <code>apply_plan</code> (preflight check → plan-problems check → per-step API check). All of these run before any write, regardless of <code>--execute</code>.</p>
+    <p><strong>Gap:</strong> <code>manual_blockers</code> in the plan (line 125-139) includes items like "CA key pairs not exported", "operator adoption unproven", and "backup is plaintext". These are printed in the plan header but are not checked by <code>apply_plan</code>; they do not block <code>apply --execute</code>. An operator who reads the plan text carefully will see them, but there is no programmatic gate. For example, a plaintext backup can be applied to a target cluster with <code>--execute</code> — the backup directory's permission check is done at backup time, not re-verified at apply time.</p>
+    <p>Tests at line 586-596 confirm dry-run produces <code>--dry-run=server</code> and <code>dry-run-ok</code> results. Tests at line 609-616 confirm stop-at-first-failure. No bypass of these is possible through the public CLI. The manual_blockers issue is a process gap, not a code bypass.</p>
+  </div>
+</div>
+
+
+<h2>Area 6 — Operator/GitOps-owned resources not blindly applied</h2>
+
+<p>This area is <span class="verdict pass">PASS</span>. The classify → backup_mode → restore_eligible chain is clearly enforced:</p>
+<ul>
+  <li><code>dr_lib.py:527-533</code>: <code>_discover_stores</code> — reference-only Secrets are never stored.</li>
+  <li><code>dr_lib.py:492-493</code>: <code>restore_eligible</code> is set only when <code>backup_mode == MODE_RESTORE</code>.</li>
+  <li><code>restore.py:149-150</code>: only <code>restore_eligible</code> entries (or explicit <code>--include-optin</code>) enter the plan as <code>action="apply"</code>.</li>
+  <li><code>restore.py:256-269</code>: only steps with <code>action=="apply"</code> are submitted to <code>oc</code>.</li>
+  <li>CRDs, CSVs, Subscriptions, OLM objects are given <code>MODE_NONE</code> or <code>MODE_REFERENCE</code> by classify; they are in the plan as manual/gitops steps but never sent to <code>oc create</code>.</li>
+  <li>Tests at <code>test_dr.py:495-510</code> confirm Suite and ManageWorkspace are excluded from the apply set.</li>
+</ul>
+<p><strong>Caveat:</strong> The Suite and ManageWorkspace CRs are stored as reference copies (not restored), but their spec — including GitOps-reconciled state — does reach disk. If <code>--store-reference-secrets</code> is used, ArgoCD-tracked Secrets also reach disk. These are clearly labelled in the manifest and are never passed to <code>oc create</code>, but their presence increases the sensitivity of the backup directory.</p>
+
+
+<h2>Area 7 — Ordering, finalizers, CA Secrets, dependent Secrets</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-09</span>
+    <span class="loc">restore.py:163-165 (build_plan)  |  restore.py:71-78 (_stage_for)</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Stage-based sort after topological sort can move a dependency after its dependent.</strong></p>
+    <p>In <code>build_plan</code> (line 163), <code>lib.order_entries(items)</code> produces a topologically ordered list. Immediately after (line 165), <code>ordered.sort(key=lambda i: i["stage"])</code> re-sorts by stage — a stable sort, so topological order is preserved <em>within</em> a stage but not across stages.</p>
+    <p>Consider: a Secret in stage 5 that a Certificate in stage 6 depends on. After the sort, the Secret (stage 5) precedes the Certificate (stage 6) — correct. But if a restorable object (stage 5) has a dependency on another restorable object that <code>_stage_for</code> assigns to stage 7 (e.g., a ManageWorkspace-owned ConfigMap), the dependency would come <em>after</em> the dependent in the final order. The <code>problems</code> array (lines 168-172) is supposed to catch this, but it only checks whether a step's dependency has a <em>higher</em> order number. That check runs after the stage-sort, so it would catch the violation — but only as a warning in the plan, not a blocking error in <code>apply_plan</code>.</p>
+    <p>In practice, the current restorable set is Secrets and ConfigMaps (stage 5) which depend on other Secrets and ConfigMaps (also stage 5), so this issue does not manifest on today's data. However, adding a new restorable custom resource type could trigger it silently.</p>
+    <p><strong>Tests at line 495-510</strong> confirm that <code>plan["problems"]</code> is empty for the default test data, which is correct but does not exercise a cross-stage dependency.</p>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge low">LOW</span>
+    <span class="fid">F-10</span>
+    <span class="loc">dr_lib.py:285-291 (classify)  |  dr_lib.py:143-148 (sanitize)</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>Finalizers on restorable operator-owned Secrets are stripped, which is correct — but the record of what was stripped is only in <code>MANIFEST.json</code>, not a blocklist for the operator.</strong></p>
+    <p>Operator-owned, state-bearing Secrets (e.g. <code>main-manage-encryption-secret</code>) have <code>ownerReferences</code> and <code>finalizers</code> stripped before writing to disk (<code>sanitize</code> lines 142-147). This is the right behaviour: stale UIDs would cause GC deletion, and finalizers would block deletion on the target. The stripped items are recorded in <code>entry["stripped"]</code>.</p>
+    <p>The <code>restore.py apply</code> step applies the sanitised YAML directly. There is no post-apply check that the restored Secret has not been re-adopted by an operator before the operator reconciles the owning CR. If an operator reattaches a finalizer to the restored Secret before stage 7 reconciliation, and then regenerates the Secret (overwriting it), the old data is lost. This is an operator-behaviour question, not a code defect, and is correctly called out in the README acceptance criteria. Rating: Low (documented caveat, not a code error).</p>
+  </div>
+</div>
+
+
+<h2>Area 8 — Partial failures and misleading success status</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-11</span>
+    <span class="loc">restore.py:279-280 (apply_plan)  |  tests/test_dr.py:598-607</span>
+  </div>
+  <div class="finding-body">
+    <p><strong><code>skipped_exists</code> is treated as a success in <code>report["ok"]</code> regardless of whether the on-target object matches the backup.</strong></p>
+    <pre>return {"ok": all(r["result"] in ("created", "dry-run-ok", "skipped_exists") for r in results)}</pre>
+    <p>When <code>oc create</code> returns <code>AlreadyExists</code> for an object, the tool records <code>skipped_exists</code> and counts it as a success. The already-existing object on the target is never inspected or diffed against the backup copy. For a state-bearing Secret (e.g. <code>main-manage-encryption-secret</code>), "already exists" could mean it was previously restored with old data, regenerated by the operator, or left over from a prior broken restore. Silently counting this as success could leave the restore incomplete.</p>
+    <p>The test at line 598-607 confirms the behaviour is as coded. The README documents that <code>--overwrite</code> uses <code>oc apply</code> to replace. The issue is that the summary <code>"apply: OK"</code> message does not distinguish between "created clean" and "skipped because already present".</p>
+    <p><strong>Recommended fix:</strong> A separate <code>ok_with_skips</code> field in the report (e.g. <code>all results are created or dry-run-ok</code>) or at minimum a clear warning when any <code>skipped_exists</code> result occurs on a <code>required</code> entry.</p>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge medium">MEDIUM</span>
+    <span class="fid">F-12</span>
+    <span class="loc">backup-suite-manage.sh:90-116, 229-232  |  dr_lib.py:437-441 (cmd_record_skip)</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>An encryption failure on a required resource increments both <code>FAILED</code> and could increment <code>REQUIRED_MISSING</code>, but the skip is not recorded, so the manifest validation check for "required resource not backed up" does not fire for that specific item.</strong></p>
+    <p>When <code>python3 "$LIB" store</code> exits non-zero (due to encrypt failure or any Python exception), the shell at line 101 only increments <code>FAILED</code>; it does <em>not</em> call <code>record-skip</code>. The manifest validation at <code>dr_lib.py:621-623</code>:</p>
+    <pre>for s in manifest["skipped"]:
+    if s["required"] and s["status"] != "skipped_policy":
+        errors.append(f"required resource {s['id']} not backed up: {s['reason']}")</pre>
+    <p>can only fire for entries that reached <code>.skips.jsonl</code>. A required resource that failed the Python store step never reaches the skips file, so the manifest's <code>validation.errors</code> array is clean for that resource even though it is missing. The overall backup still exits 2 (FAILED &gt; 0), but the JSON validation result says <code>"ok": true</code> — which is misleading if something downstream only checks the JSON.</p>
+    <p>The test at <code>test_dr.py:389-396</code> covers a missing required resource (not-found), which does go through <code>record-skip</code>. There is no test for an encrypt-failure on a required resource.</p>
+  </div>
+</div>
+
+
+<h2>Area 9 — Tests: failure coverage; no real cluster contact</h2>
+
+<p>Overall: <span class="verdict pass">PASS</span>. The test suite uses a read-only fake <code>oc</code> (<code>fakes.py:163-184</code>) that refuses all non-<code>get</code> verbs (exit 97) and is wired via a per-test PATH override so no real <code>oc</code> binary is ever reachable. The <code>StaticChecks</code> test at line 675-684 scans all scripts for mutating <code>oc</code> verbs.</p>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge low">LOW</span>
+    <span class="fid">F-13</span>
+    <span class="loc">tests/test_dr.py:219-273 (BackupEndToEndTests)  |  tests/fakes.py:116-188</span>
+  </div>
+  <div class="finding-body">
+    <p><strong>The fake <code>oc</code> binary is written to a shared <code>cls.tmp</code> directory; fixture files are named by counting directory entries, which is non-deterministic if tests run in parallel.</strong></p>
+    <p>The fixture helper at line 240 names files as <code>fixture-%d.json</code> where <code>%d = len(os.listdir(self.tmp))</code>. If two tests call <code>fixture()</code> simultaneously (e.g., with <code>-j</code> parallelism), they could get the same filename. <code>unittest</code> is single-threaded by default, so this is not a current problem. However, the <code>_cache</code> dict at line 246 is a class-level mutable that is not thread-safe. The risk is Low given standard single-threaded usage.</p>
+    <p><strong>More important gap:</strong> there is no test that calls <code>backup-suite-manage.sh</code> with a <code>DR_ENCRYPT_CMD</code> that succeeds on some objects and fails on others (simulating a transient partial encrypt failure). This would exercise F-12 above and confirm whether the manifest accurately reflects the partial state.</p>
+  </div>
+</div>
+
+
+<h2>Area 10 — Documentation accuracy</h2>
+
+<p>The README and POC-RESULTS.md are accurate and unusually candid about limitations:</p>
+<ul>
+  <li>The status table in README.md correctly marks end-to-end restore as "NOT DONE. Unproven."</li>
+  <li>POC-RESULTS.md distinguishes VERIFIED (offline tests), VERIFIED (one live read-only run), and UNVERIFIED/ASSUMPTION clearly.</li>
+  <li>The test-encryption disclaimer ("base64 stand-in that is NOT encryption") is explicit.</li>
+  <li>The <code>backups/</code> directory in git is flagged as an issue (<code>.gitignore</code> change uncommitted).</li>
+  <li>The README notes that the existing <code>backups/inst03-20261023-174100</code> was produced by the <em>old</em> script and should not be used with the new restore tool.</li>
+</ul>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="badge low">LOW</span>
+    <span class="fid">F-14</span>
+    <span class="loc">README.md:233  |  POC-RESULTS.md:100</span>
+  </div>
+  <div class="finding-body">
+    <p><strong><code>saas-envs/manual-certs/*/tls.key</code> files are mentioned but explicitly not inspected.</strong></p>
+    <p>The README limitation list (line 233) records: "saas-envs/manual-certs/*/tls.key files exist for fvtsaas; they were not opened. Confirm they are encrypted or intentionally public-test material." This is a correct honest disclosure, not a code defect. However, if those files contain real private key material, they should be addressed before the broader DR process is socialised. This is outside the scope of this codebase but is worth flagging explicitly to the team.</p>
+  </div>
+</div>
+
+
+<h2>Consolidated findings table</h2>
+
+<table>
+  <tr><th>ID</th><th>Sev</th><th>Area</th><th>File:Line</th><th>Summary</th></tr>
+  <tr><td>F-02</td><td><span class="badge high">HIGH</span></td><td>2 Encryption</td><td>dr_lib.py:367-372</td><td>decrypt_bytes does not check for empty output; yields AttributeError during apply</td></tr>
+  <tr><td>F-06</td><td><span class="badge high">HIGH</span></td><td>4 Anti-target</td><td>restore.py:224-226</td><td>Source-context guard silently bypassed when backup has empty source_context</td></tr>
+  <tr><td>F-03</td><td><span class="badge medium">MEDIUM</span></td><td>2 Encryption</td><td>dr_lib.py:479-484; backup-suite-manage.sh:99-116</td><td>Encryption failure on optional resource leaves no trace in manifest skips</td></tr>
+  <tr><td>F-04</td><td><span class="badge medium">MEDIUM</span></td><td>2 Encryption</td><td>dr_lib.py:606-610</td><td>Encrypted files: checksum covers ciphertext only; corrupt/unreadable not caught until restore</td></tr>
+  <tr><td>F-05</td><td><span class="badge medium">MEDIUM</span></td><td>3 Checksums</td><td>dr_lib.py:583-587; dr_lib.py:665-681</td><td>SHA256SUMS provides integrity vs accidental corruption only; no signature against write-access attacker; documentation gap</td></tr>
+  <tr><td>F-07</td><td><span class="badge medium">MEDIUM</span></td><td>4 Anti-target</td><td>restore.py:218-220; restore.py:293</td><td>Trailing-slash normalisation only; semantically equivalent URL variants cause confusing error, not bypass</td></tr>
+  <tr><td>F-08</td><td><span class="badge medium">MEDIUM</span></td><td>5 Dry-run</td><td>restore.py:125-139; restore.py:244-280</td><td>manual_blockers printed but do not block apply --execute; plaintext backup can be applied</td></tr>
+  <tr><td>F-09</td><td><span class="badge medium">MEDIUM</span></td><td>7 Ordering</td><td>restore.py:163-172</td><td>Stage-sort after topological sort can produce incorrect cross-stage order for future resource types; problems check catches it but only as advisory</td></tr>
+  <tr><td>F-11</td><td><span class="badge medium">MEDIUM</span></td><td>8 Partial failure</td><td>restore.py:279-280</td><td>skipped_exists counts as OK; required Secrets already present on target silently pass the ok check</td></tr>
+  <tr><td>F-12</td><td><span class="badge medium">MEDIUM</span></td><td>8 Partial failure</td><td>backup-suite-manage.sh:99-116; dr_lib.py:437-441</td><td>Encrypt failure on required resource: FAILED &gt; 0 → exit 2, but manifest JSON validation.ok may be true</td></tr>
+  <tr><td>F-01</td><td><span class="badge low">LOW</span></td><td>1 Discovery</td><td>discover.py:52-56; test_dr.py:362-369</td><td>Sentinel test does not cover --store-reference-secrets path</td></tr>
+  <tr><td>F-10</td><td><span class="badge low">LOW</span></td><td>7 Finalizers</td><td>dr_lib.py:285-291; dr_lib.py:143-148</td><td>Operator re-adoption of restored Secrets pre-reconcile is documented but not detectable by tooling</td></tr>
+  <tr><td>F-13</td><td><span class="badge low">LOW</span></td><td>9 Tests</td><td>tests/test_dr.py:219-273</td><td>Class-level mutable cache is not thread-safe; no test for partial-encrypt failure</td></tr>
+  <tr><td>F-14</td><td><span class="badge low">LOW</span></td><td>10 Docs</td><td>README.md:233</td><td>saas-envs/manual-certs/*/tls.key files not inspected; confirm before broader socialisation</td></tr>
+</table>
+
+
+<h2>Must-fix before live read-only discovery or backup?</h2>
+
+<p>Live read-only <strong>discovery</strong> (<code>discover.py</code>) has no findings that must block it — no write paths, no credentials exposed, no cluster mutations possible.</p>
+
+<p>Live <strong>backup</strong> (<code>backup-suite-manage.sh</code>): two items should be addressed first:</p>
+<ul>
+  <li><strong>F-02 (High)</strong> — add the empty-output guard to <code>decrypt_bytes</code>. Trivial one-line fix; prevents an opaque AttributeError crash during any future encrypted restore.</li>
+  <li><strong>F-06 (High)</strong> — add a warning/error in <code>cmd_init</code> and <code>preflight</code> when <code>source_server</code> or <code>source_context</code> is empty. Prevents the source-context safety guard from silently degrading.</li>
+</ul>
+<p>The remaining Medium items are process/documentation gaps or future-proofing concerns; they do not prevent a safe read-only backup run.</p>
+
+
+<div class="next-action">
+  <strong>Recommended single safest next action:</strong>
+  <p style="margin:6px 0 0">Fix F-02 (add empty-output check to <code>decrypt_bytes</code>, <code>dr_lib.py:372</code>) and F-06 (emit a warning/error when <code>source_server</code> or <code>source_context</code> is empty in <code>restore.py:preflight</code> and <code>backup-suite-manage.sh</code> init), then re-run the 67 offline tests. Both are one-line changes. Only after these two fixes are reviewed and merged: run <code>discover.py</code> read-only against the cluster (no data written, no Secret values read) and review the resulting inventory for the outstanding ambiguous classifications listed in POC-RESULTS.md §4 before attempting any backup.</p>
+</div>
+
+<footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>

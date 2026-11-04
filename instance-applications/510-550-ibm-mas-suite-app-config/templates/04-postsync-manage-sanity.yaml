@@ -1477,7 +1477,11 @@ data:
     from openshift.dynamic import DynamicClient
     import os
     import re
+    import json
+    import base64
+    import tempfile
     import logging
+    import requests
     from assertpy import assert_that
     import pytest
 
@@ -1507,6 +1511,42 @@ data:
         dyn_client = DynamicClient(k8s_client)
         dyn_client.namespace = manageNamespace
         yield dyn_client
+
+
+    @pytest.fixture(scope="session")
+    def maxadmin_api_key(dyn_client):
+        """Retrieve the maxadmin API key from Manage via its internal (.svc) endpoint, using the internal mTLS client cert."""
+        secrets = dyn_client.resources.get(api_version='v1', kind='Secret')
+        cert_secret = secrets.get(name=f"{mas_instance_id}-internal-manage-tls", namespace=manageNamespace)
+
+        crt_file = tempfile.NamedTemporaryFile(delete=False, suffix=".crt")
+        key_file = tempfile.NamedTemporaryFile(delete=False, suffix=".key")
+        try:
+            crt_file.write(base64.b64decode(cert_secret.data["tls.crt"]))
+            key_file.write(base64.b64decode(cert_secret.data["tls.key"]))
+            crt_file.close()
+            key_file.close()
+
+            # Same host resolution as tests.py: the Manage route's target service, else the default service name
+            routes = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+            manage_svc = f"{mas_instance_id}-{mas_workspace_id}"
+            try:
+                manage_route = routes.get(name=f"{mas_instance_id}-manage-{mas_workspace_id}", namespace=manageNamespace)
+                if manage_route.spec.to and manage_route.spec.to.name:
+                    manage_svc = manage_route.spec.to.name
+            except Exception as e:
+                logger.info(f"Unable to read Manage route, using default service name {manage_svc}: {e}")
+
+            url = f"https://{manage_svc}.{manageNamespace}.svc/maximo/api/os/mxapiapikey"
+            params = {"lean": 1, "ccm": 1, "oslc.select": "*", "oslc.where": 'userid="maxadmin"'}
+            resp = requests.get(url, params=params, cert=(crt_file.name, key_file.name), timeout=120, verify=False)
+            assert_that(resp.status_code).described_as("Unable to query maxadmin API key from Manage").is_equal_to(200)
+            members = resp.json().get("member", [])
+            assert_that(members).described_as("No API key found for maxadmin").is_not_empty()
+            yield members[0]["apikey"]
+        finally:
+            os.remove(crt_file.name)
+            os.remove(key_file.name)
 
 
     ##############################################################################
@@ -1563,6 +1603,54 @@ data:
             logger.error(f"Error checking MCP pod availability: {e}")
             logger.info("=" * 80)
             raise
+
+
+    def test_mcp_external_route_tools_list(dyn_client, maxadmin_api_key):
+        """Test: Verify the MCP server answers a tools/list request via its external route (not the .svc address)."""
+        match = re.match(r'^(\d+)\.(\d+)', mas_app_channel)
+        if not (match and (int(match.group(1)), int(match.group(2))) >= (9, 2)):
+            pytest.skip(f"MCP external route test is only supported for Manage >= 9.2 (current channel: '{mas_app_channel}')")
+
+        logger.info("=" * 80)
+        logger.info("TEST: MCP External Route tools/list")
+        logger.info("=" * 80)
+
+        # Find the route that targets the MCP service, e.g. <instance>-<workspace>-mcp
+        mcp_service_name = f"{mas_instance_id}-{mas_workspace_id}-mcp"
+        routes = dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+        mcp_routes = [r for r in routes.get(namespace=manageNamespace).items
+                      if r.spec.to and r.spec.to.name == mcp_service_name]
+        assert_that(mcp_routes).described_as(
+            f"Expected exactly one route targeting service {mcp_service_name} in {manageNamespace}"
+        ).is_length(1)
+
+        route = mcp_routes[0]
+        url = f"https://{route.spec.host}{route.spec.path or ''}"
+        logger.info(f"MCP route {route.metadata.name} -> {url}")
+
+        headers = {
+            "apikey": maxadmin_api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        payload = {"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
+
+        response = requests.post(url, headers=headers, json=payload, timeout=60, verify=False)
+        logger.info(f"Response status: {response.status_code}")
+        assert_that(response.status_code).is_equal_to(200)
+
+        # Streamable HTTP may reply with plain JSON or an SSE frame ("event: message\ndata: {...}")
+        body = response.text
+        if "data:" in body:
+            body = "".join(line[5:].strip() for line in body.splitlines() if line.startswith("data:"))
+        result = json.loads(body)
+        assert_that(result).contains_key("result")
+        tools = result["result"]["tools"]
+        assert_that(tools).is_not_empty()
+        logger.info(f"MCP tools/list returned {len(tools)} tool(s)")
+
+        logger.info("MCP external route tools/list: PASSED")
+        logger.info("=" * 80)
 
 
 

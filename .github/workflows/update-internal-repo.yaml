@@ -29,11 +29,12 @@ jobs:
         run: |
           set -e
 
-          echo "Cloning source repository (mirror)..."
-          git clone --mirror "https://x-access-token:${PUBLIC_TOKEN}@github.com/${SOURCE_REPO}.git" repo.git
+          echo "Cloning source repository (bare)..."
+          git clone --bare "https://x-access-token:${PUBLIC_TOKEN}@github.com/${SOURCE_REPO}.git" repo.git
           cd repo.git
 
-          echo "Pushing mirror to https://github.ibm.com/${TARGET_REPO}..."
-          git push --mirror "https://x-access-token:${GHE_TOKEN}@github.ibm.com/${TARGET_REPO}.git"
+          echo "Pushing mirror refs to https://github.ibm.com/${TARGET_REPO}..."
+          # Explicitly push heads and tags; avoid pushing internal GitHub pull-request refs (refs/pull/*)
+          git push --prune --force "https://x-access-token:${GHE_TOKEN}@github.ibm.com/${TARGET_REPO}.git" "refs/heads/*:refs/heads/*" "refs/tags/*:refs/tags/*"
 
           echo "Mirror sync completed successfully."

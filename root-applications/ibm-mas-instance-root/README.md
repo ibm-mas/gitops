@@ -207,6 +207,8 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`110-ibm-cp4d-operator-app.yaml`](templates/110-ibm-cp4d-operator-app.yaml) | cp4doperator | ✓ | | | 110 |
 | [`110-ibm-cs-control-app.yaml`](templates/110-ibm-cs-control-app.yaml) | cscontrol | ✓ | | | 110 |
 | [`110-ibm-db2u-app.yaml`](templates/110-ibm-db2u-app.yaml) | db2u | ✓ | | | 110 |
+| [`111-ibm-cpd-platform-cluster-app.yaml`](templates/111-ibm-cpd-platform-cluster-app.yaml) | cpd-platform-cluster | ✓ | | | 111 |
+| [`112-ibm-cpd-platform-app.yaml`](templates/112-ibm-cpd-platform-app.yaml) | cpd-platform | ✓ | | | 112 |
 | [`120-db2-databases-app.yaml`](templates/120-db2-databases-app.yaml) | db2-db | | ✓ | | 120 |
 | [`120-dbs-rds-databases-app.yaml`](templates/120-dbs-rds-databases-app.yaml) | dbs-rds-db | | | ✓ | 120 |
 | [`120-ibm-cognos-analytics-app.yaml`](templates/120-ibm-cognos-analytics-app.yaml) | cognos | ✓ | | | 120 |
@@ -234,9 +236,9 @@ The following table lists all ArgoCD applications defined in the templates folde
 
 ### Role Conditions
 
-- **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (10 applications)
+- **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (13 applications)
 - **Application Admin Role**: Applications that require `application_admin_role` to be set (6 applications)
-- **Both Roles**: Applications rendered regardless of role settings (16 applications)
+- **Both Roles**: Applications rendered regardless of role settings (15 applications)
 
 **Note**: Most applications have additional conditions beyond role requirements (e.g., specific configuration values must be defined). Refer to individual template files for complete rendering logic.
 
@@ -253,6 +255,8 @@ The following table lists all ArgoCD applications defined in the templates folde
 - **cp4doperator** - CP4D operators
 - **cscontrol** - Common Services control
 - **db2u** - Db2 Universal operator
+- **cpd-platform-cluster** - CPD platform cluster-scoped resources (CPD 5.4.0 and above)
+- **cpd-platform** - CPD platform namespaced resources (CPD 5.4.0 and above)
 - **db2-db** - Db2 database instances
 - **dbs-rds-db** - RDS database instances
 - **spark** - Analytics Engine (Spark)

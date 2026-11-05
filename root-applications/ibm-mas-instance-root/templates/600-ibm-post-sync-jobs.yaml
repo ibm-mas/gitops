@@ -94,8 +94,16 @@ spec:
               cli_image_repo: {{ .Values.cli_image_repo }}
 
             {{- if and .Values.fvt_gitops .Values.fvt_gitops.enabled }}
+            {{- /* gitops_version is always passed so any change to the gitops revision re-runs FVT GitOps.
+                   mas_catalog_version and mas_catalog_build_id are only passed for a catalog release
+                   (catalog.build_id set in cluster-params.yaml), so a baseline catalog version change
+                   alone does not re-run FVT GitOps. */}}
+            gitops_version: "{{ .Values.source.revision }}"
+            {{- if .Values.mas_catalog_build_id }}
             {{- if .Values.mas_catalog_version }}
             mas_catalog_version: "{{ .Values.mas_catalog_version }}"
+            {{- end }}
+            mas_catalog_build_id: "{{ .Values.mas_catalog_build_id }}"
             {{- end }}
             fvt-gitops-runner:
               enabled: true

@@ -1,8 +1,12 @@
-{{- if .Values.mas_catalog_version }}
 {{- /*
 This ConfigMap is deliberately not a hook (no argocd.argoproj.io/hook annotation). Its content
-tracks the catalog version, so when it changes the Application goes OutOfSync, automated sync runs
-and the PostSync fvt-gitops Job is executed again.
+tracks the gitops version, and for a catalog release the catalog version and build id, so when any
+of them changes the Application goes OutOfSync, automated sync runs and the PostSync fvt-gitops Job
+is executed again.
+
+mas_catalog_version and mas_catalog_build_id are only passed to this chart for a catalog release
+(catalog.build_id set in cluster-params.yaml), see
+root-applications/ibm-mas-instance-root/templates/600-ibm-post-sync-jobs.yaml
 */}}
 ---
 kind: ConfigMap
@@ -15,5 +19,6 @@ metadata:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 data:
-  mas_catalog_version: "{{ .Values.mas_catalog_version }}"
-{{- end }}
+  gitops_version: "{{ .Values.gitops_version | default "" }}"
+  mas_catalog_version: "{{ .Values.mas_catalog_version | default "" }}"
+  mas_catalog_build_id: "{{ .Values.mas_catalog_build_id | default "" }}"

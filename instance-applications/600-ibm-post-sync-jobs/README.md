@@ -40,4 +40,3 @@ ibm_post_sync_jobs:
 | `Role` | Initial user creation roles | MAS core namespace | Always | `application_admin_role` |
 | `RoleBinding` | Initial user creation role bindings | MAS core namespace | Always | `application_admin_role` |
 | `Job` | Initial user creation post-sync job | MAS core namespace | Always | `application_admin_role` |
-| `ConfigMap` | FVT GitOps trigger (holds `mas_catalog_version`, re-runs the PostSync FVT Job on a catalog change) | Post-sync jobs namespace | When `mas_catalog_version` is set | `fvt_gitops.enabled` |

@@ -1,0 +1,128 @@
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+*/}}
+{{- $_cli_image_digest := "sha256:e6c8f8a02b4bd44026dac280b1d006e60d55e15ee189fce18be7c6922879f8b6" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cp4d-services-pre-delete-cleanup
+  namespace: {{ .Values.cpd_operators_namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      serviceAccountName: cpd-sa
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: cleanup
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              ns=${CPD_INSTANCE_NAMESPACE}
+              echo "Deleting service CRs in $ns"
+              for kind in \
+                  ws.ws.cpd.ibm.com \
+                  ccs.ccs.cpd.ibm.com \
+                  datarefinery.datarefinery.cpd.ibm.com \
+                  caservices.ca.cpd.ibm.com \
+                  spss.spssmodeler.cpd.ibm.com \
+                  wmlbases.wml.cpd.ibm.com \
+                  analyticsengines.ae.cpd.ibm.com; do
+                oc delete $kind --all -n $ns --ignore-not-found=true --timeout=120s || echo "$kind cleanup failed"
+              done
+              echo "Deleting ZenExtensions in $ns"
+              oc delete zenextensions.zen.cpd.ibm.com --all -n $ns --ignore-not-found=true --timeout=120s || echo "zenextension cleanup failed"
+              echo "Remaining ZenExtensions:"
+              oc get zenextensions.zen.cpd.ibm.com -n $ns --no-headers 2>/dev/null | wc -l
+
+---
+# Lets the PreDelete cleanup Job (running as cpd-sa) delete the CPD service CRs in the instance namespace.
+# These are regular (non-hook) resources, so they still exist while the PreDelete hook runs.
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cpd-sa-predelete-cleanup
+  namespace: {{ .Values.cpd_instance_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - delete
+      - deletecollection
+    apiGroups:
+      - ws.cpd.ibm.com
+      - ccs.cpd.ibm.com
+      - datarefinery.cpd.ibm.com
+      - ca.cpd.ibm.com
+      - spssmodeler.cpd.ibm.com
+      - wml.cpd.ibm.com
+      - ae.cpd.ibm.com
+      - zen.cpd.ibm.com
+    resources:
+      - ws
+      - ccs
+      - datarefinery
+      - caservices
+      - spss
+      - wmlbases
+      - analyticsengines
+      - zenextensions
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cpd-sa-predelete-cleanup
+  namespace: {{ .Values.cpd_instance_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "084"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: cpd-sa
+    namespace: {{ .Values.cpd_operators_namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cpd-sa-predelete-cleanup

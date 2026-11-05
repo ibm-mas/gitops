@@ -1,22 +1,227 @@
 {{- /*
+PreDelete cleanup for a CPD instance. Runs when the cp4d Application is deleted and removes, in order:
+  1. the CPD service CRs, ZenExtensions, ZenService and Ibmcpd in the instance namespace
+  2. the common services / OLM objects that hold finalizers (OperandRequests, CommonService, NamespaceScope, Subscriptions)
+  3. the instance namespace, then the operators namespace
+
+The ServiceAccount and RBAC are created as PreDelete hooks (same pattern as the suite chart) so that they exist
+when the hook runs, regardless of whether the cp4doperator application (which owns cpd-sa) has already been deleted.
+The cluster-scoped IBMLicensing singleton is shared between instances and is deliberately NOT removed.
+*/}}
+{{- /*
 Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
 */}}
 {{- $_cli_image_digest := "sha256:e6c8f8a02b4bd44026dac280b1d006e60d55e15ee189fce18be7c6922879f8b6" }}
+{{- $sa_name := "cpd-predelete-cleanup-sa" }}
+{{- $role_name := "cpd-predelete-cleanup-r" }}
+{{- $cr_name := printf "cpd-predelete-cleanup-cr-%s" .Values.instance_id }}
+{{- $ops_ns := .Values.cpd_operators_namespace }}
+{{- $inst_ns := .Values.cpd_instance_namespace }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa_name }}
+  namespace: {{ $ops_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+
+---
+# Instance namespace: CPD service CRs, ZenExtensions, ZenService, Ibmcpd and the common services objects
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $inst_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - delete
+      - deletecollection
+      - patch
+    apiGroups:
+      - ws.cpd.ibm.com
+      - ccs.cpd.ibm.com
+      - datarefinery.cpd.ibm.com
+      - ca.cpd.ibm.com
+      - spssmodeler.cpd.ibm.com
+      - wml.cpd.ibm.com
+      - ae.cpd.ibm.com
+      - canvasbase.cpd.ibm.com
+      - zen.cpd.ibm.com
+      - cpd.ibm.com
+      - operator.ibm.com
+      - operators.coreos.com
+    resources:
+      - ws
+      - notebookruntimes
+      - ccs
+      - datarefinery
+      - caservices
+      - spss
+      - wmlbases
+      - analyticsengines
+      - canvasbase
+      - zenextensions
+      - zenservices
+      - ibmcpds
+      - operandrequests
+      - commonservices
+      - namespacescopes
+      - subscriptions
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $inst_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ops_ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+---
+# Operators namespace: common services objects and operator Subscriptions
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ops_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - delete
+      - deletecollection
+      - patch
+    apiGroups:
+      - operator.ibm.com
+      - operators.coreos.com
+    resources:
+      - operandrequests
+      - commonservices
+      - namespacescopes
+      - subscriptions
+
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $role_name }}
+  namespace: {{ $ops_ns }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ops_ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role_name }}
+
+---
+# Namespaces cannot be deleted with a Role. Limited to exactly the two namespaces of this CPD instance.
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $cr_name }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+rules:
+  - verbs:
+      - get
+      - list
+      - watch
+      - delete
+    apiGroups:
+      - ""
+    resources:
+      - namespaces
+    resourceNames:
+      - {{ $inst_ns }}
+      - {{ $ops_ns }}
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ $cr_name }}
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa_name }}
+    namespace: {{ $ops_ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $cr_name }}
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: cp4d-services-pre-delete-cleanup
-  namespace: {{ .Values.cpd_operators_namespace }}
+  namespace: {{ $ops_ns }}
   annotations:
     argocd.argoproj.io/hook: PreDelete
-    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 {{- if .Values.custom_labels }}
   labels:
 {{ .Values.custom_labels | toYaml | indent 4 }}
 {{- end }}
 spec:
-  backoffLimit: 3
-  activeDeadlineSeconds: 900
+  backoffLimit: 2
+  activeDeadlineSeconds: 3600
   template:
 {{- if .Values.custom_labels }}
     metadata:
@@ -24,7 +229,7 @@ spec:
 {{ .Values.custom_labels | toYaml | indent 8 }}
 {{- end }}
     spec:
-      serviceAccountName: cpd-sa
+      serviceAccountName: {{ $sa_name }}
       restartPolicy: OnFailure
       securityContext:
         runAsNonRoot: true
@@ -45,84 +250,88 @@ spec:
               drop: ["ALL"]
           env:
             - name: CPD_INSTANCE_NAMESPACE
-              value: {{ .Values.cpd_instance_namespace }}
+              value: {{ $inst_ns }}
+            - name: CPD_OPERATORS_NAMESPACE
+              value: {{ $ops_ns }}
           command:
             - /bin/bash
             - -c
             - |
-              ns=${CPD_INSTANCE_NAMESPACE}
-              echo "Deleting service CRs in $ns"
+              inst_ns=${CPD_INSTANCE_NAMESPACE}
+              ops_ns=${CPD_OPERATORS_NAMESPACE}
+
+              # Why this Job exists:
+              # The service CRs below carry finalizers that only their operator can clear. The CPD service
+              # apps are separate ArgoCD Applications, so an operator can be removed before its CRs are gone.
+              # The CRs are then stuck in Terminating and block the Application deletion (seen on noble8 with
+              # NotebookRuntime). Some CRs, such as the perspective ZenExtensions, also have no owner and are
+              # never garbage-collected. Delete everything here, while the operators still exist.
+
+              # Delete every instance of a kind in a namespace and wait for it. Anything still present after
+              # the timeout has a finalizer that nothing is clearing (typically the owning operator is already
+              # gone), so remove the finalizers to stop it being stuck in Terminating.
+              delete_kind() {
+                kind=$1
+                kns=$2
+                oc delete $kind --all -n $kns --ignore-not-found=true --timeout=120s || echo "$kind in $kns: delete did not finish in time"
+                for name in $(oc get $kind -n $kns -o name 2>/dev/null); do
+                  echo "$name still present in $kns after delete, removing finalizers"
+                  oc patch $name -n $kns --type=merge -p '{"metadata":{"finalizers":null}}' || echo "$name: finalizer removal failed"
+                done
+              }
+
+              echo "Deleting service CRs in $inst_ns"
+              # Leaf CRs first, then ws and the core CRs they depend on.
               for kind in \
-                  ws.ws.cpd.ibm.com \
-                  ccs.ccs.cpd.ibm.com \
-                  datarefinery.datarefinery.cpd.ibm.com \
+                  notebookruntimes.ws.cpd.ibm.com \
                   caservices.ca.cpd.ibm.com \
                   spss.spssmodeler.cpd.ibm.com \
                   wmlbases.wml.cpd.ibm.com \
-                  analyticsengines.ae.cpd.ibm.com; do
-                oc delete $kind --all -n $ns --ignore-not-found=true --timeout=120s || echo "$kind cleanup failed"
+                  analyticsengines.ae.cpd.ibm.com \
+                  ws.ws.cpd.ibm.com \
+                  datarefinery.datarefinery.cpd.ibm.com \
+                  ccs.ccs.cpd.ibm.com \
+                  canvasbase.canvasbase.cpd.ibm.com; do
+                delete_kind $kind $inst_ns
               done
-              echo "Deleting ZenExtensions in $ns"
-              oc delete zenextensions.zen.cpd.ibm.com --all -n $ns --ignore-not-found=true --timeout=120s || echo "zenextension cleanup failed"
-              echo "Remaining ZenExtensions:"
-              oc get zenextensions.zen.cpd.ibm.com -n $ns --no-headers 2>/dev/null | wc -l
 
----
-# Lets the PreDelete cleanup Job (running as cpd-sa) delete the CPD service CRs in the instance namespace.
-# These are regular (non-hook) resources, so they still exist while the PreDelete hook runs.
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: cpd-sa-predelete-cleanup
-  namespace: {{ .Values.cpd_instance_namespace }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "084"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-rules:
-  - verbs:
-      - get
-      - list
-      - delete
-      - deletecollection
-    apiGroups:
-      - ws.cpd.ibm.com
-      - ccs.cpd.ibm.com
-      - datarefinery.cpd.ibm.com
-      - ca.cpd.ibm.com
-      - spssmodeler.cpd.ibm.com
-      - wml.cpd.ibm.com
-      - ae.cpd.ibm.com
-      - zen.cpd.ibm.com
-    resources:
-      - ws
-      - ccs
-      - datarefinery
-      - caservices
-      - spss
-      - wmlbases
-      - analyticsengines
-      - zenextensions
+              # ZenExtensions owned by the CRs above are garbage-collected, but some have no owner.
+              echo "Deleting ZenExtensions in $inst_ns"
+              delete_kind zenextensions.zen.cpd.ibm.com $inst_ns
 
----
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: cpd-sa-predelete-cleanup
-  namespace: {{ .Values.cpd_instance_namespace }}
-  annotations:
-    argocd.argoproj.io/sync-wave: "084"
-{{- if .Values.custom_labels }}
-  labels:
-{{ .Values.custom_labels | toYaml | indent 4 }}
-{{- end }}
-subjects:
-  - kind: ServiceAccount
-    name: cpd-sa
-    namespace: {{ .Values.cpd_operators_namespace }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: cpd-sa-predelete-cleanup
+              # Platform CRs last: the services above depend on Zen and the CPD platform operator.
+              echo "Deleting ZenService and Ibmcpd in $inst_ns"
+              delete_kind zenservices.zen.cpd.ibm.com $inst_ns
+              delete_kind ibmcpds.cpd.ibm.com $inst_ns
+
+              # Common services: OperandRequests first so ODLM can uninstall the operands it installed,
+              # then the CommonService / NamespaceScope CRs, then the Subscriptions so nothing is recreated.
+              # The cluster-scoped IBMLicensing is shared between instances and is left alone.
+              for kns in $inst_ns $ops_ns; do
+                echo "Deleting common services objects in $kns"
+                delete_kind operandrequests.operator.ibm.com $kns
+                delete_kind commonservices.operator.ibm.com $kns
+                delete_kind namespacescopes.operator.ibm.com $kns
+                delete_kind subscriptions.operators.coreos.com $kns
+              done
+
+              # Never delete a system namespace, even if the values are misconfigured.
+              delete_namespace() {
+                n=$1
+                wait=$2
+                case "$n" in
+                  ""|default|kube-*|openshift|openshift-*)
+                    echo "Refusing to delete protected namespace '$n'"
+                    return 0
+                    ;;
+                esac
+                echo "Deleting namespace $n"
+                oc delete namespace $n --ignore-not-found=true --wait=$wait --timeout=300s || echo "namespace $n: delete did not finish in time"
+              }
+
+              remaining=$(oc get zenextensions.zen.cpd.ibm.com -n $inst_ns --no-headers 2>/dev/null | wc -l)
+              echo "Remaining ZenExtensions: $remaining"
+
+              delete_namespace $inst_ns true
+              # This Job runs in the operators namespace, so it is deleted last and without waiting.
+              delete_namespace $ops_ns false

@@ -40,6 +40,18 @@ spec:
     kind: ServiceAccount
     jsonPointers:
     - /imagePullSecrets
+  {{- if and .Values.fvt_gitops .Values.fvt_gitops.enabled (not .Values.mas_catalog_build_id) }}
+  {{- /* No catalog.build_id (baseline catalog): a change to the catalog keys of the FVT trigger ConfigMap,
+         including removing the build id, must not trigger a sync and therefore must not run FVT GitOps.
+         A gitops version change still does. */}}
+  - group: ""
+    kind: ConfigMap
+    name: fvt-gitops-trigger-cm
+    namespace: "mas-{{ .Values.instance.id }}-postsyncjobs"
+    jsonPointers:
+    - /data/mas_catalog_version
+    - /data/mas_catalog_build_id
+  {{- end }}
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
@@ -94,10 +106,10 @@ spec:
               cli_image_repo: {{ .Values.cli_image_repo }}
 
             {{- if and .Values.fvt_gitops .Values.fvt_gitops.enabled }}
-            {{- /* gitops_version is always passed so any change to the gitops revision re-runs FVT GitOps.
-                   mas_catalog_version and mas_catalog_build_id are only passed for a catalog release
-                   (catalog.build_id set in cluster-params.yaml), so a baseline catalog version change
-                   alone does not re-run FVT GitOps. */}}
+            {{- /* FVT GitOps re-runs when the gitops version changes (with or without catalog.build_id), and
+                   for a catalog release (catalog.build_id set in cluster-params.yaml) when the catalog version
+                   or build id changes. mas_catalog_version and mas_catalog_build_id are therefore only passed
+                   when build_id is set, so a baseline catalog version change alone does not re-run FVT GitOps. */}}
             gitops_version: "{{ .Values.source.revision }}"
             {{- if .Values.mas_catalog_build_id }}
             {{- if .Values.mas_catalog_version }}

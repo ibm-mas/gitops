@@ -29,8 +29,8 @@
 HOSTNAME=$(hostname)
 HOSTIP=$(hostname -i)
 WHOAMI=$(whoami)
-INST=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | awk -F, '{print $4}')
-INSTHOME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${INST}" | awk -F ',' '{print $5}'| sed 's/\/sqllib//')
+INSTNAME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | awk -F, '{print $4}')
+INSTHOME=$(/usr/local/bin/db2greg -dump | grep -ae "I," | grep -v "/das," | grep "${INSTNAME}" | awk -F ',' '{print $5}'| sed 's/\/sqllib//')
 BASE_DIR=${INSTHOME}/bin
 DT=$(date +"%Y%m%d_%H%M%S")
 DBNAME="BLUDB"
@@ -41,9 +41,10 @@ DBNAME="BLUDB"
 
 . ${INSTHOME}/sqllib/db2profile
 
-# -------------------------------
+# ===========================================================================
 # Load COS parameters
-# -------------------------------
+# ===========================================================================
+
 . /mnt/backup/bin/.PROPS
 
 # ===========================================================================
@@ -58,12 +59,14 @@ DBNAME="BLUDB"
 
 DATA_DIR=$( db2audit describe | grep "Audit Data Path: " | awk -F ': ' '{gsub(/"/, ""); print $2}' | sed 's/\/$//' );
 ARCHIVE_DIR=$( db2audit describe | grep "Audit Archive Path:" | awk -F ': ' '{gsub(/"/, ""); print $2}' | sed 's/\/$//' );
+BUCKET_ALIAS=$(db2 list storage access | grep ${CONTAINER} -B4 | grep ALIAS | awk -F '=' '{print $2}')
+APPENV=$(echo ${APPENV} | tr '[:lower:]' '[:upper:]' )
 
 # -------------------------------
 # Functions
 # -------------------------------
 log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+  echo "[$(date '+%F %T')] $*"
 }
 
 cleanup() {
@@ -78,7 +81,7 @@ trap cleanup EXIT
 # -------------------------------
 log "INFO  :: Starting DB2 audit extraction for database $DBNAME"
 
-: '
+: ' 
 # Stop audit
 db2audit stop
 RC=$?
@@ -109,7 +112,7 @@ else
 fi
 #db2audit.db.BLUDB.log.0.20260504093246
 #db2audit.db."$DBNAME".log.0.
-DTN=$( date +'%Y%m%d%H' )
+DTN=$( date +'%Y%m%d' )
 
 # Identify latest archived audit file
 AUDIT_LOG=$(ls -t "$ARCHIVE_DIR"/db2audit.db."$DBNAME".log.0.$DTN* 2>/dev/null | head -1)
@@ -164,7 +167,7 @@ fi
 log "INFO  :: Uploading audit extract to COS"
 
 AUDZIP=$( echo $AUDIT_ZIP | awk -F '/' '{print $NF}' )
-COS_TARGET="DB2REMOTE://AWSCOS//AUDIT_LOGS/${AUDZIP}"
+COS_TARGET="DB2REMOTE://${BUCKET_ALIAS}//${APPENV}_COS_AUDIT/${AUDZIP}"
 
 db2RemStgManager alias put \
   source="$AUDIT_ZIP" \
@@ -177,13 +180,12 @@ else
   exit
 fi
 
-
-# -- Clean the old archives more than 30 days
-log "INFO  :: Deleting the old archive more than 30 Days from Pod "
-find ${ARCHIVE_DIR} -name db2audit_report.*.zip -type f -mtime +30 -exec rm {} \;
+# -- Clean the old archives more than 7 days
+log "INFO  :: Deleting the old archive more than 7 Days from server "
+find ${ARCHIVE_DIR} -name db2audit_report.*.zip -type f -mtime +7 -exec rm {} \;
 RC=$?
 if [[ $RC -eq 0 ]]; then 
-  log "INFO  :: Cleaned archives more than 30 Days"
+  log "INFO  :: Cleaned archives more than 7 Days"
 else
   log "ERROR :: Failed to clean the old archives  "
   exit
@@ -191,6 +193,5 @@ fi
 
 log "INFO  :: Execution of audit extract and upload has completed. "
 exit 0
-
 
 # -- End of the Script

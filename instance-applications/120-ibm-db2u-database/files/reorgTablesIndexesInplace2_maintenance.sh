@@ -1,14 +1,11 @@
-#!/bin/sh
-##
-## HPS created Jan 2019
-##
-## http://www.ibm.com/developerworks/data/library/techarticle/dm-1307optimizerunstats/
-## see Identifying fragmented indexes from statistics
-## http://www.ibm.com/developerworks/data/library/techarticle/dm-1307optimizerunstats/#Listing%207
-##0 23 * * 5 (. ~/sqllib/db2profile; ~/maintenance/bin/misc/reorgTablesIndexesInplace.sh -db dbname -s MAXIMO -tb_stats -if_stats -window 120 -tr >> ~/maintenance/logs/reorgTablesIndexesInplace.sh.log 2>&1 )
-## script to reorg tables online and indexes offline based on different criteria
-## we need to be able to perform an online table reorg and an offline indexes all reorg in the same run of the script
-##
+#!/bin/bash
+#
+# ==============================================================================
+# Script: reorgs.sh
+# Purpose: Perform DB2 online (inplace) table/index reorganizations, offline
+#          index reorganizations (REORG INDEXES ALL FOR TABLE), and RUNSTATS
+#          based on thresholds, maintenance windows, and log utilization.
+# ==============================================================================
 #
 # -- Modifications/Updates on 01/May/26 by Prudhviraj Patrata
 # -- Increased the default tablesize from 20GB to 100GB 
@@ -16,1333 +13,1136 @@
 # -- Improved the readability of output of logs 
 #
 
-UsageHelp()
-{
-   echo "Script to perform reorg tables, indexes online (inplace) "
-   echo " also to REORG INDEXES ALL FOR TABLE offline"
-   echo " db2 performs the online reorgs asynchronously"
-   echo ""
-   echo "Usage: ${0} [options]"
-   echo " where [options] is one of the following:"
-   echo "       -h:   displays this usage screen"
-   echo "      -db:   dbname, default is all cataloged databases"
-   echo ""
-   echo "       -s:   table schemaname"
-   echo "       -t:   table(s) to reorg"
-   echo "-tb_stats:   reorg tables reported by REORGCHK_TB_STATS"
-   echo "      -ti:   reorg table index(s), format must be TABSCHEMA.TABNAME.INDSCHEMA.INDNAME"
-   echo "-ix_stats:   reorg table index(s) reported by REORGCHK_IX_STATS"
-   echo "-if_stats:   reorg indexes all for table(s) offline as reported by index fragmentation NLEAF/SEQUENTIAL_PAGES columns"
-   echo ""
-   echo "      -ls:   list valid table sizes for a particular schema"
-   echo "      -lf:   list all fragmented index details for a particular schema, based on valid table sizes"
-   echo "      -lt:   list all tables to reorg based on REORGCHK_TB_STATS reorg column, based on valid table sizes"
-   echo "      -li:   list all indexes to reorg based on REORGCHK_IX_STATS reorg column, based on valid table sizes"
-   echo "       -l:   list tables/indexes that would be reorged"
-   echo ""
-   echo "    -ittx:   ignore tables over a specific threshold size in MBs, default is 100000 MB ie 100 GB"
-   echo "    -ittn:   ignore tables under a specific threshold size in MBs, default is 10 MB"
-   echo "     -mar:   maximum asynchronous reorgs allowed, default is 3"
-   echo "     -log:   don't kick off a reorg if transaction log usage is over a certain percentage, default is 90%"
-   echo "  -window:   stop reorg tables/indexes/runstats after a set maintenance timeout window, default is 240 minutes"
-   echo "     -twa:   timeout window action: default=2 for online, 1 for offline"
-   echo "                1=allow current reorg(s) to continue"
-   echo "                2=stop current reorg(s)"
-#   echo "                3=stop current reorg(s) if < 80% complete and continue script"
-   echo "  -ignore:   ignore specific tables from SYSIBMADM.ADMINTABINFO t0, SYSCAT.TABLES t1 "
-   echo "             eg \"$IGNORE_TABLES_EX\""
-   echo "   -reorg:   table F1 F2 F3 filter reorg, default is *"
-   echo "   -sleep:   SLEEP_INTERVAL_TIME, default is 60 seconds"
-   echo ""
-   echo "      -tr:   execute inplace table/index reorg"
-   echo ""
-   echo "    -trsi:   Retrieve table reorganization snapshot information from snap_get_tab_reorg and db2pd -reorgs index"
-   echo ""
-   echo "Examples :"
-   echo " 1. ${0} -h"
-   echo " 2. ${0} -db dbname -s MAXIMO -ls"
-   echo " 3. ${0} -db dbname -s MAXIMO -t \"YFS_ITEM YFS_TASK_Q YFS_SHIPMENT\" -tb_stats -tr "
-   echo " 4. ${0} -db dbname -s MAXIMO -ti \"MAXIMO.YFS_SNAPSHOT.MAXIMO.YFS_SNAPSHOT_I1 MAXIMO.YFS_ITEM.MAXIMO.YFS_ITEM_PK\" -ix_stats -tr"
-   echo " 5. ${0} -db dbname -s MAXIMO -t \"YFS_ITEM YFS_SNAPSHOT YFS_IMPORT YFS_EXPORT\" -if_stats -tr"
-   echo " 6. ${0} -db dbname -s MAXIMO -tb_stats -mar 5 -window 10 -log 95 -ittx 30000 -tr"
-   echo " 7. ${0} -db dbname -s MAXIMO -tb_stats -mar 5 -window 10 -log 95 -ignore \"$IGNORE_TABLES_EX\" -reorg \"***\" -tr"
-   echo " 8. ${0} -db dbname -s MAXIMO -tb_stats -if_stats -ittx 100 -ittn 20 -tr"
-   echo " 9. ${0} -trsi"
 
-   echo ""
-
-}
-
-##
-## function to check if a string is numeric
-##
-isNumeric()
-{
-   echo $1 | grep -E '^[0-9]+$' > /dev/null
-
-   return $?
-}
-
-
-TRSI()
-{
-   db2 -v "select varchar(tabschema,9) as tabschema, varchar(tabname,32) as tabname,
-      REORG_STATUS, REORG_COMPLETION, REORG_PHASE, REORG_CURRENT_COUNTER, REORG_MAX_COUNTER, 
-      VARCHAR_FORMAT(REORG_START, 'YYYY-MM-DD-HH24:MI:SS') as REORG_START,
-      VARCHAR_FORMAT(REORG_END, 'YYYY-MM-DD-HH24:MI:SS') as REORG_END,
---      REORG_START, REORG_END,
-      REORG_INDEX_ID, REORG_TBSPC_ID
-      from table(snap_get_tab_reorg('')) 
-      order by REORG_START asc
-      with ur"
-   
-   db2pd -db $DBNAME -reorgs index | sed -n "/Index Reorg Stats:/,//p" > /dev/null 2>&1
-
-}
-
-log() 
-{
-   TYPE=$1
-   MSG="$2"
-
-   DATE=$( date '+%d-%m-%Y %H:%M:%S' );
-
-   # TYPE:
-   # 0 = Critical
-   # 1 = Warn
-   # 3 = Info
-   # 5 = Debug'
-   if [ ${TYPE} -eq 0 ]; then
-      TYPEMSG="Error"
-   elif [ ${TYPE} -eq 1 ]; then
-      TYPEMSG="Warning"
-   elif [ ${TYPE} -eq 3 ]; then
-      TYPEMSG="Info"
-   elif [ ${TYPE} -eq 5 ]; then
-      TYPEMSG="Debug"
-   else
-      TYPEMSG="Other"
-   fi
-
-   echo -e "${DATE} ${TYPEMSG} : ${MSG}" | tee -a $REORG_TABLE_INDEX_LOG
-
-   return 0
-}
-
-initTABLE_IN_USE_ARRAY()
-{
-
-   local NUM_ITEMS=$1
-   local jj;
-
-   ##
-   ## initialise the db2 TABLE_IN_USE_ARRAY
-   ##
-   for((jj=0; jj<$NUM_ITEMS; jj++))
-   do
-      TABLE_IN_USE_ARRAY[$jj]=""
-   done
-
-   return 0
-
-}
-
-existTABLE_TABLE_IN_USE_ARRAY()
-{
-
-   local TABLE=$1
-   local jj;
-   ##
-   ## check if table is in use
-   ##
-   for((jj=0; jj<${#TABLE_IN_USE_ARRAY[@]}; jj++))
-   do
-      if [ "${TABLE_IN_USE_ARRAY[$jj]}" == "$TABLE" ]; then 
-        return 0;
-      fi
-   done
-
-   return 1;
-
-}
-
-addTABLE_TABLE_IN_USE_ARRAY()
-{
-
-   local TABLE=$1
-   local jj;
-
-   ##
-   ## add table in empty slot
-   ##
-   for((jj=0; jj<${#TABLE_IN_USE_ARRAY[@]}; jj++))
-   do
-      if [ "${TABLE_IN_USE_ARRAY[$jj]}" == "" ]; then 
-        TABLE_IN_USE_ARRAY[$jj]=$TABLE;
-        return 0;
-      fi
-   done
-
-   return 1;
-}
-
-removeTABLE_TABLE_IN_USE_ARRAY()
-{
-
-   local TABLE=$1
-   local jj;
-   ##
-   ## remove entry
-   ##
-   for((jj=0; jj<${#TABLE_IN_USE_ARRAY[@]}; jj++))
-   do
-      if [ "${TABLE_IN_USE_ARRAY[$jj]}" == "$TABLE" ]; then 
-        TABLE_IN_USE_ARRAY[$jj]="";
-        return 0;
-      fi
-   done
-
-   return 1;
-
-}
-
-
-listTABLE_IN_USE_ARRAY()
-{
-
-   local jj;
-   ##
-   ## list table entries
-   ##
-   for((jj=0; jj<${#TABLE_IN_USE_ARRAY[@]}; jj++))
-   do
-      log 5 "TABLE_IN_USE_ARRAY $jj ${TABLE_IN_USE_ARRAY[$jj]}";
-   done
-
-   return 0;
-
-}
-
-getValidTablesToReorg()
-{
-
-   getValidTableSizes
-
-   VALID_TABLES_TO_REORG=""
-   VALID_TABLES_TO_REORG_RAW=""
-   NUM_VALID_TABLES_TO_REORG=0
-   for TABNAME in $VALID_TABLES
-   do
-
-      RAW=$( db2 -x "call REORGCHK_TB_STATS('T','$SCHEMANAME_IN.$TABNAME')" );
-      RAW=$( echo "$RAW" | grep $SCHEMANAME_IN | grep $TABNAME | awk '{ if (NF == 12) print $0 }' | sed 's/ \+/ /g' | grep $REORG )
-      rc=$?
-      if [ $rc -eq 0 ]; then
-        TABNAME=$( echo "$RAW" | awk '{print $2}' );
-        [ "$VALID_TABLES_TO_REORG_RAW_DATA" == "" ] && VALID_TABLES_TO_REORG_RAW_DATA="$RAW" || VALID_TABLES_TO_REORG_RAW_DATA="$VALID_TABLES_TO_REORG_RAW_DATA\n$RAW"
-      fi
-      
-   done
-
-   ## sort the tables based on REORG column
-   VALID_TABLES_TO_REORG_RAW_DATA=$( echo -e "$VALID_TABLES_TO_REORG_RAW_DATA" | sort -k12 -r);
-   VALID_TABLES_TO_REORG=$( echo -e "$VALID_TABLES_TO_REORG_RAW_DATA" | awk '{print $2}' );
-   NUM_VALID_TABLES_TO_REORG=$( echo -e "$VALID_TABLES_TO_REORG" | wc -l );
-   
-   return 0
-   
-}
-
-getValidIndexesToReorg()
-{
-
-   getValidTableSizes
-
-   VALID_INDEXES_TO_REORG=""
-   VALID_INDEXES_TO_REORG_RAW=""
-   NUM_VALID_INDEXES_TO_REORG=0
-   for TABNAME in $VALID_TABLES
-   do
-
-      RAW=$( db2 -x "call REORGCHK_IX_STATS('T','$SCHEMANAME_IN.$TABNAME')" );
-      ## this can return multiple indexes for same TABNAME
-      RAW=$( echo "$RAW" | grep $SCHEMANAME_IN | grep $TABNAME | awk '{ if (NF == 21) print $0 }' | sed 's/ \+/ /g' | grep $REORG );
-      rc=$?
-      if [ $rc -eq 0 ]; then
-        INDNAME=$( echo "$RAW" | awk '{print $1"."$2"."$3"."$4}' );
-        [ "$VALID_INDEXES_TO_REORG_RAW_DATA" == "" ] && VALID_INDEXES_TO_REORG_RAW_DATA=$RAW || VALID_INDEXES_TO_REORG_RAW_DATA="$VALID_INDEXES_TO_REORG_RAW_DATA\n$RAW"
-      fi
-      
-   done
-
-   ## sort the indexes based on REORG column
-   VALID_INDEXES_TO_REORG_RAW_DATA=$( echo -e "$VALID_INDEXES_TO_REORG_RAW_DATA" | sort -k21 -r);
-   VALID_INDEXES_TO_REORG=$( echo -e "$VALID_INDEXES_TO_REORG_RAW_DATA" | awk '{print $1"."$2"."$3"."$4}' );
-   NUM_VALID_INDEXES_TO_REORG=$( echo -e "$VALID_INDEXES_TO_REORG" | wc -l );
-
-   return 0
-   
-}
-
-getValidFragmentedIndexes()
-{
-
-   ##
-   ## http://www.ibm.com/developerworks/data/library/techarticle/dm-1307optimizerunstats/#Listing%207
-   ## 
-
-   getValidTableSizes
-
-   VALID_FRAGMENTED_INDEXES_RAW_DATA=$( db2 -x "select rtrim(tabschema)||' '||rtrim(tabname)||' '||rtrim(indschema)||' '||rtrim(indname)
-        ||' '||indcard||' '||stats_time||' '||lastused||' '||nleaf||' '||sequential_pages 
-        from syscat.indexes where tabschema='$SCHEMANAME_IN' 
-        and not (nleaf = 1 and sequential_pages = 0) 
-        and not (nleaf = 0 and sequential_pages = 1) 
-        and (nleaf - sequential_pages > 10)
-        and tabname in ( $VALID_TABLES_FORMATTED )
-        order by tabname 
-        with ur"; );
-
-   VALID_FRAGMENTED_INDEXES_RAW_DATA=$(echo "${VALID_FRAGMENTED_INDEXES_RAW_DATA}" | sed 's/ *$//g' );
-   VALID_FRAGMENTED_INDEXES=$( echo "${VALID_FRAGMENTED_INDEXES_RAW_DATA}" | sed 's/ *$//g' | cut -d' ' -f2 | uniq )
-   NUM_VALID_FRAGMENTED_INDEXES=$( echo "${VALID_FRAGMENTED_INDEXES}" | wc -l )
-}
-
-getValidTableSizes()
-{
-
-   VALID_TABLE_SIZES_RAW_DATA=$( db2 "select t0.tabname,
-      ( ( DATA_OBJECT_P_SIZE + INDEX_OBJECT_P_SIZE + LONG_OBJECT_P_SIZE + LOB_OBJECT_P_SIZE + XML_OBJECT_P_SIZE ) / 1024 ) as TOTAL_TABLE_MB,
-      cast ((INDEX_OBJECT_P_SIZE / 1024 ) as integer) as INDEX_SIZE_MB   
-      from SYSIBMADM.ADMINTABINFO t0, SYSCAT.TABLES t1
-      where t0.tabschema='$SCHEMANAME_IN'
-      and t0.tabschema=t1.tabschema
-      and t0.tabname=t1.tabname
-      $IGNORE_TABLES
-      and ( ( DATA_OBJECT_P_SIZE + INDEX_OBJECT_P_SIZE + LONG_OBJECT_P_SIZE + LOB_OBJECT_P_SIZE + XML_OBJECT_P_SIZE ) / 1024 ) < $IGNORE_TABLE_SIZE_THRESHOLD_MAX
-      and ( ( DATA_OBJECT_P_SIZE + INDEX_OBJECT_P_SIZE + LONG_OBJECT_P_SIZE + LOB_OBJECT_P_SIZE + XML_OBJECT_P_SIZE ) / 1024 ) > $IGNORE_TABLE_SIZE_THRESHOLD_MIN
-      order by 2 desc
-      with ur"; );
-   rc=$?
-   if [ $rc -eq 0 ]; then 
-      VALID_TABLE_SIZES=$( echo "$VALID_TABLE_SIZES_RAW_DATA" | sed '1,3d' | sed '$d' | sed '$d' );   
-      VALID_TABLE_SIZES=$( echo "$VALID_TABLE_SIZES" | awk 'BEGIN {ORS="\t"} { for(ii=1 ; ii<=NF ; ii++) print $ii; printf "\n"; }');
-      VALID_TABLES=$( echo "$VALID_TABLE_SIZES" | awk '{print $1}' );
-      NUM_VALID_TABLES=$( echo "$VALID_TABLE_SIZES" | wc -l );
-      # log 3 "NUM_VALID_TABLES=$NUM_VALID_TABLES"
-
-      VALID_TABLES_FORMATTED=""
-      for TABLE in $VALID_TABLES
-      do
-         VALID_TABLES_FORMATTED="$VALID_TABLES_FORMATTED'$TABLE',"
-      done
-      VALID_TABLES_FORMATTED=$( echo "$VALID_TABLES_FORMATTED" | sed 's/,$//g' )
-   else
-      VALID_TABLES_FORMATTED="'UNKNOWN_TABNAME'"
-   fi
-
-}
-
-## is TABLE within size limits < IGNORE_TABLE_SIZE_THRESHOLD_MAX and > IGNORE_TABLE_SIZE_THRESHOLD_MIN
-isTableWithinSizeLimit()
-{
-   local SCHEMANAME=$1
-   local TABNAME=$2
-   local RC=""
-   local rc=0
-
-   RC=$( db2  -x "select tabname,
-      ( ( DATA_OBJECT_P_SIZE + INDEX_OBJECT_P_SIZE + LONG_OBJECT_P_SIZE + LOB_OBJECT_P_SIZE + XML_OBJECT_P_SIZE ) / 1024 ) as TOTAL_TABLE_MB
-      from SYSIBMADM.ADMINTABINFO 
-      where tabschema='$SCHEMANAME'
-      and tabname = '$TABNAME'
-      and ( ( DATA_OBJECT_P_SIZE + INDEX_OBJECT_P_SIZE + LONG_OBJECT_P_SIZE + LOB_OBJECT_P_SIZE + XML_OBJECT_P_SIZE ) / 1024 ) < $IGNORE_TABLE_SIZE_THRESHOLD_MAX
-      and ( ( DATA_OBJECT_P_SIZE + INDEX_OBJECT_P_SIZE + LONG_OBJECT_P_SIZE + LOB_OBJECT_P_SIZE + XML_OBJECT_P_SIZE ) / 1024 ) > $IGNORE_TABLE_SIZE_THRESHOLD_MIN
-      order by 2 desc
-      with ur" );
-
-   rc=$?
-   return $rc
-
-}
-
-## create an list/array of table objects to reorg based on tabnames
-createTableOBJECT_ARRAY()
-{
-   local TABNAMES="$1"
-   local OBJECT_REORG_TABLE_TYPE=$2
-
-   ##
-   ## make the OBJECT_ARRAY for tables and indexes
-   ##
-   if [ -z "$OBJECT_ARRAY" ]; then
-      local let index=0;
-   else
-      local let index=${#OBJECT_ARRAY[@]};
-   fi 
-   local TID=0   ## Table ID - always 0 for online table reorg
-   local INDSCHEMA=NULL;
-   local INDNAME=NULL;
-   local LOCK_COUNT=0
-
-   for TABNAME in $TABNAMES
-   do
-      ## we need TABLEID, TBSPACEID for IF_STATS as the full TableName: may not be dispalyed in the db2pd output
-      local RC=$( db2 -x "select TABLEID, TBSPACEID from syscat.tables where tabname='$TABNAME' and tabschema='$SCHEMANAME_IN'" )
-      local rc=$?
-      if [ $rc -eq 0 ]; then
-         local TABLEID=$( echo $RC | awk '{print $1}' );
-         local TBSPACEID=$( echo $RC | awk '{print $2}' );
-         OBJECT_ARRAY[$index]="$SCHEMANAME_IN#$TABNAME#$INDSCHEMA#$INDNAME#$TID#NOTSTARTED#-#-#$TABLEID#$TBSPACEID#$LOCK_COUNT#$OBJECT_REORG_TABLE_TYPE"
-         let index+=1
-      fi
-   done
-
-}
-
-## create an list/array of table objects to reorg based on indnames
-createIndexOBJECT_ARRAY()
-{
-
-   local INDNAMES="$1"
-   local OBJECT_REORG_TABLE_TYPE=$2   
-   local let index=0
-   local TABLEID=9999;
-   local TBSPACEID=9999;
-   local LOCK_COUNT=0;
-
-   for INDEX in $INDNAMES
-   do
-      local TABSCHEMA=$( echo $INDEX | cut -d. -f1);
-      local TABNAME=$( echo $INDEX | cut -d. -f2);
-      local INDSCHEMA=$( echo $INDEX | cut -d. -f3);
-      local INDNAME=$( echo $INDEX | cut -d. -f4);
-      local RC=$( db2 -x "select IID from syscat.indexes where tabschema = '$TABSCHEMA' and tabname = '$TABNAME' and indschema = '$INDSCHEMA' and indname = '$INDNAME'");
-      local rc=$?
-      if [ $rc -eq 0 ]; then
-         local IID=$( echo $RC | cut -d' ' -f1);
-         OBJECT_ARRAY[$index]="$TABSCHEMA#$TABNAME#$INDSCHEMA#$INDNAME#$IID#NOTSTARTED#-#-#$TABLEID#$TBSPACEID#$LOCK_COUNT#$OBJECT_REORG_TABLE_TYPE"
-         let index+=1
-      fi
-   done
-
-}
-##
-## list out the objects and state
-## this can be used for debugging
-##
-listOBJECT_ARRAY()
-{
-   
-   local ii;
-   log 3 "The following is for debug purposes, Num objects=${#OBJECT_ARRAY[@]}, $OBJECT_NUM_TB_STATS:$OBJECT_NUM_IX_STATS:$OBJECT_NUM_IF_STATS"
-   printf "%-15s %-40s %-15s %-40s %-14s %-20s %-20s %-8s \n" "TABSCHEMA" "TABNAME" "INDSCHEMA" "INDNAME" "REORG_STATUS" "REORG_START" "REORG_END" "LOCK_COUNT" 
-   : ' for((ii=0; ii< ${#OBJECT_ARRAY[@]}; ii++))
-   do
-         echo "${OBJECT_ARRAY[$ii]}" | /usr/bin/column -t -s "#" | tee -a $REORG_TABLE_INDEX_DEBUG
-   done
-   '
-   for ((ii=0; ii<${#OBJECT_ARRAY[@]}; ii++))
-   do
-      IFS="#" read -r TABSCHEMA TABNAME INDSCHEMA INDNAME IID REORG_STATUS OBJECT_REORG_START OBJECT_REORG_END TABLEID TBSPACEID LOCK_COUNT <<< "${OBJECT_ARRAY[$ii]}"
-
-      printf "%-15s %-40s %-15s %-40s %-14s %-20s %-20s %-8s \n" "$TABSCHEMA" "$TABNAME" "$INDSCHEMA" "$INDNAME" "$REORG_STATUS" "$OBJECT_REORG_START" "$OBJECT_REORG_END" "$LOCK_COUNT" 
-   done
-}
-
-## get the number tb_stats, ix_stats and if_stats objects
-getNUM_OBJECT_REORG_TABLE_TYPE_OBJECT_ARRAY()
-{
-
-   local rc=0;
-   local ii;
-   for((ii=0; ii< ${#OBJECT_ARRAY[@]}; ii++))
-   do
-      if [ $( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f12 ) -eq $1 ]; then 
-         let rc+=1;
-      fi
-   done
-
-   return $rc;
-
-}
-
-##
-## the main event
-##
-reorgTables()
-{
-
-   ## variables that need to be reset on each run of the function
-   NUM_REORGS_IN_PROGRESS=0;
-   NUM_REORGS_KICKED_OFF=0;
-   NUM_REORGS_COMPLETED=0;
-   NUM_REORGS_STOPPED=0;
-   NUM_REORGS_ABORTED=0;
-
-   while true
-   do
-
-      ## check reorg window maintenance time
-      MAINTENANCE_TIMEOUT_WINDOW_TIME_NOW_SECONDS=$( date '+%s' );
-      DIFF=$(( MAINTENANCE_TIMEOUT_WINDOW_TIME_NOW_SECONDS - REORG_TIMEOUT_WINDOW_START_TIME_SECONDS ));
-
-      ## safety valve - if for some reason the logic can't stop the reorgs
-      if [ $DIFF -ge $(( REORG_TIMEOUT_WINDOW_SECONDS + REORG_TIMEOUT_OVERFLOW_VALVE )) ]; then 
-         log 1 "REORG_TIMEOUT_OVERFLOW_VALVE detected";
-         log 1 "Aborting reorgs"
-         break;
-      fi
-
-      if [ $DIFF -ge $REORG_TIMEOUT_WINDOW_SECONDS ]; then
-
-         REORG_TIMEOUT_WINDOW_COMPLETED=1;
-
-         ## -twa:   timeout window action: default=3
-         ##           1=allow current reorg(s) to continue 
-         ##         2=stop current reorg(s)
-         ##          3=stop current reorg(s) if < 80% complete
-         if [ $REORG_TIMEOUT_WINDOW_ACTION -eq 1 ]; then
-
-            log 3 "Reorg window ending, reorg window time exceeded, twa=$REORG_TIMEOUT_WINDOW_ACTION"
-            break
-
-         elif [ $REORG_TIMEOUT_WINDOW_ACTION -eq 2 ]; then
-
-            ## use of the REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER
-            ## 0 = ABORT those not started and issue a STOP to those STARTED
-            ## 1 = loop again and see if script exits as all reorgs are COMPLETED and STOPPED and ABORTED
-            ## 2 = break out
-            if [ $REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER -eq 0 ]; then
-               let REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER+=1
-               log 3 "Reorg window ending, reorg window time exceeded, twa=$REORG_TIMEOUT_WINDOW_ACTION"
-               log 3 "Aborting reorgs NOTSTARTED and issuing a STOP to those that are STARTED"
-            elif [ $REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER -eq 1 ]; then
-               let REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER+=1
-               log 3 "REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER=$REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER"
-            elif [ $REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER -eq 2 ]; then
-               log 3 "REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER=$REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER"
-               log 3 "Breaking out of reorg loop"
-               break;
-            fi
-         fi
-      fi
-
-      ## loop for all OBJECTS - extract relevant data from OBJECT array
-      ## if we have NOTSTARTED in the OBJECT_ARRAY[N] - then kick off a reorg
-      ## then check tables reorg status
-      for((ii=0; ii< ${#OBJECT_ARRAY[@]}; ii++))
-      do
-         ## get table related info
-         TABSCHEMA=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f1 );
-         TABNAME=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f2 );
-         INDSCHEMA=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f3 );
-         INDNAME=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f4 );
-         IID=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f5 );
-         OBJECT_REORG_STATUS=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f6 );
-         OBJECT_REORG_START=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f7 );
-         OBJECT_REORG_END=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f8 );
-         TABLEID=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f9 );
-         TBSPACEID=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f10 );
-         LOCK_COUNT=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f11 );
-         OBJECT_REORG_TABLE_TYPE=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f12 );
-         isTable=0;
-         isIndex=0;
-         if [ "$INDSCHEMA" == "NULL" -a "$INDNAME" == "NULL" ]; then
-            isTable=1;
-         else
-            isIndex=1;
-         fi
-
-         if [ $OBJECT_REORG_TABLE_TYPE -ne $REORG_TABLE_TYPE ]; then 
-            continue;
-         fi
-   
-         # log 5 "${OBJECT_ARRAY[$ii]}"
-
-         ##
-         ## has OBJECT COMPLETED - no need to continue here
-         ##
-         if [[ "$OBJECT_REORG_STATUS" == "COMPLETED" || "$OBJECT_REORG_STATUS" == "STOPPED" || "$OBJECT_REORG_STATUS" == "ABORTED" ]]; then   
-            continue;
-         fi      
-
-         if [ $TB_STATS -eq 1 -o $IX_STATS -eq 2 ]; then
-
-            ## 
-            ## query db2 for REORG_STATUS etc - there may not be an entry so carry on
-            ##
-            RC_SNAP=$( db2 -x "select REORG_STATUS, REORG_COMPLETION, REORG_PHASE, REORG_CURRENT_COUNTER, REORG_MAX_COUNTER,  VARCHAR_FORMAT(REORG_START, 'YYYY-MM-DD-HH24:MI:SS') as REORG_START,  VARCHAR_FORMAT(REORG_END, 'YYYY-MM-DD-HH24:MI:SS') as REORG_END, REORG_INDEX_ID, REORG_TBSPC_ID from table(snap_get_tab_reorg('')) where tabschema='$TABSCHEMA' and tabname='$TABNAME' and REORG_START > TIMESTAMP('$WINDOW_START_TIME_DB2') and REORG_INDEX_ID=$IID");
-            rc=$?
-            if [ $rc -ge 2 ]; then 
-               log 0 "Possible error running select query against db2\nrc=$rc\nRC=$RC"
-               continue;                  
-            fi
-
-            if [ $rc -eq 0 ]; then
-               RC=$( echo "$RC_SNAP" | awk 'BEGIN {ORS="\t"} { for(ii=1 ; ii<=NF ; ii++) print $ii; }')
-               REORG_STATUS=$( echo "$RC_SNAP" | awk '{print $1}' );
-               REORG_COMPLETION=$( echo "$RC_SNAP" | awk '{print $2}' );
-               REORG_CURRENT_COUNTER=$( echo "$RC_SNAP" | awk '{print $4}' );
-               REORG_MAX_COUNTER=$( echo "$RC_SNAP" | awk '{print $5}' );
-               REORG_START=$( echo "$RC_SNAP" | awk '{print $6}' );
-               REORG_END=$( echo "$RC_SNAP" | awk '{print $7}' );
-               REORG_INDEX_ID=$( echo "$RC_SNAP" | awk '{print $8}' );
-
-               declare -i REORG_PERCENT_COMPLETE=0
-               if [[ ! -z "$REORG_CURRENT_COUNTER" && $REORG_CURRENT_COUNTER -gt 0 ]]; then 
-                  if [[ ! -z "$REORG_MAX_COUNTER" && $REORG_MAX_COUNTER -gt 0 ]]; then 
-                     if [ $REORG_MAX_COUNTER -ge $REORG_CURRENT_COUNTER ]; then 
-                        REORG_PERCENT_COMPLETE=$(echo $REORG_CURRENT_COUNTER $REORG_MAX_COUNTER | awk '{ print int (($1/$2)*100) }' );
-                     fi
-                  fi
-               fi
-            fi
-
-            # log 5 "RC_SNAP=$RC_SNAP"
-
-         elif [ $IF_STATS -eq 3 ]; then
-
-            DB2PD_REORG_INDEX_RECORD=$( db2pd -db $DBNAME -reorgs index | grep -B1 -A11 -w "^TbspaceID: $TBSPACEID" | grep -B1 -A11 -w "TableID: $TABLEID" );
-            rc=$?
-            if [ $rc -eq 0 ]; then
-               REORG_START=$(echo "$DB2PD_REORG_INDEX_RECORD" | grep '^Start Time:' | awk '{ print $3,$4}' );
-               REORG_START_SECONDS=$(date --date="$REORG_START" '+%s');
-
-               if [ $REORG_START_SECONDS -ge $IF_STATS_WINDOW_START_TIME_DB2 ]; then
-                  REORG_STATUS=$(echo "$DB2PD_REORG_INDEX_RECORD" | grep '^Status:' | awk '{ $1=""; print $0}' | sed 's/^[ \t]*//;s/[ \t]*$//' );
-                  ## some differences between snap_get_tab_reorg and db2pd -reogrs index output
-                  if [ "$REORG_STATUS" == "In Progress" ]; then
-                     REORG_STATUS="STARTED";
-                  elif [ "$REORG_STATUS" == "Completed" ]; then 
-                     REORG_STATUS="COMPLETED";
-                  elif [ "$REORG_STATUS" == "Stopped" ]; then
-                     REORG_STATUS="STOPPED";
-                  fi
-               
-                  REORG_END=$(echo "$DB2PD_REORG_INDEX_RECORD" | grep '^Start Time:' | grep 'End Time:' | awk '{ print $7,$8}' );
-                  REORG_IND_CUR_STATUS=$( echo "$DB2PD_REORG_INDEX_RECORD" | grep "Status:" );
-                  REORG_IND_CUR=$(echo "$DB2PD_REORG_INDEX_RECORD" | grep "Cur Index:" );
-                  REORG_INDEX_STATUS=$(printf "%-25s %-10s" "$REORG_IND_CUR_STATUS" "$REORG_IND_CUR")
-               fi               
-            fi
-         fi
-
-         ##
-         ## has OBJECT been KICKED_OFF or STARTED
-         ## if it has check to see if is STARTED or COMPLETED
-         ## update OBJECT_ARRAY
-         ## update COMPLETION/STOPPED stats
-         ##
-         if [ "$OBJECT_REORG_STATUS" == "KICKED_OFF" ] || [ "$OBJECT_REORG_STATUS" == "STARTED" ]; then   
-            if [ ! -z "$REORG_STATUS" ]; then
-               if [ "$REORG_STATUS" == "STARTED" -o "$REORG_STATUS" == "COMPLETED" -o "$REORG_STATUS" == "STOPPED" ]; then 
-                  OBJECT_ARRAY[$ii]="$TABSCHEMA#$TABNAME#$INDSCHEMA#$INDNAME#$IID#$REORG_STATUS#$REORG_START#$REORG_END#$TABLEID#$TBSPACEID#$LOCK_COUNT#$OBJECT_REORG_TABLE_TYPE"
-               fi
-         
-               if [ "$REORG_STATUS" == "COMPLETED" -o "$REORG_STATUS" == "STOPPED" ]; then 
-
-                  removeTABLE_TABLE_IN_USE_ARRAY "$TABSCHEMA.$TABNAME"
-                  rc=$?
-                  if [ $rc -eq 1 ]; then 
-                     log 1 "Failed to remove table $TABSCHEMA.$TABNAME from TABLE_IN_USE_ARRAY";
-                  fi
-
-                  if [ "$REORG_STATUS" == "COMPLETED" ]; then
-                     let NUM_REORGS_COMPLETED+=1
-                  elif [ "$REORG_STATUS" == "STOPPED" ]; then
-                     let NUM_REORGS_STOPPED+=1
-                  fi
-
-                  let NUM_REORGS_IN_PROGRESS-=1
-               fi
-
-            fi
-
-         ##
-         ## OBJECT is NOSTARTED so KICK_OFF a reorg
-         ##
-         elif [ "$OBJECT_REORG_STATUS" == "NOTSTARTED" ]; then
-
-            ## dont kick off any reorgs if window timeout passed and TWA=2
-            ## OBJECTS become ABORTED - UPDATE OBJECT_ARRAY 
-            if [ $REORG_TIMEOUT_WINDOW_COMPLETED -eq 1 ] && [ $REORG_TIMEOUT_WINDOW_ACTION -eq 2 ] && [ $REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER -eq 1 ]; then 
-               REORG_STATUS=ABORTED;
-               OBJECT_ARRAY[$ii]="$TABSCHEMA#$TABNAME#$INDSCHEMA#$INDNAME#$IID#$REORG_STATUS#$OBJECT_REORG_START#$OBJECT_REORG_END#$TABLEID#$TBSPACEID#$LOCK_COUNT#$OBJECT_REORG_TABLE_TYPE";
-               let NUM_REORGS_ABORTED+=1;
-               continue;   
-               
-            fi
-
-            ## is the TABLE already being used -if it is goto next OBJECT
-            existTABLE_TABLE_IN_USE_ARRAY "$TABSCHEMA.$TABNAME"
-            rc=$?
-            [ $rc -eq 0 ] && continue;
-
-            ## we only want to kick off so many reorgs at any one time
-            if [ $NUM_REORGS_IN_PROGRESS -eq $MAX_ASYNC_REORGS_ALLOWED ]; then
-               continue;
-            fi
-
-            ##
-            ## The table could already be locked - if it is then by-pass it
-            ## and ABORT if locked more than 10 times
-            ##
-            TABLE_LOCKED=$( db2 "select APPLICATION_HANDLE, LOCK_OBJECT_TYPE, LOCK_MODE, LOCK_CURRENT_MODE, LOCK_STATUS, LOCK_COUNT, LOCK_HOLD_COUNT, TBSP_ID, TAB_FILE_ID from TABLE (MON_GET_LOCKS(NULL, -2)) where TBSP_ID=$TBSPACEID and TAB_FILE_ID=$TABLEID and LOCK_OBJECT_TYPE='TABLE' and LOCK_MODE='IX' with ur"; );
-            rc=$?
-            if [ $rc -eq 0 ]; then 
-               let LOCK_COUNT+=1;
-               log 1 "Appears table $TABSCHEMA.$TABNAME is already locked by another application(s), LOCK_COUNT=$LOCK_COUNT";
-               log 1 "$TABLE_LOCKED";
-               if [ $LOCK_COUNT -gt 10 ]; then 
-                  OBJECT_REORG_STATUS=ABORTED;
-                  let NUM_REORGS_ABORTED+=1;
-                  log 1 "Aborting table $TABSCHEMA.$TABNAME , LOCK_COUNT=$LOCK_COUNT";
-               fi
-               OBJECT_ARRAY[$ii]="$TABSCHEMA#$TABNAME#$INDSCHEMA#$INDNAME#$IID#$OBJECT_REORG_STATUS#$OBJECT_REORG_START#$OBJECT_REORG_END#$TABLEID#$TBSPACEID#$LOCK_COUNT#$OBJECT_REORG_TABLE_TYPE";
-               continue;
-            fi
-      
-            ##
-            ## do a check to see where we are on transaction log space - this could be improved!!!!
-            ##
-            #LOG_USED=$( db2 "select cast(LOG_UTILIZATION_PERCENT as decimal(5,2)) as PCTUSED, cast((TOTAL_LOG_USED_KB/1024) as Integer) as TOTUSEDMB,  cast((TOTAL_LOG_AVAILABLE_KB/1024) as Integer) as TOTAVAILMB, cast((TOTAL_LOG_USED_TOP_KB/1024) as Integer) as TOTUSEDTOPMB FROM   SYSIBMADM.LOG_UTILIZATION ");
-            LOG_USED=$( db2 -x "select LOG_UTILIZATION_PERCENT as PCTUSED FROM SYSIBMADM.MON_TRANSACTION_LOG_UTILIZATION " | tr -d ' ' ) 
-            if [ ! -z "$LOG_USED" ]; then
-               #PCTUSED=$( echo "$LOG_USED" | awk '{ if(NF==4 && $2 ~/^[0-9]+$/) print int($1)}' );
-               PCTUSED=$( echo $LOG_USED | awk '{print int($1)}')
-               if [ ! -z "$PCTUSED" ]; then
-                  if [ $PCTUSED -gt $TRANSACTION_LOG_THRESHOLD_PCT ]; then
-                     log 1 "Will not kick off another reorg due to logfile PCTUSED above threshold of $LOG_THRESHOLD% : $LOG_USED%"
-                     continue
-                  else
-                     log 3 "Present LOG Utilization Percentage : $LOG_USED%"
-                  fi
-               fi
-            fi
-
-            ##
-            ## kick off another reorg 
-            ## if rc=0 then ok, else we ABORT the OBJECT and don't try again
-            ##
-
-            if [[ $TB_STATS -eq 1 || $IX_STATS -eq 2 ]]; then 
-
-               if [ $isTable -eq 1 ]; then
-                  log 3 "Processing reorg for table $TABSCHEMA.$TABNAME"
-                  db2 "reorg table $TABSCHEMA.$TABNAME inplace allow write access" >> /dev/null 2>&1 
-                  rc=$?
-                  #RC=$( db2 -x "select REORG_STATUS, REORG_COMPLETION, REORG_PHASE, REORG_CURRENT_COUNTER, REORG_MAX_COUNTER  from table(snap_get_tab_reorg('')) where tabname='$TABNAME' " )
-                  RC=$( db2 -x "select REORG_STATUS, REORG_COMPLETION, REORG_PHASE from table(snap_get_tab_reorg('')) where tabname='$TABNAME' " )
-
-               elif [ $isIndex -eq 1 ]; then
-                  log 3 "Processing reorg for table $TABSCHEMA.$TABNAME"
-                  db2 "reorg table $TABSCHEMA.$TABNAME index $INDSCHEMA.$INDNAME inplace allow write access" > /dev/null 2>&1 
-                  rc=$?
-                  #RC=$( db2 "select REORG_STATUS, REORG_COMPLETION, REORG_PHASE, REORG_CURRENT_COUNTER, REORG_MAX_COUNTER from table(snap_get_tab_reorg('')) where tabname='$TABNAME' " )
-                  RC=$( db2 -x "select REORG_STATUS, REORG_COMPLETION, REORG_PHASE from table(snap_get_tab_reorg('')) where tabname='$TABNAME' " )
-               fi
-
-            elif [ $IF_STATS -eq 3 ]; then 
-            
-               ## for offline we throw a job at db2 and wait a few seconds and check the output
-               ## output could be "reorg indexes all for table ...", 
-               ##  or SQL error 
-               ##  or 'DB20000I  The REORG command completed successfully.'
-               ## not sure if there is a better way to do this
-               TMPLOG="/tmp/$TABSCHEMA.$TABNAME.tmp";
-               log 3 "Processing reorg on indexes for table $TABSCHEMA.$TABNAME"
-               db2 -v "reorg indexes all for table $TABSCHEMA.$TABNAME allow write access" > $TMPLOG > /dev/null 2>&1 &
-               sleep 5;
-               cat $TMPLOG;
-               RC=$( grep '^SQL' $TMPLOG);
-               rc=$?
-               if [ $rc -eq 0 ]; then 
-                  log 1 "Failed to kick off reorg\n$RC";
-                  rc=1;
-               else
-                  ## reorg could have finished then no need for the big sleep
-                  RC=$( grep 'DB20000I  The REORG command completed successfully.' $TMPLOG);
-                  if [ $? -eq 0 ]; then
-                     IF_STATS_BYPASS_SLEEP_INTERVAL_TIME=1;
-                  fi   
-                  rc=0;                  
-
-               fi
-               rm -f $TMPLOG;
-
-            fi
-
-            if [ $rc -eq 0 ]; then
-               REORG_STATUS=KICKED_OFF;
-            else
-               REORG_STATUS=ABORTED;
-            fi
-               OBJECT_ARRAY[$ii]="$TABSCHEMA#$TABNAME#$INDSCHEMA#$INDNAME#$IID#$REORG_STATUS#$OBJECT_REORG_START#$OBJECT_REORG_END#$TABLEID#$TBSPACEID#$LOCK_COUNT#$OBJECT_REORG_TABLE_TYPE";
-            if [ $rc -ne 0 ]; then
-               let NUM_REORGS_ABORTED+=1;
-               continue
-            fi
-
-            ## add the table to the TABLE_IN_USE_ARRAY
-            addTABLE_TABLE_IN_USE_ARRAY "$TABSCHEMA.$TABNAME"
-            rc=$?
-            if [ $rc -eq 1 ]; then 
-               log 1 "Failed to add table $TABSCHEMA.$TABNAME to TABLE_IN_USE_ARRAY";
-            fi
-            let NUM_REORGS_KICKED_OFF+=1;
-            let NUM_REORGS_IN_PROGRESS+=1;
-
-            continue;         
-         fi   
-
-         ##
-         ## ouput STATUS
-         ##
-         if [[ $TB_STATS -eq 1 || $IX_STATS -eq 2 ]]; then 
-            #echo -e  "$NUM_REORGS_IN_PROGRESS:$NUM_REORGS_KICKED_OFF:$NUM_REORGS_ABORTED:$NUM_REORGS_STOPPED:$NUM_REORGS_COMPLETED:$NUM_REORG_OBJECTS $TABSCHEMA.$TABNAME : $RC \t: $REORG_PERCENT_COMPLETE %" | tee -a $REORG_TABLE_INDEX_DEBUG
-            printf "%-15s %-50s %-50s %-10s\n" "$NUM_REORGS_IN_PROGRESS:$NUM_REORGS_KICKED_OFF:$NUM_REORGS_ABORTED:$NUM_REORGS_STOPPED:$NUM_REORGS_COMPLETED:$NUM_REORG_OBJECTS" "$TABSCHEMA.$TABNAME" "$RC" "COMPLETION: $REORG_PERCENT_COMPLETE %"| tee -a $REORG_TABLE_INDEX_DEBUG
-
-         elif [ $IF_STATS -eq 3 ]; then
-            #echo -e "$NUM_REORGS_IN_PROGRESS:$NUM_REORGS_KICKED_OFF:$NUM_REORGS_ABORTED:$NUM_REORGS_STOPPED:$NUM_REORGS_COMPLETED:$NUM_REORG_OBJECTS $TABSCHEMA.$TABNAME : $REORG_INDEX_STATUS "| tee -a $REORG_TABLE_INDEX_DEBUG   
-            printf "%-15s %-50s %-10s %15s\n" "$NUM_REORGS_IN_PROGRESS:$NUM_REORGS_KICKED_OFF:$NUM_REORGS_ABORTED:$NUM_REORGS_STOPPED:$NUM_REORGS_COMPLETED:$NUM_REORG_OBJECTS" "$TABSCHEMA.$TABNAME" "$REORG_INDEX_STATUS" | tee -a $REORG_TABLE_INDEX_DEBUG      
-         fi
-
-         ##
-         ## if reorg timeout then issue a stop to current reorgs that are STARTED 
-         ## no error checking for stopping a reorg
-         ## no need to update OBJECT array as it will be updated on next loop
-         ##
-
-         if [[ $TB_STATS -eq 1 || $IX_STATS -eq 2 ]]; then
-
-            if [ "$REORG_STATUS" == "STARTED" ] && [ $REORG_TIMEOUT_WINDOW_COMPLETED -eq 1 ] && [ $REORG_TIMEOUT_WINDOW_ACTION -eq 2 ] && [ $REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER -eq 1 ]; then
-
-               if [ $isTable -eq 1 ]; then
-                  db2 -v "reorg table $TABSCHEMA.$TABNAME inplace stop" > /dev/null 2>&1 
-                  rc=$?
-               elif [ $isIndex -eq 1 ]; then
-                  db2 -v "reorg table $TABSCHEMA.$TABNAME index $INDSCHEMA.$INDNAME inplace stop" > /dev/null 2>&1 
-                  rc=$?
-               fi
-            fi
-         fi
-
-      done  ## for OBJECT_ARRAY[@]
-
-      ## check if we are done with all OBJECTS
-      if [ $((NUM_REORGS_COMPLETED + NUM_REORGS_STOPPED + NUM_REORGS_ABORTED)) -ge $NUM_REORG_OBJECTS ]; then 
-         log 3 "Reorgs Status :: Completed : $NUM_REORGS_COMPLETED , Stopped : $NUM_REORGS_STOPPED ,  Aborted : $NUM_REORGS_ABORTED , Total No of Objects : $NUM_REORG_OBJECTS"
-         break
-      fi
-
-      ## wait some time
-      if [ $IF_STATS -eq 3 ] && [ $IF_STATS_BYPASS_SLEEP_INTERVAL_TIME -eq 1 ]; then
-         sleep 1;
-         IF_STATS_BYPASS_SLEEP_INTERVAL_TIME=0;
-      else
-         sleep $SLEEP_INTERVAL_TIME
-      fi
-
-   done   ## while true
-
-}
-
-# -- Main function starts here
-
-## init
-if [ -f ${HOME}/sqllib/db2profile ]; then
-    . ${HOME}/sqllib/db2profile
+# Source DB2 environment if available
+if [[ -f "${HOME}/sqllib/db2profile" ]]; then
+    # shellcheck disable=SC1090
+    . "${HOME}/sqllib/db2profile"
 fi
 
-## script already running ?
-if [ $( ps -ef | grep $0 | grep -v grep | wc -l ) -gt 2 ]; then 
-    echo "Warning: appears $0 already running"
-   echo "$( ps -ef | grep $0 | grep -v grep )";
-   exit 1
+# Ensure bash execution
+if [[ -z "${BASH_VERSION:-}" ]]; then
+    echo "Error: This script requires bash to run." >&2
+    exit 1
 fi
 
-SCRIPT=$(basename $0)
-SCRIPT_DIR=$(dirname $0)
-WHOAMI=$(whoami)
-HOSTNAME=$(hostname)
+# set -x 
+# ------------------------------------------------------------------------------
+# Constants & Script Info
+# ------------------------------------------------------------------------------
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly HOSTNAME_VAL="$(hostname)"
+readonly WHOAMI_VAL="$(whoami)"
 
-## setup some temp work files
-LOGDATE=$(date '+%Y%m%d');
-REORG_TABLE_INDEX_LOG=/tmp/${SCRIPT}.tmp.123.log
-rm -f $REORG_TABLE_INDEX_LOG
-REORG_TABLE_INDEX_DEBUG=/tmp/${SCRIPT}.debug
-rm -f $REORG_TABLE_INDEX_DEBUG
+# ------------------------------------------------------------------------------
+# Default Configuration Variables
+# ------------------------------------------------------------------------------
+DBNAME=""
+SCHEMANAME_IN=""
+TABLE_IN=""
+INDEX_IN=""
 
-## control variables
 LIST_ONLY=0
 LIST_FRAGMENTED_INDEXES=0
 LIST_VALID_TABLE_SIZES=0
 LIST_REORGCHK_TB_STATS_TABLES=0
 LIST_REORGCHK_IX_STATS_TABLES=0
 EXECUTE_TABLE_REORG=0
-IGNORE_TABLE_SIZE_THRESHOLD_MAX=100000;
-IGNORE_TABLE_SIZE_THRESHOLD_MIN=10;
-MAINTENANCE_TIMEOUT_WINDOW_MINUTES=240;
-REORG_TIMEOUT_WINDOW_ACTION=2;
-MAX_ASYNC_REORGS_ALLOWED=3;
-TRANSACTION_LOG_THRESHOLD_PCT=90;
-TB_STATS=0;
-IF_STATS=0;
-IX_STATS=0;
 TRSI=0
-IGNORE_TABLES_EX=" and t0.tabname not like '%\_H' escape '\' and t1.volatile != 'C' "
-IGNORE_TABLES="";
-REORG="*";
-SLEEP_INTERVAL_TIME=60;
-REORGCHK_TB_IF_STATS_OPTION="";
-REORGCHK_TB_STATS=1;
-REORGCHK_IF_STATS=3;
 
-## user check
-if [ $WHOAMI == "root" ]; then
-   log 0 " This script should be not run as '$WHOAMI', but as instance owner."
-   exit 1
+IGNORE_TABLE_SIZE_THRESHOLD_MAX=100000  # in MB (100 GB)
+IGNORE_TABLE_SIZE_THRESHOLD_MIN=10      # in MB
+MAINTENANCE_TIMEOUT_WINDOW_MINUTES=240
+REORG_TIMEOUT_WINDOW_ACTION=2
+MAX_ASYNC_REORGS_ALLOWED=3
+TRANSACTION_LOG_THRESHOLD_PCT=90
+SLEEP_INTERVAL_TIME=60
+
+TB_STATS=0
+IF_STATS=0
+IX_STATS=0
+REORG_TABLE_TYPE=0
+REORGCHK_TB_IF_STATS_OPTION=""
+readonly REORGCHK_TB_STATS_FLAG=1
+readonly REORGCHK_IF_STATS_FLAG=3
+
+IGNORE_TABLES_EX=" and t0.tabname not like '%\_H' escape '\\' and t1.volatile != 'C' "
+IGNORE_TABLES=""
+REORG="*"
+
+# Temporary logs
+REORG_TABLE_INDEX_LOG="/tmp/${SCRIPT_NAME}.tmp.$$.log"
+REORG_TABLE_INDEX_DEBUG="/tmp/${SCRIPT_NAME}.debug.$$.log"
+
+# Internal tracking structures
+declare -a OBJECT_ARRAY=()
+declare -a TABLE_IN_USE_ARRAY=()
+
+VALID_TABLE_SIZES_RAW_DATA=""
+VALID_TABLE_SIZES=""
+VALID_TABLES=""
+NUM_VALID_TABLES=0
+VALID_TABLES_FORMATTED=""
+
+VALID_TABLES_TO_REORG_RAW_DATA=""
+VALID_TABLES_TO_REORG=""
+NUM_VALID_TABLES_TO_REORG=0
+
+VALID_INDEXES_TO_REORG_RAW_DATA=""
+VALID_INDEXES_TO_REORG=""
+NUM_VALID_INDEXES_TO_REORG=0
+
+VALID_FRAGMENTED_INDEXES_RAW_DATA=""
+VALID_FRAGMENTED_INDEXES=""
+NUM_VALID_FRAGMENTED_INDEXES=0
+
+OBJECT_NUM_TB_STATS=0
+OBJECT_NUM_IX_STATS=0
+OBJECT_NUM_IF_STATS=0
+
+# ------------------------------------------------------------------------------
+# Functions
+# ------------------------------------------------------------------------------
+
+UsageHelp() {
+    cat << EOF
+Script to perform DB2 table/index reorganizations online (inplace) 
+and offline ("REORG INDEXES ALL FOR TABLE") based on fragmentation/statistics.
+
+Usage: ${SCRIPT_NAME} [options]
+Options:
+  -h, --help    Displays this usage screen
+  -db, -d       Database name (required)
+  -s            Table schema name (required)
+
+Reorg Criteria / Targets:
+  -t            Table name(s) to reorg (space-delimited in quotes)
+  -ti           Table index(es) in TABSCHEMA.TABNAME.INDSCHEMA.INDNAME format
+  -tb_stats     Reorg tables reported by REORGCHK_TB_STATS
+  -ix_stats     Reorg table indexes reported by REORGCHK_IX_STATS
+  -if_stats     Reorg indexes all for table(s) offline based on NLEAF/SEQUENTIAL_PAGES
+
+List / Query Operations:
+  -ls           List valid table sizes for schema
+  -lf           List fragmented index details for schema
+  -lt           List tables to reorg based on REORGCHK_TB_STATS
+  -li           List indexes to reorg based on REORGCHK_IX_STATS
+  -l            List tables/indexes that would be reorged without executing
+  -trsi         Retrieve table reorganization snapshot info from snap_get_tab_reorg & db2pd
+
+Execution & Tuning:
+  -tr           Execute inplace table/index reorganization
+  -ittx <MB>    Ignore tables over threshold size in MB (default: 100000 MB = 100 GB)
+  -ittn <MB>    Ignore tables under threshold size in MB (default: 10 MB)
+  -mar <num>    Maximum asynchronous reorgs allowed (default: 3)
+  -log <pct>    Skip reorg if transaction log usage exceeds percentage (default: 90%)
+  -window <min> Maintenance timeout window in minutes (default: 240)
+  -twa <1|2>    Timeout window action (default: 2)
+                  1 = Allow current reorg(s) to complete
+                  2 = Stop current reorg(s) and abort pending
+  -ignore <sql> Additional WHERE predicate for table exclusions
+  -reorg <pat>  REORG flag filter (e.g. "*", "***")
+  -sleep <sec>  Sleep interval in seconds between monitoring checks (default: 60)
+
+Examples:
+  1. ${SCRIPT_NAME} -h
+  2. ${SCRIPT_NAME} -db DBNAME -s MAXIMO -ls
+  3. ${SCRIPT_NAME} -db DBNAME -s MAXIMO -t "YFS_ITEM YFS_TASK_Q YFS_SHIPMENT" -tb_stats -tr
+  4. ${SCRIPT_NAME} -db DBNAME -s MAXIMO -ti "MAXIMO.YFS_SNAPSHOT.MAXIMO.YFS_SNAPSHOT_I1" -ix_stats -tr
+  5. ${SCRIPT_NAME} -db DBNAME -s MAXIMO -t "YFS_ITEM YFS_SNAPSHOT" -if_stats -tr
+  6. ${SCRIPT_NAME} -db DBNAME -s MAXIMO -tb_stats -mar 5 -window 120 -log 90 -ittx 30000 -tr
+  7. ${SCRIPT_NAME} -db DBNAME -s MAXIMO -tb_stats -if_stats -ittx 10000 -ittn 20 -tr
+  8. ${SCRIPT_NAME} -db DBNAME -trsi
+EOF
+}
+
+isNumeric() {
+    [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+log() {
+    local level=$1
+    local msg="$2"
+    local datestr
+    datestr="$(date '+%d-%m-%Y %H:%M:%S')"
+
+    local typemsg="Other"
+    case "$level" in
+        0) typemsg="Error" ;;
+        1) typemsg="Warning" ;;
+        3) typemsg="Info" ;;
+        5) typemsg="Debug" ;;
+    esac
+
+    echo -e "${datestr} ${typemsg} : ${msg}" | tee -a "$REORG_TABLE_INDEX_LOG"
+}
+
+cleanup() {
+    rm -f "$REORG_TABLE_INDEX_LOG" "$REORG_TABLE_INDEX_DEBUG" /tmp/"${SCRIPT_NAME}".*.tmp
+}
+trap cleanup EXIT INT TERM
+
+TRSI() {
+    db2 -v "select varchar(tabschema,9) as tabschema, varchar(tabname,32) as tabname,
+      REORG_STATUS, REORG_COMPLETION, REORG_PHASE, REORG_CURRENT_COUNTER, REORG_MAX_COUNTER, 
+      VARCHAR_FORMAT(REORG_START, 'YYYY-MM-DD-HH24:MI:SS') as REORG_START,
+      VARCHAR_FORMAT(REORG_END, 'YYYY-MM-DD-HH24:MI:SS') as REORG_END,
+      REORG_INDEX_ID, REORG_TBSPC_ID
+      from table(snap_get_tab_reorg('')) 
+      order by REORG_START asc
+      with ur"
+
+    if [[ -n "$DBNAME" ]]; then
+        db2pd -db "$DBNAME" -reorgs index | sed -n "/Index Reorg Stats:/,//p" 2>/dev/null || true
+    fi
+}
+
+initTABLE_IN_USE_ARRAY() {
+    local num_items=$1
+    TABLE_IN_USE_ARRAY=()
+    for ((jj=0; jj<num_items; jj++)); do
+        TABLE_IN_USE_ARRAY[jj]=""
+    done
+}
+
+existTABLE_TABLE_IN_USE_ARRAY() {
+    local table="$1"
+    local entry
+    for entry in "${TABLE_IN_USE_ARRAY[@]}"; do
+        if [[ "$entry" == "$table" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+addTABLE_TABLE_IN_USE_ARRAY() {
+    local table="$1"
+    for ((jj=0; jj<${#TABLE_IN_USE_ARRAY[@]}; jj++)); do
+        if [[ -z "${TABLE_IN_USE_ARRAY[jj]}" ]]; then
+            TABLE_IN_USE_ARRAY[jj]="$table"
+            return 0
+        fi
+    done
+    return 1
+}
+
+removeTABLE_TABLE_IN_USE_ARRAY() {
+    local table="$1"
+    for ((jj=0; jj<${#TABLE_IN_USE_ARRAY[@]}; jj++)); do
+        if [[ "${TABLE_IN_USE_ARRAY[jj]}" == "$table" ]]; then
+            TABLE_IN_USE_ARRAY[jj]=""
+            return 0
+        fi
+    done
+    return 1
+}
+
+listTABLE_IN_USE_ARRAY() {
+    for ((jj=0; jj<${#TABLE_IN_USE_ARRAY[@]}; jj++)); do
+        log 5 "TABLE_IN_USE_ARRAY $jj ${TABLE_IN_USE_ARRAY[jj]}"
+    done
+}
+
+getValidTableSizes() {
+    local schemaname="$1"
+    local tabname="$2"
+
+    VALID_TABLE_SIZES_RAW_DATA=$(db2 "select char(t0.tabname,40) tabname,
+      (( DATA_OBJECT_P_SIZE + INDEX_OBJECT_P_SIZE + LONG_OBJECT_P_SIZE + LOB_OBJECT_P_SIZE + XML_OBJECT_P_SIZE ) / 1024 ) as TOTAL_TABLE_MB,
+      cast ((INDEX_OBJECT_P_SIZE / 1024 ) as integer) as INDEX_SIZE_MB   
+      from TABLE(SYSPROC.ADMIN_GET_TAB_INFO('$schemaname', '$tabname')) as t0 , SYSCAT.TABLES t1
+      where t0.tabschema=t1.tabschema
+      and t0.tabname=t1.tabname
+      $IGNORE_TABLES
+      and (( DATA_OBJECT_P_SIZE + INDEX_OBJECT_P_SIZE + LONG_OBJECT_P_SIZE + LOB_OBJECT_P_SIZE + XML_OBJECT_P_SIZE ) / 1024 ) < $IGNORE_TABLE_SIZE_THRESHOLD_MAX
+      and (( DATA_OBJECT_P_SIZE + INDEX_OBJECT_P_SIZE + LONG_OBJECT_P_SIZE + LOB_OBJECT_P_SIZE + XML_OBJECT_P_SIZE ) / 1024 ) > $IGNORE_TABLE_SIZE_THRESHOLD_MIN
+      order by 2 desc
+      with ur")
+    local rc=$?
+
+    if [[ $rc -eq 0 && -n "$VALID_TABLE_SIZES_RAW_DATA" ]]; then
+        VALID_TABLE_SIZES=$(echo "$VALID_TABLE_SIZES_RAW_DATA" | sed '1,3d' | sed '$d' | sed '$d' | awk 'BEGIN {ORS="\t"} { for(ii=1 ; ii<=NF ; ii++) print $ii; printf "\n"; }')
+        VALID_TABLES=$(echo "$VALID_TABLE_SIZES" | awk '{print $1}')
+        if [[ -n "$VALID_TABLES" ]]; then
+            NUM_VALID_TABLES=$(echo "$VALID_TABLES" | grep -c -v '^[[:space:]]*$')
+            VALID_TABLES_FORMATTED=""
+            for tbl in $VALID_TABLES; do
+                VALID_TABLES_FORMATTED="${VALID_TABLES_FORMATTED}'$tbl',"
+            done
+            VALID_TABLES_FORMATTED="${VALID_TABLES_FORMATTED%,}"
+        else
+            NUM_VALID_TABLES=0
+            VALID_TABLES_FORMATTED="'UNKNOWN_TABNAME'"
+        fi
+    else
+        VALID_TABLES=""
+        NUM_VALID_TABLES=0
+        VALID_TABLES_FORMATTED="'UNKNOWN_TABNAME'"
+    fi
+}
+
+getValidTablesToReorg() {
+    VALID_TABLES_TO_REORG=""
+    VALID_TABLES_TO_REORG_RAW_DATA=""
+    NUM_VALID_TABLES_TO_REORG=0
+
+    # Step 1: Identify all tables in the schema that need reorg via REORGCHK_TB_STATS
+    # Run REORGCHK_TB_STATS first to populate SESSION.TB_STATS, then query it separately.
+    local reorgchk_raw
+    reorgchk_raw=$(db2 -x "call SYSPROC.REORGCHK_TB_STATS('S','$SCHEMANAME_IN')" >/dev/null | db2 -x "select rtrim(TABLE_SCHEMA), rtrim(TABLE_NAME), CARD, OVERFLOW, NPAGES, FPAGES, ACTIVE_BLOCKS, TSIZE, F1, F2, F3, REORG from SESSION.TB_STATS where REORG like '%*%' order by TABLE_SCHEMA,TABLE_NAME with UR" 2>/dev/null | awk '{ if (NF == 12) print $0 }' | sed 's/ \+/ /g' )
+    if [[ -z "$reorgchk_raw" ]]; then
+        return
+    fi
+
+    # Step 2: For each candidate table returned by reorgchk, validate its size
+    getValidTableSizes "$SCHEMANAME_IN" ""
+
+    while IFS= read -r row; do
+        local tab
+        tab=$(echo "$row" | awk '{print $2}')
+        if echo "$VALID_TABLES" | grep -qw "$tab"; then
+            if [[ -z "$VALID_TABLES_TO_REORG_RAW_DATA" ]]; then
+                VALID_TABLES_TO_REORG_RAW_DATA="$row"
+            else
+                VALID_TABLES_TO_REORG_RAW_DATA="${VALID_TABLES_TO_REORG_RAW_DATA}"$'\n'"$row"
+            fi
+        fi
+    done <<< "$reorgchk_raw"
+
+    if [[ -n "$VALID_TABLES_TO_REORG_RAW_DATA" ]]; then
+        VALID_TABLES_TO_REORG_RAW_DATA=$(echo "$VALID_TABLES_TO_REORG_RAW_DATA" | sort -k12 -r)
+        VALID_TABLES_TO_REORG=$(echo "$VALID_TABLES_TO_REORG_RAW_DATA" | awk '{print $2}')
+        NUM_VALID_TABLES_TO_REORG=$(echo "$VALID_TABLES_TO_REORG" | grep -c -v '^[[:space:]]*$')
+    fi
+}
+
+getValidIndexesToReorg() {
+    VALID_INDEXES_TO_REORG=""
+    VALID_INDEXES_TO_REORG_RAW_DATA=""
+    NUM_VALID_INDEXES_TO_REORG=0
+
+    # Step 1: Identify all indexes in the schema that need reorg via REORGCHK_IX_STATS
+    # Run REORGCHK_IX_STATS first to populate SESSION.IX_STATS, then query it separately.
+    local reorgchk_raw
+    reorgchk_raw=$(db2 -x "call SYSPROC.REORGCHK_IX_STATS('S','$SCHEMANAME_IN')" >/dev/null | db2 -x "select rtrim(TABLE_SCHEMA), rtrim(TABLE_NAME), rtrim(INDEX_SCHEMA), rtrim(INDEX_NAME), INDCARD, NLEAF, NUM_EMPTY_LEAFS, NLEVELS, NUMRIDS_DELETED, FULLKEYCARD, LEAF_RECSIZE, NONLEAF_RECSIZE, LEAF_PAGE_OVERHEAD, NONLEAF_PAGE_OVERHEAD, PCT_PAGES_SAVED, F4, F5, F6, F7, F8, REORG from SESSION.IX_STATS where REORG like '%*%' order by INDEX_SCHEMA, INDEX_NAME with UR" 2>/dev/null | awk '{ if (NF == 21) print $0 }' | sed 's/ \+/ /g' )
+
+    if [[ -z "$reorgchk_raw" ]]; then
+        return
+    fi
+
+    # Step 2: For each candidate index returned by reorgchk, validate its base table size
+    getValidTableSizes "$SCHEMANAME_IN" ""
+
+    while IFS= read -r row; do
+        local tab
+        tab=$(echo "$row" | awk '{print $2}')
+        if echo "$VALID_TABLES" | grep -qw "$tab"; then
+            if [[ -z "$VALID_INDEXES_TO_REORG_RAW_DATA" ]]; then
+                VALID_INDEXES_TO_REORG_RAW_DATA="$row"
+            else
+                VALID_INDEXES_TO_REORG_RAW_DATA="${VALID_INDEXES_TO_REORG_RAW_DATA}"$'\n'"$row"
+            fi
+        fi
+    done <<< "$reorgchk_raw"
+
+    if [[ -n "$VALID_INDEXES_TO_REORG_RAW_DATA" ]]; then
+        VALID_INDEXES_TO_REORG_RAW_DATA=$(echo "$VALID_INDEXES_TO_REORG_RAW_DATA" | sort -k21 -r)
+        VALID_INDEXES_TO_REORG=$(echo "$VALID_INDEXES_TO_REORG_RAW_DATA" | awk '{print $1"."$2"."$3"."$4}')
+        NUM_VALID_INDEXES_TO_REORG=$(echo "$VALID_INDEXES_TO_REORG" | grep -c -v '^[[:space:]]*$')
+    fi
+}
+
+getValidFragmentedIndexes() {
+    getValidTableSizes "$SCHEMANAME_IN" ""
+
+    VALID_FRAGMENTED_INDEXES_RAW_DATA=$(db2 -x "select rtrim(tabschema)||' '||rtrim(tabname)||' '||rtrim(indschema)||' '||rtrim(indname)
+        ||' '||indcard||' '||stats_time||' '||lastused||' '||nleaf||' '||sequential_pages 
+        from syscat.indexes where tabschema='$SCHEMANAME_IN' 
+        and not (nleaf = 1 and sequential_pages = 0) 
+        and not (nleaf = 0 and sequential_pages = 1) 
+        and (nleaf - sequential_pages > 10)
+        and tabname in ( $VALID_TABLES_FORMATTED )
+        order by tabname, indname
+        with ur" 2>/dev/null || true)
+
+    VALID_FRAGMENTED_INDEXES_RAW_DATA=$(echo "${VALID_FRAGMENTED_INDEXES_RAW_DATA}" | sed 's/ *$//g' | grep -v '^[[:space:]]*$' || true)
+    if [[ -n "$VALID_FRAGMENTED_INDEXES_RAW_DATA" ]]; then
+        VALID_FRAGMENTED_INDEXES=$(echo "${VALID_FRAGMENTED_INDEXES_RAW_DATA}" | cut -d' ' -f2 | sort -u)
+        NUM_VALID_FRAGMENTED_INDEXES=$(echo "${VALID_FRAGMENTED_INDEXES}" | grep -c -v '^[[:space:]]*$')
+    else
+        VALID_FRAGMENTED_INDEXES=""
+        NUM_VALID_FRAGMENTED_INDEXES=0
+    fi
+}
+
+isTableWithinSizeLimit() {
+    local schemaname="$1"
+    local tabname="$2"
+
+    local res
+    res=$(db2 -x "select tabname,
+      ( ( sum(DATA_OBJECT_P_SIZE) + sum(INDEX_OBJECT_P_SIZE) + sum(LONG_OBJECT_P_SIZE) + sum(LOB_OBJECT_P_SIZE) + sum(XML_OBJECT_P_SIZE) ) / 1024 ) as TOTAL_TABLE_MB
+      from TABLE(SYSPROC.ADMIN_GET_TAB_INFO('$schemaname', '$tabname')) as t
+      group by tabschema, tabname
+      having ( ( sum(DATA_OBJECT_P_SIZE) + sum(INDEX_OBJECT_P_SIZE) + sum(LONG_OBJECT_P_SIZE) + sum(LOB_OBJECT_P_SIZE) + sum(XML_OBJECT_P_SIZE) ) / 1024 ) < $IGNORE_TABLE_SIZE_THRESHOLD_MAX
+      and ( ( sum(DATA_OBJECT_P_SIZE) + sum(INDEX_OBJECT_P_SIZE) + sum(LONG_OBJECT_P_SIZE) + sum(LOB_OBJECT_P_SIZE) + sum(XML_OBJECT_P_SIZE) ) / 1024 ) > $IGNORE_TABLE_SIZE_THRESHOLD_MIN
+      with ur" 2>/dev/null | grep -v '^[[:space:]]*$' || true)
+
+    [[ -n "$res" ]]
+}
+
+createTableOBJECT_ARRAY() {
+    local tabnames="$1"
+    local object_reorg_table_type="$2"
+    local idx=${#OBJECT_ARRAY[@]}
+    local tid=0
+    local indschema="NULL"
+    local indname="NULL"
+    local lock_count=0
+
+    for tab in $tabnames; do
+        local rc_out
+        rc_out=$(db2 -x "select TABLEID, TBSPACEID from syscat.tables where tabname='$tab' and tabschema='$SCHEMANAME_IN' order by tabschema, tabname " 2>/dev/null || true)
+        local tableid
+        local tbspaceid
+        tableid=$(echo "$rc_out" | awk '{print $1}')
+        tbspaceid=$(echo "$rc_out" | awk '{print $2}')
+        if [[ -n "$tableid" && -n "$tbspaceid" ]]; then
+            OBJECT_ARRAY[idx]="$SCHEMANAME_IN#$tab#$indschema#$indname#$tid#NOTSTARTED#-#-#$tableid#$tbspaceid#$lock_count#$object_reorg_table_type"
+            ((idx++))
+        fi
+    done
+}
+
+createIndexOBJECT_ARRAY() {
+    local indnames="$1"
+    local object_reorg_table_type="$2"
+    local idx=${#OBJECT_ARRAY[@]}
+    local tableid=9999
+    local tbspaceid=9999
+    local lock_count=0
+
+    for ind in $indnames; do
+        local tabschema tabname indschema indname
+        tabschema=$(echo "$ind" | cut -d. -f1)
+        tabname=$(echo "$ind" | cut -d. -f2)
+        indschema=$(echo "$ind" | cut -d. -f3)
+        indname=$(echo "$ind" | cut -d. -f4)
+
+        local rc_out
+        rc_out=$(db2 -x "select IID from syscat.indexes where tabschema = '$tabschema' and tabname = '$tabname' and indschema = '$indschema' and indname = '$indname' order by indschema, indname " 2>/dev/null || true)
+        local iid
+        iid=$(echo "$rc_out" | awk '{print $1}')
+        if [[ -n "$iid" ]]; then
+            OBJECT_ARRAY[idx]="$tabschema#$tabname#$indschema#$indname#$iid#NOTSTARTED#-#-#$tableid#$tbspaceid#$lock_count#$object_reorg_table_type"
+            ((idx++))
+        fi
+    done
+}
+
+listOBJECT_ARRAY() {
+    log 3 "Objects in queue: Total=${#OBJECT_ARRAY[@]} (TB_STATS:${OBJECT_NUM_TB_STATS}, IX_STATS:${OBJECT_NUM_IX_STATS}, IF_STATS:${OBJECT_NUM_IF_STATS})"
+    printf "%-15s %-40s %-15s %-40s %-14s %-20s %-20s %-8s \n" \
+        "TABSCHEMA" "TABNAME" "INDSCHEMA" "INDNAME" "REORG_STATUS" "REORG_START" "REORG_END" "LOCK_COUNT"
+
+    for entry in "${OBJECT_ARRAY[@]}"; do
+        IFS="#" read -r tabschema tabname indschema indname iid reorg_status obj_start obj_end tableid tbspaceid lock_count obj_type <<< "$entry"
+        printf "%-15s %-40s %-15s %-40s %-14s %-20s %-20s %-8s \n" \
+            "$tabschema" "$tabname" "$indschema" "$indname" "$reorg_status" "$obj_start" "$obj_end" "$lock_count"
+    done
+}
+
+getNUM_OBJECT_REORG_TABLE_TYPE_OBJECT_ARRAY() {
+    local target_type="$1"
+    local count=0
+    for entry in "${OBJECT_ARRAY[@]}"; do
+        local obj_type
+        obj_type=$(echo "$entry" | cut -d# -f12)
+        if [[ "$obj_type" -eq "$target_type" ]]; then
+            ((count++))
+        fi
+    done
+    return "$count"
+}
+
+reorgTables() {
+    local num_reorgs_in_progress=0
+    local num_reorgs_kicked_off=0
+    local num_reorgs_completed=0
+    local num_reorgs_stopped=0
+    local num_reorgs_aborted=0
+
+    local reorg_timeout_window_completed=0
+    local reorg_timeout_window_completed_counter=0
+    local if_stats_bypass_sleep=0
+
+    while true; do
+        local now_seconds diff
+        now_seconds=$(date '+%s')
+        diff=$(( now_seconds - REORG_TIMEOUT_WINDOW_START_TIME_SECONDS ))
+
+        # Overflow valve: safety abort if runaway
+        if [[ $diff -ge $(( REORG_TIMEOUT_WINDOW_SECONDS + REORG_TIMEOUT_OVERFLOW_VALVE )) ]]; then
+            log 1 "REORG_TIMEOUT_OVERFLOW_VALVE detected. Aborting reorgs."
+            break
+        fi
+
+        # Maintenance window timeout check
+        if [[ $diff -ge $REORG_TIMEOUT_WINDOW_SECONDS ]]; then
+            reorg_timeout_window_completed=1
+            if [[ $REORG_TIMEOUT_WINDOW_ACTION -eq 1 ]]; then
+                log 3 "Reorg window time exceeded. Action=1 (allow current to complete)."
+                break
+            elif [[ $REORG_TIMEOUT_WINDOW_ACTION -eq 2 ]]; then
+                if [[ $reorg_timeout_window_completed_counter -eq 0 ]]; then
+                    ((reorg_timeout_window_completed_counter++))
+                    log 3 "Reorg window time exceeded. Aborting NOTSTARTED and issuing STOP to STARTED."
+                elif [[ $reorg_timeout_window_completed_counter -eq 1 ]]; then
+                    ((reorg_timeout_window_completed_counter++))
+                elif [[ $reorg_timeout_window_completed_counter -ge 2 ]]; then
+                    log 3 "Breaking out of reorg loop after cleanup."
+                    break
+                fi
+            fi
+        fi
+
+        # Process each object in array
+        for ((ii=0; ii<${#OBJECT_ARRAY[@]}; ii++)); do
+            IFS="#" read -r tabschema tabname indschema indname iid obj_status obj_start obj_end tableid tbspaceid lock_count obj_table_type <<< "${OBJECT_ARRAY[ii]}"
+
+            # Only process matching reorg table type
+            if [[ "$obj_table_type" -ne "$REORG_TABLE_TYPE" ]]; then
+                continue
+            fi
+
+            # Skip completed/stopped/aborted
+            if [[ "$obj_status" =~ ^(COMPLETED|STOPPED|ABORTED)$ ]]; then
+                continue
+            fi
+
+            local is_table=0 is_index=0
+            if [[ "$indschema" == "NULL" && "$indname" == "NULL" ]]; then
+                is_table=1
+            else
+                is_index=1
+            fi
+
+            local live_status="" live_start="" live_end="" percent_complete=0 live_index_status=""
+
+            # Query status for TB_STATS (1) / IX_STATS (2)
+            if [[ $TB_STATS -eq 1 || $IX_STATS -eq 2 ]]; then
+                local snap_raw
+                snap_raw=$(db2 -x "select REORG_STATUS, REORG_COMPLETION, REORG_PHASE, REORG_CURRENT_COUNTER, REORG_MAX_COUNTER, VARCHAR_FORMAT(REORG_START, 'YYYY-MM-DD-HH24:MI:SS'), VARCHAR_FORMAT(REORG_END, 'YYYY-MM-DD-HH24:MI:SS'), REORG_INDEX_ID from table(snap_get_tab_reorg('')) where tabschema='$tabschema' and tabname='$tabname' and REORG_START > TIMESTAMP('$WINDOW_START_TIME_DB2') and REORG_INDEX_ID=$iid" 2>/dev/null || true)
+                
+                if [[ -n "$snap_raw" ]]; then
+                    live_status=$(echo "$snap_raw" | awk '{print $1}')
+                    local cur_counter max_counter
+                    cur_counter=$(echo "$snap_raw" | awk '{print $4}')
+                    max_counter=$(echo "$snap_raw" | awk '{print $5}')
+                    live_start=$(echo "$snap_raw" | awk '{print $6}')
+                    live_end=$(echo "$snap_raw" | awk '{print $7}')
+
+                    if [[ -n "$cur_counter" && -n "$max_counter" && "$max_counter" -gt 0 && "$cur_counter" -gt 0 ]]; then
+                        if [[ "$max_counter" -ge "$cur_counter" ]]; then
+                            percent_complete=$(( cur_counter * 100 / max_counter ))
+                        fi
+                    fi
+                fi
+
+            # Query status for IF_STATS (3)
+            elif [[ $IF_STATS -eq 3 ]]; then
+                local pd_record
+                pd_record=$(db2pd -db "$DBNAME" -reorgs index 2>/dev/null | grep -B1 -A11 -w "^TbspaceID: $tbspaceid" | grep -B1 -A11 -w "TableID: $tableid" || true)
+                if [[ -n "$pd_record" ]]; then
+                    local rec_start
+                    rec_start=$(echo "$pd_record" | grep '^Start Time:' | awk '{ print $3,$4}' || true)
+                    local rec_start_sec=0
+                    if [[ -n "$rec_start" ]]; then
+                        rec_start_sec=$(date -d "$rec_start" '+%s' 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S" "$rec_start" '+%s' 2>/dev/null || echo 0)
+                    fi
+
+                    if [[ $rec_start_sec -ge $IF_STATS_WINDOW_START_TIME_DB2 ]]; then
+                        local raw_status
+                        raw_status=$(echo "$pd_record" | grep '^Status:' | awk '{ $1=""; print $0}' | sed 's/^[ \t]*//;s/[ \t]*$//' || true)
+                        case "$raw_status" in
+                            "In Progress") live_status="STARTED" ;;
+                            "Completed")   live_status="COMPLETED" ;;
+                            "Stopped")     live_status="STOPPED" ;;
+                            *)             live_status="$raw_status" ;;
+                        esac
+                        live_end=$(echo "$pd_record" | grep '^Start Time:' | grep 'End Time:' | awk '{ print $7,$8}' || true)
+                        local ind_status ind_cur
+                        ind_status=$(echo "$pd_record" | grep "Status:" || true)
+                        ind_cur=$(echo "$pd_record" | grep "Cur Index:" || true)
+                        live_index_status=$(printf "%-25s %-10s" "$ind_status" "$ind_cur")
+                    fi
+                fi
+            fi
+
+            # Update state for KICKED_OFF or STARTED tasks
+            if [[ "$obj_status" =~ ^(KICKED_OFF|STARTED)$ ]]; then
+                if [[ -n "$live_status" ]]; then
+                    if [[ "$live_status" =~ ^(STARTED|COMPLETED|STOPPED)$ ]]; then
+                        obj_status="$live_status"
+                        OBJECT_ARRAY[ii]="$tabschema#$tabname#$indschema#$indname#$iid#$obj_status#$live_start#$live_end#$tableid#$tbspaceid#$lock_count#$obj_table_type"
+                    fi
+
+                    if [[ "$live_status" =~ ^(COMPLETED|STOPPED)$ ]]; then
+                        removeTABLE_TABLE_IN_USE_ARRAY "$tabschema.$tabname" || log 1 "Failed to remove $tabschema.$tabname from in-use tracking"
+                        if [[ "$live_status" == "COMPLETED" ]]; then
+                            ((num_reorgs_completed++))
+                        else
+                            ((num_reorgs_stopped++))
+                        fi
+                        ((num_reorgs_in_progress--))
+                    fi
+                fi
+
+            # Kick off reorg for NOTSTARTED objects
+            elif [[ "$obj_status" == "NOTSTARTED" ]]; then
+                # Handle timeout abort
+                if [[ $reorg_timeout_window_completed -eq 1 && $REORG_TIMEOUT_WINDOW_ACTION -eq 2 && $reorg_timeout_window_completed_counter -eq 1 ]]; then
+                    obj_status="ABORTED"
+                    OBJECT_ARRAY[ii]="$tabschema#$tabname#$indschema#$indname#$iid#$obj_status#$obj_start#$obj_end#$tableid#$tbspaceid#$lock_count#$obj_table_type"
+                    ((num_reorgs_aborted++))
+                    continue
+                fi
+
+                # Check if table is already being reorganized
+                if existTABLE_TABLE_IN_USE_ARRAY "$tabschema.$tabname"; then
+                    continue
+                fi
+
+                # Check concurrency limit
+                if [[ $num_reorgs_in_progress -ge $MAX_ASYNC_REORGS_ALLOWED ]]; then
+                    continue
+                fi
+
+                # Check table locks (Abort after 10 failed lock checks)
+                local table_locked
+                table_locked=$(db2 -x "select APPLICATION_HANDLE from TABLE (MON_GET_LOCKS(NULL, -2)) where TBSP_ID=$tbspaceid and TAB_FILE_ID=$tableid and LOCK_OBJECT_TYPE='TABLE' and LOCK_MODE='IX' with ur" 2>/dev/null | grep -v '^[[:space:]]*$' || true)
+                if [[ -n "$table_locked" ]]; then
+                    ((lock_count++))
+                    log 1 "Table $tabschema.$tabname is currently locked (attempt: $lock_count)"
+                    if [[ $lock_count -gt 10 ]]; then
+                        obj_status="ABORTED"
+                        ((num_reorgs_aborted++))
+                        log 1 "Aborting reorg on $tabschema.$tabname due to persistent lock contention."
+                    fi
+                    OBJECT_ARRAY[ii]="$tabschema#$tabname#$indschema#$indname#$iid#$obj_status#$obj_start#$obj_end#$tableid#$tbspaceid#$lock_count#$obj_table_type"
+                    continue
+                fi
+
+                # Check transaction log utilization
+                local log_used pct_used
+                log_used=$(db2 -x "select LOG_UTILIZATION_PERCENT FROM SYSIBMADM.MON_TRANSACTION_LOG_UTILIZATION" 2>/dev/null | tr -d ' ' || true)
+                if [[ -n "$log_used" ]]; then
+                    pct_used=$(echo "$log_used" | awk '{print int($1)}')
+                    if [[ -n "$pct_used" && "$pct_used" -gt "$TRANSACTION_LOG_THRESHOLD_PCT" ]]; then
+                        log 1 "Log utilization is at ${log_used}%, exceeding threshold (${TRANSACTION_LOG_THRESHOLD_PCT}%). Postponing new reorgs."
+                        continue
+                    fi
+                fi
+
+                # Launch reorganization
+                local exec_rc=0
+                if [[ $TB_STATS -eq 1 || $IX_STATS -eq 2 ]]; then
+                    if [[ $is_table -eq 1 ]]; then
+                        log 3 "Launching online table reorg for $tabschema.$tabname"
+                        db2 "reorg table $tabschema.$tabname inplace allow write access" >/dev/null 2>&1
+                        exec_rc=$?
+                    elif [[ $is_index -eq 1 ]]; then
+                        log 3 "Launching online index reorg for $tabschema.$tabname ($indschema.$indname)"
+                        db2 "reorg table $tabschema.$tabname index $indschema.$indname inplace allow write access" >/dev/null 2>&1
+                        exec_rc=$?
+                    fi
+                elif [[ $IF_STATS -eq 3 ]]; then
+                    local tmplog="/tmp/${SCRIPT_NAME}.$tabschema.$tabname.$$.tmp"
+                    log 3 "Launching offline index reorg (allow write access) for $tabschema.$tabname"
+                    db2 -v "reorg indexes all for table $tabschema.$tabname allow write access" > "$tmplog" 2>&1 &
+                    sleep 5
+                    if grep -q '^SQL' "$tmplog" 2>/dev/null; then
+                        log 1 "Failed to initiate reorg on $tabschema.$tabname: $(grep '^SQL' "$tmplog")"
+                        exec_rc=1
+                    else
+                        if grep -q 'DB20000I' "$tmplog" 2>/dev/null; then
+                            if_stats_bypass_sleep=1
+                        fi
+                        exec_rc=0
+                    fi
+                    rm -f "$tmplog"
+                fi
+
+                if [[ $exec_rc -eq 0 ]]; then
+                    obj_status="KICKED_OFF"
+                    addTABLE_TABLE_IN_USE_ARRAY "$tabschema.$tabname"
+                    ((num_reorgs_kicked_off++))
+                    ((num_reorgs_in_progress++))
+                else
+                    obj_status="ABORTED"
+                    ((num_reorgs_aborted++))
+                fi
+
+                OBJECT_ARRAY[ii]="$tabschema#$tabname#$indschema#$indname#$iid#$obj_status#$obj_start#$obj_end#$tableid#$tbspaceid#$lock_count#$obj_table_type"
+                continue
+            fi
+
+            # Log current running status
+            local status_summary="${num_reorgs_in_progress}:${num_reorgs_kicked_off}:${num_reorgs_aborted}:${num_reorgs_stopped}:${num_reorgs_completed}:${NUM_REORG_OBJECTS}"
+            if [[ $TB_STATS -eq 1 || $IX_STATS -eq 2 ]]; then
+                printf "%-15s %-45s %-15s COMPLETION: %d%%\n" "$status_summary" "$tabschema.$tabname" "$obj_status" "$percent_complete" | tee -a "$REORG_TABLE_INDEX_DEBUG"
+            elif [[ $IF_STATS -eq 3 ]]; then
+                printf "%-15s %-45s %-25s\n" "$status_summary" "$tabschema.$tabname" "$live_index_status" | tee -a "$REORG_TABLE_INDEX_DEBUG"
+            fi
+
+            # Handle timeout stop for running reorgs
+            if [[ $TB_STATS -eq 1 || $IX_STATS -eq 2 ]]; then
+                if [[ "$obj_status" == "STARTED" && $reorg_timeout_window_completed -eq 1 && $REORG_TIMEOUT_WINDOW_ACTION -eq 2 && $reorg_timeout_window_completed_counter -eq 1 ]]; then
+                    if [[ $is_table -eq 1 ]]; then
+                        db2 -v "reorg table $tabschema.$tabname inplace stop" >/dev/null 2>&1 || true
+                    elif [[ $is_index -eq 1 ]]; then
+                        db2 -v "reorg table $tabschema.$tabname index $indschema.$indname inplace stop" >/dev/null 2>&1 || true
+                    fi
+                fi
+            fi
+
+        done # end for OBJECT_ARRAY
+
+        # Check termination condition
+        if [[ $(( num_reorgs_completed + num_reorgs_stopped + num_reorgs_aborted )) -ge $NUM_REORG_OBJECTS ]]; then
+            log 3 "Reorg Summary -> Completed: $num_reorgs_completed | Stopped: $num_reorgs_stopped | Aborted: $num_reorgs_aborted | Total: $NUM_REORG_OBJECTS"
+            break
+        fi
+
+        # Sleep interval between polls
+        if [[ $REORG_TABLE_TYPE -eq 3 && $if_stats_bypass_sleep -eq 1 ]]; then
+            sleep 1
+            if_stats_bypass_sleep=0
+        else
+            sleep "$SLEEP_INTERVAL_TIME"
+        fi
+
+    done
+}
+
+# ------------------------------------------------------------------------------
+# Script Pre-checks
+# ------------------------------------------------------------------------------
+
+# Root execution prevention
+if [[ "$WHOAMI_VAL" == "root" ]]; then
+    echo "Error: This script must be run as the DB2 instance owner, not root." >&2
+    exit 1
 fi
 
-##
-## command line arguments
-##
-while [ $# -gt 0 ]
-do
-   case $1 in
-      -h|-H|-help|--help) UsageHelp; exit 1 ;;
+# Concurrency lock check
+running_instances=$(pgrep -f "${SCRIPT_NAME}" | grep -v "$$" | wc -l)
+if [[ $running_instances -gt 1 ]]; then
+    echo "Warning: Another instance of ${SCRIPT_NAME} is already running." >&2
+    exit 1
+fi
 
-         -db|-d)   shift; [ ! -z $1 ] && DBNAME=$( echo $1 | tr '[a-z]' '[A-Z]' ) || { echo "Error: Must enter an argument for this option"; UsageHelp; exit 1 ; } ;;   
-             -s)   shift; [ ! -z $1 ] && SCHEMANAME_IN=$( echo $1 | tr '[a-z]' '[A-Z]' ) || { echo "Error: Must enter an argument for this option"; UsageHelp; exit 1 ; } ;;
-        	 -t)   shift; [ ! -z "$1" ] && TABLE_IN=$( echo "$1" | tr '[a-z]' '[A-Z]' ) || { echo "Error: Must enter an argument for this option"; UsageHelp; exit 1 ; } ;;
-      -tb_stats)   REORGCHK_TB_IF_STATS_OPTION+=$REORGCHK_TB_STATS; TB_STATS=1 ;;
-        	-ti)   shift; [ ! -z "$1" ] && INDEX_IN=$( echo "$1" | tr '[a-z]' '[A-Z]' ) || { echo "Error: Must enter an argument for this option"; UsageHelp; exit 1 ; } ;;   
-      -ix_stats)   IX_STATS=2 ;;
-      -if_stats)   REORGCHK_TB_IF_STATS_OPTION+=$REORGCHK_IF_STATS; IF_STATS=3 ;;
-          -ittx)   shift; isNumeric $1 && { IGNORE_TABLE_SIZE_THRESHOLD_MAX=$1; } || { echo "Error: Must enter an numeric argument for this option"; UsageHelp; exit 1 ; } ;;
-          -ittn)   shift; isNumeric $1 && { IGNORE_TABLE_SIZE_THRESHOLD_MIN=$1; } || { echo "Error: Must enter an numeric argument for this option"; UsageHelp; exit 1 ; } ;;
-
-             -l)   LIST_ONLY=1 ;;
-            -lf)   LIST_FRAGMENTED_INDEXES=1 ;;
-            -ls)   LIST_VALID_TABLE_SIZES=1 ;;
-            -lt)   LIST_REORGCHK_TB_STATS_TABLES=1 ;;
-            -li)   LIST_REORGCHK_IX_STATS_TABLES=1 ;;
-
-        -window)   shift; isNumeric $1 && { MAINTENANCE_TIMEOUT_WINDOW_MINUTES=$1; } || { echo "Error: Must enter an numeric argument for this option"; UsageHelp; exit 1 ; } ;;
-           -twa)   shift; isNumeric $1 && { REORG_TIMEOUT_WINDOW_ACTION=$1; } || { echo "Error: Must enter an numeric argument for this option"; UsageHelp; exit 1 ; } ;;
-           -mar)   shift; isNumeric $1 && { MAX_ASYNC_REORGS_ALLOWED=$1; } || { echo "Error: Must enter an numeric argument for this option"; UsageHelp; exit 1 ; } ;;
-           -log)   shift; isNumeric $1 && { TRANSACTION_LOG_THRESHOLD_PCT=$1; } || { echo "Error: Must enter an numeric argument for this option"; UsageHelp; exit 1 ; } ;;
-            -tr)   EXECUTE_TABLE_REORG=1 ;;
-
-          -trsi)   TRSI=1 ;;
-         -reorg)   shift; [ ! -z "$1" ] && REORG=$( echo "$1" ) || { echo "Error: Must enter an argument for this option"; UsageHelp; exit 1 ; } ;;   
-        -ignore)   shift; [ ! -z "$1" ] && { IGNORE_TABLES="$1"; } || { echo "Error: Must enter an argument for this option"; UsageHelp; exit 1 ; } ;;
-         -sleep)   shift; isNumeric $1 && { SLEEP_INTERVAL_TIME=$1; } || { echo "Error: Must enter an numeric argument for this option"; UsageHelp; exit 1 ; } ;;
-
-            (-*)   echo "$0: error - unrecognized option $1" 1>&2; exit 1;;
-             (*)   break;;
-   esac
+# ------------------------------------------------------------------------------
+# Argument Parsing
+# ------------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|-H|-help|--help)
+            UsageHelp
+            exit 0
+            ;;
+        -db|-d)
+            shift
+            [[ -n "${1:-}" ]] && DBNAME="$(echo "$1" | tr '[:lower:]' '[:upper:]')" || { echo "Error: -db requires an argument"; UsageHelp; exit 1; }
+            ;;
+        -s)
+            shift
+            [[ -n "${1:-}" ]] && SCHEMANAME_IN="$(echo "$1" | tr '[:lower:]' '[:upper:]')" || { echo "Error: -s requires an argument"; UsageHelp; exit 1; }
+            ;;
+        -t)
+            shift
+            [[ -n "${1:-}" ]] && TABLE_IN="$(echo "$1" | tr '[:lower:]' '[:upper:]')" || { echo "Error: -t requires an argument"; UsageHelp; exit 1; }
+            ;;
+        -tb_stats)
+            REORGCHK_TB_IF_STATS_OPTION+="$REORGCHK_TB_STATS_FLAG"
+            TB_STATS=1
+            ;;
+        -ti)
+            shift
+            [[ -n "${1:-}" ]] && INDEX_IN="$(echo "$1" | tr '[:lower:]' '[:upper:]')" || { echo "Error: -ti requires an argument"; UsageHelp; exit 1; }
+            ;;
+        -ix_stats)
+            IX_STATS=2
+            ;;
+        -if_stats)
+            REORGCHK_TB_IF_STATS_OPTION+="$REORGCHK_IF_STATS_FLAG"
+            IF_STATS=3
+            ;;
+        -ittx)
+            shift
+            if isNumeric "${1:-}"; then
+                IGNORE_TABLE_SIZE_THRESHOLD_MAX="$1"
+            else
+                echo "Error: -ittx requires a numeric argument"; UsageHelp; exit 1
+            fi
+            ;;
+        -ittn)
+            shift
+            if isNumeric "${1:-}"; then
+                IGNORE_TABLE_SIZE_THRESHOLD_MIN="$1"
+            else
+                echo "Error: -ittn requires a numeric argument"; UsageHelp; exit 1
+            fi
+            ;;
+        -l)
+            LIST_ONLY=1
+            ;;
+        -lf)
+            LIST_FRAGMENTED_INDEXES=1
+            ;;
+        -ls)
+            LIST_VALID_TABLE_SIZES=1
+            ;;
+        -lt)
+            LIST_REORGCHK_TB_STATS_TABLES=1
+            ;;
+        -li)
+            LIST_REORGCHK_IX_STATS_TABLES=1
+            ;;
+        -window)
+            shift
+            if isNumeric "${1:-}"; then
+                MAINTENANCE_TIMEOUT_WINDOW_MINUTES="$1"
+            else
+                echo "Error: -window requires a numeric argument"; UsageHelp; exit 1
+            fi
+            ;;
+        -twa)
+            shift
+            if isNumeric "${1:-}"; then
+                REORG_TIMEOUT_WINDOW_ACTION="$1"
+            else
+                echo "Error: -twa requires a numeric argument"; UsageHelp; exit 1
+            fi
+            ;;
+        -mar)
+            shift
+            if isNumeric "${1:-}"; then
+                MAX_ASYNC_REORGS_ALLOWED="$1"
+            else
+                echo "Error: -mar requires a numeric argument"; UsageHelp; exit 1
+            fi
+            ;;
+        -log)
+            shift
+            if isNumeric "${1:-}"; then
+                TRANSACTION_LOG_THRESHOLD_PCT="$1"
+            else
+                echo "Error: -log requires a numeric argument"; UsageHelp; exit 1
+            fi
+            ;;
+        -tr)
+            EXECUTE_TABLE_REORG=1
+            ;;
+        -trsi)
+            TRSI=1
+            ;;
+        -reorg)
+            shift
+            [[ -n "${1:-}" ]] && REORG="$1" || { echo "Error: -reorg requires an argument"; UsageHelp; exit 1; }
+            ;;
+        -ignore)
+            shift
+            [[ -n "${1:-}" ]] && IGNORE_TABLES="$1" || { echo "Error: -ignore requires an argument"; UsageHelp; exit 1; }
+            ;;
+        -sleep)
+            shift
+            if isNumeric "${1:-}"; then
+                SLEEP_INTERVAL_TIME="$1"
+            else
+                echo "Error: -sleep requires a numeric argument"; UsageHelp; exit 1
+            fi
+            ;;
+        -*)
+            echo "Error: Unrecognized option '$1'" >&2
+            UsageHelp
+            exit 1
+            ;;
+        *)
+            break
+            ;;
+    esac
     shift
 done
 
-##
-## some verification
-##
-if [[ -z "$DBNAME" && -z "$SCHEMANAME_IN" ]]; then 
-   log 0 "Please provide Database Name and Schema Name "
-   exit 1
-
-fi
-: '
-if [ -z "$SCHEMANAME_IN" ]; then
-   log 0 "must enter a schemaname"
-   exit 1
-fi
-'
-CHECK=1
-if [ $CHECK -eq 0 ]; then 
-   rc=0
-   if [ $TB_STATS -eq 1 ] && [ $IX_STATS -eq 2 -o $IF_STATS -eq 3 ]; then
-      rc=1;
-   elif [ $IX_STATS -eq 2 ] && [ $TB_STATS -eq 1 -o $IF_STATS -eq 3 ]; then
-      rc=1;
-   elif [ $IF_STATS -eq 3 ] && [ $TB_STATS -eq 1 -o $IX_STATS -eq 2 ]; then 
-      rc=1;
-   fi
-   if [ $rc -eq 1 ]; then
-      log 0 "can't define more than one of -tb_stats, -ix_stats or -if_stats"
-      exit 1
-   fi
-
-fi ## CHECK
-
-if [ $TB_STATS -eq 1 ] && [ ! -z "$INDEX_IN" ]; then
-   log 0 "can't define -ti with -tb_stats"
-   exit 1
-elif [ $IX_STATS -eq 2 ] && [ ! -z "$TABLE_IN" ]; then
-   log 0 "can't define -t with -ix_stats"
-   exit 1
-elif [ $IF_STATS -eq 3 ] && [ ! -z "$INDEX_IN" ]; then
-   log 0 "can't define -ti with -if_stats"
-   exit 1
+# ------------------------------------------------------------------------------
+# Input Validations
+# ------------------------------------------------------------------------------
+if [[ -z "$DBNAME" ]]; then
+    log 0 "Database name (-db) is required."
+    exit 1
 fi
 
-if [ $TRANSACTION_LOG_THRESHOLD_PCT -gt 99 ]; then
-   log 0 "-log option should be less than 100, TRANSACTION_LOG_THRESHOLD_PCT=$TRANSACTION_LOG_THRESHOLD_PCT"
-   exit 1
-fi
-if [ $IGNORE_TABLE_SIZE_THRESHOLD_MIN -ge $IGNORE_TABLE_SIZE_THRESHOLD_MAX ]; then
-   log 0 "option -ittx should be greater than option -ittn"
-   exit 1
+if [[ $TRSI -eq 0 && -z "$SCHEMANAME_IN" ]]; then
+    log 0 "Schema name (-s) is required."
+    exit 1
 fi
 
-## override some defaults for offline reorgs
-#if [ $IF_STATS -eq 3 ]; then
-#   MAX_ASYNC_REORGS_ALLOWED=1;
-#   REORG_TIMEOUT_WINDOW_ACTION=1;
-#   ## make SLEEP_INTERVAL_TIME 1/3 for IF_STATS
-#   SLEEP_INTERVAL_TIME=$( echo $SLEEP_INTERVAL_TIME | awk '{ print $1/3 }');
-#fi
+if [[ $TB_STATS -eq 1 && -n "$INDEX_IN" ]]; then
+    log 0 "Cannot define -ti with -tb_stats."
+    exit 1
+fi
 
-## fixup REORG filter string for grep
-REORG=$( echo "$REORG" | sed 's/*/\\*/g' | sed 's/-/\\-/g');
+if [[ $IX_STATS -eq 2 && -n "$TABLE_IN" ]]; then
+    log 0 "Cannot define -t with -ix_stats."
+    exit 1
+fi
 
-## need to transform to seconds - easier to work with
-## 3/4 time is for reorgs , 1/4 for runstats
+if [[ $IF_STATS -eq 3 && -n "$INDEX_IN" ]]; then
+    log 0 "Cannot define -ti with -if_stats."
+    exit 1
+fi
+
+if [[ $TRANSACTION_LOG_THRESHOLD_PCT -ge 100 ]]; then
+    log 0 "Option -log must be less than 100% (currently: $TRANSACTION_LOG_THRESHOLD_PCT)."
+    exit 1
+fi
+
+if [[ $IGNORE_TABLE_SIZE_THRESHOLD_MIN -ge $IGNORE_TABLE_SIZE_THRESHOLD_MAX ]]; then
+    log 0 "Option -ittx ($IGNORE_TABLE_SIZE_THRESHOLD_MAX MB) must be greater than -ittn ($IGNORE_TABLE_SIZE_THRESHOLD_MIN MB)."
+    exit 1
+fi
+
+# Format REORG filter string for regex
+REORG_REGEX=$(echo "$REORG" | sed 's/*/\\*/g; s/-/\\-/g')
+
+# Calculate maintenance time windows
 MAINTENANCE_TIMEOUT_WINDOW_SECONDS=$(( 60 * MAINTENANCE_TIMEOUT_WINDOW_MINUTES ))
-REORG_TIMEOUT_WINDOW_SECONDS=$( echo $MAINTENANCE_TIMEOUT_WINDOW_SECONDS | awk '{ print int(0.75*$1) }');
-RUNSTATS_TIMEOUT_WINDOW_SECONDS=$( echo $MAINTENANCE_TIMEOUT_WINDOW_SECONDS | awk '{ print int(0.25*$1) }');
+REORG_TIMEOUT_WINDOW_SECONDS=$(( MAINTENANCE_TIMEOUT_WINDOW_SECONDS * 3 / 4 ))
+RUNSTATS_TIMEOUT_WINDOW_SECONDS=$(( MAINTENANCE_TIMEOUT_WINDOW_SECONDS * 1 / 4 ))
+REORG_TIMEOUT_OVERFLOW_VALVE=300
 
-# echo "$MAINTENANCE_TIMEOUT_WINDOW_SECONDS $REORG_TIMEOUT_WINDOW_SECONDS $RUNSTATS_TIMEOUT_WINDOW_SECONDS"
+# ------------------------------------------------------------------------------
+# Main Process
+# ------------------------------------------------------------------------------
+log 3 "Starting ${SCRIPT_NAME} at $(date) on ${HOSTNAME_VAL}"
 
-##
-## main
-##
-log 3 "Starting $0 at $(date) on $HOSTNAME"
+# Check HADR Role
+ROLE=$(db2 -x "get db cfg for $DBNAME" 2>/dev/null | grep 'HADR database role' | cut -d '=' -f2 | tr -d ' ' || true)
+if [[ -n "$ROLE" && "$ROLE" == "STANDBY" ]]; then
+    log 0 "Database $DBNAME has HADR role '$ROLE'. Cannot execute reorganizations on a STANDBY node."
+    exit 1
+fi
 
-#DBNAMES=$( db2 list db directory | grep -E "alias|Indirect" | grep -B 1 Indirect | grep alias | awk '{print $4}' | sort )
+log 3 "Target Database :: $DBNAME"
+db2 connect to "$DBNAME" >/dev/null 2>&1
+if [[ $? -ne 0 ]]; then
+    log 0 "Failed to connect to database $DBNAME"
+    exit 1
+fi
 
-##
-## loops for all dbs
-##
-#for DBNAME in $DBNAMES
-#do
+# Handle TRSI snapshot request
+if [[ $TRSI -eq 1 ]]; then
+    TRSI
+    exit 0
+fi
 
-   ## just process the one db
-#   if [ ! -z "$DB" ] && [ "$DB" != "$DBNAME" ] ; then
-#      continue
-#   fi
-#   DBNAME=${DB}
-   ## can't run script on a STANDBY db
-   ROLE=$(db2 "get db cfg for $DBNAME" | grep 'HADR database role' | cut -d '=' -f2 | sed 's/ *//g')
-   if [ -z "$ROLE" ] || [ "$ROLE" == "" ]; then
-      log 1 " Can't determine hadr database role from 'db2 get db cfg for $DBNAME'"
-      continue
-   elif [ "$ROLE" == "STANDBY" ]; then
-      log 1 " Can't run script '${0}' for $DBNAME with hadr database role '$ROLE'"
-      continue
-   fi
+# Handle List Options
+if [[ $LIST_VALID_TABLE_SIZES -eq 1 ]]; then
+    getValidTableSizes "$SCHEMANAME_IN" ""
+    log 3 "Found $NUM_VALID_TABLES valid tables in range [${IGNORE_TABLE_SIZE_THRESHOLD_MIN} MB - ${IGNORE_TABLE_SIZE_THRESHOLD_MAX} MB]:\n$VALID_TABLE_SIZES_RAW_DATA"
+    exit 0
+fi
 
-   log 3 "DBNAME  :: $DBNAME"
+if [[ $LIST_FRAGMENTED_INDEXES -eq 1 ]]; then
+    getValidFragmentedIndexes
+    header="TABSCHEMA TABNAME INDSCHEMA INDNAME INDCARD STATS_TIME LAST_USED NLEAF SEQUENTIAL_PAGES"
+    log 3 "Found $NUM_VALID_FRAGMENTED_INDEXES fragmented index entries:\n$header\n$VALID_FRAGMENTED_INDEXES_RAW_DATA"
+    exit 0
+fi
 
-   db2 connect to $DBNAME >> /dev/null 2>&1
-   rc=$?
-   if [ $rc -ne 0 ]; then
-      log 0 " can't connect to $DBNAME"
-      continue   
-   fi
+if [[ $LIST_REORGCHK_TB_STATS_TABLES -eq 1 ]]; then
+    getValidTablesToReorg
+    header="TABLE_SCHEMA TABLE_NAME CARD OVERFLOW NPAGES FPAGES ACTIVE_BLOCKS TSIZE F1 F2 F3 REORG"
+    log 3 "Found $NUM_VALID_TABLES_TO_REORG tables needing reorg via REORGCHK_TB_STATS:\n$header\n$VALID_TABLES_TO_REORG_RAW_DATA"
+    exit 0
+fi
 
-   if [ $TRSI -eq 1 ]; then 
-      TRSI
-      continue
+if [[ $LIST_REORGCHK_IX_STATS_TABLES -eq 1 ]]; then
+    getValidIndexesToReorg
+    header="TABLE_SCHEMA TABLE_NAME INDEX_SCHEMA INDEX_NAME INDCARD NLEAF NUM_EMPTY_LEAFS NLEVELS NUMRIDS_DELETED FULLKEYCARD LEAF_RECSIZE NONLEAF_RECSIZE LEAF_PAGE_OVERHEAD NONLEAF_PAGE_OVERHEAD PCT_PAGES_SAVED F4 F5 F6 F7 F8 REORG"
+    log 3 "Found $NUM_VALID_INDEXES_TO_REORG indexes needing reorg via REORGCHK_IX_STATS:\n$header\n$VALID_INDEXES_TO_REORG_RAW_DATA"
+    exit 0
+fi
 
-   elif [ $LIST_VALID_TABLE_SIZES -eq 1 ]; then
-      getValidTableSizes
-      log 3 "The following $NUM_VALID_TABLES are valid table sizes within the range $IGNORE_TABLE_SIZE_THRESHOLD_MIN MB and $IGNORE_TABLE_SIZE_THRESHOLD_MAX GB\n$VALID_TABLE_SIZES_RAW_DATA"
-      continue      
+log 3 "Target Schema   :: $SCHEMANAME_IN"
+[[ -n "$TABLE_IN" ]] && log 3 "Target Tables   :: $TABLE_IN"
+[[ -n "$INDEX_IN" ]] && log 3 "Target Indexes  :: $INDEX_IN"
+log 3 "Validating tables/indexes needed for reorgs . . . "
 
-   elif [ $LIST_FRAGMENTED_INDEXES -eq 1 ]; then 
-      getValidFragmentedIndexes
-      VALID_FRAMENTED_INDEXES_HEADER="TABSCHEMA TABNAME INDSCHEMA INDNAME INDCARD STATS_TIME LAST_USED NLEAF SEQUENTIAL_PAGES";
-      log 3 "The following $NUM_VALID_FRAGMENTED_INDEXES are fragmenated indexes based on tables sizes within the range $IGNORE_TABLE_SIZE_THRESHOLD_MIN MB and $IGNORE_TABLE_SIZE_THRESHOLD_MAX GB\n$VALID_FRAMENTED_INDEXES_HEADER\n$VALID_FRAGMENTED_INDEXES_RAW_DATA"
-      continue;   
-   elif [ $LIST_REORGCHK_TB_STATS_TABLES -eq 1 ]; then
-      getValidTablesToReorg
-      REORGCHK_TB_STATS_HEADER="TABLE_SCHEMA TABLE_NAME CARD OVERFLOW NPAGES FPAGES ACTIVE_BLOCKS TSIZE F1 F2 F3 REORG";
-      log 3 "The following $NUM_VALID_TABLES_TO_REORG are results from REORGCHK_TB_STATS based on tables sizes within the range $IGNORE_TABLE_SIZE_THRESHOLD_MIN MB and $IGNORE_TABLE_SIZE_THRESHOLD_MAX GB\n$REORGCHK_TB_STATS_HEADER\n$VALID_TABLES_TO_REORG_RAW_DATA"
-      continue;
+# ------------------------------------------------------------------------------
+# Build Object Queue
+# ------------------------------------------------------------------------------
 
-   elif [ $LIST_REORGCHK_IX_STATS_TABLES -eq 1 ]; then
-      getValidIndexesToReorg
-      REORGCHK_IX_STAT_HEADER="TABLE_SCHEMA TABLE_NAME INDEX_SCHEMA INDEX_NAME INDCARD NLEAF NUM_EMPTY_LEAFS NLEVELS NUMRIDS_DELETED FULLKEYCARD LEAF_RECSIZE NONLEAF_RECSIZE LEAF_PAGE_OVERHEAD NONLEAF_PAGE_OVERHEAD PCT_PAGES_SAVED F4 F5 F6 F7 F8 REORG";
-      log 3 "The following $NUM_VALID_INDEXES_TO_REORG are results from REORGCHK_IX_STATS based on tables sizes within the range $IGNORE_TABLE_SIZE_THRESHOLD_MIN MB and $IGNORE_TABLE_SIZE_THRESHOLD_MAX GB\n$REORGCHK_IX_STAT_HEADER\n$VALID_INDEXES_TO_REORG_RAW_DATA"
-      continue;
+if [[ -n "$TABLE_IN" ]]; then
+    for tbl in $TABLE_IN; do
+        chk=$(db2 -x "select tabname from syscat.tables where tabname = '$tbl' and tabschema = '$SCHEMANAME_IN' and type = 'T'" 2>/dev/null | grep -v '^[[:space:]]*$' || true)
+        if [[ -z "$chk" ]]; then
+            log 0 "Specified table '$tbl' does not exist in schema '$SCHEMANAME_IN'."
+            exit 1
+        fi
+        if ! isTableWithinSizeLimit "$SCHEMANAME_IN" "$tbl"; then
+            log 0 "Table '$tbl' is outside size boundaries (${IGNORE_TABLE_SIZE_THRESHOLD_MIN} MB - ${IGNORE_TABLE_SIZE_THRESHOLD_MAX} MB)."
+            exit 1
+        fi
+    done
 
-   fi
+    if [[ $IF_STATS -eq 3 ]]; then
+        createTableOBJECT_ARRAY "$TABLE_IN" "$IF_STATS"
+    else
+        # Default to online inplace reorg (TB_STATS=1) when -t is given without a reorg-type flag
+        [[ $TB_STATS -ne 1 ]] && TB_STATS=1
+        createTableOBJECT_ARRAY "$TABLE_IN" "$TB_STATS"
+    fi
 
-   INPLACE=1
-   if [ $INPLACE -eq 1 ]; then
+elif [[ ${#REORGCHK_TB_IF_STATS_OPTION} -eq 2 ]]; then
+    for ((idx=0; idx<2; idx++)); do
+        opt_char="${REORGCHK_TB_IF_STATS_OPTION:idx:1}"
+        if [[ "$opt_char" == "1" ]]; then
+            getValidTablesToReorg
+            createTableOBJECT_ARRAY "$VALID_TABLES_TO_REORG" "$TB_STATS"
+        elif [[ "$opt_char" == "3" ]]; then
+            getValidFragmentedIndexes
+            createTableOBJECT_ARRAY "$VALID_FRAGMENTED_INDEXES" "$IF_STATS"
+        fi
+    done
 
-      log 3 "SCHEMA  :: $SCHEMANAME_IN"
-      log 3 "TABLES  :: $TABLE_IN"
-      log 3 "INDEXES :: $INDEX_IN"
-      log 3 "Looking for Qualified Tables or Indexes for $SCHEMANAME_IN in $DBNAME . . . "
-      echo ""
+elif [[ $TB_STATS -eq 1 ]]; then
+    getValidTablesToReorg
+    createTableOBJECT_ARRAY "$VALID_TABLES_TO_REORG" "$TB_STATS"
 
-      ##
-      ## input table(s) verification
-      ## verify input table exist
-      ## and table is within size limits
-      ## create the OBJECT_ARRAY that holds the relevant table information
-      ##
-      if [ ! -z "$TABLE_IN" ]; then
+elif [[ $IF_STATS -eq 3 ]]; then
+    getValidFragmentedIndexes
+    createTableOBJECT_ARRAY "$VALID_FRAGMENTED_INDEXES" "$IF_STATS"
+fi
 
-         TABLE_IN=$( echo "$TABLE_IN" | tr ' ' '\n' );
-         for TABNAME in $TABLE_IN
-         do
+if [[ -n "$INDEX_IN" ]]; then
+    for ind in $INDEX_IN; do
+        tschema=$(echo "$ind" | cut -d. -f1)
+        tname=$(echo "$ind" | cut -d. -f2)
+        ischema=$(echo "$ind" | cut -d. -f3)
+        iname=$(echo "$ind" | cut -d. -f4)
 
-            ## make sure table exists
-            RC=$( db2 -x "select tabname from syscat.tables where tabname = '$TABNAME' and tabschema = '$SCHEMANAME_IN' and type = 'T'");
-            rc=$?
-            if [ $rc -ne 0 ]; then
-               log 0 "input command line table '$TABNAME' does not exist or is invalid"
-               exit 1
-            fi
+        chk=$(db2 -x "select indname from syscat.indexes where tabschema = '$tschema' and tabname = '$tname' and indschema = '$ischema' and indname = '$iname'" 2>/dev/null | grep -v '^[[:space:]]*$' || true)
+        if [[ -z "$chk" ]]; then
+            log 0 "Specified index '$ind' does not exist."
+            exit 1
+        fi
+        if ! isTableWithinSizeLimit "$tschema" "$tname"; then
+            log 0 "Base table for index '$ind' is outside size boundaries."
+            exit 1
+        fi
+    done
+    createIndexOBJECT_ARRAY "$INDEX_IN" "$IX_STATS"
 
-            isTableWithinSizeLimit $SCHEMANAME_IN $TABNAME
-            rc=$?
-            if [ $rc -ne 0 ]; then 
-               log 0 "Table $TABNAME is not within the range $IGNORE_TABLE_SIZE_THRESHOLD_MIN MB and $IGNORE_TABLE_SIZE_THRESHOLD_MAX MB"
-               exit 1
-            fi
+elif [[ $IX_STATS -eq 2 ]]; then
+    getValidIndexesToReorg
+    createIndexOBJECT_ARRAY "$VALID_INDEXES_TO_REORG" "$IX_STATS"
+fi
 
-         done
-   
-         if [ $TB_STATS -eq 1 ]; then
-            createTableOBJECT_ARRAY "$TABLE_IN" $TB_STATS
-         elif [ $IF_STATS -eq 3 ]; then
-            createTableOBJECT_ARRAY "$TABLE_IN" $IF_STATS
-         fi
+# Count objects by category
+getNUM_OBJECT_REORG_TABLE_TYPE_OBJECT_ARRAY "$TB_STATS"; OBJECT_NUM_TB_STATS=$?
+getNUM_OBJECT_REORG_TABLE_TYPE_OBJECT_ARRAY "$IX_STATS"; OBJECT_NUM_IX_STATS=$?
+getNUM_OBJECT_REORG_TABLE_TYPE_OBJECT_ARRAY "$IF_STATS"; OBJECT_NUM_IF_STATS=$?
 
-      elif [ ${#REORGCHK_TB_IF_STATS_OPTION} -eq 2 ]; then
-         for REORG_TYPE in 0 1  
-         do
-            if [ "${REORGCHK_TB_IF_STATS_OPTION:$REORG_TYPE:1}" == "1" ]; then 
-               getValidTablesToReorg
-               TABLE_IN="$VALID_TABLES_TO_REORG";
-               createTableOBJECT_ARRAY "$TABLE_IN" $TB_STATS
-            elif [ "${REORGCHK_TB_IF_STATS_OPTION:$REORG_TYPE:1}" == "3" ]; then 
-               getValidFragmentedIndexes
-               TABLE_IN="$VALID_FRAGMENTED_INDEXES"
-               createTableOBJECT_ARRAY "$TABLE_IN" $IF_STATS
-            fi
-         done
+if [[ $LIST_ONLY -eq 1 ]]; then
+    listOBJECT_ARRAY
+    exit 0
+fi
 
-      elif [ $TB_STATS -eq 1 ]; then 
-         getValidTablesToReorg
-         TABLE_IN="$VALID_TABLES_TO_REORG";
-         createTableOBJECT_ARRAY "$TABLE_IN" $TB_STATS
-      elif [ $IF_STATS -eq 3 ]; then 
-         getValidFragmentedIndexes
-         TABLE_IN="$VALID_FRAGMENTED_INDEXES"
-         createTableOBJECT_ARRAY "$TABLE_IN" $IF_STATS
-      fi
+# ------------------------------------------------------------------------------
+# Execution Stage
+# ------------------------------------------------------------------------------
+if [[ $EXECUTE_TABLE_REORG -eq 1 ]]; then
+    listOBJECT_ARRAY
 
-      ## 
-      ## input indexes verification
-      ## verify input indexes exist
-      ##
-      if [ ! -z "$INDEX_IN" ]; then
-         INDEX_IN=$( echo "$INDEX_IN" | tr ' ' '\n' );
-         for INDEX in $INDEX_IN
-         do
-            ## make sure index exists, especially those input on command line
-            TABSCHEMA=$( echo $INDEX | cut -d. -f1);
-            TABNAME=$( echo $INDEX | cut -d. -f2);
-            INDSCHEMA=$( echo $INDEX | cut -d. -f3);
-            INDNAME=$( echo $INDEX | cut -d. -f4);
-            RC=$( db2 -x "select indname from syscat.indexes where tabschema = '$TABSCHEMA' and tabname = '$TABNAME' and indschema = '$INDSCHEMA' and indname = '$INDNAME'");
-            rc=$?
-            if [ $rc -ne 0 ]; then
-               log 0 " input command line index '$INDEX' does not exist"
-               exit 1
-            fi
+    REORG_TIMEOUT_WINDOW_START_TIME_SECONDS=$(date '+%s')
+    WINDOW_START_TIME_DB2=$(date '+%Y-%m-%d-%H.%M.%S')
+    IF_STATS_WINDOW_START_TIME_DB2=$(date '+%s')
+    initTABLE_IN_USE_ARRAY "$MAX_ASYNC_REORGS_ALLOWED"
 
-            isTableWithinSizeLimit $TABSCHEMA $TABNAME
-            rc=$?
-            if [ $rc -ne 0 ]; then 
-               log 0 "Table $TABNAME is not within the range $IGNORE_TABLE_SIZE_THRESHOLD_MIN MB and $IGNORE_TABLE_SIZE_THRESHOLD_MAX MB"
-               exit 1
-            fi
+    MAX_ASYNC_REORGS_ALLOWED_ORIG="$MAX_ASYNC_REORGS_ALLOWED"
+    REORG_TIMEOUT_WINDOW_ACTION_ORIG="$REORG_TIMEOUT_WINDOW_ACTION"
+    SLEEP_INTERVAL_TIME_ORIG="$SLEEP_INTERVAL_TIME"
 
-         done
+    log 3 "Starting reorganizations..."
+    #set -x
 
-         createIndexOBJECT_ARRAY "$INDEX_IN" $IX_STATS;
-      ##
-      ##
-      elif [ $IX_STATS -eq 2 ]; then 
-         getValidIndexesToReorg
-         INDEX_IN="$VALID_INDEXES_TO_REORG"
-         createIndexOBJECT_ARRAY "$INDEX_IN" $IX_STATS;
-      fi
-
-      ## get the NUMBER of tables per reorg table type
-      getNUM_OBJECT_REORG_TABLE_TYPE_OBJECT_ARRAY $TB_STATS; OBJECT_NUM_TB_STATS=$?;
-      getNUM_OBJECT_REORG_TABLE_TYPE_OBJECT_ARRAY $IX_STATS; OBJECT_NUM_IX_STATS=$?;
-      getNUM_OBJECT_REORG_TABLE_TYPE_OBJECT_ARRAY $IF_STATS; OBJECT_NUM_IF_STATS=$?;
-
-      ## just list out the OBJECT_ARRAY and exit
-      if [ $LIST_ONLY -eq 1 ]; then
-
-         #printf "%-15s %-30s %-15s %-30s %-5s %-10s %-25s %-25s %-10s %-10s %-10s %-15s\n" "TABSCHEMA" "TABNAME" "INDSCHEMA" "INDNAME" "IID" "REORG_STATUS" "REORG_START" "REORG_END" "TABLEID" "TBSPACEID" "LOCK_COUNT" "TABLE_TYPE"
-         listOBJECT_ARRAY;
-         exit 1
-      fi
-
-      
-      if [ $EXECUTE_TABLE_REORG -eq 1 ]; then
-
-
-        ## 
-        ## this is the main list of what we are going to reorg
-        ##
-        #echo ""
-        #printf "%-15s %-30s %-15s %-30s %-5s %-10s %-25s %-25s %-10s %-10s %-10s %-15s\n" "TABSCHEMA" "TABNAME" "INDSCHEMA" "INDNAME" "IID" "REORG_STATUS" "REORG_START" "REORG_END" "TABLEID" "TBSPACEID" "LOCK_COUNT" "TABLE_TYPE"
-
-        listOBJECT_ARRAY;
-
-#         exit 1
-
-        ##
-        ## setup some control variables for the main loop
-        ##  
-        ## REORG_STATUS COMPLETED PAUSED STARTED STOPPED TRUNCATE
-        ##
-        MAINTENANCE_TIMEOUT_WINDOW_START_TIME_SECONDS=$( date '+%s' );   
-        REORG_TIMEOUT_WINDOW_START_TIME_SECONDS=$( date '+%s' );
-        WINDOW_START_TIME_DB2=$( date '+%Y-%m-%d-%H.%M.%S' );
-        IF_STATS_WINDOW_START_TIME_DB2=$( date '+%s' );
-        IF_STATS_BYPASS_SLEEP_INTERVAL_TIME=0;
-        NUM_REORG_OBJECTS="${#OBJECT_ARRAY[@]}";
-#         NUM_REORGS_IN_PROGRESS=0;
-#         NUM_REORGS_KICKED_OFF=0;
-#         NUM_REORGS_COMPLETED=0;
-#         NUM_REORGS_STOPPED=0;
-#         NUM_REORGS_ABORTED=0;
-        REORG_TIMEOUT_OVERFLOW_VALVE=300;
-        REORG_TIMEOUT_WINDOW_COMPLETED=0;
-        REORG_TIMEOUT_WINDOW_COMPLETED_COUNTER=0;
-        initTABLE_IN_USE_ARRAY    $MAX_ASYNC_REORGS_ALLOWED
-
-        ## multi table reorg option 
-        ## online table reorg and offline index reorgs have different options
-        MAX_ASYNC_REORGS_ALLOWED_ORG=$MAX_ASYNC_REORGS_ALLOWED;
-        REORG_TIMEOUT_WINDOW_ACTION_ORG=$REORG_TIMEOUT_WINDOW_ACTION;
-        SLEEP_INTERVAL_TIME_ORG=$SLEEP_INTERVAL_TIME;
-
-        ## override some defaults for offline reorgs
-        #if [ $IF_STATS -eq 3 ]; then
-        #   MAX_ASYNC_REORGS_ALLOWED=1;
-        #   REORG_TIMEOUT_WINDOW_ACTION=1;
-        #   ## make SLEEP_INTERVAL_TIME 1/3 for IF_STATS
-        #   SLEEP_INTERVAL_TIME=$( echo $SLEEP_INTERVAL_TIME | awk '{ print $1/3 }');
-        #fi
-
-        echo ""
-        log 3 "Starting reorg of ..."
-
-        if [ ${#REORGCHK_TB_IF_STATS_OPTION} -eq 2 ]; then
-            for REORG_TYPE in 0 1  
-            do
-
-               if [ "${REORGCHK_TB_IF_STATS_OPTION:$REORG_TYPE:1}" == "1" ]; then
-                TB_STATS=1;
-                IF_STATS=0;
-                NUM_REORG_OBJECTS=$OBJECT_NUM_TB_STATS;
-                REORG_TABLE_TYPE=$TB_STATS;
-                MAX_ASYNC_REORGS_ALLOWED=$MAX_ASYNC_REORGS_ALLOWED_ORG;
-                REORG_TIMEOUT_WINDOW_ACTION=$REORG_TIMEOUT_WINDOW_ACTION_ORG;
-                SLEEP_INTERVAL_TIME=$SLEEP_INTERVAL_TIME_ORG;
-
-               elif [ "${REORGCHK_TB_IF_STATS_OPTION:$REORG_TYPE:1}" == "3" ]; then
-                TB_STATS=0;
-                IF_STATS=3;
-                NUM_REORG_OBJECTS=$OBJECT_NUM_IF_STATS;
-                  REORG_TABLE_TYPE=$IF_STATS;
-                  MAX_ASYNC_REORGS_ALLOWED=1;
-                  REORG_TIMEOUT_WINDOW_ACTION=1;
-                  SLEEP_INTERVAL_TIME=$( echo $SLEEP_INTERVAL_TIME_ORG | awk '{ print $1/3 }');
-               fi
-
-               reorgTables      
-            done
-         else
-            if [ $TB_STATS -eq 1 ]; then
-               REORG_TABLE_TYPE=$TB_STATS;
-            elif [ $IX_STATS -eq 2 ]; then
-               REORG_TABLE_TYPE=$IX_STATS;
-            elif [ $IF_STATS -eq 3 ]; then
-               REORG_TABLE_TYPE=$IF_STATS;
+    if [[ ${#REORGCHK_TB_IF_STATS_OPTION} -eq 2 ]]; then
+        for ((idx=0; idx<2; idx++)); do
+            opt_char="${REORGCHK_TB_IF_STATS_OPTION:idx:1}"
+            if [[ "$opt_char" == "1" ]]; then
+                TB_STATS=1
+                IF_STATS=0
+                NUM_REORG_OBJECTS="$OBJECT_NUM_TB_STATS"
+                REORG_TABLE_TYPE="$TB_STATS"
+                MAX_ASYNC_REORGS_ALLOWED="$MAX_ASYNC_REORGS_ALLOWED_ORIG"
+                REORG_TIMEOUT_WINDOW_ACTION="$REORG_TIMEOUT_WINDOW_ACTION_ORIG"
+                SLEEP_INTERVAL_TIME="$SLEEP_INTERVAL_TIME_ORIG"
+            elif [[ "$opt_char" == "3" ]]; then
+                TB_STATS=0
+                IF_STATS=3
+                NUM_REORG_OBJECTS="$OBJECT_NUM_IF_STATS"
+                REORG_TABLE_TYPE="$IF_STATS"
+                MAX_ASYNC_REORGS_ALLOWED=1
+                REORG_TIMEOUT_WINDOW_ACTION=1
+                SLEEP_INTERVAL_TIME=$(( SLEEP_INTERVAL_TIME_ORIG / 3 ))
+                [[ $SLEEP_INTERVAL_TIME -lt 5 ]] && SLEEP_INTERVAL_TIME=5
             fi
             reorgTables
-         fi
-         
-         ## list current state of OBJECT_ARRAY
-         #printf "%-15s %-30s %-15s %-30s %-5s %-10s %-25s %-25s %-10s %-10s %-10s %-15s\n" "TABSCHEMA" "TABNAME" "INDSCHEMA" "INDNAME" "IID" "REORG_STATUS" "REORG_START" "REORG_END" "TABLEID" "TBSPACEID" "LOCK_COUNT" "TABLE_TYPE"
-         listOBJECT_ARRAY;
+        done
+    else
+        if [[ $TB_STATS -eq 1 ]]; then
+            REORG_TABLE_TYPE="$TB_STATS"
+            NUM_REORG_OBJECTS="$OBJECT_NUM_TB_STATS"
+        elif [[ $IX_STATS -eq 2 ]]; then
+            REORG_TABLE_TYPE="$IX_STATS"
+            NUM_REORG_OBJECTS="$OBJECT_NUM_IX_STATS"
+        elif [[ $IF_STATS -eq 3 ]]; then
+            REORG_TABLE_TYPE="$IF_STATS"
+            NUM_REORG_OBJECTS="$OBJECT_NUM_IF_STATS"
+        fi
+        reorgTables
+    fi
 
-         ##
-         ## now do runstats
-         ##
-         log 3 "Starting runstats of ..."
-         RUNSTATS_TIMEOUT_WINDOW_START_TIME_SECONDS=$( date '+%s' );
+    listOBJECT_ARRAY
 
-         for((ii=0; ii< ${#OBJECT_ARRAY[@]}; ii++))
-         do
+    # --------------------------------------------------------------------------
+    # Post-Reorg RUNSTATS Stage
+    # --------------------------------------------------------------------------
+    log 3 "Starting post-reorganization RUNSTATS..."
+    for entry in "${OBJECT_ARRAY[@]}"; do
+        now_sec=$(date '+%s')
+        diff_sec=$(( now_sec - REORG_TIMEOUT_WINDOW_START_TIME_SECONDS ))
+        if [[ $diff_sec -ge $(( REORG_TIMEOUT_WINDOW_SECONDS + RUNSTATS_TIMEOUT_WINDOW_SECONDS )) ]]; then
+            log 3 "Maintenance window expired. Halting RUNSTATS."
+            break
+        fi
 
-            ## check runstats window maintenance time
-            MAINTENANCE_TIMEOUT_WINDOW_TIME_NOW_SECONDS=$( date '+%s' );
-            DIFF=$(( MAINTENANCE_TIMEOUT_WINDOW_TIME_NOW_SECONDS - REORG_TIMEOUT_WINDOW_START_TIME_SECONDS ));
-            if [ $DIFF -ge $(( REORG_TIMEOUT_WINDOW_SECONDS + RUNSTATS_TIMEOUT_WINDOW_SECONDS)) ]; then
-               #log 3 "$REORG_TIMEOUT_WINDOW_START_TIME_SECONDS $MAINTENANCE_TIMEOUT_WINDOW_TIME_NOW_SECONDS $REORG_TIMEOUT_WINDOW_SECONDS $RUNSTATS_TIMEOUT_WINDOW_SECONDS $DIFF"               
-               log 3 "Runstats window ending, runstats window time exceeded"
-               break
+        IFS="#" read -r t_schema t_name i_schema i_name iid r_status r_start r_end tbl_id tbsp_id l_count o_type <<< "$entry"
+
+        if [[ "$r_status" == "COMPLETED" ]]; then
+            stats_chk=$(db2 -x "select stats_time from syscat.tables where tabschema='$t_schema' and tabname='$t_name' and stats_time < TIMESTAMP('$WINDOW_START_TIME_DB2')" 2>/dev/null | grep -v '^[[:space:]]*$' || true)
+            if [[ -n "$stats_chk" ]]; then
+                log 3 "Executing RUNSTATS on ${t_schema}.${t_name}..."
+                db2 -v "runstats on table ${t_schema}.${t_name} ON ALL COLUMNS WITH DISTRIBUTION ON ALL COLUMNS AND DETAILED INDEXES ALL ALLOW WRITE ACCESS" >/dev/null 2>&1
+                log 3 "Completed RUNSTATS on ${t_schema}.${t_name}"
             fi
+        fi
+    done
+fi
 
-            ## get table info
-            TABSCHEMA=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f1 );
-            TABNAME=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f2 );
-            INDSCHEMA=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f3 );
-            INDNAME=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f4 );
-            IID=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f5 );
-            OBJECT_REORG_STATUS=$( echo ${OBJECT_ARRAY[$ii]} | cut -d# -f6 );
-
-            ## only do a runstats if table/index has completed
-            ## verify stats time so we dont kick off another runstats on the same table
-            if [ "$OBJECT_REORG_STATUS" == "COMPLETED" ]; then 
-               STATS_TIME=$( db2 -x "select stats_time from syscat.tables where tabschema='$TABSCHEMA' and tabname='$TABNAME' and stats_time < TIMESTAMP('$WINDOW_START_TIME_DB2') " );
-               rc=$?
-               if [ $rc -eq 0 ]; then   
-                  log 3 "Starting runstats on $TABSCHEMA.$TABNAME"
-                  # db2 -v "runstats on table $TABSCHEMA.$TABNAME WITH DISTRIBUTION ON ALL COLUMNS AND SAMPLED DETAILED INDEXES ALL ALLOW WRITE ACCESS";
-                  #db2 -v "runstats on table $TABSCHEMA.$TABNAME WITH DISTRIBUTION ON KEY COLUMNS AND SAMPLED DETAILED INDEXES ALL ALLOW WRITE ACCESS UTIL_IMPACT_PRIORITY 50" > /dev/null 2>&1
-                  db2 -v "runstats on table $TABSCHEMA.$TABNAME ON ALL COLUMNS WITH DISTRIBUTION ON ALL COLUMNS AND DETAILED INDEXES ALL ALLOW WRITE ACCESS " > /dev/null 2>&1
-                  log 3 "Finished runstats on $TABSCHEMA.$TABNAME"
-               fi
-            fi
-
-         done
-
-      fi    ## EXECUTE_TABLE_REORG
-
-   fi   ## INPLACE
-
-#done ## DBNAMES
-
-##
-## cleanup
-##
-
-log 3 "Completed $0 at $(date)"
+log 3 "Completed ${SCRIPT_NAME} at $(date)"
 exit 0
+

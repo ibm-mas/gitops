@@ -1,3 +1,6 @@
+
+
+{{- $is540 := not (lt (semver "5.4.0" | (semver (.Values.cpd_product_version | default "0.0.0" | toString)).Compare) 0) }}
 ---
 kind: ServiceAccount
 apiVersion: v1
@@ -243,7 +246,9 @@ rules:
       - jobs
       - subscriptions
       - clusterserviceversions
+{{- if $is540 }}
       - catalogsources
+{{- end }}
       - operandregistries
       - operandconfigs
       - namespacescopes
@@ -256,6 +261,7 @@ rules:
     resources:
       - packagemanifests
       - clusters
+{{- if $is540 }}
   - verbs:
       - get
       - list
@@ -280,6 +286,7 @@ rules:
       - rolebindings
       - clusterroles
       - clusterrolebindings
+{{- end }}
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -299,8 +306,11 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: presync-cpd-prereq-role-{{ .Values.instance_id }}
+{{- if $is540 }}
 
 ---
+# Temporary: the CPD 5.4.0 Helm install (cpd-platform-helm-install) runs as cpd-sa
+# and needs broad rights. Replace with a minimal role once the required permissions are measured.
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -319,3 +329,4 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: cluster-admin
+{{- end }}

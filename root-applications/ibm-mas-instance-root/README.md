@@ -217,10 +217,16 @@ The following table lists all ArgoCD applications defined in the templates folde
 
 | [`111-ibm-cpfs-cluster-app.yaml`](templates/111-ibm-cpfs-cluster-app.yaml) | cpfs-cluster | ✓ | | | 111 |
 | [`111-ibm-nss-cluster-app.yaml`](templates/111-ibm-nss-cluster-app.yaml) | nss-cluster | ✓ | | | 111 |
+| [`111-ibm-iam-cluster-app.yaml`](templates/111-ibm-iam-cluster-app.yaml) | iam-cluster | ✓ | | | 111 |
+| [`111-ibm-pg-cluster-app.yaml`](templates/111-ibm-pg-cluster-app.yaml) | pg-cluster | ✓ | | | 111 |
 | [`112-ibm-nss-app.yaml`](templates/112-ibm-nss-app.yaml) | nss | ✓ | | | 112 |
 | [`113-ibm-cpfs-app.yaml`](templates/113-ibm-cpfs-app.yaml) | cpfs | ✓ | | | 113 |
+| [`113-ibm-iam-app.yaml`](templates/113-ibm-iam-app.yaml) | iam | ✓ | | | 113 |
+| [`113-ibm-pg-app.yaml`](templates/113-ibm-pg-app.yaml) | pg | ✓ | | | 113 |
 | [`114-ibm-cpd-platform-cluster-app.yaml`](templates/114-ibm-cpd-platform-cluster-app.yaml) | cpd-platform-cluster | ✓ | | | 114 |
+| [`114-ibm-zen-cluster-app.yaml`](templates/114-ibm-zen-cluster-app.yaml) | zen-cluster | ✓ | | | 114 |
 | [`115-ibm-cpd-platform-app.yaml`](templates/115-ibm-cpd-platform-app.yaml) | cpd-platform | ✓ | | | 115 |
+| [`115-ibm-zen-app.yaml`](templates/115-ibm-zen-app.yaml) | zen | ✓ | | | 115 |
 | [`116-ibm-cp4d-post-verify-app.yaml`](templates/116-ibm-cp4d-post-verify-app.yaml) | cp4d-post-verify | ✓ | | | 116 |
 | [`120-db2-databases-app.yaml`](templates/120-db2-databases-app.yaml) | db2-db | | ✓ | | 120 |
 
@@ -250,7 +256,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 
 ### Role Conditions
 
-- **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (18 applications)
+- **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (24 applications)
 - **Application Admin Role**: Applications that require `application_admin_role` to be set (6 applications)
 - **Both Roles**: Applications rendered regardless of role settings (15 applications)
 
@@ -273,8 +279,14 @@ The following table lists all ArgoCD applications defined in the templates folde
 - **nss-cluster** - Namespace Scope operator cluster-scoped resources (CPD 5.4.0 and above)
 - **nss** - Namespace Scope operator and `NamespaceScope` CR (CPD 5.4.0 and above)
 - **cpfs** - Common services (CPFS and ODLM) operators (CPD 5.4.0 and above)
+- **iam-cluster** - Identity Management operator cluster-scoped resources (CPD 5.4.0 and above)
+- **iam** - Identity Management and commonui operators (CPD 5.4.0 and above)
+- **pg-cluster** - ibm-pg-operator cluster-scoped resources (CPD 5.4.0 and above)
+- **pg** - ibm-pg-operator, Postgres for common services (CPD 5.4.0 and above)
 - **cpd-platform-cluster** - CPD platform cluster-scoped resources (CPD 5.4.0 and above)
 - **cpd-platform** - CPD platform namespaced resources (CPD 5.4.0 and above)
+- **zen-cluster** - Zen cluster-scoped resources (CPD 5.4.0 and above)
+- **zen** - Zen operator and `ZenService` CR (CPD 5.4.0 and above)
 - **cp4d-post-verify** - CP4D admin credentials and URL verification after the platform install (CPD 5.4.0 and above)
 - **db2-db** - Db2 database instances
 - **dbs-rds-db** - RDS database instances

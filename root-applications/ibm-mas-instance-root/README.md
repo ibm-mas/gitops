@@ -61,12 +61,14 @@ Applications are deployed in the following order (controlled by sync-wave annota
 2. **100-121: Dependencies** - SLS, Db2, CP4D, databases, and CP4D services
 3. **130: MAS Suite** - Core MAS suite installation and configurations
 4. **200: Workspaces** - MAS workspace creation
-5. **500-551: Applications** - MAS application installations and configurations
-   - **500**: Manage install (highest priority among MAS apps)
-   - **502**: Manage config
-   - **504**: Secondary (SDB / standby HADR) Db2 databases, synced right after Manage and before every other app
-   - **505-550**: Remaining MAS apps in the `main` order (Facilities, Assist, Visual Inspection, IoT, Health, Monitor, Optimizer, Predict); IoT and Monitor order depends on channel (< 9.2 / >= 9.2)
-   - **551**: Addons config (same as `main`)
+5. **500-551: Applications** - each MAS app is deployed as a contiguous block: primary Db2 (PDB) -> app install -> app workspace config -> standby Db2 (SDB). Waves are computed by the `ibm-mas-instance-root.syncwave` helper in [`_helpers.tpl`](templates/_helpers.tpl).
+   - **Manage**: PDB `120`, install `501`, workspace config `502`, SDB `503`
+   - **Facilities**: PDB `505`, install `506`, workspace config `507`, SDB `508`
+   - **Monitor / IoT**: Monitor then IoT when the Monitor or IoT channel is >= 9.2 (Monitor `510`-`513`, IoT `516`-`517`); otherwise IoT then Monitor (IoT `511`-`512`, Monitor `515`-`518`)
+   - **Health**: install `521`, workspace config `522`
+   - **Assist**: install `526`; **Visual Inspection**: install `531`; **Optimizer**: install `536`
+   - **Predict**: install `541`, workspace config `542`
+   - **551**: Addons config
 6. **600: RBAC & Post-Sync** - RBAC setup and post-deployment validation
 
 ## Configuration Files
@@ -214,7 +216,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`110-ibm-db2u-app.yaml`](templates/110-ibm-db2u-app.yaml) | db2u | ✓ | | | 110 |
 | [`111-ibm-cpd-platform-cluster-app.yaml`](templates/111-ibm-cpd-platform-cluster-app.yaml) | cpd-platform-cluster | ✓ | | | 111 |
 | [`112-ibm-cpd-platform-app.yaml`](templates/112-ibm-cpd-platform-app.yaml) | cpd-platform | ✓ | | | 112 |
-| [`120-db2-databases-app.yaml`](templates/120-db2-databases-app.yaml) | db2-db | | ✓ | | 120 (504 for `sdb` instances) |
+| [`120-db2-databases-app.yaml`](templates/120-db2-databases-app.yaml) | db2-db | | ✓ | | Per app block, see Deployment Sequence (PDB first, SDB after the workspace config) |
 | [`120-dbs-rds-databases-app.yaml`](templates/120-dbs-rds-databases-app.yaml) | dbs-rds-db | | | ✓ | 120 |
 | [`120-ibm-cognos-analytics-app.yaml`](templates/120-ibm-cognos-analytics-app.yaml) | cognos | ✓ | | | 120 |
 | [`120-ibm-spark-app.yaml`](templates/120-ibm-spark-app.yaml) | spark | ✓ | | | 120 |
@@ -225,16 +227,16 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`130-ibm-mas-suite-app.yaml`](templates/130-ibm-mas-suite-app.yaml) | suite | | | ✓ | 130 |
 | [`130-ibm-mas-suite-configs-app.yaml`](templates/130-ibm-mas-suite-configs-app.yaml) | mas_config_name | | ✓ | | 130 |
 | [`200-ibm-mas-workspaces.yaml`](templates/200-ibm-mas-workspaces.yaml) | workspace | | ✓ | | 200 |
-| [`500-ibm-mas-masapp-manage-install.yaml`](templates/500-ibm-mas-masapp-manage-install.yaml) | manage | | | ✓ | 500 |
-| [`505-ibm-mas-masapp-facilities-install.yaml`](templates/505-ibm-mas-masapp-facilities-install.yaml) | facilities | | | ✓ | 505 |
-| [`510-ibm-mas-masapp-assist-install.yaml`](templates/510-ibm-mas-masapp-assist-install.yaml) | assist | | | ✓ | 510 |
-| [`510-ibm-mas-masapp-iot-install.yaml`](templates/510-ibm-mas-masapp-iot-install.yaml) | iot | | | ✓ | 510 |
-| [`510-ibm-mas-masapp-visualinspection-install.yaml`](templates/510-ibm-mas-masapp-visualinspection-install.yaml) | visualinspection | | | ✓ | 510 |
-| [`510-550-ibm-mas-masapp-configs.yaml`](templates/510-550-ibm-mas-masapp-configs.yaml) | masapp-config | | ✓ | | 502 (manage), 510-550 (others) |
-| [`520-ibm-mas-masapp-health-install.yaml`](templates/520-ibm-mas-masapp-health-install.yaml) | health | | | ✓ | 520 |
-| [`520-ibm-mas-masapp-monitor-install.yaml`](templates/520-ibm-mas-masapp-monitor-install.yaml) | monitor | | | ✓ | 520 |
-| [`520-ibm-mas-masapp-optimizer-install.yaml`](templates/520-ibm-mas-masapp-optimizer-install.yaml) | optimizer | | | ✓ | 520 |
-| [`540-ibm-mas-masapp-predict-install.yaml`](templates/540-ibm-mas-masapp-predict-install.yaml) | predict | | | ✓ | 540 |
+| [`500-ibm-mas-masapp-manage-install.yaml`](templates/500-ibm-mas-masapp-manage-install.yaml) | manage | | | ✓ | Per app block, see Deployment Sequence |
+| [`505-ibm-mas-masapp-facilities-install.yaml`](templates/505-ibm-mas-masapp-facilities-install.yaml) | facilities | | | ✓ | Per app block, see Deployment Sequence |
+| [`510-ibm-mas-masapp-assist-install.yaml`](templates/510-ibm-mas-masapp-assist-install.yaml) | assist | | | ✓ | Per app block, see Deployment Sequence |
+| [`510-ibm-mas-masapp-iot-install.yaml`](templates/510-ibm-mas-masapp-iot-install.yaml) | iot | | | ✓ | Per app block, see Deployment Sequence |
+| [`510-ibm-mas-masapp-visualinspection-install.yaml`](templates/510-ibm-mas-masapp-visualinspection-install.yaml) | visualinspection | | | ✓ | Per app block, see Deployment Sequence |
+| [`510-550-ibm-mas-masapp-configs.yaml`](templates/510-550-ibm-mas-masapp-configs.yaml) | masapp-config | | ✓ | | Per app block, see Deployment Sequence |
+| [`520-ibm-mas-masapp-health-install.yaml`](templates/520-ibm-mas-masapp-health-install.yaml) | health | | | ✓ | Per app block, see Deployment Sequence |
+| [`520-ibm-mas-masapp-monitor-install.yaml`](templates/520-ibm-mas-masapp-monitor-install.yaml) | monitor | | | ✓ | Per app block, see Deployment Sequence |
+| [`520-ibm-mas-masapp-optimizer-install.yaml`](templates/520-ibm-mas-masapp-optimizer-install.yaml) | optimizer | | | ✓ | Per app block, see Deployment Sequence |
+| [`540-ibm-mas-masapp-predict-install.yaml`](templates/540-ibm-mas-masapp-predict-install.yaml) | predict | | | ✓ | Per app block, see Deployment Sequence |
 | [`550-ibm-mas-addons-config.yaml`](templates/550-ibm-mas-addons-config.yaml) | addons | | ✓ | | 551 |
 | [`600-application-admin-rbac-app.yaml`](templates/600-application-admin-rbac-app.yaml) | application-admin-rbac | | ✓ | | 600 |
 | [`600-ibm-post-sync-jobs.yaml`](templates/600-ibm-post-sync-jobs.yaml) | postsyncjobs | | | ✓ | 600 |

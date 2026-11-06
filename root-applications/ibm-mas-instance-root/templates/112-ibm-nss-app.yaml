@@ -6,7 +6,7 @@
 {{- if $is540 }}
 {{- /*
   Chart version resolution (highest priority first):
-    1. Explicit gitops config value (ibm_cp4d.cpd_platform_chart_version)
+    1. Explicit gitops config value (ibm_cp4d.namespace_scope_chart_version)
     2. olm-utils-cm ConfigMap lookup (deployed by wave 110-ibm-cp4d)
     3. Hardcoded default (safety net for helm template dry-runs)
 */}}
@@ -15,14 +15,14 @@
 {{- if $olmUtils }}
 {{- $meta = $olmUtils.data.release_components_meta | fromYaml }}
 {{- end }}
-{{- $cpdPlatformVersion := .Values.ibm_cp4d.cpd_platform_chart_version | default ((index $meta "cpd_platform" | default dict).case_version | default "5.10.0") }}
+{{- $nssVersion := .Values.ibm_cp4d.namespace_scope_chart_version | default ((index $meta "ibm-namespace-scope-operator" | default dict).cr_version | default "4.3.6") }}
 ---
 # CPD >= 5.4.0 — native ArgoCD Helm Apps (no K8s Jobs)
-# Wave 112: cpd-platform namespace-scoped (operator + CR)
+# Wave 112: namespace-scope-operator namespace-scoped (operator + NamespaceScope CR)
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cpd-platform.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  name: nss.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
   namespace: {{ .Values.argo.namespace }}
   labels:
     environment: '{{ .Values.account.id }}'
@@ -40,20 +40,17 @@ spec:
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
-    namespace: {{ $cpd_instance_ns }}
+    namespace: {{ $cpd_operators_ns }}
   source:
-    chart: cpd-platform
+    chart: ibm-namespace-scope-operator
     repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
-    targetRevision: "{{ $cpdPlatformVersion }}"
+    targetRevision: "{{ $nssVersion }}"
     helm:
       valuesObject:
         global:
           licenseAccept: true
-          releaseVersion: {{ $cpd_version }}
           operatorNamespace: {{ $cpd_operators_ns }}
           instanceNamespace: {{ $cpd_instance_ns }}
-          fileStorageClass: {{ .Values.ibm_cp4d.cpd_primary_storage_class }}
-          blockStorageClass: {{ .Values.ibm_cp4d.cpd_metadata_storage_class }}
           imagePullSecret: ibm-entitlement-key
   syncPolicy:
     automated:

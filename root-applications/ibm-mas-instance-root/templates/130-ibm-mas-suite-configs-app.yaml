@@ -22,8 +22,8 @@ metadata:
     {{- if eq $value.mas_config_chart "ibm-mas-aicfg-config" }}
     argocd.argoproj.io/sync-wave: "190"
     {{- else if and (eq $value.mas_config_chart "ibm-jdbc-config") (eq ($value.jdbc_type | default "") "incluster-db2") (not (empty $value.mas_application_id)) (ne $value.mas_application_id "manage") }}
-    {{- /* In-cluster Db2 JDBC config reads secrets written by the app's Db2 post-sync job, so it must sync after that app's PDB (install wave = PDB + 1). Manage PDB is at 120, so Manage stays at 130. */}}
-    argocd.argoproj.io/sync-wave: "{{ include "ibm-mas-instance-root.syncwave" (dict "root" $ "app" $value.mas_application_id "step" "install") | default "130" }}"
+    {{- /* In-cluster Db2 JDBC config reads secrets written by the app's Db2 post-sync job, so it must sync after that app's PDB and before the app install (jdbc wave = PDB + 1, install = PDB + 2). Manage PDB is at 120, so Manage stays at 130. */}}
+    argocd.argoproj.io/sync-wave: "{{ include "ibm-mas-instance-root.syncwave" (dict "root" $ "app" $value.mas_application_id "step" "jdbc") | default "130" }}"
     {{- else }}
     argocd.argoproj.io/sync-wave: "130"
     {{- end }}

@@ -30,10 +30,10 @@ ibm_cp4d:
 | `RoleBinding` | CP4D namespace role bindings | CP4D instance namespace | Always | `cluster_admin_role` |
 | `ClusterRole` | CP4D cluster roles | N/A (cluster-scoped) | Always | `cluster_admin_role` |
 | `ClusterRoleBinding` | CP4D cluster role bindings | N/A (cluster-scoped) | Always | `cluster_admin_role` |
-| `Job` | CP4D install and verification jobs | CP4D operators namespace | Version-dependent and always for verification hooks as applicable | `cluster_admin_role` |
+| `Job` | CP4D install and verification jobs | CP4D operators namespace | Version-dependent; the post-verify Job runs only below CPD 5.4.0 (see `116-ibm-cp4d-post-verify`) | `cluster_admin_role` |
 | `Certificate` | `cpd-public-cert` LE cert for public CPD route | CP4D instance namespace | When `cpd_public_route_enabled` is true | `cluster_admin_role` |
 | `ClusterIssuer` | `<instance_id>-cis-le-prod` issuer referenced by `cpd-public-cert` (not created by this chart) | N/A (cluster-scoped) | When `cpd_public_route_enabled` is true | `cluster_admin_role` |
-| `Ibmcpd` | CP4D platform custom resource | CP4D instance namespace | Always | `cluster_admin_role` |
+| `Ibmcpd` | CP4D platform custom resource | CP4D instance namespace | CPD below 5.4.0 | `cluster_admin_role` |
 | `ConfigMap` | CP4D service dependency config maps | CP4D operators namespace | When optional services are enabled | `cluster_admin_role` |
 | `Subscription` | CP4D service subscriptions | CP4D operators namespace | When optional services are enabled | `cluster_admin_role` |
 | `OperandRegistry` | CP4D operand registries | CP4D operators namespace | When WSL or SPSS services are enabled | `cluster_admin_role` |

@@ -207,6 +207,21 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`110-ibm-cp4d-operator-app.yaml`](templates/110-ibm-cp4d-operator-app.yaml) | cp4doperator | ✓ | | | 110 |
 | [`110-ibm-cs-control-app.yaml`](templates/110-ibm-cs-control-app.yaml) | cscontrol | ✓ | | | 110 |
 | [`110-ibm-db2u-app.yaml`](templates/110-ibm-db2u-app.yaml) | db2u | ✓ | | | 110 |
+| [`111-ibm-cpfs-cluster-app.yaml`](templates/111-ibm-cpfs-cluster-app.yaml) | cpfs-cluster | ✓ | | | 111 |
+| [`111-ibm-nss-cluster-app.yaml`](templates/111-ibm-nss-cluster-app.yaml) | nss-cluster | ✓ | | | 111 |
+| [`111-ibm-iam-cluster-app.yaml`](templates/111-ibm-iam-cluster-app.yaml) | iam-cluster | ✓ | | | 111 |
+| [`111-ibm-pg-cluster-app.yaml`](templates/111-ibm-pg-cluster-app.yaml) | pg-cluster | ✓ | | | 111 |
+| [`111-ibm-postgresql-cluster-app.yaml`](templates/111-ibm-postgresql-cluster-app.yaml) | postgresql-cluster | ✓ | | | 111 |
+| [`112-ibm-nss-app.yaml`](templates/112-ibm-nss-app.yaml) | nss | ✓ | | | 112 |
+| [`113-ibm-cpfs-app.yaml`](templates/113-ibm-cpfs-app.yaml) | cpfs | ✓ | | | 113 |
+| [`113-ibm-iam-app.yaml`](templates/113-ibm-iam-app.yaml) | iam | ✓ | | | 113 |
+| [`113-ibm-pg-app.yaml`](templates/113-ibm-pg-app.yaml) | pg | ✓ | | | 113 |
+| [`113-ibm-postgresql-app.yaml`](templates/113-ibm-postgresql-app.yaml) | postgresql | ✓ | | | 113 |
+| [`114-ibm-cpd-platform-cluster-app.yaml`](templates/114-ibm-cpd-platform-cluster-app.yaml) | cpd-platform-cluster | ✓ | | | 114 |
+| [`114-ibm-zen-cluster-app.yaml`](templates/114-ibm-zen-cluster-app.yaml) | zen-cluster | ✓ | | | 114 |
+| [`115-ibm-cpd-platform-app.yaml`](templates/115-ibm-cpd-platform-app.yaml) | cpd-platform | ✓ | | | 115 |
+| [`115-ibm-zen-app.yaml`](templates/115-ibm-zen-app.yaml) | zen | ✓ | | | 115 |
+| [`116-ibm-cp4d-post-verify-app.yaml`](templates/116-ibm-cp4d-post-verify-app.yaml) | cp4d-post-verify | ✓ | | | 116 |
 | [`120-db2-databases-app.yaml`](templates/120-db2-databases-app.yaml) | db2-db | | ✓ | | 120 |
 | [`120-dbs-rds-databases-app.yaml`](templates/120-dbs-rds-databases-app.yaml) | dbs-rds-db | | | ✓ | 120 |
 | [`120-ibm-cognos-analytics-app.yaml`](templates/120-ibm-cognos-analytics-app.yaml) | cognos | ✓ | | | 120 |
@@ -234,9 +249,9 @@ The following table lists all ArgoCD applications defined in the templates folde
 
 ### Role Conditions
 
-- **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (10 applications)
+- **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (26 applications)
 - **Application Admin Role**: Applications that require `application_admin_role` to be set (6 applications)
-- **Both Roles**: Applications rendered regardless of role settings (16 applications)
+- **Both Roles**: Applications rendered regardless of role settings (15 applications)
 
 **Note**: Most applications have additional conditions beyond role requirements (e.g., specific configuration values must be defined). Refer to individual template files for complete rendering logic.
 
@@ -253,6 +268,21 @@ The following table lists all ArgoCD applications defined in the templates folde
 - **cp4doperator** - CP4D operators
 - **cscontrol** - Common Services control
 - **db2u** - Db2 Universal operator
+- **cpfs-cluster** - Common services (CPFS and ODLM) cluster-scoped resources (CPD 5.4.0 and above)
+- **nss-cluster** - Namespace Scope operator cluster-scoped resources (CPD 5.4.0 and above)
+- **nss** - Namespace Scope operator and `NamespaceScope` CR (CPD 5.4.0 and above)
+- **cpfs** - Common services (CPFS and ODLM) operators (CPD 5.4.0 and above)
+- **iam-cluster** - Identity Management operator cluster-scoped resources (CPD 5.4.0 and above)
+- **iam** - Identity Management and commonui operators (CPD 5.4.0 and above)
+- **pg-cluster** - ibm-pg-operator cluster-scoped resources (CPD 5.4.0 and above)
+- **pg** - ibm-pg-operator, Postgres for common services (CPD 5.4.0 and above)
+- **postgresql-cluster** - EDB Postgres operator cluster-scoped resources (CPD 5.4.0 and above)
+- **postgresql** - EDB Postgres operator, required by Analytics Engine (CPD 5.4.0 and above)
+- **cpd-platform-cluster** - CPD platform cluster-scoped resources (CPD 5.4.0 and above)
+- **cpd-platform** - CPD platform namespaced resources (CPD 5.4.0 and above)
+- **zen-cluster** - Zen cluster-scoped resources (CPD 5.4.0 and above)
+- **zen** - Zen operator and `ZenService` CR (CPD 5.4.0 and above)
+- **cp4d-post-verify** - CP4D admin credentials and URL verification after the platform install (CPD 5.4.0 and above)
 - **db2-db** - Db2 database instances
 - **dbs-rds-db** - RDS database instances
 - **spark** - Analytics Engine (Spark)

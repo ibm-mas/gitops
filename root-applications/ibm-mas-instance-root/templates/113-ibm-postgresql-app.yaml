@@ -1,0 +1,64 @@
+{{- if and (not (empty .Values.ibm_cp4d)) (.Values.cluster_admin_role) }}
+{{- $cpd_operators_ns := .Values.ibm_cp4d.cpd_operators_namespace }}
+{{- $cpd_instance_ns := .Values.ibm_cp4d.cpd_instance_namespace }}
+{{- $cpd_version := .Values.ibm_cp4d.cpd_product_version | default "0.0.0" | toString }}
+{{- $is540 := not (lt (semver "5.4.0" | (semver $cpd_version).Compare) 0) }}
+{{- if $is540 }}
+{{- /*
+  Chart version resolution (highest priority first):
+    1. Explicit gitops config value (ibm_cp4d.postgresql_chart_version)
+    2. olm-utils-cm ConfigMap lookup (deployed by wave 110-ibm-cp4d)
+    3. Hardcoded default (safety net for helm template dry-runs)
+*/}}
+{{- $olmUtils := lookup "v1" "ConfigMap" $cpd_instance_ns "olm-utils-cm" }}
+{{- $meta := dict }}
+{{- if $olmUtils }}
+{{- $meta = $olmUtils.data.release_components_meta | fromYaml }}
+{{- end }}
+{{- $postgresqlVersion := .Values.ibm_cp4d.postgresql_chart_version | default ((index $meta "postgresql" | default dict).case_version | default "5.40.0") }}
+---
+# CPD >= 5.4.0 — native ArgoCD Helm Apps (no K8s Jobs)
+# Wave 113: postgresql (EDB Postgres operator) namespace-scoped (operators).
+# Creates the cloud-native-postgresql-operand-images-config ConfigMap read by Analytics Engine (Spark)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgresql.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "113"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ $cpd_operators_ns }}
+  source:
+    chart: postgresql
+    repoURL: https://raw.githubusercontent.com/IBM/charts/master/repo/ibm-helm
+    targetRevision: "{{ $postgresqlVersion }}"
+    helm:
+      valuesObject:
+        global:
+          licenseAccept: true
+          operatorNamespace: {{ $cpd_operators_ns }}
+          instanceNamespace: {{ $cpd_instance_ns }}
+          imagePullSecret: ibm-entitlement-key
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+{{- end }}
+{{- end }}

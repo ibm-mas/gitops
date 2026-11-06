@@ -93,6 +93,7 @@ The {{ aiservice_instance_root_chart() }} also contains an ApplicationSet:
 | IBM Sync Resources | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/000-ibm-sync-resources.yaml", "000-ibm-sync-resources.yaml") }} | [000-ibm-sync-resources](charts/000-ibm-sync-resources.md) |
 | IBM Sync Jobs | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/010-ibm-sync-jobs.yaml", "010-ibm-sync-jobs.yaml") }} | [010-ibm-sync-jobs](charts/010-ibm-sync-jobs.md) |
 | IBM Sync Jobs CP4D | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/101-ibm-sync-jobs-cp4d.yaml", "101-ibm-sync-jobs-cp4d.yaml") }} | [101-ibm-sync-jobs-cp4d](charts/101-ibm-sync-jobs-cp4d.md) |
+| CP4D Post Verify | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/116-ibm-cp4d-post-verify-app.yaml", "116-ibm-cp4d-post-verify-app.yaml") }} | [116-ibm-cp4d-post-verify](charts/116-ibm-cp4d-post-verify.md) |
 | Post Sync Job CP4D Services | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/121-ibm-post-sync-job-cp4d-services.yaml", "121-ibm-post-sync-job-cp4d-services.yaml") }} | [121-ibm-post-sync-job-cp4d-services](charts/121-ibm-post-sync-job-cp4d-services.md) |
 | IBM Post Sync Jobs | {{ gitops_repo_file_link("root-applications/ibm-mas-instance-root/templates/600-ibm-post-sync-jobs.yaml", "600-ibm-post-sync-jobs.yaml") }} | [600-ibm-post-sync-jobs](charts/600-ibm-post-sync-jobs.md) |
 

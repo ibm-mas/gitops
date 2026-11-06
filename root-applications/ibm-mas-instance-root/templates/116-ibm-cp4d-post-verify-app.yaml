@@ -1,0 +1,72 @@
+{{- if and (not (empty .Values.ibm_cp4d)) (.Values.cluster_admin_role) }}
+{{- $cpd_version := .Values.ibm_cp4d.cpd_product_version | default "0.0.0" | toString }}
+{{- $is540 := not (lt (semver "5.4.0" | (semver $cpd_version).Compare) 0) }}
+{{- if $is540 }}
+---
+# CPD >= 5.4.0 — verify admin credentials and URL once the platform install has produced the ZenService
+# Wave 116: runs after cpd-platform (115) and before the CPD services (120)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cp4d-post-verify.{{ .Values.cluster.id }}.{{ .Values.instance.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+    instance: '{{ .Values.instance.id }}'
+  annotations:
+    argocd.argoproj.io/sync-wave: "116"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  ignoreDifferences:
+  - group: '*'
+    kind: ServiceAccount
+    jsonPointers:
+    - /imagePullSecrets
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: {{ .Values.cluster.url }}
+    namespace: {{ .Values.ibm_cp4d.cpd_operators_namespace }}
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: instance-applications/116-ibm-cp4d-post-verify
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }}
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            account_id: "{{ .Values.account.id }}"
+            region_id: "{{ .Values.region.id }}"
+            cluster_id: "{{ .Values.cluster.id }}"
+            instance_id: "{{ .Values.instance.id }}"
+            cli_image_repo: {{ .Values.cli_image_repo }}
+            cpd_operators_namespace: "{{ .Values.ibm_cp4d.cpd_operators_namespace }}"
+            cpd_instance_namespace: "{{ .Values.ibm_cp4d.cpd_instance_namespace }}"
+            {{- if .Values.custom_labels }}
+            custom_labels: {{ .Values.custom_labels | toYaml | nindent 14 }}
+            {{- end }}
+        - name: ARGOCD_APP_NAME
+          value: cp4dpostverify
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      {{- if .Values.auto_delete }}
+      prune: true
+      {{- end }}
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+{{- end }}
+{{- end }}

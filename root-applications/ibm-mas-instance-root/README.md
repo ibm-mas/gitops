@@ -61,13 +61,13 @@ Applications are deployed in the following order (controlled by sync-wave annota
 2. **100-121: Dependencies** - SLS, Db2, CP4D, databases, and CP4D services
 3. **130: MAS Suite** - Core MAS suite installation and configurations
 4. **200: Workspaces** - MAS workspace creation
-5. **500-551: Applications** - each MAS app is deployed as a contiguous block: primary Db2 (PDB) -> app install -> app workspace config -> standby Db2 (SDB). Waves are computed by the `ibm-mas-instance-root.syncwave` helper in [`_helpers.tpl`](templates/_helpers.tpl).
-   - **Manage**: PDB `120`, install `501`, workspace config `502`, SDB `503`
-   - **Facilities**: PDB `505`, install `506`, workspace config `507`, SDB `508`
-   - **Monitor / IoT**: Monitor then IoT when the Monitor or IoT channel is >= 9.2 (Monitor `510`-`513`, IoT `516`-`517`); otherwise IoT then Monitor (IoT `511`-`512`, Monitor `515`-`518`)
-   - **Health**: install `521`, workspace config `522`
-   - **Assist**: install `526`; **Visual Inspection**: install `531`; **Optimizer**: install `536`
-   - **Predict**: install `541`, workspace config `542`
+5. **500-551: Applications** - each MAS app is deployed as a contiguous block: primary Db2 (PDB) -> in-cluster Db2 JDBC config -> app install -> app workspace config -> standby Db2 (SDB). Waves are computed by the `ibm-mas-instance-root.syncwave` helper in [`_helpers.tpl`](templates/_helpers.tpl). The JDBC config (`130-ibm-mas-suite-configs-app.yaml`) moves into the block only for in-cluster Db2 of non-Manage apps; otherwise it stays at `130`.
+   - **Manage**: PDB `120`, install `502`, workspace config `503`, SDB `504` (JDBC config stays at `130`)
+   - **Facilities**: PDB `505`, JDBC `506`, install `507`, workspace config `508`, SDB `509`
+   - **Monitor / IoT**: Monitor then IoT when the Monitor or IoT channel is >= 9.2 (Monitor `510`-`514`, IoT `515`-`519`); otherwise IoT then Monitor (IoT `510`-`514`, Monitor `515`-`519`)
+   - **Health**: PDB `520`, JDBC `521`, install `522`, workspace config `523`, SDB `524`
+   - **Assist**: `525`-`529`; **Visual Inspection**: `530`-`534`; **Optimizer**: `535`-`539`
+   - **Predict**: PDB `540`, JDBC `541`, install `542`, workspace config `543`, SDB `544`
    - **551**: Addons config
 6. **600: RBAC & Post-Sync** - RBAC setup and post-deployment validation
 

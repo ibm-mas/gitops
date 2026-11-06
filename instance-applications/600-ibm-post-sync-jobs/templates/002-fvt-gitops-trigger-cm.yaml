@@ -1,19 +1,4 @@
-{{- /*
-The fvt-gitops Job (fvt-gitops-runner sub-chart) is an ArgoCD PostSync hook. ArgoCD only runs
-PostSync hooks when it performs a sync, and hook resources are ignored when deciding whether an
-Application is OutOfSync. Every resource in this Application is a hook, so a change to the gitops
-version or the catalog version would not cause a sync and the FVT GitOps tests would not re-run.
-
-This ConfigMap is deliberately not a hook (no argocd.argoproj.io/hook annotation). Its content
-tracks the gitops version, and for a catalog release (catalog.build_id set in cluster-params.yaml)
-the catalog version and build id, so when any of them changes the Application goes OutOfSync,
-automated sync runs and the PostSync fvt-gitops Job is executed again.
-
-mas_catalog_version and mas_catalog_build_id are only passed to this chart for a catalog release.
-Without a build id the two keys are empty and the Application ignores them (ignoreDifferences in
-root-applications/ibm-mas-instance-root/templates/600-ibm-post-sync-jobs.yaml), so removing the
-build id or changing the catalog version alone does not trigger a sync.
-*/}}
+{{- /* A change to these values syncs the app so the PostSync fvt-gitops Job runs again. */}}
 ---
 kind: ConfigMap
 apiVersion: v1

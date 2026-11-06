@@ -213,6 +213,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 | [`113-ibm-cpfs-app.yaml`](templates/113-ibm-cpfs-app.yaml) | cpfs | ✓ | | | 113 |
 | [`114-ibm-cpd-platform-cluster-app.yaml`](templates/114-ibm-cpd-platform-cluster-app.yaml) | cpd-platform-cluster | ✓ | | | 114 |
 | [`115-ibm-cpd-platform-app.yaml`](templates/115-ibm-cpd-platform-app.yaml) | cpd-platform | ✓ | | | 115 |
+| [`116-ibm-cp4d-post-verify-app.yaml`](templates/116-ibm-cp4d-post-verify-app.yaml) | cp4d-post-verify | ✓ | | | 116 |
 | [`120-db2-databases-app.yaml`](templates/120-db2-databases-app.yaml) | db2-db | | ✓ | | 120 |
 | [`120-dbs-rds-databases-app.yaml`](templates/120-dbs-rds-databases-app.yaml) | dbs-rds-db | | | ✓ | 120 |
 | [`120-ibm-cognos-analytics-app.yaml`](templates/120-ibm-cognos-analytics-app.yaml) | cognos | ✓ | | | 120 |
@@ -240,7 +241,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 
 ### Role Conditions
 
-- **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (17 applications)
+- **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (18 applications)
 - **Application Admin Role**: Applications that require `application_admin_role` to be set (6 applications)
 - **Both Roles**: Applications rendered regardless of role settings (15 applications)
 
@@ -265,6 +266,7 @@ The following table lists all ArgoCD applications defined in the templates folde
 - **cpfs** - Common services (CPFS and ODLM) operators (CPD 5.4.0 and above)
 - **cpd-platform-cluster** - CPD platform cluster-scoped resources (CPD 5.4.0 and above)
 - **cpd-platform** - CPD platform namespaced resources (CPD 5.4.0 and above)
+- **cp4d-post-verify** - CP4D admin credentials and URL verification after the platform install (CPD 5.4.0 and above)
 - **db2-db** - Db2 database instances
 - **dbs-rds-db** - RDS database instances
 - **spark** - Analytics Engine (Spark)

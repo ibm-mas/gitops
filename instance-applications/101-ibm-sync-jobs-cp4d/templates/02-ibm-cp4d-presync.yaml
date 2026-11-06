@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v6" }}
+{{- $_job_version := "v7" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -249,16 +249,17 @@ spec:
               echo "Fetching values from olm-utils-cm config map"
               echo "================================================================================"
               echo "Fetching IBM Licensing Channel..."
-              export LICENSING_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.["ibm-licensing"].sub_channel')
-              if [[ -z "${LICENSING_CHANNEL}" ]]; then
+              # The key is "ibm-licensing" up to CPD 5.3.x and "ibm_licensing_v2" / "ibm_licensing" from CPD 5.4.0
+              export LICENSING_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.["ibm-licensing"].sub_channel // .["ibm_licensing_v2"].sub_channel // .["ibm_licensing"].sub_channel')
+              if [[ -z "${LICENSING_CHANNEL}" || "${LICENSING_CHANNEL}" == "null" ]]; then
                 echo "Failed to fetch ibm licensing channel"
                 exit 1
               fi
 
               echo
               echo "Fetching IBM Licensing Version..."
-              export LICENSING_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.["ibm-licensing"].csv_version')
-              if [[ -z "${LICENSING_VERSION}" ]]; then
+              export LICENSING_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.["ibm-licensing"].csv_version // .["ibm_licensing_v2"].csv_version // .["ibm_licensing"].csv_version')
+              if [[ -z "${LICENSING_VERSION}" || "${LICENSING_VERSION}" == "null" ]]; then
                 echo "Failed to fetch ibm licensing version"
                 exit 1
               fi

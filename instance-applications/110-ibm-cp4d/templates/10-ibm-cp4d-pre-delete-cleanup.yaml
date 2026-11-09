@@ -6,6 +6,8 @@ PreDelete cleanup for a CPD instance. Runs when the cp4d Application is deleted 
 
 The ServiceAccount and RBAC are created as PreDelete hooks (same pattern as the suite chart) so that they exist
 when the hook runs, regardless of whether the cp4doperator application (which owns cpd-sa) has already been deleted.
+The hook objects (ServiceAccount, RBAC, Job) live in the instance syncres namespace, not in a CPD namespace. The Job
+deletes both CPD namespaces, so running it inside one of them makes ArgoCD fail the hook with "namespace not found".
 The cluster-scoped IBMLicensing singleton is shared between instances and is deliberately NOT removed.
 */}}
 {{- /*
@@ -17,13 +19,16 @@ Use the build/bin/set-cli-image-digest.sh script to update this value across all
 {{- $cr_name := printf "cpd-predelete-cleanup-cr-%s" .Values.instance_id }}
 {{- $ops_ns := .Values.cpd_operators_namespace }}
 {{- $inst_ns := .Values.cpd_instance_namespace }}
+{{- $hook_ns := printf "mas-%s-syncres" .Values.instance_id }}
+{{- $admin_crb_name := printf "cpd-instance-admin-rbac-%s" .Values.instance_id }}
+{{- $rsi_webhook_name := printf "rsi-webhook-cfg-%s" .Values.cpd_instance_namespace }}
 
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ $sa_name }}
-  namespace: {{ $ops_ns }}
+  namespace: {{ $hook_ns }}
   annotations:
     argocd.argoproj.io/hook: PreDelete
     argocd.argoproj.io/hook-delete-policy: HookSucceeded,HookFailed,BeforeHookCreation
@@ -66,6 +71,7 @@ rules:
       - cpd.ibm.com
       - operator.ibm.com
       - operators.coreos.com
+      - oidc.security.ibm.com
     resources:
       - ws
       - notebookruntimes
@@ -79,6 +85,7 @@ rules:
       - zenextensions
       - zenservices
       - ibmcpds
+      - clients
       - operandrequests
       - commonservices
       - namespacescopes
@@ -100,7 +107,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: {{ $sa_name }}
-    namespace: {{ $ops_ns }}
+    namespace: {{ $hook_ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -152,7 +159,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: {{ $sa_name }}
-    namespace: {{ $ops_ns }}
+    namespace: {{ $hook_ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -160,6 +167,8 @@ roleRef:
 
 ---
 # Namespaces cannot be deleted with a Role. Limited to exactly the two namespaces of this CPD instance.
+# Also limited to the two cluster-scoped objects of this instance that nothing else removes on deprovision:
+# the Zen RSI MutatingWebhookConfiguration (created by the Zen operator) and the admin ClusterRoleBinding.
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -184,6 +193,24 @@ rules:
     resourceNames:
       - {{ $inst_ns }}
       - {{ $ops_ns }}
+  - verbs:
+      - get
+      - delete
+    apiGroups:
+      - admissionregistration.k8s.io
+    resources:
+      - mutatingwebhookconfigurations
+    resourceNames:
+      - {{ $rsi_webhook_name }}
+  - verbs:
+      - get
+      - delete
+    apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterrolebindings
+    resourceNames:
+      - {{ $admin_crb_name }}
 
 ---
 kind: ClusterRoleBinding
@@ -200,7 +227,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: {{ $sa_name }}
-    namespace: {{ $ops_ns }}
+    namespace: {{ $hook_ns }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -211,7 +238,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: cp4d-services-pre-delete-cleanup
-  namespace: {{ $ops_ns }}
+  namespace: {{ $hook_ns }}
   annotations:
     argocd.argoproj.io/hook: PreDelete
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
@@ -253,6 +280,10 @@ spec:
               value: {{ $inst_ns }}
             - name: CPD_OPERATORS_NAMESPACE
               value: {{ $ops_ns }}
+            - name: RSI_WEBHOOK_NAME
+              value: {{ $rsi_webhook_name }}
+            - name: ADMIN_CRB_NAME
+              value: {{ $admin_crb_name }}
           command:
             - /bin/bash
             - -c
@@ -304,6 +335,10 @@ spec:
               delete_kind zenservices.zen.cpd.ibm.com $inst_ns
               delete_kind ibmcpds.cpd.ibm.com $inst_ns
 
+              # The Zen client registration has a finalizer that only the IAM operator clears.
+              echo "Deleting OIDC clients in $inst_ns"
+              delete_kind clients.oidc.security.ibm.com $inst_ns
+
               # The Zen / CPD operators recreate the perspective ZenExtensions while they are running, so
               # sweep again now that ZenService and Ibmcpd are gone and nothing reconciles them any more.
               echo "Deleting ZenExtensions in $inst_ns (second pass)"
@@ -319,6 +354,13 @@ spec:
                 delete_kind namespacescopes.operator.ibm.com $kns
                 delete_kind subscriptions.operators.coreos.com $kns
               done
+
+              # Cluster-scoped objects of this instance. The RSI webhook is created by the Zen operator and is not
+              # owned by any Application, so it is left behind if it is not removed here. Both names are fixed
+              # by this chart and the Role above only allows these two names.
+              echo "Deleting cluster-scoped objects of this instance"
+              oc delete mutatingwebhookconfiguration ${RSI_WEBHOOK_NAME} --ignore-not-found=true || echo "webhook ${RSI_WEBHOOK_NAME}: delete failed"
+              oc delete clusterrolebinding ${ADMIN_CRB_NAME} --ignore-not-found=true || echo "clusterrolebinding ${ADMIN_CRB_NAME}: delete failed"
 
               # Never delete a system namespace, even if the values are misconfigured.
               delete_namespace() {
@@ -338,5 +380,4 @@ spec:
               echo "Remaining ZenExtensions: $remaining"
 
               delete_namespace $inst_ns true
-              # This Job runs in the operators namespace, so it is deleted last and without waiting.
-              delete_namespace $ops_ns false
+              delete_namespace $ops_ns true

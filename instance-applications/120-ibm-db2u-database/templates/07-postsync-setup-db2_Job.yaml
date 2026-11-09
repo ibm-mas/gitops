@@ -767,7 +767,14 @@ spec:
               echo ""
               echo "Fetch CA cert from db2u-certicate-${DB2_INSTANCE_NAME} secret in ${DB2_NAMESPACE}"
               echo "--------------------------------------------------------------------------------"
+              {{- if and .Values.db2_manual_cert.enabled .Values.db2_manual_cert.tls_crt .Values.db2_manual_cert.tls_key .Values.db2_manual_cert.ca_crt }}
               export DB2_CA_PEM=$(cat /etc/mas/creds/db2u-certificate/ca.crt | base64 -w0)
+              {{- else if and .Values.db2_manual_cert.enabled .Values.db2_manual_cert.tls_crt .Values.db2_manual_cert.tls_key }}
+              echo "ERROR: db2_manual_cert.ca_crt is empty — cannot write CA chain to Secrets Manager" >&2
+              exit 1
+              {{- else }}
+              export DB2_CA_PEM=$(cat /etc/mas/creds/db2u-certificate/ca.crt | base64 -w0)
+              {{- end }}
               if [[ -z "${DB2_CA_PEM}" ]]; then
                 echo "Failed to fetch db2 ca pem"
                 exit 1
@@ -934,7 +941,11 @@ spec:
             optional: false
         - name: db2u-certificate
           secret:
+{{- if and .Values.db2_manual_cert.enabled .Values.db2_manual_cert.tls_crt .Values.db2_manual_cert.tls_key }}
+            secretName: "db2u-manual-certificate-{{ .Values.db2_instance_name }}"
+{{- else }}
             secretName: "db2u-certificate-{{ .Values.db2_instance_name }}"
+{{- end }}
             defaultMode: 420
             optional: false
 {{- if .Values.db2_backup_bucket_name }}

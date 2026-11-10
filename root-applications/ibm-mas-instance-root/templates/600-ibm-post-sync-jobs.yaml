@@ -40,6 +40,16 @@ spec:
     kind: ServiceAccount
     jsonPointers:
     - /imagePullSecrets
+  {{- if and .Values.fvt_gitops .Values.fvt_gitops.enabled (not .Values.mas_catalog_build_id) }}
+  {{- /* Without catalog.build_id, catalog changes must not sync the app and re-run FVT GitOps. */}}
+  - group: ""
+    kind: ConfigMap
+    name: fvt-gitops-trigger-cm
+    namespace: "mas-{{ .Values.instance.id }}-postsyncjobs"
+    jsonPointers:
+    - /data/mas_catalog_version
+    - /data/mas_catalog_build_id
+  {{- end }}
   project: "{{ .Values.argo.projects.apps }}"
   destination:
     server: {{ .Values.cluster.url }}
@@ -94,6 +104,14 @@ spec:
               cli_image_repo: {{ .Values.cli_image_repo }}
 
             {{- if and .Values.fvt_gitops .Values.fvt_gitops.enabled }}
+            {{- /* Catalog values are passed only when catalog.build_id is set; gitops_version always. */}}
+            gitops_version: "{{ .Values.source.revision }}"
+            {{- if .Values.mas_catalog_build_id }}
+            {{- if .Values.mas_catalog_version }}
+            mas_catalog_version: "{{ .Values.mas_catalog_version }}"
+            {{- end }}
+            mas_catalog_build_id: "{{ .Values.mas_catalog_build_id }}"
+            {{- end }}
             fvt-gitops-runner:
               enabled: true
               instance_id: "{{ .Values.instance.id }}"

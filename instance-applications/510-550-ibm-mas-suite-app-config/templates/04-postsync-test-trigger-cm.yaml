@@ -1,0 +1,17 @@
+{{- if or (eq .Values.mas_app_id "manage") (eq .Values.mas_app_id "visualinspection") }}
+{{- /* A change to these values syncs the app so the PostSync test hooks run again. */}}
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: postsync-test-trigger-cm
+  namespace: {{ .Values.mas_app_namespace }}
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  mas_catalog_version: "{{ .Values.mas_catalog_version | default "" }}"
+  mas_catalog_build_id: "{{ .Values.mas_catalog_build_id | default "" }}"
+  gitops_version: "{{ .Values.gitops_version | default "" }}"
+{{- end }}

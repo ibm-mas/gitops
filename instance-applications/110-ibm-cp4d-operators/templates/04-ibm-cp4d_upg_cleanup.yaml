@@ -24,7 +24,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v7" }}
+{{- $_job_version := "v8" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -151,11 +151,17 @@ spec:
                   oc patch commonservice common-service -n ${CPD_OPERATORS_NAMESPACE} --type=merge -p '{"spec":{"license":{"accept":true}}}'
                 fi
 
-                # Clean up orphaned ibm-zen-metastore-secret when ibm-zen-metastore-cm does not exist (embedded EDB requirement)
+                # Clean up orphaned ibm-zen-metastore-secret or ibm-zen-metastore-cm (both must exist or neither for embedded EDB)
                 if [[ -n "${CPD_INSTANCE_NAMESPACE}" ]]; then
-                  if oc get secret ibm-zen-metastore-secret -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null && ! oc get cm ibm-zen-metastore-cm -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
+                  HAS_SECRET=$(oc get secret ibm-zen-metastore-secret -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -o name)
+                  HAS_CM=$(oc get cm ibm-zen-metastore-cm -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -o name)
+
+                  if [[ -n "${HAS_SECRET}" && -z "${HAS_CM}" ]]; then
                     echo "Cleaning up orphaned ibm-zen-metastore-secret in ${CPD_INSTANCE_NAMESPACE}..."
                     oc delete secret ibm-zen-metastore-secret -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
+                  elif [[ -z "${HAS_SECRET}" && -n "${HAS_CM}" ]]; then
+                    echo "Cleaning up orphaned ibm-zen-metastore-cm in ${CPD_INSTANCE_NAMESPACE}..."
+                    oc delete cm ibm-zen-metastore-cm -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
                   fi
                 fi
 

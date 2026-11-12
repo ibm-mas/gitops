@@ -24,7 +24,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v4" }}
+{{- $_job_version := "v5" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -118,9 +118,34 @@ spec:
                 echo $(( $CH1 - $CH2 ))
               }
 
-              # Verify that the available channel for common service operator is enough for the given product version
+              # For CPD 5.4.0 and above: transition from OLM to Helm by cleaning up old 5.3.x OLM subscriptions & CSVs
+              if [[ "${CPD_PRODUCT_VERSION}" == "5.4.0" || "${CPD_PRODUCT_VERSION}" > "5.4.0" ]]; then
+                echo "================================================================================"
+                echo "CPD 5.4.0+ Upgrade detected: Cleaning up legacy OLM Subscriptions and CSVs..."
+                echo "================================================================================"
+
+                for SUB in cpd-platform-operator ibm-common-service-operator ibm-namespace-scope-operator ibm-zen-operator; do
+                  echo "Checking Subscription ${SUB}..."
+                  if oc get Subscription ${SUB} -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                    echo "Deleting legacy OLM Subscription ${SUB}..."
+                    oc delete Subscription ${SUB} -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                  fi
+                done
+
+                # Delete legacy ClusterServiceVersions left over from 5.3.x OLM
+                echo "Deleting legacy ClusterServiceVersions in ${CPD_OPERATORS_NAMESPACE}..."
+                oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
+                oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
+                oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/ibm-namespace-scope-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
+                oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/ibm-zen-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
+
+                echo "Legacy OLM cleanup for CPD 5.4.0 complete. Proceeding with Helm deployment."
+                exit 0
+              fi
+
+              # For CPD < 5.4.0: perform standard OLM channel verification
               echo "Verify that the available channel in the packagemanifests is enough for the product version currently installing"
-              export CPFS_AVAILABLE_CHANNELS=$((oc get PackageManifest ibm-common-service-operator -n ${CPD_OPERATORS_NAMESPACE} -o json) | jq -r '.status.channels | .[].name| split ("v") |last')
+              export CPFS_AVAILABLE_CHANNELS=$((oc get PackageManifest ibm-common-service-operator -n ${CPD_OPERATORS_NAMESPACE} -o json 2>/dev/null) | jq -r '.status.channels | .[].name | split ("v") | last')
 
               echo
               echo "============"

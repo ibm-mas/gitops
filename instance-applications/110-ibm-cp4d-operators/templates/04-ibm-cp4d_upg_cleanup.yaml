@@ -124,7 +124,7 @@ spec:
                 echo "CPD 5.4.0+ Upgrade detected: Cleaning up legacy OLM Subscriptions and CSVs..."
                 echo "================================================================================"
 
-                for SUB in cpd-platform-operator ibm-common-service-operator ibm-namespace-scope-operator ibm-zen-operator; do
+                for SUB in cpd-platform-operator ibm-common-service-operator ibm-namespace-scope-operator ibm-zen-operator operand-deployment-lifecycle-manager-app; do
                   echo "Checking Subscription ${SUB}..."
                   if oc get Subscription ${SUB} -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
                     echo "Deleting legacy OLM Subscription ${SUB}..."
@@ -138,6 +138,13 @@ spec:
                 oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
                 oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/ibm-namespace-scope-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
                 oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/ibm-zen-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
+                oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/operand-deployment-lifecycle-manager-app.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
+
+                # Ensure CommonService license acceptance is set
+                if oc get commonservice common-service -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                  echo "Ensuring CommonService license.accept is set to true in ${CPD_OPERATORS_NAMESPACE}..."
+                  oc patch commonservice common-service -n ${CPD_OPERATORS_NAMESPACE} --type=merge -p '{"spec":{"license":{"accept":true}}}' --ignore-not-found
+                fi
 
                 echo "Legacy OLM cleanup for CPD 5.4.0 complete. Proceeding with Helm deployment."
                 exit 0

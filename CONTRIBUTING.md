@@ -135,7 +135,7 @@ Automatically builds and publishes versioned documentation to GitHub Pages:
 
 ### Update Internal GHE Repo
 **Workflow:** [`.github/workflows/update-internal-repo.yaml`](.github/workflows/update-internal-repo.yaml)
-**Triggers:** Pushes to any branch or tag, daily schedule (`0 2 * * *`), and manual dispatch (`workflow_dispatch`)
+**Triggers:** Manual dispatch (`workflow_dispatch`), with internal synchronization managed via scheduled pull jobs within the IBM network.
 
 Mirrors all branches, tags, and commit history directly to the internal IBM GitHub Enterprise repository:
 - Mirrors `ibm-mas/gitops` to `automation-paas-cd-pipeline/mas-gitops` on github.ibm.com

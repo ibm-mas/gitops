@@ -1,15 +1,20 @@
 name: Update Internal GHE Mirror
 
 on:
-  push:
-    branches:
-      - '**'
-    tags:
-      - '**'
-  schedule:
-    # Daily reconciliation at 02:00 UTC to prune deleted branches/tags
-    - cron: '0 2 * * *'
+  # Automated push/schedule triggers disabled on public GitHub Actions runners due to github.ibm.com network isolation.
+  # Use internal pull-model sync (e.g. OpenShift CronJob / pipeline) within the IBM intranet.
+  # Manual dispatch retained for on-demand execution and test verification.
   workflow_dispatch:
+    inputs:
+      target_repo:
+        description: 'Target repository on GHE'
+        required: true
+        default: 'Devansh-Raghuvanshi/mas-gitops-test'
+      dry_run:
+        description: 'Run in dry-run mode (no changes pushed)'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: ghe-mirror-sync
@@ -20,21 +25,22 @@ jobs:
     name: Mirror to Internal GHE
     runs-on: ubuntu-latest
     steps:
-      - name: Mirror repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Execute mirror sync
         env:
           SOURCE_REPO: ${{ github.repository }}
-          TARGET_REPO: automation-paas-cd-pipeline/mas-gitops
+          TARGET_REPO: ${{ github.event.inputs.target_repo || 'Devansh-Raghuvanshi/mas-gitops-test' }}
           PUBLIC_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHE_TOKEN: ${{ secrets.ACTIONS_GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
         run: |
           set -e
-
-          echo "Cloning source repository (bare)..."
-          git clone --bare "https://x-access-token:${PUBLIC_TOKEN}@github.com/${SOURCE_REPO}.git" repo.git
-          cd repo.git
-
-          echo "Pushing mirror refs to https://github.ibm.com/${TARGET_REPO}..."
-          # Explicitly push heads and tags; avoid pushing internal GitHub pull-request refs (refs/pull/*)
-          git push --prune --force "https://x-access-token:${GHE_TOKEN}@github.ibm.com/${TARGET_REPO}.git" "refs/heads/*:refs/heads/*" "refs/tags/*:refs/tags/*"
-
-          echo "Mirror sync completed successfully."
+          chmod +x ./build/bin/sync-internal-mirror.sh
+          ./build/bin/sync-internal-mirror.sh \
+            ${DRY_RUN} \
+            --source "${SOURCE_REPO}" \
+            --target "${TARGET_REPO}" \
+            --public-token "${PUBLIC_TOKEN}" \
+            --ghe-token "${GHE_TOKEN}"

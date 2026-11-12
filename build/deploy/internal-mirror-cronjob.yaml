@@ -1,0 +1,94 @@
+---
+# ==============================================================================
+# OpenShift / Kubernetes CronJob for Internal GHE Pull Mirror
+# Target: Syncs github.com/ibm-mas/gitops -> github.ibm.com/automation-paas-cd-pipeline/mas-gitops
+# ==============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mas-gitops-ghe-mirror-secret
+  labels:
+    app.kubernetes.io/name: mas-gitops-pull-mirror
+    app.kubernetes.io/part-of: mas-gitops-mirroring
+type: Opaque
+stringData:
+  # Replace with internal Functional ID (FID) Personal Access Token having repo & workflow scopes
+  GHE_TOKEN: "<REPLACE_WITH_INTERNAL_GHE_FID_TOKEN>"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mas-gitops-pull-mirror
+  labels:
+    app.kubernetes.io/name: mas-gitops-pull-mirror
+    app.kubernetes.io/part-of: mas-gitops-mirroring
+spec:
+  # Schedule: Every 15 minutes
+  schedule: "*/15 * * * *"
+  # Forbid overlapping executions to prevent race conditions during git push
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: mas-gitops-pull-mirror
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: git-mirror
+              image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                capabilities:
+                  drop:
+                    - ALL
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              env:
+                - name: SOURCE_REPO
+                  value: "ibm-mas/gitops"
+                - name: TARGET_REPO
+                  value: "automation-paas-cd-pipeline/mas-gitops"
+                - name: GHE_HOST
+                  value: "github.ibm.com"
+                - name: GHE_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: mas-gitops-ghe-mirror-secret
+                      key: GHE_TOKEN
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  echo "Installing git..."
+                  microdnf install -y git
+                  
+                  WORK_DIR=$(mktemp -d)
+                  trap 'rm -rf "${WORK_DIR}"' EXIT
+                  cd "${WORK_DIR}"
+                  
+                  echo "Cloning source bare: https://github.com/${SOURCE_REPO}.git"
+                  git clone --bare "https://github.com/${SOURCE_REPO}.git" repo.git
+                  cd repo.git
+                  
+                  echo "Pushing mirror refs to https://${GHE_HOST}/${TARGET_REPO}..."
+                  git push --prune --force "https://x-access-token:${GHE_TOKEN}@${GHE_HOST}/${TARGET_REPO}.git" "refs/heads/*:refs/heads/*" "refs/tags/*:refs/tags/*"
+                  
+                  echo "Mirror sync completed successfully at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"

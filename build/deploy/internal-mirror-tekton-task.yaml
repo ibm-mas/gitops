@@ -1,0 +1,64 @@
+---
+# ==============================================================================
+# Tekton Task & Pipeline for Internal GHE Pull Mirror (SPS / Tekton)
+# ==============================================================================
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: mas-gitops-pull-mirror-task
+  labels:
+    app.kubernetes.io/name: mas-gitops-pull-mirror
+spec:
+  params:
+    - name: source-repo
+      type: string
+      default: "ibm-mas/gitops"
+      description: "Source repository on public GitHub"
+    - name: target-repo
+      type: string
+      default: "automation-paas-cd-pipeline/mas-gitops"
+      description: "Target repository on internal GHE"
+    - name: ghe-host
+      type: string
+      default: "github.ibm.com"
+      description: "Internal GitHub Enterprise host"
+    - name: ghe-token-secret-name
+      type: string
+      default: "mas-gitops-ghe-mirror-secret"
+      description: "Secret name containing the GHE token"
+    - name: ghe-token-secret-key
+      type: string
+      default: "GHE_TOKEN"
+      description: "Secret key containing the GHE token"
+  steps:
+    - name: mirror-sync
+      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      env:
+        - name: SOURCE_REPO
+          value: $(params.source-repo)
+        - name: TARGET_REPO
+          value: $(params.target-repo)
+        - name: GHE_HOST
+          value: $(params.ghe-host)
+        - name: GHE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: $(params.ghe-token-secret-name)
+              key: $(params.ghe-token-secret-key)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        
+        microdnf install -y git
+        WORK_DIR=$(mktemp -d)
+        trap 'rm -rf "${WORK_DIR}"' EXIT
+        cd "${WORK_DIR}"
+        
+        echo "Cloning source repository: https://github.com/${SOURCE_REPO}.git"
+        git clone --bare "https://github.com/${SOURCE_REPO}.git" repo.git
+        cd repo.git
+        
+        echo "Pushing mirror refs to https://${GHE_HOST}/${TARGET_REPO}.git"
+        git push --prune --force "https://x-access-token:${GHE_TOKEN}@${GHE_HOST}/${TARGET_REPO}.git" "refs/heads/*:refs/heads/*" "refs/tags/*:refs/tags/*"
+        
+        echo "Mirror sync completed successfully."

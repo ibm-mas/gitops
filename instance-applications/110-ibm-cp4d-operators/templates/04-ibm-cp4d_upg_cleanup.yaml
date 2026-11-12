@@ -96,6 +96,8 @@ spec:
           env:
             - name: CPD_OPERATORS_NAMESPACE
               value: {{ .Values.cpd_operators_namespace }}
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
             - name: CPFS_CHANNEL
               value: {{ .Values.cpfs_channel }}
             - name: CPD_PLATFORM_CHANNEL
@@ -144,6 +146,14 @@ spec:
                 if oc get commonservice common-service -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
                   echo "Ensuring CommonService license.accept is set to true in ${CPD_OPERATORS_NAMESPACE}..."
                   oc patch commonservice common-service -n ${CPD_OPERATORS_NAMESPACE} --type=merge -p '{"spec":{"license":{"accept":true}}}' --ignore-not-found
+                fi
+
+                # Clean up orphaned ibm-zen-metastore-secret when ibm-zen-metastore-cm does not exist (embedded EDB requirement)
+                if [[ -n "${CPD_INSTANCE_NAMESPACE}" ]]; then
+                  if oc get secret ibm-zen-metastore-secret -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null && ! oc get cm ibm-zen-metastore-cm -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
+                    echo "Cleaning up orphaned ibm-zen-metastore-secret in ${CPD_INSTANCE_NAMESPACE}..."
+                    oc delete secret ibm-zen-metastore-secret -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
+                  fi
                 fi
 
                 echo "Legacy OLM cleanup for CPD 5.4.0 complete. Proceeding with Helm deployment."

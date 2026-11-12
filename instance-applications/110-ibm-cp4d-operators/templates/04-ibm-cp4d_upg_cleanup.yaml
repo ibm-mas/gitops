@@ -24,7 +24,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v5" }}
+{{- $_job_version := "v6" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -136,11 +136,14 @@ spec:
 
                 # Delete legacy ClusterServiceVersions left over from 5.3.x OLM
                 echo "Deleting legacy ClusterServiceVersions in ${CPD_OPERATORS_NAMESPACE}..."
-                oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/cpd-platform-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
-                oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/ibm-common-service-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
-                oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/ibm-namespace-scope-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
-                oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/ibm-zen-operator.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
-                oc delete csv -n ${CPD_OPERATORS_NAMESPACE} -l "operators.coreos.com/operand-deployment-lifecycle-manager-app.${CPD_OPERATORS_NAMESPACE}" --ignore-not-found
+                for CSV_PREFIX in cpd-platform-operator ibm-common-service-operator ibm-namespace-scope-operator ibm-zen-operator operand-deployment-lifecycle-manager; do
+                  for CSV_NAME in $(oc get csv -n ${CPD_OPERATORS_NAMESPACE} -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+                    if [[ "${CSV_NAME}" == ${CSV_PREFIX}* ]]; then
+                      echo "Deleting legacy ClusterServiceVersion ${CSV_NAME}..."
+                      oc delete csv "${CSV_NAME}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                    fi
+                  done
+                done
 
                 # Ensure CommonService license acceptance is set
                 if oc get commonservice common-service -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then

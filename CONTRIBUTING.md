@@ -134,13 +134,14 @@ Automatically builds and publishes versioned documentation to GitHub Pages:
 - Version tags (`x.x.x`) are grouped by minor release (`x.x`)
 
 ### Update Internal GHE Repo
-**Workflow:** [`.github/workflows/update-internal-repo.yaml`](.github/workflows/update-internal-repo.yaml)
-**Triggers:** Manual dispatch (`workflow_dispatch`), with internal synchronization managed via scheduled pull jobs within the IBM network.
+**Script:** [`build/bin/sync-internal-mirror.sh`](build/bin/sync-internal-mirror.sh)
+**Deployment:** [`build/deploy/internal-mirror-cronjob.yaml`](build/deploy/internal-mirror-cronjob.yaml) (OpenShift / Kubernetes CronJob)
 
-Mirrors all branches, tags, and commit history directly to the internal IBM GitHub Enterprise repository:
-- Mirrors `ibm-mas/gitops` to `automation-paas-cd-pipeline/mas-gitops` on github.ibm.com
+Mirrors all branches, tags, and commit history directly from public GitHub to the internal IBM GitHub Enterprise repository using the internal pull model:
+- Clones `ibm-mas/gitops` bare and mirrors to `automation-paas-cd-pipeline/mas-gitops` on github.ibm.com
 - Retains exact commit SHAs, author metadata, and tag definitions (1:1 parity)
-- Automatically prunes deleted upstream branches and tags
+- Automatically prunes deleted upstream branches and tags (`--prune`)
+- Executed periodically inside the IBM network to respect GHE network boundaries
 
 
 RBAC

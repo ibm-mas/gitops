@@ -182,7 +182,7 @@ spec:
                   if ! oc get cm ibmcloud-cluster-info -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
                     if oc get cm ibmcloud-cluster-info -n kube-public &>/dev/null; then
                       echo "Copying ibmcloud-cluster-info to ${CPD_INSTANCE_NAMESPACE}..."
-                      oc get cm ibmcloud-cluster-info -n kube-public -o yaml | sed "s/namespace: .*/namespace: ${CPD_INSTANCE_NAMESPACE}/" | oc apply -f - || true
+                      oc get cm ibmcloud-cluster-info -n kube-public -o json | jq --arg ns "${CPD_INSTANCE_NAMESPACE}" '.metadata.namespace = $ns | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.annotations, .metadata.ownerReferences)' | oc apply -f - || true
                     else
                       echo "Creating default ibmcloud-cluster-info in ${CPD_INSTANCE_NAMESPACE}..."
                       oc create cm ibmcloud-cluster-info -n ${CPD_INSTANCE_NAMESPACE} --from-literal=cluster_name=mycluster --from-literal=cluster_address=10.0.0.1 || true
@@ -202,7 +202,7 @@ spec:
                   if ! oc get cm product-configmap -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
                     if oc get cm product-configmap -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
                       echo "Copying product-configmap to ${CPD_OPERATORS_NAMESPACE}..."
-                      oc get cm product-configmap -n ${CPD_INSTANCE_NAMESPACE} -o yaml | sed "s/namespace: .*/namespace: ${CPD_OPERATORS_NAMESPACE}/" | oc apply -f - || true
+                      oc get cm product-configmap -n ${CPD_INSTANCE_NAMESPACE} -o json | jq --arg ns "${CPD_OPERATORS_NAMESPACE}" '.metadata.namespace = $ns | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.annotations, .metadata.ownerReferences)' | oc apply -f - || true
                     else
                       echo "Creating default product-configmap in ${CPD_OPERATORS_NAMESPACE}..."
                       oc create cm product-configmap -n ${CPD_OPERATORS_NAMESPACE} --from-literal=PRODUCT_NAME="IBM Cloud Platform Common Services" || true
@@ -211,7 +211,7 @@ spec:
                   if ! oc get cm ibmcloud-cluster-info -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
                     if oc get cm ibmcloud-cluster-info -n kube-public &>/dev/null; then
                       echo "Copying ibmcloud-cluster-info to ${CPD_OPERATORS_NAMESPACE}..."
-                      oc get cm ibmcloud-cluster-info -n kube-public -o yaml | sed "s/namespace: .*/namespace: ${CPD_OPERATORS_NAMESPACE}/" | oc apply -f - || true
+                      oc get cm ibmcloud-cluster-info -n kube-public -o json | jq --arg ns "${CPD_OPERATORS_NAMESPACE}" '.metadata.namespace = $ns | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.annotations, .metadata.ownerReferences)' | oc apply -f - || true
                     else
                       echo "Creating default ibmcloud-cluster-info in ${CPD_OPERATORS_NAMESPACE}..."
                       oc create cm ibmcloud-cluster-info -n ${CPD_OPERATORS_NAMESPACE} --from-literal=cluster_name=mycluster --from-literal=cluster_address=10.0.0.1 || true
@@ -226,7 +226,7 @@ spec:
                   if ! oc get secret platform-auth-idp-credentials -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
                     if oc get secret platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
                       echo "Copying platform-auth-idp-credentials to ${CPD_OPERATORS_NAMESPACE}..."
-                      oc get secret platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} -o json | jq ".metadata.namespace = \"${CPD_OPERATORS_NAMESPACE}\" | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.annotations, .metadata.ownerReferences)" | oc apply -f - || true
+                      oc get secret platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} -o json | jq --arg ns "${CPD_OPERATORS_NAMESPACE}" '.metadata.namespace = $ns | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.annotations, .metadata.ownerReferences)' | oc apply -f - || true
                     fi
                   fi
 
@@ -234,16 +234,7 @@ spec:
                   if oc get crd commonwebuis.operators.ibm.com &>/dev/null; then
                     if ! oc get CommonWebUI common-web-ui -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
                       echo "Creating default CommonWebUI common-web-ui in ${CPD_OPERATORS_NAMESPACE}..."
-                      cat <<EOF | oc apply -f - || true
-apiVersion: operators.ibm.com/v1alpha1
-kind: CommonWebUI
-metadata:
-  name: common-web-ui
-  namespace: ${CPD_OPERATORS_NAMESPACE}
-spec:
-  scaleConfig: small
-  replicas: 1
-EOF
+                      printf 'apiVersion: operators.ibm.com/v1alpha1\nkind: CommonWebUI\nmetadata:\n  name: common-web-ui\n  namespace: %s\nspec:\n  scaleConfig: small\n  replicas: 1\n' "${CPD_OPERATORS_NAMESPACE}" | oc apply -f - || true
                     fi
                   fi
                 fi

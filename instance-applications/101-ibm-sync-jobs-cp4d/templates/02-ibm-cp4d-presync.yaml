@@ -26,7 +26,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v5" }}
+{{- $_job_version := "v7" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -223,36 +223,43 @@ spec:
               SM_AWS_ACCESS_KEY_ID=$(cat /etc/mas/creds/aws/aws_access_key_id)
               SM_AWS_SECRET_ACCESS_KEY=$(cat /etc/mas/creds/aws/aws_secret_access_key)
 
-              echo 
+              echo
               echo "================================================================================"
               echo "Storing CP4D Dependencies' Channel and Version info in AWS Secret Manager"
               echo "================================================================================"
 
-              
+                            
               echo
-              echo "Fetching channel for namespace scope from PackageManifest"
+              echo "Fetching channel for namespace scope from olm-utils-cm ConfigMap"
               echo "================================================================================"
 
-              export NAMESPACE_SCOPE_CHANNEL=$((oc get PackageManifest ibm-namespace-scope-operator -n ${CPD_OPERATORS_NAMESPACE} -o json) | jq -r '[.status.channels | .[].name] | last')
+              export NAMESPACE_SCOPE_CR_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.["ibm-namespace-scope-operator"].cr_version')
+              if [[ -z "${NAMESPACE_SCOPE_CR_VERSION}" || "${NAMESPACE_SCOPE_CR_VERSION}" == "null" ]]; then
+                echo "Failed to fetch namespace scope cr_version"
+                exit 1
+              fi
+              # Derive channel from major.minor of cr_version (e.g. 4.3.6 -> v4.3)
+              export NAMESPACE_SCOPE_CHANNEL="v$(echo "${NAMESPACE_SCOPE_CR_VERSION}" | cut -d'.' -f1,2)"
               if [[ -z "${NAMESPACE_SCOPE_CHANNEL}" ]]; then
                 echo "Failed to fetch namespace scope channel"
                 exit 1
               fi
 
-              echo 
+              echo
               echo "Fetching values from olm-utils-cm config map"
               echo "================================================================================"
               echo "Fetching IBM Licensing Channel..."
-              export LICENSING_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.["ibm-licensing"].sub_channel')
-              if [[ -z "${LICENSING_CHANNEL}" ]]; then
+              # The key is "ibm-licensing" up to CPD 5.3.x and "ibm_licensing_v2" / "ibm_licensing" from CPD 5.4.0
+              export LICENSING_CHANNEL=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.["ibm-licensing"].sub_channel // .["ibm_licensing_v2"].sub_channel // .["ibm_licensing"].sub_channel')
+              if [[ -z "${LICENSING_CHANNEL}" || "${LICENSING_CHANNEL}" == "null" ]]; then
                 echo "Failed to fetch ibm licensing channel"
                 exit 1
               fi
 
               echo
               echo "Fetching IBM Licensing Version..."
-              export LICENSING_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.["ibm-licensing"].csv_version')
-              if [[ -z "${LICENSING_VERSION}" ]]; then
+              export LICENSING_VERSION=$((oc get ConfigMap olm-utils-cm -o json) | yq '.data.release_components_meta' | yq '.["ibm-licensing"].csv_version // .["ibm_licensing_v2"].csv_version // .["ibm_licensing"].csv_version')
+              if [[ -z "${LICENSING_VERSION}" || "${LICENSING_VERSION}" == "null" ]]; then
                 echo "Failed to fetch ibm licensing version"
                 exit 1
               fi

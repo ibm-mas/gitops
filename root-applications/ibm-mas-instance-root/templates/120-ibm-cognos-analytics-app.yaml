@@ -2,6 +2,7 @@
 {{ $cpd_operators_ns := .Values.ibm_cp4d.cpd_operators_namespace }}
 {{ $cpd_instance_ns := .Values.ibm_cp4d.cpd_instance_namespace }}
 {{ $cpd_version := .Values.ibm_cp4d.cpd_product_version | default "0.0.0" | toString }}
+{{ $is540 := not (lt (semver "5.4.0" | (semver $cpd_version).Compare) 0) }}
 {{- /*
   Chart version resolution (highest priority first):
     1. Explicit gitops config value (ibm_cp4d.cognos_chart_version)
@@ -13,7 +14,7 @@
 {{- if $olmUtils }}
 {{- $meta = $olmUtils.data.release_components_meta | fromYaml }}
 {{- end }}
-{{- $cognosVersion := .Values.ibm_cp4d.cognos_chart_version | default ((index $meta "cognos_analytics" | default dict).case_version | default "29.1.0") }}
+{{- $cognosVersion := .Values.ibm_cp4d.cognos_chart_version | default ((index $meta "cognos_analytics" | default dict).case_version | default (ternary "30.0.0" "29.1.0" $is540)) }}
 ---
 # CPD >= 5.3.1 — native ArgoCD Helm Apps (no K8s Jobs)
 # Wave 119: cognos-analytics cluster-scoped (CRDs + ClusterRoles)

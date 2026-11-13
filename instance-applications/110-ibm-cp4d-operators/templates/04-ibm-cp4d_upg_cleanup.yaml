@@ -24,7 +24,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v4" }}
+{{- $_job_version := "v10" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -96,6 +96,8 @@ spec:
           env:
             - name: CPD_OPERATORS_NAMESPACE
               value: {{ .Values.cpd_operators_namespace }}
+            - name: CPD_INSTANCE_NAMESPACE
+              value: {{ .Values.cpd_instance_namespace }}
             - name: CPFS_CHANNEL
               value: {{ .Values.cpfs_channel }}
             - name: CPD_PLATFORM_CHANNEL
@@ -118,9 +120,132 @@ spec:
                 echo $(( $CH1 - $CH2 ))
               }
 
-              # Verify that the available channel for common service operator is enough for the given product version
+              # For CPD 5.4.0 and above: transition from OLM to Helm by cleaning up old 5.3.x OLM subscriptions & CSVs
+              if [[ "${CPD_PRODUCT_VERSION}" == "5.4.0" || "${CPD_PRODUCT_VERSION}" > "5.4.0" ]]; then
+                echo "================================================================================"
+                echo "CPD 5.4.0+ Upgrade detected: Cleaning up legacy OLM Subscriptions and CSVs..."
+                echo "================================================================================"
+
+                for SUB in cpd-platform-operator ibm-common-service-operator ibm-namespace-scope-operator ibm-zen-operator operand-deployment-lifecycle-manager-app; do
+                  echo "Checking Subscription ${SUB}..."
+                  if oc get Subscription ${SUB} -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                    echo "Deleting legacy OLM Subscription ${SUB}..."
+                    oc delete Subscription ${SUB} -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                  fi
+                done
+
+                # Delete legacy ClusterServiceVersions left over from 5.3.x OLM
+                echo "Deleting legacy ClusterServiceVersions in ${CPD_OPERATORS_NAMESPACE}..."
+                for CSV_PREFIX in cpd-platform-operator ibm-common-service-operator ibm-namespace-scope-operator ibm-zen-operator operand-deployment-lifecycle-manager; do
+                  for CSV_NAME in $(oc get csv -n ${CPD_OPERATORS_NAMESPACE} -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+                    if [[ "${CSV_NAME}" == ${CSV_PREFIX}* ]]; then
+                      echo "Deleting legacy ClusterServiceVersion ${CSV_NAME}..."
+                      oc delete csv "${CSV_NAME}" -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found
+                    fi
+                  done
+                done
+
+                # Ensure CommonService license acceptance is set
+                if oc get commonservice common-service -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                  echo "Ensuring CommonService license.accept is set to true in ${CPD_OPERATORS_NAMESPACE}..."
+                  oc patch commonservice common-service -n ${CPD_OPERATORS_NAMESPACE} --type=merge -p '{"spec":{"license":{"accept":true}}}'
+                fi
+
+                # Clean up orphaned ibm-zen-metastore-secret or ibm-zen-metastore-cm (both must exist or neither for embedded EDB)
+                if [[ -n "${CPD_INSTANCE_NAMESPACE}" ]]; then
+                  HAS_SECRET=$(oc get secret ibm-zen-metastore-secret -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -o name)
+                  HAS_CM=$(oc get cm ibm-zen-metastore-cm -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found -o name)
+
+                  if [[ -n "${HAS_SECRET}" && -z "${HAS_CM}" ]]; then
+                    echo "Cleaning up orphaned ibm-zen-metastore-secret in ${CPD_INSTANCE_NAMESPACE}..."
+                    oc delete secret ibm-zen-metastore-secret -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
+                  elif [[ -z "${HAS_SECRET}" && -n "${HAS_CM}" ]]; then
+                    echo "Cleaning up orphaned ibm-zen-metastore-cm in ${CPD_INSTANCE_NAMESPACE}..."
+                    oc delete cm ibm-zen-metastore-cm -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
+                  fi
+
+                  # Clean up legacy 5.3.x OperandRequests that are orphaned or stuck in Pending
+                  if oc get operandrequest catalog-api-ibm-licensing-request -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
+                    echo "Deleting legacy 5.3.x catalog-api-ibm-licensing-request OperandRequest in ${CPD_INSTANCE_NAMESPACE}..."
+                    oc delete operandrequest catalog-api-ibm-licensing-request -n ${CPD_INSTANCE_NAMESPACE} --ignore-not-found
+                  fi
+
+                  # Ensure platform-auth-idp, oauth-client-map, and ibmcloud-cluster-info configmaps exist to unblock ibm-iam-operator and ZenService lite-cr startup
+                  if ! oc get cm platform-auth-idp -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
+                    echo "Creating platform-auth-idp ConfigMap in ${CPD_INSTANCE_NAMESPACE}..."
+                    oc create cm platform-auth-idp -n ${CPD_INSTANCE_NAMESPACE} --from-literal=MASTER_PATH=/usr/share/idm/master || true
+                  fi
+                  if ! oc get cm oauth-client-map -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
+                    echo "Creating oauth-client-map ConfigMap in ${CPD_INSTANCE_NAMESPACE}..."
+                    oc create cm oauth-client-map -n ${CPD_INSTANCE_NAMESPACE} --from-literal=CLUSTER_CA_DOMAIN=mycluster.icp || true
+                  fi
+                  if ! oc get cm ibmcloud-cluster-info -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
+                    if oc get cm ibmcloud-cluster-info -n kube-public &>/dev/null; then
+                      echo "Copying ibmcloud-cluster-info to ${CPD_INSTANCE_NAMESPACE}..."
+                      oc get cm ibmcloud-cluster-info -n kube-public -o json | jq --arg ns "${CPD_INSTANCE_NAMESPACE}" '.metadata.namespace = $ns | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.annotations, .metadata.ownerReferences)' | oc apply -f - || true
+                    else
+                      echo "Creating default ibmcloud-cluster-info in ${CPD_INSTANCE_NAMESPACE}..."
+                      oc create cm ibmcloud-cluster-info -n ${CPD_INSTANCE_NAMESPACE} --from-literal=cluster_name=mycluster --from-literal=cluster_address=10.0.0.1 || true
+                    fi
+                  fi
+                fi
+
+                if [[ -n "${CPD_OPERATORS_NAMESPACE}" ]]; then
+                  if ! oc get cm platform-auth-idp -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                    echo "Creating platform-auth-idp ConfigMap in ${CPD_OPERATORS_NAMESPACE}..."
+                    oc create cm platform-auth-idp -n ${CPD_OPERATORS_NAMESPACE} --from-literal=MASTER_PATH=/usr/share/idm/master || true
+                  fi
+                  if ! oc get cm oauth-client-map -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                    echo "Creating oauth-client-map ConfigMap in ${CPD_OPERATORS_NAMESPACE}..."
+                    oc create cm oauth-client-map -n ${CPD_OPERATORS_NAMESPACE} --from-literal=CLUSTER_CA_DOMAIN=mycluster.icp || true
+                  fi
+                  if ! oc get cm product-configmap -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                    if oc get cm product-configmap -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
+                      echo "Copying product-configmap to ${CPD_OPERATORS_NAMESPACE}..."
+                      oc get cm product-configmap -n ${CPD_INSTANCE_NAMESPACE} -o json | jq --arg ns "${CPD_OPERATORS_NAMESPACE}" '.metadata.namespace = $ns | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.annotations, .metadata.ownerReferences)' | oc apply -f - || true
+                    else
+                      echo "Creating default product-configmap in ${CPD_OPERATORS_NAMESPACE}..."
+                      oc create cm product-configmap -n ${CPD_OPERATORS_NAMESPACE} --from-literal=PRODUCT_NAME="IBM Cloud Platform Common Services" || true
+                    fi
+                  fi
+                  if ! oc get cm ibmcloud-cluster-info -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                    if oc get cm ibmcloud-cluster-info -n kube-public &>/dev/null; then
+                      echo "Copying ibmcloud-cluster-info to ${CPD_OPERATORS_NAMESPACE}..."
+                      oc get cm ibmcloud-cluster-info -n kube-public -o json | jq --arg ns "${CPD_OPERATORS_NAMESPACE}" '.metadata.namespace = $ns | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.annotations, .metadata.ownerReferences)' | oc apply -f - || true
+                    else
+                      echo "Creating default ibmcloud-cluster-info in ${CPD_OPERATORS_NAMESPACE}..."
+                      oc create cm ibmcloud-cluster-info -n ${CPD_OPERATORS_NAMESPACE} --from-literal=cluster_name=mycluster --from-literal=cluster_address=10.0.0.1 || true
+                    fi
+                  fi
+                  if ! oc get secret ibmcloud-cluster-ca-cert -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                    if oc get secret cs-ca-certificate-secret -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                      echo "Creating ibmcloud-cluster-ca-cert alias from cs-ca-certificate-secret in ${CPD_OPERATORS_NAMESPACE}..."
+                      oc get secret cs-ca-certificate-secret -n ${CPD_OPERATORS_NAMESPACE} -o json | jq '.metadata.name = "ibmcloud-cluster-ca-cert" | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.annotations, .metadata.ownerReferences)' | oc apply -f - || true
+                    fi
+                  fi
+                  if ! oc get secret platform-auth-idp-credentials -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                    if oc get secret platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} &>/dev/null; then
+                      echo "Copying platform-auth-idp-credentials to ${CPD_OPERATORS_NAMESPACE}..."
+                      oc get secret platform-auth-idp-credentials -n ${CPD_INSTANCE_NAMESPACE} -o json | jq --arg ns "${CPD_OPERATORS_NAMESPACE}" '.metadata.namespace = $ns | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.annotations, .metadata.ownerReferences)' | oc apply -f - || true
+                    fi
+                  fi
+
+                  # Ensure CommonWebUI CR exists if the CRD is installed so im-needs-ui OperandRequest reaches Ready
+                  if oc get crd commonwebuis.operators.ibm.com &>/dev/null; then
+                    if ! oc get CommonWebUI common-web-ui -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                      echo "Creating default CommonWebUI common-web-ui in ${CPD_OPERATORS_NAMESPACE}..."
+                      printf 'apiVersion: operators.ibm.com/v1alpha1\nkind: CommonWebUI\nmetadata:\n  name: common-web-ui\n  namespace: %s\nspec:\n  scaleConfig: small\n  replicas: 1\n' "${CPD_OPERATORS_NAMESPACE}" | oc apply -f - || true
+                    fi
+                  fi
+                fi
+
+                echo "Legacy OLM cleanup for CPD 5.4.0 complete. Proceeding with Helm deployment."
+                exit 0
+              fi
+
+              # For CPD < 5.4.0: perform standard OLM channel verification
               echo "Verify that the available channel in the packagemanifests is enough for the product version currently installing"
-              export CPFS_AVAILABLE_CHANNELS=$((oc get PackageManifest ibm-common-service-operator -n ${CPD_OPERATORS_NAMESPACE} -o json) | jq -r '.status.channels | .[].name| split ("v") |last')
+              export CPFS_AVAILABLE_CHANNELS=$((oc get PackageManifest ibm-common-service-operator -n ${CPD_OPERATORS_NAMESPACE} -o json 2>/dev/null) | jq -r '.status.channels | .[].name | split ("v") | last')
 
               echo
               echo "============"

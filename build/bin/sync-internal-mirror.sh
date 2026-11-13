@@ -82,14 +82,21 @@ trap 'rm -rf "${WORK_DIR}"' EXIT
 
 cd "${WORK_DIR}"
 
-# Build source clone URL (public GitHub)
-if [[ -n "${PUBLIC_TOKEN}" ]]; then
+# Build source clone URL (public GitHub or direct path/URL)
+if [[ "${SOURCE_REPO}" =~ ^(https?://|/|\.) ]]; then
+  SOURCE_URL="${SOURCE_REPO}"
+elif [[ -n "${PUBLIC_TOKEN}" ]]; then
   SOURCE_URL="https://x-access-token:${PUBLIC_TOKEN}@github.com/${SOURCE_REPO}.git"
 else
   SOURCE_URL="https://github.com/${SOURCE_REPO}.git"
 fi
 
-TARGET_URL="https://x-access-token:${GHE_TOKEN}@${GHE_HOST}/${TARGET_REPO}.git"
+# Build target URL (internal GHE or direct path/URL)
+if [[ "${TARGET_REPO}" =~ ^(https?://|/|\.) ]]; then
+  TARGET_URL="${TARGET_REPO}"
+else
+  TARGET_URL="https://x-access-token:${GHE_TOKEN}@${GHE_HOST}/${TARGET_REPO}.git"
+fi
 
 echo "=== Internal Mirror Sync Started ==="
 echo "Timestamp : $(date -u +"%Y-%m-%dT%H:%M:%SZ")"

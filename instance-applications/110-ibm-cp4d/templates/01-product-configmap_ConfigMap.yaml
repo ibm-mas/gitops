@@ -1,0 +1,18 @@
+{{- if not (lt (semver "5.4.0" | (semver (.Values.cpd_product_version | default "0.0.0" | toString)).Compare) 0) }}
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: product-configmap
+  namespace: {{ .Values.cpd_instance_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "081"
+{{- if .Values.custom_labels }}
+  labels:
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+data:
+  PRODUCT_NAME: "IBM Cloud Pak for Data"
+  ROUTER_PORT: "443"
+  CLUSTER_NAME: "mycluster"
+{{- end }}

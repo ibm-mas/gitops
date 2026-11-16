@@ -24,7 +24,7 @@ Increment this value whenever you make a change to an immutable field of the Job
 E.g. passing in a new environment variable.
 Included in $_job_hash (see below).
 */}}
-{{- $_job_version := "v10" }}
+{{- $_job_version := "v11" }}
 
 {{- /*
 10 char hash appended to the job name taking into account $_job_config_values, $_job_version and $_cli_image_digest
@@ -126,7 +126,7 @@ spec:
                 echo "CPD 5.4.0+ Upgrade detected: Cleaning up legacy OLM Subscriptions and CSVs..."
                 echo "================================================================================"
 
-                for SUB in cpd-platform-operator ibm-common-service-operator ibm-namespace-scope-operator ibm-zen-operator operand-deployment-lifecycle-manager-app; do
+                for SUB in cpd-platform-operator ibm-common-service-operator ibm-namespace-scope-operator ibm-zen-operator operand-deployment-lifecycle-manager-app ibm-iam-operator ibm-im-operator ibm-postgresql-operator cloud-native-postgresql; do
                   echo "Checking Subscription ${SUB}..."
                   if oc get Subscription ${SUB} -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
                     echo "Deleting legacy OLM Subscription ${SUB}..."
@@ -136,7 +136,7 @@ spec:
 
                 # Delete legacy ClusterServiceVersions left over from 5.3.x OLM
                 echo "Deleting legacy ClusterServiceVersions in ${CPD_OPERATORS_NAMESPACE}..."
-                for CSV_PREFIX in cpd-platform-operator ibm-common-service-operator ibm-namespace-scope-operator ibm-zen-operator operand-deployment-lifecycle-manager; do
+                for CSV_PREFIX in cpd-platform-operator ibm-common-service-operator ibm-namespace-scope-operator ibm-zen-operator operand-deployment-lifecycle-manager ibm-iam-operator ibm-im-operator ibm-postgresql-operator cloud-native-postgresql; do
                   for CSV_NAME in $(oc get csv -n ${CPD_OPERATORS_NAMESPACE} -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
                     if [[ "${CSV_NAME}" == ${CSV_PREFIX}* ]]; then
                       echo "Deleting legacy ClusterServiceVersion ${CSV_NAME}..."
@@ -144,6 +144,28 @@ spec:
                     fi
                   done
                 done
+
+                # Delete legacy OLM mutating and validating webhook configurations if present
+                echo "Cleaning up legacy OLM admission webhook configurations..."
+                for MW in $(oc get mutatingwebhookconfigurations -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+                  if [[ "${MW}" == *ibm-common-service* || "${MW}" == *ibm-operandrequest* || "${MW}" == *ibm-im-operator* || "${MW}" == *ibm-iam* ]]; then
+                    echo "Deleting legacy MutatingWebhookConfiguration ${MW}..."
+                    oc delete mutatingwebhookconfiguration "${MW}" --ignore-not-found || true
+                  fi
+                done
+                for VW in $(oc get validatingwebhookconfigurations -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+                  if [[ "${VW}" == *ibm-common-service* || "${VW}" == *ibm-im-operator* || "${VW}" == *ibm-iam* ]]; then
+                    echo "Deleting legacy ValidatingWebhookConfiguration ${VW}..."
+                    oc delete validatingwebhookconfiguration "${VW}" --ignore-not-found || true
+                  fi
+                done
+
+                # Clean up stale 5.3.x Authentication CR so ibm-iam-operator in 5.4.0 starts fresh without legacy route status
+                if oc get authentications.operator.ibm.com example-authentication -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then
+                  echo "Cleaning up stale 5.3.x Authentication CR in ${CPD_OPERATORS_NAMESPACE}..."
+                  oc patch authentications.operator.ibm.com example-authentication -n ${CPD_OPERATORS_NAMESPACE} -p '{"metadata":{"finalizers":[]}}' --type=merge || true
+                  oc delete authentications.operator.ibm.com example-authentication -n ${CPD_OPERATORS_NAMESPACE} --ignore-not-found || true
+                fi
 
                 # Ensure CommonService license acceptance is set
                 if oc get commonservice common-service -n ${CPD_OPERATORS_NAMESPACE} &>/dev/null; then

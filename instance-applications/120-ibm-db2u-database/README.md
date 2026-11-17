@@ -30,7 +30,7 @@ Contains a job that runs last (`05-postsync-setup-db2_Job.yaml`). This registers
 | `Service` | Db2 services, including HADR services | DB2 application namespace | Always | `application_admin_role` |
 | `Service` | Private NLB service | DB2 application namespace | When `private_nlb.enabled` is true | `application_admin_role` |
 | `Secret` | Post-sync DB2 generated secret | DB2 application namespace | Always | `application_admin_role` |
-| `Secret` | Customer certificate secret (`db2u-manual-certificate-<instance>`) | DB2 application namespace | When `db2_manual_cert.enabled` is true | `application_admin_role` |
+| `Secret` | Customer certificate secret (`db2u-manual-certificate-<instance>`) | DB2 application namespace | When `db2_manual_cert.enabled` is true and `tls_crt` and `tls_key` are set | `application_admin_role` |
 | `NetworkPolicy` | HADR network policy | DB2 application namespace | When HADR is enabled | `application_admin_role` |
 | `Job` | Pre/post-sync DB2 setup jobs | DB2 application namespace | Always | `application_admin_role` |
 | `Job` | DB2 audit policy setup job | DB2 application namespace | When `mas_application_id` is `manage`, `facilities`, `monitor`, or `iot` | `application_admin_role` |
@@ -307,17 +307,22 @@ When disabled, the existing cert-manager issued certificate remains in use.
 
 ### PEM Requirements
 
-Customer certificates must be PEM encoded.
+Customer certificates must be PEM encoded. The values are supplied base64-encoded in the YAML fragment written by `create_db2_manual_cert()`.
 
 | Field | Required | Description |
 |---|---|---|
-| `tls_crt` | Yes | PEM certificate (or certificate chain) |
+| `tls_crt` | Yes | PEM certificate or chain, ordered leaf first, CA last |
 | `tls_key` | Yes | PEM private key |
 | `ca_crt` | No | PEM CA certificate or chain |
 
-The certificate SANs should cover both the configured `db2_route_hostname` and the internal Db2 service names used by MAS.
+### Customer Certificate Ingestion
 
-If `ca_crt` is not supplied, the certificate ingestion workflow will attempt to extract the issuing CA certificate from the certificate chain contained in `tls_crt`. If a full CA chain is available, providing it explicitly via `ca_crt` is recommended.
+- If `ca_crt` is not supplied, the last certificate in the `tls_crt` chain is used as the CA. Wrong ordering yields the wrong CA, so keep the leaf first. Supplying `ca_crt` explicitly is recommended when a full CA chain is available.
+- When `db2_manual_cert` is enabled, `ca_crt` must be non-empty. The postsync Job fails with a clear error if it is empty, because the CA is needed for the JdbcCfg trust anchor.
+- The SANs must cover:
+  - `db2_route_hostname`
+  - `c-<db2_instance>-db2u-engn-svc.<namespace>.svc`
+  - `*.c-<db2_instance>-db2u-engn-svc.<namespace>.svc`
 
 ### PrivateLink Access Pattern
 

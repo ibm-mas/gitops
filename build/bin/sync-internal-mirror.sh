@@ -72,7 +72,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${GHE_TOKEN}" ]]; then
-  echo "ERROR: GHE_TOKEN environment variable or --ghe-token argument is required to authenticate against ${GHE_HOST}." >&2
+  # Automatically attempt to resolve token from GitHub CLI (gh) if authenticated
+  if command -v gh >/dev/null 2>&1; then
+    GHE_TOKEN="$(gh auth token --hostname "${GHE_HOST}" 2>/dev/null || true)"
+  fi
+fi
+
+if [[ -z "${GHE_TOKEN}" ]]; then
+  echo "ERROR: GHE_TOKEN environment variable or --ghe-token argument is required (or authenticate via 'gh auth login --hostname ${GHE_HOST}')." >&2
   exit 1
 fi
 

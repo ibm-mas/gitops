@@ -133,15 +133,8 @@ Automatically builds and publishes versioned documentation to GitHub Pages:
 - Documentation is published to [https://ibm-mas.github.io/gitops/](https://ibm-mas.github.io/gitops/)
 - Version tags (`x.x.x`) are grouped by minor release (`x.x`)
 
-### Update Internal GHE Repo
-**Script:** [`build/bin/sync-internal-mirror.sh`](build/bin/sync-internal-mirror.sh)
-**Deployment:** [`build/deploy/internal-mirror-cronjob.yaml`](build/deploy/internal-mirror-cronjob.yaml) (OpenShift / Kubernetes CronJob)
-
-Mirrors all branches, tags, and commit history directly from public GitHub to the internal IBM GitHub Enterprise repository using the internal pull model:
-- Clones `ibm-mas/gitops` bare and mirrors to `automation-paas-cd-pipeline/mas-gitops` on github.ibm.com
-- Retains exact commit SHAs, author metadata, and tag definitions (1:1 parity)
-- Automatically prunes deleted upstream branches and tags (`--prune`)
-- Executed periodically inside the IBM network to respect GHE network boundaries
+### Internal GHE Mirroring
+The public `ibm-mas/gitops` repository is mirrored to the internal IBM GitHub Enterprise repository (`automation-paas-cd-pipeline/mas-gitops`) via an internal pull-model synchronization pipeline running within the internal IBM toolchain.
 
 
 RBAC

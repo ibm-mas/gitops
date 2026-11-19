@@ -1,0 +1,265 @@
+{{- /*
+IC User Role setup job for InCluster DB2 (Manage only).
+
+Runs after the main postsync DB2 setup job (sync-wave 129) and the audit policy job
+(sync-wave 130), at sync-wave 131.
+
+Only executed when ALL of the following conditions are met:
+  1. production_database_access is set  <-- checked first; skips everything if not configured
+  2. application_admin_role: true
+  3. mas_application_id == "manage"
+  4. should_execute: true
+  5. db2_instance_name does not contain "sdb" (shared instances are excluded)
+
+When the production-database-access GenericAddon is configured this job will:
+  - Check if the IC_USER DB2 role already exists; create it if not.
+  - Grant all required Maximo table, sequence, catalog, and package privileges
+    to the IC_USER role (idempotent - safe to re-run).
+  - Look for existing users whose name starts with "ic" (case-insensitive) and
+    grant the IC_USER role to each of them if not already assigned. Users are
+    found from the local OS user list (getent) and from SYSCAT.DBAUTH, because
+    users served by SSSD can be looked up by name but are not listed by getent.
+  - Enable the USER_AUDIT audit policy (created by the audit policy job) for the
+    same users.
+  - Enable the USER_AUDIT audit policy for the IC_USER role.
+*/}}
+{{- if .Values.production_database_access }}
+{{- if .Values.application_admin_role }}
+{{- if eq .Values.mas_application_id "manage" }}
+{{- if .Values.should_execute }}
+{{- if not (contains "sdb" .Values.db2_instance_name) }}
+
+{{- /*
+Meaningful prefix for the job resource name. Must be under 52 chars.
+*/}}
+{{- $_job_name_prefix := "postsync-ic-user" }}
+
+{{- /*
+Use the build/bin/set-cli-image-digest.sh script to update this value across all charts.
+Included in $_job_hash (see below).
+*/}}
+{{- $_cli_image_digest := "sha256:e6c8f8a02b4bd44026dac280b1d006e60d55e15ee189fce18be7c6922879f8b6" }}
+
+{{- /*
+A dict of values that influence the behaviour of the job in some way.
+Any changes to values in this dict will trigger a rerun of the job.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_config_values := omit .Values "junitreporter" }}
+
+{{- /*
+Increment this value whenever you make a change to an immutable field of the Job resource.
+E.g. passing in a new environment variable.
+Included in $_job_hash (see below).
+*/}}
+{{- $_job_version := "v20" }}
+
+{{- $_job_hash := print ($_job_config_values | toYaml) $_cli_image_digest $_job_version | adler32sum }}
+{{- $_job_name := join "-" (list $_job_name_prefix $_job_hash) }}
+{{- $_job_cleanup_group := cat $_job_name_prefix .Values.db2_instance_name | sha1sum }}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $_job_name }}
+  namespace: "{{ .Values.db2_namespace }}"
+  annotations:
+    argocd.argoproj.io/sync-wave: "131"
+  labels:
+    mas.ibm.com/job-cleanup-group: {{ $_job_cleanup_group }}
+{{- if .Values.custom_labels }}
+{{ .Values.custom_labels | toYaml | indent 4 }}
+{{- end }}
+spec:
+  template:
+{{- if .Values.custom_labels }}
+    metadata:
+      labels:
+{{ .Values.custom_labels | toYaml | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: run
+          image: {{ .Values.cli_image_repo | default "quay.io/ibmmas/cli" }}@{{ $_cli_image_digest }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          env:
+            - name: DB2_NAMESPACE
+              value: "{{ .Values.db2_namespace }}"
+            - name: DB2_INSTANCE_NAME
+              value: "{{ .Values.db2_instance_name }}"
+            - name: DB2_DBNAME
+              value: "{{ .Values.db2_dbname }}"
+            - name: MAS_APP_ID
+              value: "{{ .Values.mas_application_id }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              source /mascli/functions/gitops_utils
+
+              export DB2_SCHEMA="MAXIMO"
+
+              echo ""
+              echo "================================================================================"
+              echo "Settings"
+              echo "================================================================================"
+              echo "DB2_NAMESPACE ................. ${DB2_NAMESPACE}"
+              echo "DB2_INSTANCE_NAME ............. ${DB2_INSTANCE_NAME}"
+              echo "DB2_DBNAME .................... ${DB2_DBNAME}"
+              echo "MAS_APP_ID .................... ${MAS_APP_ID}"
+              echo "DB2_SCHEMA .................... ${DB2_SCHEMA}"
+
+              echo ""
+              echo "================================================================================"
+              echo "Waiting for pod c-${DB2_INSTANCE_NAME}-db2u-0 to report Ready=True (timeout 300s)"
+              echo "================================================================================"
+              oc wait --for=condition=Ready pod/c-${DB2_INSTANCE_NAME}-db2u-0 --timeout 300s -n ${DB2_NAMESPACE}
+
+              echo ""
+              echo "================================================================================"
+              echo "Executing IC user role setup on c-${DB2_INSTANCE_NAME}-db2u-0"
+              echo "================================================================================"
+
+              oc exec -n ${DB2_NAMESPACE} c-${DB2_INSTANCE_NAME}-db2u-0 -- \
+                su -lc ". ~/sqllib/db2profile && \
+                  DB_NAME=${DB2_DBNAME} && \
+                  DB_SCHEMA=${DB2_SCHEMA} && \
+                  IC_ROLE=IC_USER && \
+                  DATETIME=\$(date +%Y%m%d_%H%M%S) && \
+                  SQL_FILE=/tmp/\${IC_ROLE}_\${DATETIME}.sql && \
+                  OUT_FILE=/tmp/\${IC_ROLE}_\${DATETIME}.out && \
+                  > \${SQL_FILE} && \
+                  echo \"Connecting to database \${DB_NAME}...\" && \
+                  db2 connect to \"\${DB_NAME}\" && \
+                  echo '' && echo '== Step 1: Check role ==' && \
+                  EXISTING_ROLE=\$(db2 -x \"SELECT CHAR(ROLENAME,30) FROM SYSCAT.ROLES WHERE ROLENAME = '\${IC_ROLE}'\" || true) && \
+                  if echo \"\${EXISTING_ROLE}\" | grep -iqw \"\${IC_ROLE}\"; then \
+                    echo \"Role \${IC_ROLE} already exists - skipping creation.\"; \
+                  else \
+                    echo \"Role \${IC_ROLE} does not exist - creating...\"; \
+                    echo \"CREATE ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
+                  fi && \
+                  echo '' && echo '== Step 2a: Check database CONNECT grant ==' && \
+                  CONNECT_COUNT=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.DBAUTH WHERE GRANTEE = '\${IC_ROLE}' AND GRANTEETYPE = 'R' AND CONNECTAUTH = 'Y'\" | tr -d ' .') && \
+                  if [ \"\${CONNECT_COUNT}\" != \"0\" ] && [ -n \"\${CONNECT_COUNT}\" ]; then \
+                    echo \"CONNECT and catalog/package grants already present - skipping.\"; \
+                  else \
+                    echo \"CONNECT grant not found - assigning static grants...\"; \
+                    echo \"GRANT CONNECT ON DATABASE TO ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
+                    echo \"GRANT EXECUTE ON PROCEDURE SYSIBM.SQLCAMESSAGECCSID TO ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
+                    echo \"GRANT EXECUTE ON PACKAGE NULLID.SYSSH200 TO ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
+                    echo \"GRANT SELECT ON TABLE SYSIBM.SYSDUMMY1 TO ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
+                    echo \"GRANT SELECT ON TABLE SYSCAT.SCHEMATA TO ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
+                    echo \"GRANT SELECT ON TABLE SYSCAT.TABLES TO ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
+                    echo \"GRANT SELECT ON TABLE SYSCAT.COLUMNS TO ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
+                    echo \"GRANT SELECT ON TABLE SYSCAT.INDEXES TO ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
+                    echo \"GRANT SELECT ON TABLE SYSCAT.VIEWS TO ROLE \${IC_ROLE};\" >> \${SQL_FILE}; \
+                  fi && \
+                  echo '' && echo '== Step 2b: Check table grants ==' && \
+                  TABLE_GRANTS_COUNT=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.TABAUTH WHERE GRANTEE = '\${IC_ROLE}' AND GRANTEETYPE = 'R' AND TABSCHEMA = '\${DB_SCHEMA}' AND SELECTAUTH = 'Y' AND INSERTAUTH = 'Y' AND UPDATEAUTH = 'Y' AND DELETEAUTH = 'Y'\" | tr -d ' .') && \
+                  if [ \"\${TABLE_GRANTS_COUNT}\" != \"0\" ] && [ -n \"\${TABLE_GRANTS_COUNT}\" ]; then \
+                    echo \"Table grants already present (\${TABLE_GRANTS_COUNT} found) - skipping.\"; \
+                  else \
+                    echo \"Table grants not found - assigning all table privileges...\"; \
+                    db2 \"SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE '|| RTRIM(TABSCHEMA)||'.'||CHR(34)||RTRIM(TABNAME)||CHR(34)||' TO ROLE \${IC_ROLE};' FROM SYSCAT.TABLES WHERE TABSCHEMA = '\${DB_SCHEMA}' AND TABNAME IN ('AUTOKEY','MAXSEQUENCE','SYNONYMDOMAIN','DEPLOYEDASSET','DPACCOMMDEVICE','DPACCPU','DPACDISK','DPACDISPLAY','DPACIMAGEDEVICE','DPACMEDIAADAPTER','DPACNETADAPTER','DPACNETDEVCARD','DPACOMMDEVICE','DPACOMPUTER','DPACOS','DPACPU','DPACSOFTWARE','DPACSWSUITE','DPADISK','DPADISPLAY','DPAFILE','DPAIMAGEDEVICE','DPAIPX','DPALOGICALDRIVE','DPAMADAPTER','DPAMADPTVARIANT','DPAMEDIAADAPTER','DPAMMANUFACTURER','DPAMMANUVARIANT','DPAMOS','DPAMOSVARIANT','DPAMPROCESSOR','DPAMPROCVARIANT','DPAMSOFTWARE','DPAMSWSUITE','DPAMSWSUITECOMP','DPAMSWUSAGE','DPAMSWUSAGERANGE','DPAMSWVARIANT','DPANETADAPTER','DPANETDEVCARD','DPANETDEVICE','DPANETPRINTER','DPAOS','DPASOFTWARE','DPASWSUITE','DPATCPIP','DPAUSERINFO','FSNCLASS','FSNCLASSQUAL','FSNCLASSRELATION','FSNLASTSCAN','FSNMETHOD','FSNMETHODPARAM','FSNMTHDPARAMQUAL','FSNMTHDQUAL','FSNOBJECT','FSNOBJPROPERTY','FSNOBJRELATION','FSNPROPERTY','FSNPROPERTYQUAL','FSNPROVIDER','FSNQUALIFIER','FSNREFPROPERTY','FSNSCHEMA','FSNSQLCOLUMN','FSNSQLTABLE','FSNTABLEQUAL','TAMITDPAHWM','TLOAMDPAANCESTOR','TLOAMFSNEVENTLISTENER','TLOAMFSNRUNSTATUS','TLOAMSOFTWARE','ALIASES','ATTRIBUTE_TYPES','CDM_VERSION','CHANGE_EVENTS','CLASS_TYPES','DESIRED_SUPPORTED_ATTRS','DESIRED_SUPPORTED_MAP','ENUMERATIONS','INTERFACE_TYPES','ME_ATTRIBUTES','METADATA_ASSN','MSS','MSS_ME','MSS_RELATIONSHIPS','NAMING_IDENTIFIERS','NAMING_POLICIES','NAMING_RULES','RELATIONSHIP_TYPES','RELATIONSHIPS','SUPERIORS','VALID_REL_TYPES','ASSETATTRIBUTE','CDMCITYPES','CLASSANCESTOR','CLASSIFICATION','CLASSSPEC','CLASSSTRUCTURE','RELATION','RELATIONRULES','ACTCI','ACTCIRELATION','ACTCISPEC','CCIDELETEDACTCI','OMP','OMPCIRLN','MAXVARS','MAXLABELS','L_MAXLABELS','MAXMESSAGES','TAMITSWPRTNUM','TLOAMSWCATALOG','TLOAMSWREL')\" 2>/dev/null | grep -i 'GRANT SELECT, INSERT' >> \${SQL_FILE} || true; \
+                  fi && \
+                  echo '' && echo '== Step 2c: Check sequence grants ==' && \
+                  SEQ_GRANTS_COUNT=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.SEQUENCEAUTH WHERE GRANTEE = '\${IC_ROLE}' AND GRANTEETYPE = 'R' AND SEQSCHEMA = '\${DB_SCHEMA}' AND USAGEAUTH = 'Y' AND ALTERAUTH = 'Y'\" | tr -d ' .') && \
+                  if [ \"\${SEQ_GRANTS_COUNT}\" != \"0\" ] && [ -n \"\${SEQ_GRANTS_COUNT}\" ]; then \
+                    echo \"Sequence grants already present (\${SEQ_GRANTS_COUNT} found) - skipping.\"; \
+                  else \
+                    echo \"Sequence grants not found - assigning all sequence privileges...\"; \
+                    db2 \"SELECT 'GRANT USAGE, ALTER ON SEQUENCE '|| RTRIM(SEQSCHEMA)||'.'||CHR(34)||RTRIM(SEQNAME)||CHR(34)||' TO ROLE \${IC_ROLE};' FROM SYSCAT.SEQUENCES WHERE SEQSCHEMA = '\${DB_SCHEMA}' AND SEQNAME IN ('ACTCIRELATIONSEQ','ACTCISEQ','ACTCISPECSEQ','ASSETATTRIBUTESEQ','AUTOKEYSEQ','CCIDELETEDACTCISEQ','CDMCITYPESSEQ','CLASSANCESTORUSEQ','CLASSIFICATIONSEQ','CLASSSPECSEQ','CLASSSTRUCTURESEQ','DEPLOYEDASSETSEQ','DPACOMMDEVICESEQ','DPACOMPUTERSEQ','DPACPUSEQ','DPADISKSEQ','DPADISPLAYSEQ','DPAFILESEQ','DPAIMAGEDEVICESEQ','DPAIPXSEQ','DPALOGICALDRIVESEQ','DPAMADAPTERSEQ','DPAMADPTVARIANTSEQ','DPAMEDIAADAPTERSEQ','DPAMMANUFACTURERSEQ','DPAMMANUVARIANTSEQ','DPAMOSSEQ','DPAMOSVARIANTSEQ','DPAMPROCESSORSEQ','DPAMPROCVARIANTSEQ','DPAMSOFTWARESEQ','DPAMSWSUITECOMPSEQ','DPAMSWSUITESEQ','DPAMSWUSAGERANGESEQ','DPAMSWUSAGESEQ','DPAMSWVARIANTSEQ','DPANETADAPTERSEQ','DPANETDEVCARDSEQ','DPANETDEVICESEQ','DPANETPRINTERSEQ','DPAOSSEQ','DPASOFTWARESEQ','DPASWSUITESEQ','DPATCPIPSEQ','DPAUSERINFOSEQ','L_MAXLABELSSEQ','MAXLABELSSEQ','MAXMESSAGESSEQ','MAXSEQUENCESEQ','MAXVARSSEQ','OMPCIRLNSEQ','OMPSEQ','RELATIONRULESSEQ','RELATIONSEQ','SYNONYMDOMAINSEQ','TAMITDPAHWMSEQ','TAMITSWPRTNUMSEQ','TLOAMDPAANCESTORSEQ','TLOAMFSNEVENTLISTENERSEQ','TLOAMFSNRUNSTATUSSEQ','TLOAMSOFTWARESEQ','TLOAMSWCATALOGSEQ','TLOAMSWRELSEQ')\" 2>/dev/null | grep -i 'GRANT USAGE, ALTER' >> \${SQL_FILE} || true; \
+                  fi && \
+                  echo '' && echo '== Step 3: Check users with ic prefix ==' && \
+                  OS_USERS=\$(getent passwd | cut -d: -f1 | grep -i '^ic' || true) && \
+                  DB_USERS=\$(db2 -x \"SELECT RTRIM(GRANTEE) FROM SYSCAT.DBAUTH WHERE GRANTEETYPE = 'U' AND GRANTEE LIKE 'IC%'\" | tr -d ' ' || true) && \
+                  IC_USERS=\$( (echo \"\${OS_USERS}\"; echo \"\${DB_USERS}\") | tr '[:lower:]' '[:upper:]' | grep -E '^IC[A-Z0-9_#@\$]*\$' | sort -u || true ) && \
+                  if [ -z \"\${IC_USERS}\" ]; then \
+                    echo \"No user whose name starts with 'ic' was found (checked OS users and database authorizations).\"; \
+                    echo \"Skipping role assignment because ic user not found.\"; \
+                  else \
+                    echo \"Found user(s) whose name starts with 'ic': \$(echo \${IC_USERS})\"; \
+                    for IC_DB_USER in \${IC_USERS}; do \
+                      IC_DB_USER_UC=\$(echo \"\${IC_DB_USER}\" | tr '[:lower:]' '[:upper:]') && \
+                      ROLE_ASSIGNED=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.ROLEAUTH WHERE ROLENAME = '\${IC_ROLE}' AND GRANTEE = '\${IC_DB_USER_UC}' AND GRANTEETYPE = 'U'\" | tr -d ' .') && \
+                      if [ \"\${ROLE_ASSIGNED}\" = \"0\" ] || [ -z \"\${ROLE_ASSIGNED}\" ]; then \
+                        echo \"Role \${IC_ROLE} not assigned to \${IC_DB_USER_UC} - granting...\"; \
+                        echo \"GRANT ROLE \${IC_ROLE} TO USER \${IC_DB_USER_UC};\" >> \${SQL_FILE}; \
+                      else \
+                        echo \"Role \${IC_ROLE} already assigned to \${IC_DB_USER_UC} - skipping.\"; \
+                      fi; \
+                    done; \
+                  fi && \
+                  echo '' && echo '== Step 4: Execute SQL ==' && \
+                  if [ -s \"\${SQL_FILE}\" ]; then \
+                    db2 -tvf \"\${SQL_FILE}\" > \"\${OUT_FILE}\" 2>&1; RC=\$?; cat \"\${OUT_FILE}\"; rm -f \"\${SQL_FILE}\"; [ \${RC} -le 4 ] || exit \${RC}; \
+                  else \
+                    echo 'Nothing to execute - role and grants already in place.'; rm -f \"\${SQL_FILE}\"; \
+                  fi && \
+                  echo '' && echo '== Step 5: Enable USER_AUDIT policy for users with ic prefix ==' && \
+                  POLICY_EXISTS=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITPOLICIES WHERE AUDITPOLICYNAME = 'USER_AUDIT'\" | tr -d ' .') && \
+                  if [ -z \"\${IC_USERS}\" ]; then \
+                    echo \"No user whose name starts with 'ic' was found - skipping user audit.\"; \
+                  elif [ \"\${POLICY_EXISTS}\" = \"0\" ] || [ -z \"\${POLICY_EXISTS}\" ]; then \
+                    echo \"Audit policy USER_AUDIT not found - skipping user audit.\"; \
+                  else \
+                    for IC_DB_USER in \${IC_USERS}; do \
+                      IC_DB_USER_UC=\$(echo \"\${IC_DB_USER}\" | tr '[:lower:]' '[:upper:]') && \
+                      AUDIT_ASSIGNED=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE AUDITPOLICYNAME = 'USER_AUDIT' AND OBJECTTYPE = 'i' AND SUBOBJECTTYPE = 'U' AND OBJECTNAME = '\${IC_DB_USER_UC}'\" | tr -d ' .') && \
+                      if [ \"\${AUDIT_ASSIGNED}\" = \"0\" ] || [ -z \"\${AUDIT_ASSIGNED}\" ]; then \
+                        echo \"Enabling USER_AUDIT for \${IC_DB_USER_UC}...\"; \
+                        if db2 \"AUDIT USER \${IC_DB_USER_UC} USING POLICY USER_AUDIT\"; then \
+                          echo \"OK: USER_AUDIT is now enabled for user \${IC_DB_USER_UC}.\"; \
+                        else \
+                          echo \"WARNING: could not enable USER_AUDIT for user \${IC_DB_USER_UC} (another audit policy may already be in use).\"; \
+                        fi; \
+                      else \
+                        echo \"USER_AUDIT already enabled for \${IC_DB_USER_UC} - skipping.\"; \
+                      fi; \
+                    done; \
+                  fi && \
+                  echo '' && echo \"== Step 6: Enable USER_AUDIT policy for role \${IC_ROLE} ==\" && \
+                  if [ \"\${POLICY_EXISTS}\" = \"0\" ] || [ -z \"\${POLICY_EXISTS}\" ]; then \
+                    echo \"Audit policy USER_AUDIT not found - skipping role audit.\"; \
+                  else \
+                    ROLE_AUDIT_ASSIGNED=\$(db2 -x \"SELECT COUNT(*) FROM SYSCAT.AUDITUSE WHERE AUDITPOLICYNAME = 'USER_AUDIT' AND OBJECTTYPE = 'i' AND SUBOBJECTTYPE = 'R' AND OBJECTNAME = '\${IC_ROLE}'\" | tr -d ' .') && \
+                    if [ \"\${ROLE_AUDIT_ASSIGNED}\" = \"0\" ] || [ -z \"\${ROLE_AUDIT_ASSIGNED}\" ]; then \
+                      echo \"Enabling USER_AUDIT for role \${IC_ROLE}...\"; \
+                      if db2 \"AUDIT ROLE \${IC_ROLE} USING POLICY USER_AUDIT\"; then \
+                        echo \"OK: USER_AUDIT is now enabled for role \${IC_ROLE}.\"; \
+                      else \
+                        echo \"WARNING: could not enable USER_AUDIT for role \${IC_ROLE} (another audit policy may already be in use).\"; \
+                      fi; \
+                    else \
+                      echo \"USER_AUDIT already enabled for role \${IC_ROLE} - skipping.\"; \
+                    fi; \
+                  fi && \
+                  db2 terminate || true" \
+                db2inst1 || exit $?
+
+              echo ""
+              echo "================================================================================"
+              echo "IC user role setup completed successfully"
+              echo "================================================================================"
+
+      restartPolicy: Never
+
+      serviceAccountName: "postsync-sa-{{ .Values.db2_instance_name }}"
+      volumes: []
+  backoffLimit: 4
+
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

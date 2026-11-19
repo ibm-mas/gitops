@@ -23,19 +23,19 @@ if [[ ${DEST_USER} == *MANA* ]]; then
 fi
   echo "db2 \"commit\" " >> ${SCRIPT}
   echo "  "
-  echo "  " 
+  echo "  "
+
+# -- Add customer-provided SQL file execution to the script if present
+if [[ -f ${CUSTOMER_SQL} ]]; then
+  echo "echo \"Executing customer SQL file: ${CUSTOMER_SQL} . . .\"" >> ${SCRIPT}
+  echo "db2 -tvf ${CUSTOMER_SQL}" >> ${SCRIPT}
+  echo "db2 \"commit\"" >> ${SCRIPT}
+  echo "db2 connect reset 2>/dev/null" >> ${SCRIPT}
+  echo "echo \"Post Backflow SQL script executed successfully.\"" >> ${SCRIPT}
+fi
 
   echo "db2set db2comm=tcpip,ssl" >> ${SCRIPT}
   echo "db2stop force ; ipclean ; db2start" >> ${SCRIPT}
 
 
 chmod 755 ${SCRIPT}
-
-# -- Execute customer-provided SQL file if present
-if [[ -f ${CUSTOMER_SQL} ]]; then
-  echo "Executing customer SQL file: ${CUSTOMER_SQL} . . ."
-  db2 connect to bludb
-  db2 -tvf ${CUSTOMER_SQL}
-  db2 connect reset 2>/dev/null
-  echo "Post Backflow SQL script executed successfully."
-fi

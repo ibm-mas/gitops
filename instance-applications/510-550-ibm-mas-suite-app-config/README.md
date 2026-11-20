@@ -63,6 +63,13 @@ customization_archive_secret_names:
 manage_logging_secret_name: string
 manage_logging_access_secret_key: string (secret reference)
 
+# Manage Attachments Configuration (optional)
+manage_attachments_secret_name: string
+manage_attachments_endpoint_url: string (secret reference)
+manage_attachments_bucket_name: string (secret reference)
+manage_attachments_access_key: string (secret reference)
+manage_attachments_access_secret_key: string (secret reference)
+
 # Global Secrets (optional)
 # Application-specific global secrets configuration
 

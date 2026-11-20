@@ -219,6 +219,8 @@ spec:
               value: '{{ .Values.subscription_id }}'
             - name: DOMAIN
               value: '{{ .Values.sls_domain }}'
+            - name: CLUSTER_ID
+              value: {{ .Values.cluster_id}}
 
             # Hard-coded for now:
             - name: AVP_TYPE
@@ -276,6 +278,11 @@ spec:
               SECRET_NAME_SLS=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/sls
               TAGS="[{\"Key\": \"source\", \"Value\": \"postsync-ibm-sls-update-sm-job\"}, {\"Key\": \"account\", \"Value\": \"${ACCOUNT_ID}\"}, {\"Key\": \"subscription_id\", \"Value\": \"${SUBSCRIPTION_ID}\"}]"
               sm_update_secret $SECRET_NAME_SLS "{\"registration_key\": \"$SLS_REGISTRATION_KEY\", \"ca_b64\": \"$SLS_CA\", \"sls_url\":\"$SLS_URL\" }" "${TAGS}"
+
+              # Mongo AIService SaaS Specific
+              SECRET_MONGO_VALUE=$(aws secretsmanager get-secret-value --secret-id ${ACCOUNT_ID}/${CLUSTER_ID}/mongo)
+              SECRET_NAME_MONGO=${ACCOUNT_ID}/${ICN}/${SUBSCRIPTION_ID}/mongo
+              sm_update_secret $SECRET_NAME_MONGO $SECRET_MONGO_VALUE
     
               # 1. Define the namespace using the environment variables passed to the container
               namespace="mas-${ICN_LOWER}-${SUBSCRIPTION_ID}-sls"

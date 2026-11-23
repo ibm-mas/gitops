@@ -70,6 +70,7 @@ metadata:
 {{- end }}
 stringData:
   devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
+  slack_webhook_url: "{{ .Values.slack_webhook_url | default "" }}"
 
 ---
 kind: ServiceAccount
@@ -123,6 +124,12 @@ rules:
       - ""
     resources:
       - configmaps
+  - verbs:
+      - get
+    apiGroups:
+      - "batch"
+    resources:
+      - jobs
   - verbs:
       - get
       - list
@@ -1635,6 +1642,14 @@ spec:
               value: "{{ .Values.mas_app_channel }}"
             - name: TEST_RECORD_CM
               value: "{{ $record_cm_name }}"
+            - name: SLACK_SUITE_NAMES
+              value: "postsync-sanity-manage-{{ .Values.instance_id }},postsync-sanity-manage-mcp-{{ .Values.instance_id }}"
+            - name: JOB_NAME
+              value: "{{ $job_name }}"
+            - name: BACKOFF_LIMIT
+              value: "10"
+            - name: SLACK_TEST_NAME
+              value: "Manage sanity"
             - name: DEVOPS_ENVIRONMENT
               value: "{{ .Values.instance_id }}"
             - name: DEVOPS_SUITE_NAME
@@ -1699,6 +1714,9 @@ spec:
                   python /opt/app-root/src/save-junit-to-mongo.py
                 fi
               fi
+
+              {{- include "ibm-mas-suite-app-config.slack-notify" . | nindent 14 }}
+              slack_notify || true
 
               if [[ $TEST_PASSED == "false" ]]; then
                 echo "Test Result failed, exit 1"

@@ -65,6 +65,7 @@ metadata:
 {{- end }}
 stringData:
   devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
+  slack_webhook_url: "{{ .Values.slack_webhook_url | default "" }}"
 
 ---
 kind: ServiceAccount
@@ -117,6 +118,12 @@ rules:
       - ""
     resources:
       - configmaps
+  - verbs:
+      - get
+    apiGroups:
+      - "batch"
+    resources:
+      - jobs
 ---
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -538,6 +545,12 @@ spec:
               value: "mas-{{ .Values.instance_id }}-core"
             - name: TEST_RECORD_CM
               value: "{{ $record_cm_name }}"
+            - name: JOB_NAME
+              value: "{{ $job_name }}"
+            - name: BACKOFF_LIMIT
+              value: "10"
+            - name: SLACK_TEST_NAME
+              value: "MaximoIT verify"
             - name: DEVOPS_ENVIRONMENT
               value: "{{ .Values.instance_id }}"
             - name: DEVOPS_SUITE_NAME
@@ -586,6 +599,9 @@ spec:
                 export DEVOPS_MONGO_URI
                 python /opt/app-root/src/save-junit-to-mongo.py
               fi
+
+              {{- include "ibm-mas-suite-app-config.slack-notify" . | nindent 14 }}
+              slack_notify || true
 
               if [[ $TEST_PASSED == "false" ]]; then
                 echo "Test Result failed, exit 1"

@@ -11,6 +11,7 @@ must contain a mas-devops release that has it.
 Expects these env vars on the Job: TEST_PASSED (shell var), JOB_NAME, BACKOFF_LIMIT, DEVOPS_ENVIRONMENT, DEVOPS_BUILD_NUMBER,
 DEVOPS_SUITE_NAME.
 Optional: SLACK_TEST_NAME, the readable name of the test shown in the title, e.g. "Manage verify". Defaults to "Verification".
+Optional: INSTANCE_DOMAIN, shown as the "Domain" field. The field is left out when it is not set.
 Optional: SLACK_SUITE_NAMES, a comma separated list of the suite names saved to Mongo, in the same order as the
 <testsuite> elements in the junit XML. Defaults to DEVOPS_SUITE_NAME.
 
@@ -74,12 +75,14 @@ try:
         suite_name = suite_names[index] if index < len(suite_names) else suite.get("name")
         suite_lines.append("\u2022 %s: %d passed, %d failed" % (mrkdwn(suite_name), passed, failed))
 
-    fields = {
-        "Instance ID": mrkdwn(instance),
+    fields = {"Instance ID": mrkdwn(instance)}
+    if os.environ.get("INSTANCE_DOMAIN"):
+        fields["Domain"] = mrkdwn(os.environ["INSTANCE_DOMAIN"])
+    fields.update({
         "Build": mrkdwn(build),
         "Total passed": str(passed_total),
         "Total failed": str(failed_total),
-    }
+    })
     details = "*Test suites:*\n" + "\n".join(suite_lines)
     if failure_lines:
         details += "\n\n*Failed tests:*\n" + "\n".join(failure_lines)

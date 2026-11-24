@@ -8,8 +8,9 @@ Meaningful prefix for the job resource name. Must be under 52 chars to leave roo
 {{- /*
 A dict of values that influence the behaviour of the job.
 Any changes to values in this dict will trigger a rerun of the job.
+slack_webhook_url is left out so rotating the webhook does not rerun the tests.
 */}}
-{{- $_job_config_values := omit .Values "junitreporter" }}
+{{- $_job_config_values := omit .Values "junitreporter" "slack_webhook_url" }}
 
 {{- /*
 Increment this value whenever you make a change to an immutable field of the Job resource.
@@ -87,6 +88,7 @@ metadata:
 {{- end }}
 stringData:
   devops_mongo_uri: "{{ .Values.devops_mongo_uri }}"
+  slack_webhook_url: "{{ .Values.slack_webhook_url | default "" }}"
 
 ---
 # ServiceAccount
@@ -414,6 +416,16 @@ spec:
                   name: {{ $secret }}
                   key: devops_mongo_uri
                   optional: true
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: slack_webhook_url
+                  optional: true
+{{- if .Values.domain }}
+            - name: INSTANCE_DOMAIN
+              value: "{{ .Values.domain }}"
+{{- end }}
           command:
             - /bin/bash
             - -c

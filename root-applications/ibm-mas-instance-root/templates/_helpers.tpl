@@ -56,3 +56,18 @@ For an app without a block: pdb returns 120, sdb returns 549 and jdbc/install/co
 549
 {{- end -}}
 {{- end -}}
+
+{{- /*
+Subscriptions to the custom failure -> recovered -> success ArgoCD notification triggers
+(on-custom-status, on-custom-status-recovered, on-custom-status-success). The triggers, templates
+and the "slack" service are defined in the argocd-notifications-cm of the ArgoCD instance.
+Currently included only by the Maximo Manage (EAM) Applications (500 install and the 510-550 workspace config for manage).
+Include this inside the "notifications.slack_channel_id" guard of an Application's annotations.
+
+Arguments: the chart root context ($)
+*/}}
+{{- define "ibm-mas-instance-root.custom-status-notifications" -}}
+notifications.argoproj.io/subscribe.on-custom-status.slack: {{ .Values.notifications.slack_channel_id }}
+notifications.argoproj.io/subscribe.on-custom-status-recovered.slack: {{ .Values.notifications.slack_channel_id }}
+notifications.argoproj.io/subscribe.on-custom-status-success.slack: {{ .Values.notifications.slack_channel_id }}
+{{- end }}

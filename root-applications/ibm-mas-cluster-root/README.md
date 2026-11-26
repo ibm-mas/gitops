@@ -209,6 +209,7 @@ These values **must** be provided by the parent ApplicationSet:
 | `devops.mongo_uri` | DevOps MongoDB URI | Internal DevOps tracking |
 | `devops.build_number` | DevOps build number | Internal DevOps tracking |
 | `notifications.slack_channel_id` | Slack channel ID | Enable Slack notifications |
+| `notifications.slack_webhook_url` | AVP reference to the Slack Incoming Webhook URL used by the custom alerts | Optional; adds the `slack-webhook-url` key to `argocd-notifications-secret` |
 | `ibm_operator_catalog.mas_catalog_version` | MAS catalog version | Override default catalog version |
 | `application_admin_service_account.name` | Service account name | Custom service account configuration |
 | `application_admin_service_account.namespace` | Service account namespace | Custom service account configuration |
@@ -219,6 +220,7 @@ The following table lists all ArgoCD applications and ApplicationSets defined in
 
 | Template File | Application Name | Cluster Admin Role | Application Admin Role | Both Roles |
 |--------------|------------------|-------------------|----------------------|------------|
+| [`000-argocd-notifications.yaml`](templates/000-argocd-notifications.yaml) | argocd-notifications | ✓ | | |
 | [`000-efs-csi-driver.yaml`](templates/000-efs-csi-driver.yaml) | efs-csi-driver | ✓ | | |
 | [`000-ibm-operator-catalog-app.yaml`](templates/000-ibm-operator-catalog-app.yaml) | operator-catalog | ✓ | | |
 | [`000-image-mirroring.yaml`](templates/000-image-mirroring.yaml) | image-mirroring | ✓ | | |
@@ -248,7 +250,7 @@ The following table lists all ArgoCD applications and ApplicationSets defined in
 
 ### Role Conditions
 
-- **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (22 applications)
+- **Cluster Admin Role**: Applications that require `cluster_admin_role` to be set (23 applications)
 - **Both Roles**: Applications/ApplicationSets rendered regardless of role settings (2 ApplicationSets)
 
 **Note**: Most applications have additional conditions beyond role requirements (e.g., specific values must be defined). Refer to individual template files for complete rendering logic.

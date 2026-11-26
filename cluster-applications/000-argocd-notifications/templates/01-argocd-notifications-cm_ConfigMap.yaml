@@ -1,0 +1,31 @@
+---
+# Adds the custom failure -> recovered -> success notification config to the ArgoCD notifications
+# ConfigMap. The ConfigMap is shared with other notification config, so this chart only contributes
+# its own keys (service, templates, triggers) and relies on ServerSideApply (set on the Application)
+# to merge them without touching other keys. It is never pruned or deleted by ArgoCD.
+#
+# - files/*.yaml        -> one ConfigMap key per file, named after the file
+#                          (e.g. files/service.webhook.slack.yaml -> data."service.webhook.slack").
+# - files/stages/*.yaml -> one file per stage holding both its Slack template and its trigger. Each is
+#                          rendered as two keys: data."template.<stage>" and data."trigger.on-<stage>"
+#                          (e.g. files/stages/custom-status.yaml -> template.custom-status + trigger.on-custom-status).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: {{ .Values.argo_namespace }}
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+data:
+{{- range $path, $_ := .Files.Glob "files/*.yaml" }}
+  {{ base $path | trimSuffix ".yaml" }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
+{{- range $path, $_ := .Files.Glob "files/stages/*.yaml" }}
+{{- $stage := base $path | trimSuffix ".yaml" }}
+{{- $content := $.Files.Get $path | fromYaml }}
+  template.{{ $stage }}: |
+{{ $content.template | indent 4 }}
+  trigger.on-{{ $stage }}: |
+{{ $content.trigger | indent 4 }}
+{{- end }}

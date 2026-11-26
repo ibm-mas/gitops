@@ -151,7 +151,7 @@ The following parameters are passed from the parent Cluster Root ApplicationSet 
 | `sm.aws_secret_access_key` | AWS Secrets Manager secret access key | From configuration |
 | `devops.mongo_uri` | DevOps MongoDB URI | Passed from cluster root |
 | `devops.build_number` | DevOps build number | Passed from cluster root |
-| `notifications.slack_channel_id` | Slack channel for notifications | Passed from cluster root |
+| `notifications.slack_channel_id` | Slack channel for notifications. When set, the Maximo Manage application (the `manage` install and its workspace config) also subscribes to the `on-custom-status`, `on-custom-status-recovered` and `on-custom-status-success` triggers (failure -> recovered -> success) via the `slack` service. These triggers and templates must exist in the ArgoCD instance's `argocd-notifications-cm`. | Passed from cluster root |
 | `mas_catalog_version` | MAS catalog version | Passed from cluster root |
 | `application_admin_service_account.name` | Application admin service account name | Passed from cluster root |
 | `application_admin_service_account.namespace` | Application admin service account namespace | Passed from cluster root |

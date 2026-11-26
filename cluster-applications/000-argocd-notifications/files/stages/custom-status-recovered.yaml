@@ -1,0 +1,43 @@
+# Stage "custom-status-recovered": rendered as ConfigMap keys template.custom-status-recovered and trigger.on-custom-status-recovered
+template: |
+  webhook:
+    slack:
+      method: POST
+      body: |
+        {
+          "attachments": [
+            {
+              "color": "#ECB22E",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Deployment update for instance {{index .app.metadata.labels "instance"}}: Application Recovered, Verifying Health ({{.app.metadata.name}})*"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {"type": "mrkdwn", "text": "*Instance ID:* {{index .app.metadata.labels "instance"}}"},
+                    {"type": "mrkdwn", "text": "*Cluster:* {{index .app.metadata.labels "cluster"}}"},
+                    {"type": "mrkdwn", "text": "*Project:* {{.app.spec.project}}"},
+                    {"type": "mrkdwn", "text": "*Sync Status:* {{.app.status.sync.status}}"},
+                    {"type": "mrkdwn", "text": "*Health Status:* {{.app.status.health.status}}"},
+                    {"type": "mrkdwn", "text": "*Deployed by:* {{with .app.status.operationState}}{{with .operation}}{{with .initiatedBy}}{{if .username}}{{.username}}{{else}}automated{{end}}{{end}}{{end}}{{end}}"}
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "The failure is fixed and the sync succeeded. Waiting for the application to become Healthy.\n\n*Revision:* {{.app.status.sync.revision}}\n\n*ArgoCD:* <{{.context.argocdUrl}}/applications/{{.app.metadata.name}}|{{.app.metadata.name}}>"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+trigger: |
+  - when: (app.status.sync.status == 'Synced' && app.status.health.status != 'Degraded' && app.status.operationState?.phase == 'Succeeded' && (app.metadata.annotations['notified.notifications.argoproj.io'] ?? '') contains 'on-custom-status:') || ((app.metadata.annotations['notified.notifications.argoproj.io'] ?? '') contains 'on-custom-status-recovered:' && !((app.metadata.annotations['notified.notifications.argoproj.io'] ?? '') contains 'on-custom-status-success:'))
+    send: [custom-status-recovered]

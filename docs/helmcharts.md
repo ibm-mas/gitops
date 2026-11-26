@@ -25,6 +25,7 @@ The following figure shows a tree of ArgoCD applications and Application Sets ge
 
 | Application | Template | Helm Chart |
 |-|-|-|
+|ArgoCD Notifications | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-argocd-notifications.yaml", "000-argocd-notifications.yaml") }} | [000-argocd-notifications](charts/000-argocd-notifications.md) |
 |EFS CSI Driver | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-efs-csi-driver.yaml", "000-efs-csi-driver.yaml") }} | [000-efs-csi-driver](charts/000-efs-csi-driver.md) |
 |IBM Operator Catalog | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-ibm-operator-catalog-app.yaml", "000-ibm-operator-catalog-app.yaml") }} | [000-ibm-operator-catalog](charts/000-ibm-operator-catalog.md) |
 |Image Mirroring | {{ gitops_repo_file_link("root-applications/ibm-mas-cluster-root/templates/000-image-mirroring.yaml", "000-image-mirroring.yaml") }} | [000-image-mirroring](charts/000-image-mirroring.md) |

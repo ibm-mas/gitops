@@ -1,0 +1,59 @@
+{{- if and (.Values.cluster_admin_role) .Values.notifications .Values.notifications.slack_channel_id }}
+---
+# Custom ArgoCD notifications (failure -> recovered -> success) for MAS applications.
+# Adds the Slack service, templates and triggers to the argocd-notifications-cm of the ArgoCD instance.
+# This targets the management cluster (where ArgoCD runs), not the target cluster in cluster.url.
+# The "slack-webhook-url" key must exist in the argocd-notifications-secret of that ArgoCD instance: either
+# set notifications.slack_webhook_url (an AVP reference) so the chart adds it, or create it by hand.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-notifications.{{ .Values.cluster.id }}
+  namespace: {{ .Values.argo.namespace }}
+  labels:
+    environment: '{{ .Values.account.id }}'
+    region: '{{ .Values.region.id }}'
+    cluster: '{{ .Values.cluster.id }}'
+    {{- if .Values.argo.instance }}
+    argocd.argoproj.io/instance: '{{ .Values.argo.instance }}'
+    {{- end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "000"
+    notifications.argoproj.io/subscribe.on-sync-failed.workspace1: {{ .Values.notifications.slack_channel_id }}
+    notifications.argoproj.io/subscribe.on-sync-succeeded.workspace1: {{ .Values.notifications.slack_channel_id }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: "{{ .Values.argo.projects.apps }}"
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: {{ .Values.argo.namespace }}
+  source:
+    repoURL: "{{ .Values.source.repo_url }}"
+    path: cluster-applications/000-argocd-notifications
+    targetRevision: "{{ .Values.source.revision }}"
+    plugin:
+      name: {{ .Values.avp.name }}
+      env:
+        - name: {{ .Values.avp.values_varname }}
+          value: |
+            argo_namespace: "{{ .Values.argo.namespace }}"
+            {{- if .Values.notifications.slack_webhook_url }}
+            slack_webhook_url: "{{ .Values.notifications.slack_webhook_url }}"
+            {{- end }}
+        - name: ARGOCD_APP_NAME
+          value: argocdnotificationsapp
+        {{- if not (empty .Values.avp.secret) }}
+        - name: AVP_SECRET
+          value: {{ .Values.avp.secret }}
+        {{- end }}
+  syncPolicy:
+    automated:
+      selfHeal: true
+    retry:
+      limit: 20
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+{{- end }}

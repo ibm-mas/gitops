@@ -9,6 +9,13 @@ For a visual overview of how these charts relate to each other, see [The Source 
 ## Cluster Applications
 
 {%
+   include-markdown "charts/000-argocd-notifications.md"
+   heading-offset=2
+%}
+
+---
+
+{%
    include-markdown "charts/000-efs-csi-driver.md"
    heading-offset=2
 %}

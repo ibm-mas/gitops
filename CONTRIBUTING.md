@@ -133,14 +133,8 @@ Automatically builds and publishes versioned documentation to GitHub Pages:
 - Documentation is published to [https://ibm-mas.github.io/gitops/](https://ibm-mas.github.io/gitops/)
 - Version tags (`x.x.x`) are grouped by minor release (`x.x`)
 
-### Update Internal GHE Repo
-**Workflow:** [`.github/workflows/update-internal-repo.yaml`](.github/workflows/update-internal-repo.yaml)
-**Triggers:** Pushes to any branch (excluding tags)
-
-Synchronizes changes to the internal IBM GitHub Enterprise repository:
-- Copies files from public repo to `automation-paas-cd-pipeline/mas-gitops` on github.ibm.com
-- Uses [`copy-gitops.sh`](build/bin/copy-gitops.sh) to selectively sync files
-- Maintains branch parity between public and internal repositories
+### Internal GHE Mirroring
+The public `ibm-mas/gitops` repository is mirrored to the internal IBM GitHub Enterprise repository (`automation-paas-cd-pipeline/mas-gitops`) via an internal pull-model synchronization pipeline running within the internal IBM toolchain.
 
 
 RBAC

@@ -25,6 +25,7 @@ fully deployed and functioning as expected.  Results are written to MongoDB usin
 | `devops_mongo_uri` | MongoDB connection string; leave empty to skip result recording | `""` |
 | `slack_webhook_url` | Slack incoming webhook URL for the run-complete notification; leave empty to skip it (the message is printed in the Job log instead) | `""` |
 | `domain` | Instance domain shown in the Slack notification; left out when empty | `""` |
+| `deployed_by` | Who deployed the instance, shown in the Slack notification; left out when empty | `""` |
 | `fvt_gitops_image_repo` | Container image repository for the `fvt-gitops` test image | `docker-na-public.artifactory.swg-devops.com/wiotp-docker-local/mas-devops/fvt-gitops` |
 | `fvt_gitops_image_tag` | Container image tag | `"latest"` |
 | `custom_labels` | Extra labels applied to all created resources | `{}` |

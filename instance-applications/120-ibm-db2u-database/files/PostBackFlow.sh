@@ -25,14 +25,16 @@ fi
   echo "  "
   echo "  "
 
-# -- Add customer-provided SQL file execution to the script if present
-if [[ -f ${CUSTOMER_SQL} ]]; then
-  echo "echo \"Executing customer SQL file: ${CUSTOMER_SQL} . . .\"" >> ${SCRIPT}
-  echo "db2 -tvf ${CUSTOMER_SQL}" >> ${SCRIPT}
-  echo "db2 \"commit\"" >> ${SCRIPT}
-  echo "db2 connect reset 2>/dev/null" >> ${SCRIPT}
-  echo "echo \"Post Backflow SQL script executed successfully.\"" >> ${SCRIPT}
-fi
+# -- Add customer SQL file execution to the script. The file check is written into the script itself,
+# -- because the SQL file does not exist at provision time (when this script runs) and is only
+# -- present later, when the backflow job executes ${SCRIPT}.
+  echo "if [ -f ${CUSTOMER_SQL} ]; then" >> ${SCRIPT}
+  echo "  echo \"Executing customer SQL file: ${CUSTOMER_SQL} . . .\"" >> ${SCRIPT}
+  echo "  db2 -tvf ${CUSTOMER_SQL}" >> ${SCRIPT}
+  echo "  db2 \"commit\"" >> ${SCRIPT}
+  echo "  db2 connect reset 2>/dev/null" >> ${SCRIPT}
+  echo "  echo \"Post Backflow SQL script executed successfully.\"" >> ${SCRIPT}
+  echo "fi" >> ${SCRIPT}
 
   echo "db2set db2comm=tcpip,ssl" >> ${SCRIPT}
   echo "db2stop force ; ipclean ; db2start" >> ${SCRIPT}
